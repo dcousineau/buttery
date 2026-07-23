@@ -1,0 +1,11 @@
+[tools]
+node = "26"
+pnpm = "11"
+railway = "latest"
+
+[tasks.railway-skills]
+description = "Install Railway skills into this project"
+run = "railway skills install"
+
+[hooks]
+postinstall = "mise run railway-skills"
