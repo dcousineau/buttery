@@ -19,6 +19,11 @@ export default defineRailway(() => {
       BETTER_AUTH_SECRET: { generator: "secret(44)", preserveExisting: true },
     },
   });
+  // CDN caching is enabled for this service but is not expressible in the IaC
+  // DSL (as of railway@3.6.0 / CLI 5.28); it is managed via `railway cdn`:
+  //   railway cdn status --service buttery
+  // Current settings: enabled, html-caching=auto, default-ttl=2h, swr honored,
+  // purge-on-deploy=html.
 
   return project("buttery", {
     resources: [db, web],

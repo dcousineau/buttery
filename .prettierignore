@@ -1,0 +1,7 @@
+dist
+.tanstack
+.nitro
+.output
+pnpm-lock.yaml
+src/routeTree.gen.ts
+skills-lock.json
