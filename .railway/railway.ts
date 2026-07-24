@@ -1,12 +1,11 @@
-import { defineRailway, postgres, project, service } from "railway/iac";
+import { defineRailway, github, postgres, project, service } from "railway/iac";
 
 export default defineRailway(() => {
   const db = postgres("postgres");
 
-  // Deployed from the local checkout via `railway up`. To switch to
-  // GitHub-triggered deploys later, add:
-  //   source: github("dcousineau/buttery")
+  // GitHub-triggered deploys: pushes to the repo build & deploy automatically.
   const web = service("buttery", {
+    source: github("dcousineau/buttery"),
     build: "pnpm run build",
     start: "pnpm start",
     env: {
