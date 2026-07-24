@@ -1,8 +1,18 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { BookOpenText, CalendarRange, CookingPot, Dices, FolderLock, ShoppingBasket } from "lucide-react";
 import { authClient } from "../lib/auth-client";
 import { normalizeRecipeRef } from "../lib/atproto/recipe-exchange";
 import { fetchRecipe } from "../lib/atproto/recipes";
+import ButterStick from "../components/ButterStick";
+import { Badge } from "#/components/ui/badge";
+import { Button } from "#/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
+import { Field, FieldGroup, FieldLabel } from "#/components/ui/field";
+import { Input } from "#/components/ui/input";
+import { Separator } from "#/components/ui/separator";
+import { Skeleton } from "#/components/ui/skeleton";
+import { Spinner } from "#/components/ui/spinner";
 import type { FormEvent } from "react";
 import type { RecipeResult } from "../lib/atproto/recipes";
 
@@ -13,20 +23,76 @@ export const Route = createFileRoute("/")({
 
 function App() {
   return (
-    <main className="page-wrap px-4 pb-8 pt-14">
-      <section className="island-shell rise-in rounded-[2rem] px-6 py-10 sm:px-10 sm:py-12">
-        <p className="island-kicker mb-3">Buttery</p>
-        <h1 className="display-title mb-4 max-w-3xl text-4xl leading-[1.02] font-bold tracking-tight text-[var(--sea-ink)] sm:text-5xl">Recipes on atproto</h1>
-        <p className="m-0 max-w-2xl text-base text-[var(--sea-ink-soft)]">
-          Sign in with your atproto account and look up recipes stored in the <code>exchange.recipe.recipe</code> lexicon.
-        </p>
+    <div className="page-wrap px-4 pt-10 pb-8 sm:pt-14">
+      <section className="rise-in flex flex-col items-start gap-8 sm:flex-row sm:items-center">
+        <div className="min-w-0">
+          <Badge variant="secondary" className="mb-4">
+            A social recipe box on the open web
+          </Badge>
+          <h1 className="display-title m-0 max-w-2xl text-4xl leading-[1.08] text-foreground sm:text-6xl">
+            Good recipes,
+            <br />
+            spread <span className="text-primary">generously.</span>
+          </h1>
+          <p className="mt-5 max-w-xl text-base text-muted-foreground sm:text-lg">
+            <strong className="text-foreground">but·ter·y</strong> <em>(noun)</em> — a pantry; a room where the good stuff is kept. Buttery keeps your recipes on your own atproto
+            account, ready to share with friends — and big and bright on the counter while you cook.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button size="lg" render={<a href="#sign-in" />}>
+              Sign in with atproto
+            </Button>
+            <Button size="lg" variant="outline" render={<a href="#features" />}>
+              What's cooking
+            </Button>
+          </div>
+        </div>
+        <ButterStick label="A pop-art stick of butter" className="w-52 shrink-0 self-center sm:w-64" />
       </section>
 
-      <div className="mt-8 grid gap-4 lg:grid-cols-2">
+      <div className="mt-12 grid gap-6 lg:grid-cols-2">
         <LoginCard />
         <RecipeLookupCard />
       </div>
-    </main>
+
+      <section id="features" className="mt-16">
+        <h2 className="display-title m-0 text-2xl text-foreground sm:text-3xl">What's in the pantry</h2>
+        <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <FeatureCard
+            icon={<CookingPot />}
+            title="Cook mode"
+            highlight
+            blurb="The whole point. Recipes rendered huge and glare-proof for the counter — no sleep, no scrolling with buttery thumbs."
+          />
+          <FeatureCard icon={<FolderLock />} title="Private collections" blurb="Sort recipes into shelves only you (or your chosen few) can open." />
+          <FeatureCard icon={<ShoppingBasket />} title="Shopping lists" blurb="Pick recipes, get one consolidated list for the store." />
+          <FeatureCard icon={<CalendarRange />} title="Meal planner" blurb="Lay the week out on the table before it starts." />
+          <FeatureCard icon={<Dices />} title="Randomizer" blurb="Can't decide? Roll the dice, dinner picks itself." />
+          <FeatureCard icon={<BookOpenText />} title="Yours, portably" blurb="Recipes live in your PDS as atproto records. Leave anytime and take the whole pantry." />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function FeatureCard({ icon, title, blurb, highlight }: { icon: React.ReactNode; title: string; blurb: string; highlight?: boolean }) {
+  return (
+    <Card className={highlight ? "bg-secondary text-secondary-foreground" : undefined}>
+      <CardHeader>
+        <CardTitle role="heading" aria-level={3} className="flex items-center gap-2.5 font-bold [&_svg]:size-5 [&_svg]:shrink-0">
+          {icon}
+          {title}
+          {highlight ? (
+            <Badge variant="outline" className="ml-auto text-[0.6rem] tracking-wide uppercase">
+              priority
+            </Badge>
+          ) : null}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className={`m-0 text-sm ${highlight ? "text-secondary-foreground" : "text-muted-foreground"}`}>{blurb}</p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -55,49 +121,57 @@ function LoginCard() {
     window.location.href = data.url;
   }
 
+  const failureMessage = error ?? (authError ? "Sign-in was not completed. Try again." : null);
+
   return (
-    <section className="island-shell rounded-2xl p-6">
-      <p className="island-kicker mb-3">Account</p>
-      {isPending ? (
-        <p className="m-0 text-sm text-[var(--sea-ink-soft)]">Restoring session…</p>
-      ) : session ? (
-        <div className="space-y-4">
-          <p className="m-0 text-sm text-[var(--sea-ink)]">
-            Signed in as <code className="break-all">{session.user.name}</code>
-          </p>
-          <button
-            type="button"
-            onClick={() => void authClient.signOut()}
-            className="rounded-full border border-[rgba(23,58,64,0.2)] bg-white/50 px-5 py-2.5 text-sm font-semibold text-[var(--sea-ink)] transition hover:-translate-y-0.5 hover:border-[rgba(23,58,64,0.35)]"
-          >
-            Sign out
-          </button>
-        </div>
-      ) : (
-        <form onSubmit={onSubmit} className="space-y-3">
-          <label className="block text-sm font-semibold text-[var(--sea-ink)]">
-            Handle
-            <input
-              type="text"
-              value={handle}
-              onChange={(e) => setHandle(e.target.value)}
-              placeholder="alice.bsky.social"
-              autoComplete="username"
-              className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-white/60 px-4 py-2.5 text-sm font-normal text-[var(--sea-ink)] outline-none focus:border-[rgba(50,143,151,0.6)]"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={pending}
-            className="rounded-full border border-[rgba(50,143,151,0.3)] bg-[rgba(79,184,178,0.14)] px-5 py-2.5 text-sm font-semibold text-[var(--lagoon-deep)] transition hover:-translate-y-0.5 hover:bg-[rgba(79,184,178,0.24)] disabled:opacity-50"
-          >
-            {pending ? "Redirecting…" : "Sign in with atproto"}
-          </button>
-          {error && <p className="m-0 text-sm text-red-600">{error}</p>}
-          {!error && authError && <p className="m-0 text-sm text-red-600">Sign-in was not completed. Try again.</p>}
-        </form>
-      )}
-    </section>
+    <Card id="sign-in" className="scroll-mt-24">
+      <CardHeader>
+        <CardTitle role="heading" aria-level={2} className="display-title text-xl">
+          Your account
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isPending ? (
+          <Skeleton className="h-9 w-full" />
+        ) : session ? (
+          <div className="flex flex-col items-start gap-4">
+            <p className="m-0 text-sm">
+              Signed in as <code className="break-all">{session.user.name}</code>
+            </p>
+            <Button variant="outline" onClick={() => void authClient.signOut()}>
+              Sign out
+            </Button>
+          </div>
+        ) : (
+          <form onSubmit={onSubmit}>
+            <FieldGroup>
+              <Field data-invalid={failureMessage ? true : undefined}>
+                <FieldLabel htmlFor="atproto-handle">atproto handle</FieldLabel>
+                <Input
+                  id="atproto-handle"
+                  type="text"
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  placeholder="alice.bsky.social"
+                  autoComplete="username"
+                  aria-invalid={failureMessage ? true : undefined}
+                  aria-describedby={failureMessage ? "atproto-handle-error" : undefined}
+                />
+              </Field>
+            </FieldGroup>
+            <Button type="submit" disabled={pending} className="mt-4">
+              {pending ? <Spinner data-icon="inline-start" /> : null}
+              {pending ? "Redirecting…" : "Sign in with atproto"}
+            </Button>
+            {failureMessage && (
+              <p id="atproto-handle-error" role="alert" className="mt-3 mb-0 text-sm font-semibold text-destructive">
+                {failureMessage}
+              </p>
+            )}
+          </form>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -123,31 +197,42 @@ function RecipeLookupCard() {
   }
 
   return (
-    <section className="island-shell rounded-2xl p-6">
-      <p className="island-kicker mb-3">Fetch a Recipe</p>
-      <form onSubmit={onSubmit} className="space-y-3">
-        <label className="block text-sm font-semibold text-[var(--sea-ink)]">
-          Recipe id, recipe.exchange URL, or AT-URI
-          <input
-            type="text"
-            value={ref}
-            onChange={(e) => setRef(e.target.value)}
-            placeholder="01JMTK16MTE4AVXYSSTGB5B1TR"
-            className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-white/60 px-4 py-2.5 text-sm font-normal text-[var(--sea-ink)] outline-none focus:border-[rgba(50,143,151,0.6)]"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-full border border-[rgba(50,143,151,0.3)] bg-[rgba(79,184,178,0.14)] px-5 py-2.5 text-sm font-semibold text-[var(--lagoon-deep)] transition hover:-translate-y-0.5 hover:bg-[rgba(79,184,178,0.24)] disabled:opacity-50"
-        >
-          {pending ? "Fetching…" : "Fetch"}
-        </button>
-        {error && <p className="m-0 text-sm text-red-600">{error}</p>}
-      </form>
+    <Card>
+      <CardHeader>
+        <CardTitle role="heading" aria-level={2} className="display-title text-xl">
+          Fetch a recipe
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={onSubmit}>
+          <FieldGroup>
+            <Field data-invalid={error ? true : undefined}>
+              <FieldLabel htmlFor="recipe-ref">Recipe id, recipe.exchange URL, or AT-URI</FieldLabel>
+              <Input
+                id="recipe-ref"
+                type="text"
+                value={ref}
+                onChange={(e) => setRef(e.target.value)}
+                placeholder="01JMTK16MTE4AVXYSSTGB5B1TR"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "recipe-ref-error" : undefined}
+              />
+            </Field>
+          </FieldGroup>
+          <Button type="submit" variant="secondary" disabled={pending} className="mt-4">
+            {pending ? <Spinner data-icon="inline-start" /> : null}
+            {pending ? "Fetching…" : "Fetch"}
+          </Button>
+          {error && (
+            <p id="recipe-ref-error" role="alert" className="mt-3 mb-0 text-sm font-semibold text-destructive">
+              {error}
+            </p>
+          )}
+        </form>
 
-      {recipe && <RecipeView recipe={recipe} />}
-    </section>
+        {recipe && <RecipeView recipe={recipe} />}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -163,32 +248,33 @@ function RecipeView({ recipe }: { recipe: RecipeResult }) {
   ].filter(Boolean) as Array<string>;
 
   return (
-    <article className="mt-6 border-t border-[var(--line)] pt-5">
-      <h2 className="mb-2 text-xl font-bold text-[var(--sea-ink)]">{r.name}</h2>
-      <p className="mb-1 text-xs text-[var(--sea-ink-soft)]">
+    <article className="mt-6">
+      <Separator className="mb-5" />
+      <h3 className="mb-2 text-xl font-bold">{r.name}</h3>
+      <p className="mb-1 text-xs text-muted-foreground">
         <code className="break-all">{recipe.uri}</code>
       </p>
-      <p className="mb-4 text-sm text-[var(--sea-ink-soft)]">{r.text}</p>
+      <p className="mb-4 text-sm text-muted-foreground">{r.text}</p>
 
       {meta.length > 0 && (
-        <ul className="mb-4 flex flex-wrap gap-2 pl-0">
+        <div className="mb-4 flex flex-wrap gap-2">
           {meta.map((m) => (
-            <li key={m} className="list-none rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1 text-xs text-[var(--sea-ink)]">
+            <Badge key={m} variant="outline">
               {m}
-            </li>
+            </Badge>
           ))}
-        </ul>
+        </div>
       )}
 
-      <h3 className="mb-2 text-sm font-semibold text-[var(--sea-ink)]">Ingredients</h3>
-      <ul className="mb-4 list-disc space-y-1 pl-5 text-sm text-[var(--sea-ink-soft)]">
+      <h4 className="mb-2 text-sm font-bold">Ingredients</h4>
+      <ul className="mb-4 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
         {r.ingredients.map((ing, i) => (
           <li key={i}>{ing}</li>
         ))}
       </ul>
 
-      <h3 className="mb-2 text-sm font-semibold text-[var(--sea-ink)]">Instructions</h3>
-      <ol className="m-0 list-decimal space-y-2 pl-5 text-sm text-[var(--sea-ink-soft)]">
+      <h4 className="mb-2 text-sm font-bold">Instructions</h4>
+      <ol className="m-0 list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
         {r.instructions.map((step, i) => (
           <li key={i}>{step}</li>
         ))}

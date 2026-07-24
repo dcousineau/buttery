@@ -1,24 +1,52 @@
 import { Link } from "@tanstack/react-router";
+import { authClient } from "../lib/auth-client";
+import ButterStick from "./ButterStick";
 import ThemeToggle from "./ThemeToggle";
+import { Badge } from "#/components/ui/badge";
+import { Button } from "#/components/ui/button";
+import { SidebarTrigger } from "#/components/ui/sidebar";
+import { Skeleton } from "#/components/ui/skeleton";
+
+function AuthState() {
+  const { data: session, isPending } = authClient.useSession();
+
+  if (isPending) {
+    return <Skeleton className="h-8 w-24 rounded-lg" />;
+  }
+
+  if (session) {
+    return (
+      <div className="flex items-center gap-2">
+        <Badge variant="secondary" className="max-w-40 truncate" title={session.user.name}>
+          @{session.user.name}
+        </Badge>
+        <Button variant="ghost" size="sm" onClick={() => void authClient.signOut()}>
+          Sign out
+        </Button>
+      </div>
+    );
+  }
+
+  return <Button render={<Link to="/" hash="sign-in" />}>Sign in</Button>;
+}
 
 export default function Header() {
   return (
-    <header className="sticky top-0 z-50 border-b border-[var(--line)] bg-[var(--header-bg)] px-4 backdrop-blur-lg">
-      <nav className="page-wrap flex flex-wrap items-center gap-x-3 gap-y-2 py-3 sm:py-4">
-        <h2 className="m-0 flex-shrink-0 text-base font-semibold tracking-tight">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 rounded-full border border-[var(--chip-line)] bg-[var(--chip-bg)] px-3 py-1.5 text-sm text-[var(--sea-ink)] no-underline shadow-[0_8px_24px_rgba(30,90,72,0.08)] sm:px-4 sm:py-2"
-          >
-            <span className="h-2 w-2 rounded-full bg-[linear-gradient(90deg,#56c6be,#7ed3bf)]" />
-            Buttery
-          </Link>
-        </h2>
+    <header className="sticky top-0 z-40 border-b-2 border-border bg-background">
+      <div className="flex items-center gap-2 px-3 py-2.5 sm:px-5">
+        <SidebarTrigger />
 
-        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+        <Link to="/" className="flex items-center gap-2 text-foreground no-underline md:hidden">
+          <ButterStick className="h-6 w-auto" />
+          <span className="display-title text-lg leading-none">Buttery</span>
+        </Link>
+
+        <div className="ml-auto flex items-center gap-2">
+          <AuthState />
           <ThemeToggle />
         </div>
-      </nav>
+      </div>
+      <div className="gingham-band" aria-hidden="true" />
     </header>
   );
 }
