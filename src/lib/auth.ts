@@ -1,14 +1,16 @@
 import { betterAuth } from "better-auth";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
-import { getPool } from "./db";
+import { getDb } from "./db";
 import { atprotoPlugin } from "./atproto/better-auth-plugin";
 import { APP_URL } from "./atproto/oauth-node";
 
-// Server-only module. Sessions live in Postgres via the pg Pool (better-auth's
-// built-in Kysely adapter); the only sign-in method is atproto OAuth.
+// Server-only module. Sessions live in Postgres, queried through the shared
+// Kysely instance from `getDb()` — better-auth uses Kysely internally, so
+// handing it our instance keeps auth and app queries on one connection pool.
+// The only sign-in method is atproto OAuth.
 export const auth = betterAuth({
   baseURL: APP_URL,
-  database: getPool(),
+  database: { db: getDb(), type: "postgres" },
   trustedOrigins: [APP_URL],
   plugins: [
     atprotoPlugin(),

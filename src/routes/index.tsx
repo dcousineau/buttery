@@ -39,10 +39,10 @@ function App() {
             account, ready to share with friends — and big and bright on the counter while you cook.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button size="lg" render={<a href="#sign-in" />}>
+            <Button size="lg" render={<a href="#sign-in" />} nativeButton={false}>
               Sign in with atproto
             </Button>
-            <Button size="lg" variant="outline" render={<a href="#features" />}>
+            <Button size="lg" variant="outline" render={<a href="#features" />} nativeButton={false}>
               What's cooking
             </Button>
           </div>

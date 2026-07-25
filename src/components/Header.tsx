@@ -27,7 +27,11 @@ function AuthState() {
     );
   }
 
-  return <Button render={<Link to="/" hash="sign-in" />}>Sign in</Button>;
+  return (
+    <Button render={<Link to="/" hash="sign-in" />} nativeButton={false}>
+      Sign in
+    </Button>
+  );
 }
 
 export default function Header() {
