@@ -44,6 +44,11 @@
   --radius: 0.75rem;
   --shadow-hard: #2a1e12;
 
+  /* Height of the full-width app header; measured + overwritten at runtime in
+   * AppShell so the fixed sidebar can start below it. Default ~= header row +
+   * gingham band, avoids first-paint jump. */
+  --header-height: 3.75rem;
+
   --sidebar: #fff6e3;
   --sidebar-foreground: #2a1e12;
   --sidebar-primary: #e2231a;

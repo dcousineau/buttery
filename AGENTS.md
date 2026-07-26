@@ -68,6 +68,7 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
 
 ## Structure
 
+- **Mono-repo (pnpm workspace):** web app at `services/web` (pkg `@buttery/web`), atproto lexicons at `packages/lexicons` (`@buttery/lexicons`). Paths below are relative to `services/web/`. Run package scripts from root via `pnpm --filter @buttery/web <script>` (bare `pnpm dev`/`pnpm build` still delegate to the web app).
 - `src/routes/` — file-based routes (`__root.tsx` document shell, `index.tsx`, `about.tsx`)
 - `src/router.tsx` — `getRouter()` factory
 - `src/routeTree.gen.ts` — generated; never hand-edit
@@ -127,14 +128,14 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 - Verified local flow (2026-07-23): terminal A `railway dev` (postgres on host port **17754**, same creds as prod), terminal B `pnpm dev` with `.env` holding `DATABASE_URL=postgresql://postgres:<pw>@localhost:17754/railway`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL=http://127.0.0.1:3000`. Vite dev loads `.env` into `process.env` — confirmed working end-to-end.
 - `railway dev`/`railway run` inject remote env vars that WIN over local shell exports (`COMING_SOON=false railway run …` stays `true`; `--no-local` no help). To override locally, prefix child command: `railway run env COMING_SOON=false pnpm dev`. `.env` can't override this — Vite only loads `VITE_`-prefixed vars into `process.env`.
 - Run app _inside_ `railway dev` also works: injects/rewrites `BETTER_AUTH_URL` to `https://buttery.buttery.railway.localhost`, but `oauth-node.ts` collapses any local hostname (incl. `*.localhost`) to `http://127.0.0.1:3000` — atproto forbids `.localhost` TLDs in web client_ids, so local dev always uses loopback client. Either way, browse http://127.0.0.1:3000.
-- railway-dev postgres volume starts empty, persists across restarts. Run `pnpm db:migrate:up` once after first start (again after `railway dev clean`) to build schema.
+- railway-dev postgres volume starts empty, persists across restarts. Run migrations once after first start (again after `railway dev clean`) to build schema: `pnpm --filter @buttery/web db:migrate:up` from repo root (`kysely.config.ts` loads `services/web/.env`, which is the filtered cwd). Or inject railway-dev vars directly: `railway run --service buttery -- pnpm --filter=@buttery/web db:migrate:up`.
 - `railway dev up --dry-run --no-tui` regen `~/.railway/develop/<project-id>/docker-compose.yml` (ports/creds source of truth) but delete it when dry-run exits — read while `railway dev` actually running, or right after regen.
 - Alternative: own postgres + `DATABASE_URL` in `.env` (see `.env.example`), or `railway run pnpm dev` against _production_ database vars (careful).
 
 ## Database (Kysely + migrations)
 
 - All SQL goes through shared, typed Kysely instance from `src/lib/db.ts` (`getDb()`). better-auth shares same instance (`database: { db: getDb(), type: "postgres" }` in `src/lib/auth.ts`). Prefer Kysely query-builder primitives over raw `sql`.
-- Schema owned by **kysely-ctl migrations** in `src/db/migrations/` (config: root `kysely.config.ts`, reuses shared pool + loads `.env`). Initial migration ports whole better-auth + atproto schema. `scripts/better-auth.sql` is historical source, now superseded.
+- Schema owned by **kysely-ctl migrations** in `src/db/migrations/` (config: `services/web/kysely.config.ts`, reuses shared pool + loads `services/web/.env`). Initial migration ports whole better-auth + atproto schema. `scripts/better-auth.sql` is historical source, now superseded.
 - **ALWAYS run `pnpm db:codegen` right after `pnpm db:migrate:up` when work locally** — regen `src/db/types.ts` (the `DB` interface) from live DB so types match schema. `types.ts` generated; never hand-edit.
 - Prod migrations run auto on deploy via Railway pre-deploy (`preDeploy: "pnpm db:migrate:up"` in `.railway/railway.ts`). This why `kysely-ctl` lives in `dependencies` (Railpack prunes devDeps from runtime image); `kysely-codegen` is true devDependency and never runs in prod.
 - Better-auth schema changes (new plugins/fields): atproto plugin declares its tables in `src/lib/atproto/better-auth-plugin.ts`. After change auth schema, write new migration (`pnpm db:migrate:new …`) with DDL, apply it, then `pnpm db:codegen`.
@@ -154,6 +155,7 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 
 ## Gotchas
 
+- Claude Code command sandbox network allowlist excludes the dev DB host AND `localhost:3000` — `curl localhost:3000` returns `000`, DB/migration commands can't connect. Run those via `!` in the prompt (or sandbox-disabled); verify running pages through the Chrome MCP tools, not `curl`.
 - `pnpm add`/`pnpm install` fail under Claude Code command sandbox (`ERR_PNPM_UNEXPECTED_STORE` / `ERR_SQLITE_ERROR` — store sqlite write blocked). Run pnpm installs with sandbox disabled.
 - pnpm 11 warns `pnpm.onlyBuiltDependencies` in package.json ignored (moved to pnpm settings); harmless, esbuild/lightningcss build scripts still work.
 - Several TanStack deps pinned to `latest` in package.json (CLI default); lockfile pins real versions.

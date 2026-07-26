@@ -7,7 +7,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "pnpm --filter @buttery/lexicons build && COMING_SOON=false vite dev --port 3000",
+    "dev": "pnpm --filter @buttery/lexicons build && vite dev --port 3000",
     "generate-routes": "tsr generate",
     "build": "pnpm --filter @buttery/lexicons build && vite build",
     "start": "srvx --prod --entry dist/server/server.js --static ../client",
@@ -41,6 +41,7 @@
     "kysely-ctl": "^0.21.0",
     "lucide-react": "^1.26.0",
     "pg": "^8.22.0",
+    "railway": "^3.6.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "srvx": "^0.12.4",

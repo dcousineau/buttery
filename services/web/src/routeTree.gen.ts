@@ -8,95 +8,192 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from "./routes/__root";
-import { Route as IndexRouteImport } from "./routes/index";
-import { Route as OauthClientMetadataDotjsonRouteImport } from "./routes/oauth-client-metadata[.]json";
-import { Route as ApiAuthSplatRouteImport } from "./routes/api/auth/$";
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as IndexRouteImport } from './routes/index'
+import { Route as AiUsageRouteImport } from './routes/ai-usage'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as OauthClientMetadataDotjsonRouteImport } from './routes/oauth-client-metadata[.]json'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as TermsRouteImport } from './routes/terms'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
-  id: "/",
-  path: "/",
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
-} as any);
-const OauthClientMetadataDotjsonRoute = OauthClientMetadataDotjsonRouteImport.update({
-  id: "/oauth-client-metadata.json",
-  path: "/oauth-client-metadata.json",
+} as any)
+const AiUsageRoute = AiUsageRouteImport.update({
+  id: '/ai-usage',
+  path: '/ai-usage',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OauthClientMetadataDotjsonRoute =
+  OauthClientMetadataDotjsonRouteImport.update({
+    id: '/oauth-client-metadata.json',
+    path: '/oauth-client-metadata.json',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
-  id: "/api/auth/$",
-  path: "/api/auth/$",
+  id: '/api/auth/$',
+  path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 
 export interface FileRoutesByFullPath {
-  "/": typeof IndexRoute;
-  "/oauth-client-metadata.json": typeof OauthClientMetadataDotjsonRoute;
-  "/api/auth/$": typeof ApiAuthSplatRoute;
+  '/': typeof IndexRoute
+  '/ai-usage': typeof AiUsageRoute
+  '/login': typeof LoginRoute
+  '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
-  "/": typeof IndexRoute;
-  "/oauth-client-metadata.json": typeof OauthClientMetadataDotjsonRoute;
-  "/api/auth/$": typeof ApiAuthSplatRoute;
+  '/': typeof IndexRoute
+  '/ai-usage': typeof AiUsageRoute
+  '/login': typeof LoginRoute
+  '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport;
-  "/": typeof IndexRoute;
-  "/oauth-client-metadata.json": typeof OauthClientMetadataDotjsonRoute;
-  "/api/auth/$": typeof ApiAuthSplatRoute;
+  __root__: typeof rootRouteImport
+  '/': typeof IndexRoute
+  '/ai-usage': typeof AiUsageRoute
+  '/login': typeof LoginRoute
+  '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/oauth-client-metadata.json" | "/api/auth/$";
-  fileRoutesByTo: FileRoutesByTo;
-  to: "/" | "/oauth-client-metadata.json" | "/api/auth/$";
-  id: "__root__" | "/" | "/oauth-client-metadata.json" | "/api/auth/$";
-  fileRoutesById: FileRoutesById;
+  fileRoutesByFullPath: FileRoutesByFullPath
+  fullPaths:
+    | '/'
+    | '/ai-usage'
+    | '/login'
+    | '/oauth-client-metadata.json'
+    | '/privacy'
+    | '/terms'
+    | '/api/auth/$'
+  fileRoutesByTo: FileRoutesByTo
+  to:
+    | '/'
+    | '/ai-usage'
+    | '/login'
+    | '/oauth-client-metadata.json'
+    | '/privacy'
+    | '/terms'
+    | '/api/auth/$'
+  id:
+    | '__root__'
+    | '/'
+    | '/ai-usage'
+    | '/login'
+    | '/oauth-client-metadata.json'
+    | '/privacy'
+    | '/terms'
+    | '/api/auth/$'
+  fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute;
-  OauthClientMetadataDotjsonRoute: typeof OauthClientMetadataDotjsonRoute;
-  ApiAuthSplatRoute: typeof ApiAuthSplatRoute;
+  IndexRoute: typeof IndexRoute
+  AiUsageRoute: typeof AiUsageRoute
+  LoginRoute: typeof LoginRoute
+  OauthClientMetadataDotjsonRoute: typeof OauthClientMetadataDotjsonRoute
+  PrivacyRoute: typeof PrivacyRoute
+  TermsRoute: typeof TermsRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
-declare module "@tanstack/react-router" {
+declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    "/": {
-      id: "/";
-      path: "/";
-      fullPath: "/";
-      preLoaderRoute: typeof IndexRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/oauth-client-metadata.json": {
-      id: "/oauth-client-metadata.json";
-      path: "/oauth-client-metadata.json";
-      fullPath: "/oauth-client-metadata.json";
-      preLoaderRoute: typeof OauthClientMetadataDotjsonRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/api/auth/$": {
-      id: "/api/auth/$";
-      path: "/api/auth/$";
-      fullPath: "/api/auth/$";
-      preLoaderRoute: typeof ApiAuthSplatRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ai-usage': {
+      id: '/ai-usage'
+      path: '/ai-usage'
+      fullPath: '/ai-usage'
+      preLoaderRoute: typeof AiUsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth-client-metadata.json': {
+      id: '/oauth-client-metadata.json'
+      path: '/oauth-client-metadata.json'
+      fullPath: '/oauth-client-metadata.json'
+      preLoaderRoute: typeof OauthClientMetadataDotjsonRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AiUsageRoute: AiUsageRoute,
+  LoginRoute: LoginRoute,
   OauthClientMetadataDotjsonRoute: OauthClientMetadataDotjsonRoute,
+  PrivacyRoute: PrivacyRoute,
+  TermsRoute: TermsRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-};
-export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)._addFileTypes<FileRouteTypes>();
+}
+export const routeTree = rootRouteImport
+  ._addFileChildren(rootRouteChildren)
+  ._addFileTypes<FileRouteTypes>()
 
-import type { getRouter } from "./router.tsx";
-import type { createStart } from "@tanstack/react-start";
-declare module "@tanstack/react-start" {
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
   interface Register {
-    ssr: true;
-    router: Awaited<ReturnType<typeof getRouter>>;
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
   }
 }

@@ -5,8 +5,10 @@ import { getPool } from "./src/lib/db";
 // kysely-ctl config: drives `pnpm db:migrate:*`.
 //
 // The CLI runs outside the app runtime, so nothing injects .env for us the way
-// the dev server / railway does. Load it here. No-op when the file is absent
-// (e.g. on Railway, where DATABASE_URL is already in the environment).
+// the dev server / railway does. Load it here — `.env` lives in this package
+// (services/web), which is also the cwd for `pnpm --filter @buttery/web`. No-op
+// when the file is absent (e.g. on Railway, where DATABASE_URL is already in
+// the environment).
 try {
   process.loadEnvFile();
 } catch {

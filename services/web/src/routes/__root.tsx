@@ -1,4 +1,4 @@
-import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
+import { HeadContent, Scripts, createRootRoute, useRouterState } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import AppShell from "../components/AppShell";
@@ -34,8 +34,13 @@ export const Route = createRootRoute({
   shellComponent: RootDocument,
 });
 
+/** Pages that stay reachable during the soft-launch gate (legal / transparency). */
+const UNGATED_ROUTES = new Set(["/terms", "/privacy", "/ai-usage"]);
+
 function RootDocument({ children }: { children: React.ReactNode }) {
   const comingSoon = Route.useLoaderData();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const gated = comingSoon && !UNGATED_ROUTES.has(pathname);
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -43,7 +48,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(255,216,77,0.55)]">
-        {comingSoon ? <ComingSoon /> : <AppShell>{children}</AppShell>}
+        {gated ? <ComingSoon /> : <AppShell>{children}</AppShell>}
         <TanStackDevtools
           config={{
             position: "bottom-right",

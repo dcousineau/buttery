@@ -111,6 +111,9 @@ importers:
       pg:
         specifier: ^8.22.0
         version: 8.22.0
+      railway:
+        specifier: ^3.6.0
+        version: 3.6.0
       react:
         specifier: ^19.2.8
         version: 19.2.8

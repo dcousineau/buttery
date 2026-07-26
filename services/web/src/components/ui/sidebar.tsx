@@ -205,7 +205,9 @@ function Sidebar({
         data-slot="sidebar-container"
         data-side={side}
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
+          // Fixed, but starts below the full-width app header (--header-height,
+          // set by AppShell) instead of at the viewport top.
+          "fixed top-[var(--header-height,0px)] bottom-0 z-10 hidden h-[calc(100svh-var(--header-height,0px))] w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
             ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
@@ -244,6 +246,36 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
     >
       <PanelLeftIcon />
       <span className="sr-only">Toggle Sidebar</span>
+    </Button>
+  );
+}
+
+/**
+ * Collapse/expand control that floats on the sidebar's outer edge. Must be a
+ * sibling that FOLLOWS the <Sidebar> in the DOM so its `peer-hover` reads the
+ * sidebar's hover state. Hidden until the sidebar is hovered; when collapsed it
+ * parks at the screen edge and stays visible so the sidebar can be reopened.
+ */
+function SidebarFloatingToggle({ className, ...props }: React.ComponentProps<typeof Button>) {
+  const { toggleSidebar, state } = useSidebar();
+  const collapsed = state === "collapsed";
+
+  return (
+    <Button
+      data-slot="sidebar-floating-toggle"
+      variant="outline"
+      size="icon-sm"
+      aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      onClick={toggleSidebar}
+      className={cn(
+        "fixed top-[calc(var(--header-height,0px)+0.5rem)] z-30 hidden transition-[left,opacity] duration-200 ease-linear md:flex",
+        collapsed ? "left-2 opacity-100" : "left-[calc(var(--sidebar-width)-0.875rem)] opacity-0 peer-hover:opacity-100 hover:opacity-100 focus-visible:opacity-100",
+        className,
+      )}
+      {...props}
+    >
+      <PanelLeftIcon />
     </Button>
   );
 }
@@ -579,6 +611,7 @@ export {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  SidebarFloatingToggle,
   SidebarProvider,
   SidebarRail,
   SidebarSeparator,

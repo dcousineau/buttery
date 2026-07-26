@@ -74,7 +74,7 @@ export const atprotoPlugin = () => {
           did = result.session.did;
         } catch (err) {
           ctx.context.logger.error("atproto callback failed", err);
-          throw ctx.redirect("/?auth_error=atproto");
+          throw ctx.redirect("/login?auth_error=atproto");
         }
 
         const handle = await resolveHandleForDid(did);

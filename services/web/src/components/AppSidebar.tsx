@@ -1,13 +1,11 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { BookOpenText, CalendarRange, Dices, FolderLock, Home, ShoppingBasket } from "lucide-react";
-import ButterStick from "./ButterStick";
 import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuBadge,
   SidebarMenuButton,
@@ -38,14 +36,7 @@ export default function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader>
-        <Link to="/" onClick={() => setOpenMobile(false)} className="flex items-center gap-2 px-1 py-1 text-sidebar-foreground no-underline">
-          <ButterStick className="h-7 w-auto" />
-          <span className="display-title text-xl leading-none">Buttery</span>
-        </Link>
-      </SidebarHeader>
-      <div className="gingham-band" aria-hidden="true" />
-      <SidebarContent>
+      <SidebarContent className="pt-2">
         <SidebarGroup>
           <SidebarGroupLabel>The pantry</SidebarGroupLabel>
           <SidebarGroupContent>

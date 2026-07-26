@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import ButterStick from "./ButterStick";
 import ThemeToggle from "./ThemeToggle";
 import { Badge } from "#/components/ui/badge";
@@ -41,8 +42,21 @@ export default function ComingSoon() {
 
       <footer className="mt-auto">
         <div className="gingham-band" aria-hidden="true" />
-        <div className="border-t-2 border-border bg-card px-4 py-8 text-center text-muted-foreground">
-          <p className="page-wrap m-0 text-sm">&copy; {new Date().getFullYear()} Buttery — the pantry where the good stuff is kept.</p>
+        <div className="border-t-2 border-border bg-card px-4 py-8 text-muted-foreground">
+          <div className="page-wrap flex flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
+            <p className="m-0 text-sm">&copy; {new Date().getFullYear()} Buttery — the pantry where the good stuff is kept.</p>
+            <nav className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm font-semibold">
+              <Link to="/terms" className="hover:text-foreground">
+                Terms
+              </Link>
+              <Link to="/privacy" className="hover:text-foreground">
+                Privacy
+              </Link>
+              <Link to="/ai-usage" className="hover:text-foreground">
+                AI Usage
+              </Link>
+            </nav>
+          </div>
         </div>
       </footer>
     </div>
