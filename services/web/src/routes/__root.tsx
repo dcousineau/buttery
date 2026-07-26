@@ -4,6 +4,7 @@ import { TanStackDevtools } from "@tanstack/react-devtools";
 import AppShell from "../components/AppShell";
 import ComingSoon from "../components/ComingSoon";
 import { getComingSoon } from "../lib/config";
+import { absolute, seo } from "../lib/seo";
 
 import appCss from "../styles.css?url";
 
@@ -20,9 +21,7 @@ export const Route = createRootRoute({
         name: "viewport",
         content: "width=device-width, initial-scale=1",
       },
-      {
-        title: "Buttery",
-      },
+      ...seo(),
     ],
     links: [
       {
@@ -41,11 +40,16 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const comingSoon = Route.useLoaderData();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const gated = comingSoon && !UNGATED_ROUTES.has(pathname);
+  // Canonical / og:url are per-page; derive both from the current path so every
+  // route gets them without per-route wiring. Query/hash are intentionally dropped.
+  const canonical = absolute(pathname);
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />
+        <link rel="canonical" href={canonical} />
+        <meta property="og:url" content={canonical} />
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(255,216,77,0.55)]">
         {gated ? <ComingSoon /> : <AppShell>{children}</AppShell>}

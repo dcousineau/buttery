@@ -1,3 +1,4 @@
 # https://www.robotstxt.org/robotstxt.html
+# Alpha: disallow all crawlers site-wide until public launch.
 User-agent: *
-Disallow:
+Disallow: /

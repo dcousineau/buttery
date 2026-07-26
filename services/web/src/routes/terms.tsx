@@ -1,7 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { LegalPage } from "../components/LegalPage";
+import { seo } from "../lib/seo";
 
 export const Route = createFileRoute("/terms")({
+  head: () => ({
+    meta: seo({
+      title: "Terms of Service · Buttery",
+      description: "An informal terms of service for Buttery during its development period.",
+    }),
+  }),
   component: TermsPage,
 });
 

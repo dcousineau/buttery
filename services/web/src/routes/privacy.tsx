@@ -1,7 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { LegalPage } from "../components/LegalPage";
+import { seo } from "../lib/seo";
 
 export const Route = createFileRoute("/privacy")({
+  head: () => ({
+    meta: seo({
+      title: "Privacy Policy · Buttery",
+      description: "An informal privacy policy for Buttery during its development phase.",
+    }),
+  }),
   component: PrivacyPage,
 });
 

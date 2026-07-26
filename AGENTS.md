@@ -85,6 +85,15 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
 - App code: semantic tokens only (`bg-primary`, `text-muted-foreground`); never raw hexes or `bg-[var(--butter)]` (brand colors shown as `bg-butter*` for rare mascot/hero moments).
 - Dark mode keys off `.dark` class (`@custom-variant dark` in `src/styles.css`); theme init script in `__root.tsx` + ThemeToggle keep it.
 
+## SEO / social meta
+
+- `src/lib/seo.ts` builds the `head()` `meta` array. Root (`__root.tsx`) sets site defaults; any route overrides via `head: () => ({ meta: seo({ title, description, image }) })`. Deepest matched route wins (HeadContent dedupes by `name`/`property`).
+- `og:url` + `<link rel="canonical">` are NOT in `seo()` — they're per-page, emitted globally in `__root.tsx` from the current pathname (`absolute(pathname)`). Don't add a `url`/canonical arg back to `seo()`.
+- Absolute origin comes from `siteUrl()` = `import.meta.env.VITE_APP_URL` (Vite-inlined at build into both bundles). `VITE_APP_URL` mirrors `BETTER_AUTH_URL` — set from one `publicOrigin` const in `.railway/railway.ts`, and in `.env`/`.env.example` for dev. It MUST be present at **build** time (client inline), so it lives in the service env, not just runtime.
+- **We do absolutely nothing Twitter/X-specific.** No `twitter:card`, `twitter:*`, `twitter:site` tags. We emit only standards-based Open Graph (`og:*`) + plain `<meta name="description">`. Twitter/X consumes OG tags fine; every other platform (Slack, Discord, Signal, iMessage, Mastodon, Bluesky, LinkedIn) reads OG too. One standard, no vendor carve-outs. Don't add Twitter tags.
+- OG image is a static asset (`public/og-image.png`, 1200×630; source SVG at `public/og-image.svg`) — TanStack Start has no built-in OG image generator. `seo()` resolves it absolute against `SITE_URL` and hardcodes `og:image:width/height/type` to the 1200×630 PNG (fix those if a route ships a different image).
+- `public/robots.txt` **disallows all crawlers** during alpha (`Disallow: /`) — flip to `Disallow:` at public launch.
+
 ## Accessibility (non-negotiable)
 
 **All frontend work MUST be WCAG A compliant at minimum; aim for AA.** Color-contrast and

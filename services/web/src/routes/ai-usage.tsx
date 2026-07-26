@@ -1,7 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { LegalLink, LegalPage } from "../components/LegalPage";
+import { seo } from "../lib/seo";
 
 export const Route = createFileRoute("/ai-usage")({
+  head: () => ({
+    meta: seo({
+      title: "AI Usage · Buttery",
+      description: "A human-written note on AI usage in Buttery: most code was LLM-generated but the running app does not call LLMs.",
+    }),
+  }),
   component: AiUsagePage,
 });
 

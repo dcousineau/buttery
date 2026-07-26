@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Buttery — alpha atproto recipe management">
+  <!-- Buttery OG image. Brand: cream bg, ink outlines, butter + crocker-red accents.
+       Fonts: Alfa Slab One (display wordmark), Rubik (blurb) — see docs/BRAND.md.
+       The @import below loads the webfonts when this SVG is rendered in a *browser*
+       (or a vector tool that fetches CSS). Headless rasterizers (rsvg/ImageMagick)
+       ignore @import — install the fonts locally, or embed woff2 as base64 @font-face,
+       before exporting. Export to 1200x630 PNG for the actual og:image; scrapers do
+       not reliably render SVG. -->
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Alfa+Slab+One&amp;family=Rubik:wght@500;600;700&amp;display=swap');
+    .wordmark { font-family: 'Alfa Slab One','Rubik',Georgia,serif; }
+    .body { font-family: 'Rubik','Helvetica Neue',Arial,sans-serif; }
+  </style>
+
+  <!-- page background: cream -->
+  <rect width="1200" height="630" fill="#FFF6E3"/>
+
+  <!-- pop-art framed panel: hard offset ink shadow + 2px-style ink border on paper -->
+  <rect x="72" y="72" width="1056" height="486" rx="18" fill="#2A1E12"/>
+  <rect x="60" y="60" width="1056" height="486" rx="18" fill="#FFFDF4" stroke="#2A1E12" stroke-width="10"/>
+
+  <!-- ALPHA PREVIEW chip: butter fill, ink outline + text -->
+  <g>
+    <rect x="108" y="120" width="290" height="52" rx="26" fill="#FFD84D" stroke="#2A1E12" stroke-width="6"/>
+    <text x="253" y="156" text-anchor="middle" class="body" font-size="26" font-weight="700" letter-spacing="3" fill="#2A1E12">ALPHA PREVIEW</text>
+  </g>
+
+  <!-- wordmark: "Buttery" ink, period in crocker red -->
+  <text x="104" y="336" class="wordmark" font-size="188" font-weight="400" fill="#2A1E12">Buttery<tspan fill="#E2231A">.</tspan></text>
+
+  <!-- blurb, Rubik -->
+  <text x="112" y="424" class="body" font-size="40" font-weight="600" fill="#2A1E12">A recipe management tool in the ATmosphere.</text>
+</svg>

@@ -9,10 +9,14 @@ import { Field, FieldGroup, FieldLabel } from "#/components/ui/field";
 import { Input } from "#/components/ui/input";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Spinner } from "#/components/ui/spinner";
+import { seo } from "../lib/seo";
 import type { FormEvent, ReactNode } from "react";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): { auth_error?: string } => (typeof search.auth_error === "string" ? { auth_error: search.auth_error } : {}),
+  head: () => ({
+    meta: seo({ title: "Sign in · Buttery", description: "Sign in to Buttery with your atproto account." }),
+  }),
   component: LoginPage,
 });
 
