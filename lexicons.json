@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "lexicons": ["app.bsky.embed.defs", "com.atproto.identity.resolveHandle", "com.atproto.repo.getRecord", "com.atproto.repo.strongRef"],
+  "resolutions": {
+    "app.bsky.embed.defs": {
+      "uri": "at://did:plc:4v4y5r3lwsbtmsxhile2ljac/com.atproto.lexicon.schema/app.bsky.embed.defs",
+      "cid": "bafyreia42uud4qil67wknywzbxfyxc3b7woewsii54cakq2ould3ldetei"
+    },
+    "com.atproto.identity.resolveHandle": {
+      "uri": "at://did:plc:6msi3pj7krzih5qxqtryxlzw/com.atproto.lexicon.schema/com.atproto.identity.resolveHandle",
+      "cid": "bafyreigckmqtt3jrtzd7tvigjatnz6ajqyafs26h5pwcudwag2anedxnmu"
+    },
+    "com.atproto.repo.getRecord": {
+      "uri": "at://did:plc:6msi3pj7krzih5qxqtryxlzw/com.atproto.lexicon.schema/com.atproto.repo.getRecord",
+      "cid": "bafyreihdnm3v25uaptt5vjvnpfsfgb6fbhxew2ye3l6q4ndm7xi5wpc4vy"
+    },
+    "com.atproto.repo.strongRef": {
+      "uri": "at://did:plc:6msi3pj7krzih5qxqtryxlzw/com.atproto.lexicon.schema/com.atproto.repo.strongRef",
+      "cid": "bafyreifrkdbnkvfjujntdaeigolnrjj3srrs53tfixjhmacclps72qlov4"
+    }
+  }
+}

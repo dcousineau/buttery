@@ -1,0 +1,213 @@
+{
+  "id": "exchange.recipe.recipe",
+  "defs": {
+    "main": {
+      "key": "tid",
+      "type": "record",
+      "record": {
+        "type": "object",
+        "required": ["name", "text", "ingredients", "instructions", "createdAt", "updatedAt"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "The name of the recipe"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 3000,
+            "description": "A description of the recipe"
+          },
+          "embed": {
+            "ref": "#imagesEmbed",
+            "type": "ref"
+          },
+          "cookTime": {
+            "type": "string",
+            "description": "Time required for cooking (ISO-8601 duration; lex-schema 0.2.2 lacks the 'duration' format so it is stored as a plain string)"
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "description": "Tags describing the recipe"
+          },
+          "prepTime": {
+            "type": "string",
+            "description": "Time required for preparation (ISO-8601 duration; lex-schema 0.2.2 lacks the 'duration' format so it is stored as a plain string)"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Timestamp when this recipe was created"
+          },
+          "nutrition": {
+            "type": "ref",
+            "ref": "#nutrition"
+          },
+          "totalTime": {
+            "type": "string",
+            "description": "Total time required (ISO-8601 duration; lex-schema 0.2.2 lacks the 'duration' format so it is stored as a plain string)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Timestamp when this recipe was last updated"
+          },
+          "attribution": {
+            "refs": [
+              "exchange.recipe.defs#attributionOriginal",
+              "exchange.recipe.defs#attributionPerson",
+              "exchange.recipe.defs#attributionPublication",
+              "exchange.recipe.defs#attributionWebsite",
+              "exchange.recipe.defs#attributionShow",
+              "exchange.recipe.defs#attributionProduct"
+            ],
+            "type": "union"
+          },
+          "ingredients": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "description": "List of ingredients and their measurements"
+          },
+          "recipeYield": {
+            "type": "string",
+            "description": "Number of servings or yield"
+          },
+          "instructions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000
+            },
+            "description": "Step by step cooking instructions"
+          },
+          "cookingMethod": {
+            "type": "string",
+            "description": "Method of cooking (e.g., baking, grilling)",
+            "knownValues": ["exchange.recipe.defs#cookingMethod"]
+          },
+          "recipeCuisine": {
+            "type": "string",
+            "description": "Cuisine type (e.g., Italian, Mexican)",
+            "knownValues": ["exchange.recipe.defs#recipeCuisine"]
+          },
+          "recipeCategory": {
+            "type": "string",
+            "description": "Category of recipe (e.g., appetizer, main course)",
+            "knownValues": ["exchange.recipe.defs#recipeCategory"]
+          },
+          "suitableForDiet": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "knownValues": ["exchange.recipe.defs#diet"]
+            },
+            "description": "Dietary restrictions this recipe is suitable for"
+          }
+        }
+      },
+      "description": "A complete recipe with all its components."
+    },
+    "view": {
+      "type": "object",
+      "required": ["images"],
+      "properties": {
+        "images": {
+          "type": "array",
+          "items": {
+            "ref": "#viewImage",
+            "type": "ref"
+          },
+          "maxLength": 4
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": ["image", "alt"],
+      "properties": {
+        "alt": {
+          "type": "string",
+          "description": "Alt text description of the image, for accessibility."
+        },
+        "image": {
+          "type": "blob",
+          "accept": ["image/*"],
+          "maxSize": 1000000
+        },
+        "aspectRatio": {
+          "ref": "app.bsky.embed.defs#aspectRatio",
+          "type": "ref"
+        }
+      }
+    },
+    "viewImage": {
+      "type": "object",
+      "required": ["thumb", "fullsize", "alt"],
+      "properties": {
+        "alt": {
+          "type": "string",
+          "description": "Alt text description of the image, for accessibility."
+        },
+        "thumb": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL for thumbnail version of the image. CDN location provided by recipe.exchange."
+        },
+        "fullsize": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL for full size version of the image. CDN location provided by recipe.exchange."
+        },
+        "aspectRatio": {
+          "ref": "app.bsky.embed.defs#aspectRatio",
+          "type": "ref"
+        }
+      }
+    },
+    "imagesEmbed": {
+      "type": "object",
+      "required": ["images"],
+      "properties": {
+        "images": {
+          "type": "array",
+          "items": {
+            "ref": "#image",
+            "type": "ref"
+          },
+          "maxLength": 4
+        }
+      }
+    },
+    "nutrition": {
+      "type": "object",
+      "properties": {
+        "calories": {
+          "type": "integer"
+        },
+        "fatContent": {
+          "type": "string",
+          "description": "(float; Lexicon has no number type \u2014 kept as unknown to stay compatible with on-wire decimals) (decimal stored as string on wire; Lexicon has no float type)"
+        },
+        "proteinContent": {
+          "type": "string",
+          "description": "(float; Lexicon has no number type \u2014 kept as unknown to stay compatible with on-wire decimals) (decimal stored as string on wire; Lexicon has no float type)"
+        },
+        "carbohydrateContent": {
+          "type": "string",
+          "description": "(float; Lexicon has no number type \u2014 kept as unknown to stay compatible with on-wire decimals) (decimal stored as string on wire; Lexicon has no float type)"
+        }
+      },
+      "description": "Nutritional information"
+    }
+  },
+  "$type": "com.atproto.lexicon.schema",
+  "lexicon": 1,
+  "description": "A recipe shared on recipe.exchange"
+}

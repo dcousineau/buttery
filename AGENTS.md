@@ -31,7 +31,7 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
 - System tooling (node, pnpm, Railway CLI) run by [mise](https://mise.jdx.dev) via `mise.toml`. Install mise first (`brew install mise` + shell activation), then `mise install` from repo root.
 - `mise install` give node 26 / pnpm 11 / railway. Then `postinstall` hook run `mise run railway-skills` (`railway skills install`) so Railway agent skills ready. Note: Railway CLI install skills global only (`~/.agents/skills`, `~/.claude/skills`, etc.) — no project-scoped mode; use `--agent claude-code` to narrow targets.
 - Fresh clones must `mise trust` before hooks/tasks run (`mise install` prompts).
-- First-time setup: Railway MCP server not set (check `railway mcp install --help` or tool MCP list) → suggest install — `railway mcp install` add to Claude Code/Cursor/OpenCode/Codex, or `railway setup agent -y` do skills + MCP + login in one step.
+- First-time setup: Railway MCP server not set (check `railway mcp install --help` or tool MCP list) → suggest install — `railway mcp install` add to Claude Code/Cursor/OpenCode/Codex, or `railway setup agent -y` do skills + MCP + login one step.
 - New major CLIs/tools go in `[tools]` in `mise.toml`, not homebrew or npm globals.
 
 ## Stack and integrations
@@ -44,6 +44,8 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
   (`src/lib/atproto/better-auth-plugin.ts`, server-side `@atproto/oauth-client-node` —
   DPoP/PAR; DID = identity, synthetic email). Handler at `src/routes/api/auth/$.ts`,
   client via `authClient` (`src/lib/auth-client.ts`). Atproto only sign-in method.
+- Atproto records: `@atproto/lex` codegen (NOT `@atproto/api`, removed). Read/validate/write
+  `exchange.recipe.*` via generated types. See "Atproto lexicons" section.
 
 ## Scripts
 
@@ -61,6 +63,8 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
 - `pnpm db:migrate:new <name>` — scaffold new migration in `src/db/migrations/`
 - `pnpm db:migrate:list` — show migration status
 - `pnpm db:codegen` — regen `src/db/types.ts` from live DB (dev-only)
+- `pnpm lex:build` — regen `src/lexicons/` TS from `lexicons/*.json` (cleans dir first; lex build not idempotent). Auto-runs before dev/build/typecheck.
+- `pnpm lex:install <nsid>…` — resolve + vendor a lexicon into `lexicons/` (network; may need patching, see PATCHES.md)
 
 ## Structure
 
@@ -75,7 +79,7 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
 ## Design system (shadcn + Buttery brand)
 
 - Read `docs/BRAND.md` BEFORE any UI/design work — palette, type, pop-art kit, token mapping, don'ts.
-- shadcn style `base-nova` = **Base UI primitives, not Radix**: custom triggers use `render={<a/>}` prop, never `asChild`. When `render` swap a Button to non-`<button>` (`<a>`, `<Link>`), add `nativeButton={false}` or Base UI warn at runtime and drop button semantics.
+- shadcn style `base-nova` = **Base UI primitives, not Radix**: custom triggers use `render={<a/>}` prop, never `asChild`. When `render` swap Button to non-`<button>` (`<a>`, `<Link>`), add `nativeButton={false}` or Base UI warn at runtime and drop button semantics.
 - Components are vendored source in `src/components/ui/`, on-purpose customized (border-2 ink, `shadow-pop*` hard shadows, sticker hover physics in button). New primitive: `pnpm dlx shadcn@latest add <x>`, then pop-art-ify to match before use.
 - App code: semantic tokens only (`bg-primary`, `text-muted-foreground`); never raw hexes or `bg-[var(--butter)]` (brand colors shown as `bg-butter*` for rare mascot/hero moments).
 - Dark mode keys off `.dark` class (`@custom-variant dark` in `src/styles.css`); theme init script in `__root.tsx` + ThemeToggle keep it.
@@ -119,7 +123,7 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 
 ## Local development with postgres
 
-- Preferred: `railway dev` (Railway local emulation, experimental). Gen docker-compose from Railway environment, run postgres locally with same `postgres-ssl:18` image, inject `DATABASE_URL` into code services. Needs Docker. `railway dev down` stops; `railway dev clean` wipes data; `railway dev configure` set how app service runs locally (e.g. `pnpm dev`, port 3000).
+- Preferred: `railway dev` (Railway local emulation, experimental). Gen docker-compose from Railway environment, run postgres locally with same `postgres-ssl:18` image, inject `DATABASE_URL` into code services. Needs Docker. `railway dev down` stops; `railway dev clean` wipes data; `railway dev configure` set how app service run locally (e.g. `pnpm dev`, port 3000).
 - Verified local flow (2026-07-23): terminal A `railway dev` (postgres on host port **17754**, same creds as prod), terminal B `pnpm dev` with `.env` holding `DATABASE_URL=postgresql://postgres:<pw>@localhost:17754/railway`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL=http://127.0.0.1:3000`. Vite dev loads `.env` into `process.env` — confirmed working end-to-end.
 - `railway dev`/`railway run` inject remote env vars that WIN over local shell exports (`COMING_SOON=false railway run …` stays `true`; `--no-local` no help). To override locally, prefix child command: `railway run env COMING_SOON=false pnpm dev`. `.env` can't override this — Vite only loads `VITE_`-prefixed vars into `process.env`.
 - Run app _inside_ `railway dev` also works: injects/rewrites `BETTER_AUTH_URL` to `https://buttery.buttery.railway.localhost`, but `oauth-node.ts` collapses any local hostname (incl. `*.localhost`) to `http://127.0.0.1:3000` — atproto forbids `.localhost` TLDs in web client_ids, so local dev always uses loopback client. Either way, browse http://127.0.0.1:3000.
@@ -131,9 +135,22 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 
 - All SQL goes through shared, typed Kysely instance from `src/lib/db.ts` (`getDb()`). better-auth shares same instance (`database: { db: getDb(), type: "postgres" }` in `src/lib/auth.ts`). Prefer Kysely query-builder primitives over raw `sql`.
 - Schema owned by **kysely-ctl migrations** in `src/db/migrations/` (config: root `kysely.config.ts`, reuses shared pool + loads `.env`). Initial migration ports whole better-auth + atproto schema. `scripts/better-auth.sql` is historical source, now superseded.
-- **ALWAYS run `pnpm db:codegen` right after `pnpm db:migrate:up` when work locally** — it regen `src/db/types.ts` (the `DB` interface) from live DB so types match schema. `types.ts` generated; never hand-edit.
+- **ALWAYS run `pnpm db:codegen` right after `pnpm db:migrate:up` when work locally** — regen `src/db/types.ts` (the `DB` interface) from live DB so types match schema. `types.ts` generated; never hand-edit.
 - Prod migrations run auto on deploy via Railway pre-deploy (`preDeploy: "pnpm db:migrate:up"` in `.railway/railway.ts`). This why `kysely-ctl` lives in `dependencies` (Railpack prunes devDeps from runtime image); `kysely-codegen` is true devDependency and never runs in prod.
 - Better-auth schema changes (new plugins/fields): atproto plugin declares its tables in `src/lib/atproto/better-auth-plugin.ts`. After change auth schema, write new migration (`pnpm db:migrate:new …`) with DDL, apply it, then `pnpm db:codegen`.
+
+## Atproto lexicons (@atproto/lex)
+
+- `lexicons/*.json` = vendored source of truth (committed). `src/lexicons/**` = generated TS (gitignored + eslint-ignored). Rebuild: `pnpm lex:build`.
+- **Read `lexicons/PATCHES.md` before touching lexicons or re-pulling upstream.** recipe.exchange lexicons non-conformant to strict lex-schema 0.2.2 (float→string, `union`-of-`token`→`string`+`knownValues`, inline objects→named `ref` defs, unsupported string formats stripped). Patches hand edits NOT tracked by CID manifest.
+- Read path: prefer lex's typed `xrpc(url, queryDef, {params})` — returns `XrpcResponse`; body at `.payload.body`; blobs/CIDs pre-decoded (no `jsonToLex` needed). Raw `fetch`+JSON instead? call `jsonToLex(value)` before `$parse`/`$safeParse` or blobs fail `expected: ['blob']`.
+- Validate records with generated `recipeLex.$safeParse(...)` (module in `src/lexicons/exchange/recipe/`). See `src/lib/atproto/recipes.ts` (read) + `recipe-writes.ts` (authenticated `Client` writes).
+- Auth writes: `restore(did)` OAuthSession IS a lex `Agent` → `new Client(session)`; `client.create(recipe, fields)`.
+
+## Code style
+
+- Interacting with 3rd-party API-client types (esp. lex): NO `as` casts to satisfy branded types — convert at boundary with library's own validator (lex: `$params.parse(...)`, `asDatetimeString(...)` / `currentDatetimeString()`). Casts hide upstream breakage.
+- Prefer inferred return types on functions wrapping a client — don't annotate — so client shape change surfaces as compile error downstream.
 
 ## Gotchas
 

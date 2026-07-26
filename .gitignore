@@ -13,3 +13,7 @@ __unconfig*
 todos.json
 .mcp.json
 .pnpm-store
+
+# @atproto/lex generated TypeScript — regenerated from lexicons/ via `pnpm lex:build`.
+# The source of truth (lexicons/*.json + lexicons.json manifest) IS committed.
+/src/lexicons

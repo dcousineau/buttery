@@ -1,0 +1,132 @@
+{
+  "id": "exchange.recipe.profile",
+  "defs": {
+    "main": {
+      "key": "literal:self",
+      "type": "record",
+      "record": {
+        "type": "object",
+        "required": ["createdAt", "profileType"],
+        "properties": {
+          "about": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Biography or description of the profile"
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "(was format:email; unsupported in lex-schema 0.2.2, stored as string)"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "#link"
+            },
+            "maxLength": 5
+          },
+          "phone": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "address": {
+            "type": "ref",
+            "ref": "#address"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Timestamp when the profile was created"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "Timestamp when this recipe was last updated"
+          },
+          "profileType": {
+            "type": "string",
+            "knownValues": ["exchange.recipe.defs#profileTypePersonal", "exchange.recipe.defs#profileTypeBusiness"],
+            "description": "(was union-of-token; rewritten to string+knownValues to match recipe.exchange's own enum pattern and lex's typed codegen)"
+          },
+          "businessType": {
+            "type": "string",
+            "knownValues": [
+              "exchange.recipe.defs#businessTypeRestaurant",
+              "exchange.recipe.defs#businessTypeCafe",
+              "exchange.recipe.defs#businessTypeFoodTruck",
+              "exchange.recipe.defs#businessTypeCatering",
+              "exchange.recipe.defs#businessTypePersonalChef",
+              "exchange.recipe.defs#businessTypeMealService",
+              "exchange.recipe.defs#businessTypeProducer",
+              "exchange.recipe.defs#businessTypeRetailer",
+              "exchange.recipe.defs#businessTypeMarketVendor",
+              "exchange.recipe.defs#businessTypeFarm",
+              "exchange.recipe.defs#businessTypeEducator",
+              "exchange.recipe.defs#businessTypeNutritionist",
+              "exchange.recipe.defs#businessTypeContentCreator",
+              "exchange.recipe.defs#businessTypeConsultant",
+              "exchange.recipe.defs#businessTypeEquipmentManufacturer",
+              "exchange.recipe.defs#businessTypeSupplier",
+              "exchange.recipe.defs#businessTypeInstitution",
+              "exchange.recipe.defs#businessTypeNonprofit",
+              "exchange.recipe.defs#businessTypeCommunityOrg",
+              "exchange.recipe.defs#businessTypeHomeCook",
+              "exchange.recipe.defs#businessTypeProfessional"
+            ],
+            "description": "(was union-of-token; rewritten to string+knownValues to match recipe.exchange's own enum pattern and lex's typed codegen)"
+          }
+        }
+      }
+    },
+    "link": {
+      "type": "object",
+      "required": ["title", "url"],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 2048
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    },
+    "address": {
+      "type": "object",
+      "properties": {
+        "city": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "country": {
+          "type": "string"
+        },
+        "street1": {
+          "type": "string"
+        },
+        "street2": {
+          "type": "string"
+        },
+        "latitude": {
+          "type": "string",
+          "description": "(float; Lexicon has no number type \u2014 kept as unknown to stay compatible with on-wire decimals) (decimal as string; float unsupported in Lexicon; wire encoding unverified \u2014 no live records)"
+        },
+        "longitude": {
+          "type": "string",
+          "description": "(float; Lexicon has no number type \u2014 kept as unknown to stay compatible with on-wire decimals) (decimal as string; float unsupported in Lexicon; wire encoding unverified \u2014 no live records)"
+        },
+        "postalCode": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "$type": "com.atproto.lexicon.schema",
+  "lexicon": 1,
+  "description": "Profile information for recipe.exchange users"
+}

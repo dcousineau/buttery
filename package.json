@@ -6,9 +6,11 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "COMING_SOON=false vite dev --port 3000",
+    "dev": "pnpm lex:build && COMING_SOON=false vite dev --port 3000",
     "generate-routes": "tsr generate",
-    "build": "vite build",
+    "lex:install": "lex install",
+    "lex:build": "node -e \"require('fs').rmSync('src/lexicons',{recursive:true,force:true})\" && lex build --pretty --index-file",
+    "build": "pnpm lex:build && vite build",
     "start": "srvx --prod --entry dist/server/server.js --static ../client",
     "preview": "vite preview",
     "test": "vitest run",
@@ -17,7 +19,7 @@
     "db:migrate:new": "kysely migrate make",
     "db:migrate:list": "kysely migrate list",
     "db:codegen": "kysely-codegen --out-file src/db/types.ts --exclude-pattern \"*.kysely_migration*\"",
-    "typecheck": "tsc",
+    "typecheck": "pnpm lex:build && tsc",
     "lint": "eslint .",
     "format": "prettier --write .",
     "prepare": "husky"
@@ -27,7 +29,7 @@
     "*.{js,jsx,ts,tsx}": "eslint --fix"
   },
   "dependencies": {
-    "@atproto/api": "^0.20.33",
+    "@atproto/lex": "^0.3.0",
     "@atproto/oauth-client": "^0.7.11",
     "@atproto/oauth-client-node": "^0.4.9",
     "@atproto/oauth-types": "^0.7.5",
