@@ -4,17 +4,27 @@ export default defineRailway(() => {
   const db = postgres("postgres");
 
   // GitHub-triggered deploys: pushes to the repo build & deploy automatically.
+  //
+  // Monorepo (pnpm workspace): Railway builds from the repo root — no
+  // rootDirectory — so the whole workspace + lockfile are present. The build
+  // filters to the web service and its deps (`@buttery/web...`, trailing `...`
+  // pulls in @buttery/lexicons and builds it first). watchPatterns keep pushes
+  // that only touch other future services from rebuilding web.
   const web = service("buttery", {
     source: github("dcousineau/buttery"),
-    build: "pnpm run build",
+    build: {
+      buildCommand: "pnpm install --frozen-lockfile && pnpm --filter @buttery/web... build",
+      watchPatterns: ["services/web/**", "packages/lexicons/**", "pnpm-lock.yaml"],
+    },
     // Runs after build, before the new container serves traffic, inside the
     // built app image with DATABASE_URL injected. Migrations must succeed
     // (exit 0) or the deploy is aborted and the old container keeps serving.
     // `migrate latest` is idempotent, so a no-op deploy re-runs it harmlessly.
-    // Requires kysely-ctl in `dependencies` (Railpack prunes devDeps from the
-    // runtime image) — see package.json.
-    preDeploy: "pnpm db:migrate:up",
-    start: "pnpm start",
+    // Requires kysely-ctl in the web package `dependencies` (Railpack prunes
+    // devDeps from the runtime image). The web service owns the db shape for
+    // now; when db is extracted to @buttery/db this filter moves with it.
+    preDeploy: "pnpm --filter @buttery/web db:migrate:up",
+    start: "pnpm --filter @buttery/web start",
     env: {
       DATABASE_URL: db.env.DATABASE_URL,
       // Public origin — used as better-auth baseURL and to derive the atproto
@@ -35,6 +45,14 @@ export default defineRailway(() => {
   //   railway cdn status --service buttery
   // Current settings: enabled, html-caching=auto, default-ttl=2h, swr honored,
   // purge-on-deploy=html.
+
+  // Future services live in this same monorepo and are added as sibling
+  // service() entries, each with its own narrow watchPatterns so they build
+  // independently of web:
+  //   - a dedicated api service      → filter @buttery/api...,    watch services/api/** + shared packages
+  //   - atproto sync listeners/workers → filter @buttery/worker..., long-running
+  //   - a cron for periodic repo sync  → same, plus deploy.cronSchedule
+  // Shared code they consume (lexicons today; db later) goes under packages/.
 
   return project("buttery", {
     resources: [db, web],

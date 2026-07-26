@@ -1,7 +1,7 @@
 import { xrpc } from "@atproto/lex";
-import * as recipeLex from "../../lexicons/exchange/recipe/recipe.js";
-import getRecord, { $params as getRecordParams } from "../../lexicons/com/atproto/repo/getRecord.js";
-import resolveHandleQuery, { $params as resolveHandleParams } from "../../lexicons/com/atproto/identity/resolveHandle.js";
+import * as recipeLex from "@buttery/lexicons/exchange/recipe/recipe";
+import getRecord, { $params as getRecordParams } from "@buttery/lexicons/com/atproto/repo/getRecord";
+import resolveHandleQuery, { $params as resolveHandleParams } from "@buttery/lexicons/com/atproto/identity/resolveHandle";
 
 const APPVIEW = "https://public.api.bsky.app";
 

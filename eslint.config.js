@@ -4,7 +4,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist", ".tanstack", ".nitro", ".output", "src/routeTree.gen.ts", "src/lexicons/**"],
+    ignores: ["**/dist/**", "**/.tanstack/**", "**/.nitro/**", "**/.output/**", "services/web/src/routeTree.gen.ts", "packages/lexicons/src/generated/**"],
   },
   js.configs.recommended,
   tseslint.configs.recommended,

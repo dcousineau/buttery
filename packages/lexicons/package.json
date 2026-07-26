@@ -1,0 +1,21 @@
+{
+  "name": "@buttery/lexicons",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/generated/index.ts",
+    "./*": "./src/generated/*.ts"
+  },
+  "scripts": {
+    "build": "lex build --lexicons lexicons --out src/generated --pretty --index-file --clear",
+    "lex:install": "lex install",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@atproto/lex": "^0.3.0"
+  },
+  "devDependencies": {
+    "@typescript/native": "npm:typescript@^7.0.2"
+  }
+}

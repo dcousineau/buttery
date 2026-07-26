@@ -1,6 +1,6 @@
 import { Client, currentDatetimeString } from "@atproto/lex";
-import recipe from "../../lexicons/exchange/recipe/recipe.js";
-import type { Main as RecipeRecord } from "../../lexicons/exchange/recipe/recipe.js";
+import recipe from "@buttery/lexicons/exchange/recipe/recipe";
+import type { Main as RecipeRecord } from "@buttery/lexicons/exchange/recipe/recipe";
 import { getAtprotoOAuthClient } from "./oauth-node";
 
 /**
