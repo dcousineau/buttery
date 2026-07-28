@@ -1,0 +1,84 @@
+name: PR
+
+on:
+  pull_request:
+
+# GITHUB_TOKEN needs check/PR write for reviewdog to post lint annotations.
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+concurrency:
+  group: pr-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Skip husky git-hook install during `pnpm install` in CI.
+  HUSKY: "0"
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # Single source of truth for the Node version (kept in sync with mise.toml).
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Web tests import from the built lexicons package (mirrors the typecheck script).
+      - name: Build lexicons
+        run: pnpm --filter @buttery/lexicons build
+
+      - name: Run vitest
+        # `github-actions` reporter emits inline ::error annotations on failing tests;
+        # `default` keeps a readable log in the job output.
+        run: pnpm --filter @buttery/web test --reporter=default --reporter=github-actions
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup reviewdog
+        uses: reviewdog/action-setup@v1
+        with:
+          reviewdog_version: latest
+
+      - name: Run eslint
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # eslint emits machine-readable checkstyle XML; reviewdog turns it into
+        # inline PR annotations and fails the job on any lint error.
+        run: |
+          set -o pipefail
+          pnpm lint --format checkstyle \
+            | reviewdog -f=checkstyle -name=eslint -reporter=github-pr-check -fail-level=any
