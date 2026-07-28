@@ -3,11 +3,9 @@ name: PR
 on:
   pull_request:
 
-# GITHUB_TOKEN needs check/PR write for reviewdog to post lint annotations.
+# Annotations are emitted via workflow commands (::error), so no write scopes needed.
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
 
 concurrency:
   group: pr-${{ github.workflow }}-${{ github.ref }}
@@ -68,17 +66,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Setup reviewdog
-        uses: reviewdog/action-setup@v1
-        with:
-          reviewdog_version: latest
-
       - name: Run eslint
-        env:
-          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # eslint emits machine-readable checkstyle XML; reviewdog turns it into
-        # inline PR annotations and fails the job on any lint error.
+        # Register a problem matcher that parses eslint's default (stylish)
+        # output into inline PR annotations — dependency-free, same annotation
+        # channel vitest's github-actions reporter uses. eslint's nonzero exit
+        # still fails the job.
         run: |
-          set -o pipefail
-          pnpm lint --format checkstyle \
-            | reviewdog -f=checkstyle -name=eslint -reporter=github-pr-check -fail-level=any
+          echo "::add-matcher::.github/eslint-matcher.json"
+          pnpm lint
