@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { authClient } from "../lib/auth-client";
 import ButterStick from "./ButterStick";
+import HouseholdSwitcher from "./HouseholdSwitcher";
 import ThemeToggle from "./ThemeToggle";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -58,6 +59,7 @@ export default function Header({ ref, leftSlot, hidden = false }: { ref?: Ref<HT
         </Link>
 
         <div className="ml-auto flex items-center gap-2">
+          <HouseholdSwitcher />
           <AuthState />
           <ThemeToggle />
         </div>

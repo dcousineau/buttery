@@ -7,11 +7,12 @@ import Footer from "./Footer";
 import Header from "./Header";
 
 /** Routes that render without the sidebar — just the shared header + footer. */
-const NAVLESS_ROUTES = new Set(["/", "/login", "/terms", "/privacy", "/ai-usage"]);
+const NAVLESS_ROUTES = new Set(["/", "/login", "/terms", "/privacy", "/ai-usage", "/onboarding", "/households/switch"]);
 
-/** Recipe detail pages render full-width (no sidebar) so the recipe owns the page. */
+/** Recipe detail pages and the auth-flow / invite screens render full-width (no
+ * sidebar) so the focused task owns the page. */
 function isNavless(pathname: string): boolean {
-  return NAVLESS_ROUTES.has(pathname) || pathname.startsWith("/recipes/");
+  return NAVLESS_ROUTES.has(pathname) || pathname.startsWith("/recipes/") || pathname.startsWith("/invite/");
 }
 
 function SkipLink() {
