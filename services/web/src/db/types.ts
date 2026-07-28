@@ -95,6 +95,40 @@ export interface AtprotoSyncRun {
   status: Generated<string>;
 }
 
+export interface Household {
+  created_at: Generated<Timestamp>;
+  created_by_did: string;
+  deleted_at: Timestamp | null;
+  id: string;
+  name: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface HouseholdInvite {
+  bound_to_did: string | null;
+  created_at: Generated<Timestamp>;
+  created_by_did: string;
+  expires_at: Timestamp | null;
+  household_id: string;
+  id: string;
+  max_uses: Generated<number>;
+  revoked_at: Timestamp | null;
+  role: Generated<string>;
+  status: Generated<string>;
+  token_hash: string;
+  uses: Generated<number>;
+}
+
+export interface HouseholdMember {
+  deleted_at: Timestamp | null;
+  did: string;
+  household_id: string;
+  invited_by_did: string | null;
+  joined_at: Generated<Timestamp>;
+  role: string;
+  tombstoned: Generated<boolean>;
+}
+
 export interface Recipe {
   calories: number | null;
   carbohydrate_content: Numeric | null;
@@ -185,6 +219,7 @@ export interface RecipeVocabAlias {
 }
 
 export interface Session {
+  active_household_id: string | null;
   createdAt: Generated<Timestamp>;
   expiresAt: Timestamp;
   id: string;
@@ -223,6 +258,9 @@ export interface DB {
   atproto_oauth_state: AtprotoOauthState;
   atproto_repo: AtprotoRepo;
   atproto_sync_run: AtprotoSyncRun;
+  household: Household;
+  household_invite: HouseholdInvite;
+  household_member: HouseholdMember;
   recipe: Recipe;
   recipe_attribution: RecipeAttribution;
   recipe_image: RecipeImage;
