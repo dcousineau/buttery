@@ -1,0 +1,603 @@
+import { useState } from "react";
+import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
+import { Check, Copy, Crown, Link2, LogOut, Mail, Pencil, Plus, Shield, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
+import { requireActiveHousehold, listHouseholdMembers } from "#/lib/household/onboarding";
+import { listMyHouseholds, renameHousehold, deleteHousehold, createHousehold } from "#/lib/household/households";
+import { listInvites, createInvite, revokeInvite } from "#/lib/household/invites";
+import { removeMember, setMemberRole, leaveHousehold } from "#/lib/household/members";
+import { errorMessage } from "#/lib/household/pending-invite";
+import { ConfirmDialog } from "#/components/ConfirmDialog";
+import { Badge } from "#/components/ui/badge";
+import { Button } from "#/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
+import { Field, FieldGroup, FieldLabel } from "#/components/ui/field";
+import { Input } from "#/components/ui/input";
+import { Separator } from "#/components/ui/separator";
+import { Spinner } from "#/components/ui/spinner";
+import { seo } from "#/lib/seo";
+import type { Role } from "#/lib/household/errors";
+import type { HouseholdMemberView } from "#/lib/household/onboarding";
+import type { InviteSummary } from "#/lib/household/invites";
+import type { FormEvent } from "react";
+
+/** Household management surface (§7/§10). The loader runs the §8 stale-active
+ * guard (`requireActiveHousehold`) so this never renders against a dead/exited
+ * household; owner-only data + controls are gated on the caller's server-derived
+ * role — the client never decides authorization. */
+export const Route = createFileRoute("/households/")({
+  loader: async () => {
+    const active = await requireActiveHousehold();
+    const [members, mine] = await Promise.all([listHouseholdMembers({ data: { householdId: active.householdId } }), listMyHouseholds()]);
+    const summary = mine.find((h) => h.id === active.householdId);
+    const myRole: Role = summary?.role ?? "member";
+    const invites = myRole === "owner" ? await listInvites({ data: { householdId: active.householdId } }) : [];
+    return { householdId: active.householdId, name: active.name, myRole, members, invites, householdCount: mine.length };
+  },
+  head: ({ loaderData }) => ({ meta: seo({ title: loaderData ? `${loaderData.name} · Buttery` : "Household · Buttery", description: "Manage your household." }) }),
+  component: HouseholdPage,
+});
+
+function HouseholdPage() {
+  const data = Route.useLoaderData();
+  const isOwner = data.myRole === "owner";
+  return (
+    <div className="page-wrap px-4 pt-8 pb-12 sm:pt-10">
+      <div className="rise-in mx-auto flex max-w-2xl flex-col gap-6">
+        <HouseholdHeader householdId={data.householdId} name={data.name} isOwner={isOwner} />
+
+        <MembersSection householdId={data.householdId} members={data.members} isOwner={isOwner} />
+
+        {isOwner ? <InvitesSection householdId={data.householdId} invites={data.invites} /> : null}
+
+        <Separator />
+
+        <CreateAnotherSection currentName={data.name} />
+
+        <DangerZone householdId={data.householdId} isOwner={isOwner} memberCount={data.members.length} />
+      </div>
+    </div>
+  );
+}
+
+// --- Header + rename ------------------------------------------------------
+
+function HouseholdHeader({ householdId, name, isOwner }: { householdId: string; name: string; isOwner: boolean }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(name);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onSave(e: FormEvent) {
+    e.preventDefault();
+    if (!value.trim()) {
+      setError("Give your household a name.");
+      return;
+    }
+    setError(null);
+    setPending(true);
+    try {
+      await renameHousehold({ data: { householdId, name: value.trim() } });
+      setEditing(false);
+      await router.invalidate();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <form onSubmit={onSave} className="flex flex-col gap-2">
+        <FieldGroup>
+          <Field data-invalid={error ? true : undefined}>
+            <FieldLabel htmlFor="rename-household">Household name</FieldLabel>
+            <Input id="rename-household" value={value} onChange={(e) => setValue(e.target.value)} maxLength={100} autoFocus aria-invalid={error ? true : undefined} />
+          </Field>
+        </FieldGroup>
+        <div className="flex gap-2">
+          <Button type="submit" size="sm" disabled={pending}>
+            {pending ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" aria-hidden="true" />}
+            Save
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => {
+              setValue(name);
+              setEditing(false);
+              setError(null);
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+        {error ? (
+          <p role="alert" className="m-0 text-sm font-semibold text-destructive">
+            {error}
+          </p>
+        ) : null}
+      </form>
+    );
+  }
+
+  return (
+    <header className="flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0">
+        <Badge variant="secondary" className="mb-2">
+          Household
+        </Badge>
+        <h1 className="display-title m-0 text-3xl leading-[1.1] text-foreground sm:text-4xl">{name}</h1>
+      </div>
+      {isOwner ? (
+        <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+          <Pencil data-icon="inline-start" aria-hidden="true" />
+          Rename
+        </Button>
+      ) : null}
+    </header>
+  );
+}
+
+// --- Members --------------------------------------------------------------
+
+function MembersSection({ householdId, members, isOwner }: { householdId: string; members: HouseholdMemberView[]; isOwner: boolean }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle role="heading" aria-level={2} className="display-title flex items-center gap-2 text-lg">
+          <Users aria-hidden="true" className="size-5" />
+          Members ({members.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1">
+        {members.map((m) => (
+          <MemberRow key={m.did} householdId={householdId} member={m} isOwner={isOwner} />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MemberRow({ householdId, member, isOwner }: { householdId: string; member: HouseholdMemberView; isOwner: boolean }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(action: () => Promise<unknown>) {
+    setError(null);
+    setPending(true);
+    try {
+      await action();
+      await router.invalidate();
+    } catch (err) {
+      setError(errorMessage(err));
+      setPending(false);
+    }
+  }
+
+  const label = member.handle ? `@${member.handle}` : member.did;
+  // Owner controls apply to OTHER members only; self-management is "Leave" in the
+  // danger zone. The last-owner invariant is enforced server-side (LastOwnerError
+  // → friendly message surfaced here) — we don't try to predict it in the client.
+  const showControls = isOwner && !member.isSelf;
+
+  return (
+    <div className="flex flex-col gap-1 border-b border-border/60 py-2 last:border-b-0">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {member.role === "owner" ? <Crown aria-hidden="true" className="size-4 shrink-0 text-primary" /> : null}
+          <span className="truncate text-sm font-semibold text-foreground" title={member.did}>
+            {label}
+          </span>
+          {member.isSelf ? (
+            <Badge variant="outline" className="text-[0.65rem]">
+              you
+            </Badge>
+          ) : null}
+          <Badge variant={member.role === "owner" ? "secondary" : "outline"}>{member.role}</Badge>
+        </div>
+        {showControls ? (
+          <div className="flex flex-wrap gap-1.5">
+            {member.role === "member" ? (
+              <Button size="xs" variant="outline" disabled={pending} onClick={() => run(() => setMemberRole({ data: { householdId, did: member.did, role: "owner" } }))}>
+                <Shield aria-hidden="true" />
+                Make owner
+              </Button>
+            ) : (
+              <Button size="xs" variant="outline" disabled={pending} onClick={() => run(() => setMemberRole({ data: { householdId, did: member.did, role: "member" } }))}>
+                Make member
+              </Button>
+            )}
+            <Button size="xs" variant="ghost" disabled={pending} onClick={() => run(() => removeMember({ data: { householdId, did: member.did } }))}>
+              <UserMinus aria-hidden="true" />
+              Remove
+            </Button>
+          </div>
+        ) : null}
+      </div>
+      {error ? (
+        <p role="alert" className="m-0 text-sm font-semibold text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// --- Invites (owners) -----------------------------------------------------
+
+function InvitesSection({ householdId, invites }: { householdId: string; invites: InviteSummary[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle role="heading" aria-level={2} className="display-title flex items-center gap-2 text-lg">
+          <Mail aria-hidden="true" className="size-5" />
+          Invites
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <CreateInviteForm householdId={householdId} />
+        <Separator />
+        {invites.length === 0 ? (
+          <p className="m-0 text-sm text-muted-foreground">No pending invites.</p>
+        ) : (
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
+            {invites.map((invite) => (
+              <InviteRow key={invite.id} invite={invite} />
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CreateInviteForm({ householdId }: { householdId: string }) {
+  const router = useRouter();
+  const [mode, setMode] = useState<"bound" | "open">("bound");
+  const [role, setRole] = useState<Role>("member");
+  const [handle, setHandle] = useState("");
+  const [maxUses, setMaxUses] = useState(5);
+  const [expiryDays, setExpiryDays] = useState(7);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [link, setLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLink(null);
+    setCopied(false);
+    if (mode === "bound" && !handle.trim()) {
+      setError("Enter the handle to invite.");
+      return;
+    }
+    setPending(true);
+    try {
+      const expiresAt = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
+      const result = await createInvite({
+        data:
+          mode === "bound"
+            ? { householdId, role, boundHandle: handle.trim(), expiresAt }
+            : { householdId, role, maxUses, expiresAt },
+      });
+      setLink(result.link);
+      if (mode === "bound") setHandle("");
+      await router.invalidate();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function onCopy() {
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="flex flex-col gap-3">
+      <fieldset className="flex flex-wrap gap-4 border-0 p-0">
+        <legend className="mb-1 text-sm font-semibold text-foreground">New invite</legend>
+        <label className="flex items-center gap-1.5 text-sm">
+          <input type="radio" name="invite-mode" checked={mode === "bound"} onChange={() => setMode("bound")} />
+          Invite a handle
+        </label>
+        <label className="flex items-center gap-1.5 text-sm">
+          <input type="radio" name="invite-mode" checked={mode === "open"} onChange={() => setMode("open")} />
+          Shareable link
+        </label>
+      </fieldset>
+
+      {mode === "bound" ? (
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="invite-handle">Handle to invite</FieldLabel>
+            <Input
+              id="invite-handle"
+              value={handle}
+              onChange={(e) => setHandle(e.target.value)}
+              placeholder="alice.bsky.social"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+          </Field>
+        </FieldGroup>
+      ) : (
+        <div className="flex flex-wrap gap-3">
+          <FieldGroup className="w-28">
+            <Field>
+              <FieldLabel htmlFor="invite-max-uses">Max uses</FieldLabel>
+              <Input id="invite-max-uses" type="number" min={1} max={100} value={maxUses} onChange={(e) => setMaxUses(Math.max(1, Number(e.target.value) || 1))} />
+            </Field>
+          </FieldGroup>
+          <FieldGroup className="w-28">
+            <Field>
+              <FieldLabel htmlFor="invite-expiry">Expires (days)</FieldLabel>
+              <Input id="invite-expiry" type="number" min={1} max={365} value={expiryDays} onChange={(e) => setExpiryDays(Math.max(1, Number(e.target.value) || 1))} />
+            </Field>
+          </FieldGroup>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-end gap-3">
+        <FieldGroup className="w-40">
+          <Field>
+            <FieldLabel htmlFor="invite-role">Role</FieldLabel>
+            <select
+              id="invite-role"
+              value={role}
+              onChange={(e) => setRole(e.target.value === "owner" ? "owner" : "member")}
+              className="h-8 rounded-lg border-2 border-border bg-card px-2 text-sm text-foreground"
+            >
+              <option value="member">Member</option>
+              <option value="owner">Owner</option>
+            </select>
+          </Field>
+        </FieldGroup>
+        <Button type="submit" size="sm" variant="secondary" disabled={pending}>
+          {pending ? <Spinner data-icon="inline-start" /> : <UserPlus data-icon="inline-start" aria-hidden="true" />}
+          Create invite
+        </Button>
+      </div>
+
+      {error ? (
+        <p role="alert" className="m-0 text-sm font-semibold text-destructive">
+          {error}
+        </p>
+      ) : null}
+
+      {link ? (
+        <div className="flex flex-col gap-2 rounded-lg border-2 border-border bg-muted/40 p-3">
+          <p className="m-0 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+            <Link2 aria-hidden="true" className="size-4" />
+            Invite link
+          </p>
+          <div className="flex items-center gap-2">
+            <Input readOnly value={link} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
+            <Button type="button" size="sm" variant="outline" onClick={onCopy}>
+              {copied ? <Check data-icon="inline-start" aria-hidden="true" /> : <Copy data-icon="inline-start" aria-hidden="true" />}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <p className="m-0 text-xs text-muted-foreground">Share this link with the person you're inviting. It's the only time it's shown.</p>
+        </div>
+      ) : null}
+    </form>
+  );
+}
+
+function InviteRow({ invite }: { invite: InviteSummary }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onRevoke() {
+    setError(null);
+    setPending(true);
+    try {
+      await revokeInvite({ data: { inviteId: invite.id } });
+      await router.invalidate();
+    } catch (err) {
+      setError(errorMessage(err));
+      setPending(false);
+    }
+  }
+
+  return (
+    <li className="flex flex-col gap-1 border-b border-border/60 py-2 last:border-b-0">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+          <Badge variant={invite.boundToDid ? "outline" : "secondary"}>{invite.boundToDid ? "handle" : "link"}</Badge>
+          <Badge variant={invite.role === "owner" ? "secondary" : "outline"}>{invite.role}</Badge>
+          <span className="text-muted-foreground">
+            {invite.uses}/{invite.maxUses} used
+          </span>
+          {invite.expiresAt ? <span className="text-muted-foreground">· expires {invite.expiresAt.slice(0, 10)}</span> : null}
+        </div>
+        <Button size="xs" variant="ghost" disabled={pending} onClick={onRevoke}>
+          {pending ? <Spinner data-icon="inline-start" /> : <Trash2 aria-hidden="true" />}
+          Revoke
+        </Button>
+      </div>
+      {error ? (
+        <p role="alert" className="m-0 text-sm font-semibold text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
+// --- Create another (item 11 confirm) -------------------------------------
+
+function CreateAnotherSection({ currentName }: { currentName: string }) {
+  const navigate = useNavigate();
+  const [name, setName] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function onRequest(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError("Give the new household a name.");
+      return;
+    }
+    setError(null);
+    setConfirmOpen(true);
+  }
+
+  async function onConfirm() {
+    setPending(true);
+    try {
+      await createHousehold({ data: { name: name.trim() } });
+      setConfirmOpen(false);
+      // createHousehold sets the new one active server-side; land in it.
+      await navigate({ to: "/households" });
+    } catch (err) {
+      setError(errorMessage(err));
+      setConfirmOpen(false);
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="m-0 text-sm font-semibold text-muted-foreground">Create another household</h2>
+      <p className="m-0 text-sm text-muted-foreground">Most people only need one. If you really need a separate space, you can create another.</p>
+      <form onSubmit={onRequest} className="mt-1 flex flex-wrap items-end gap-2">
+        <FieldGroup className="min-w-56 flex-1">
+          <Field data-invalid={error ? true : undefined}>
+            <FieldLabel htmlFor="new-household-name">New household name</FieldLabel>
+            <Input
+              id="new-household-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="The lake house"
+              maxLength={100}
+              aria-invalid={error ? true : undefined}
+            />
+          </Field>
+        </FieldGroup>
+        <Button type="submit" variant="outline">
+          <Plus data-icon="inline-start" aria-hidden="true" />
+          Create another
+        </Button>
+      </form>
+      {error ? (
+        <p role="alert" className="m-0 text-sm font-semibold text-destructive">
+          {error}
+        </p>
+      ) : null}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Create another household?"
+        description={
+          <>
+            You're already in <strong className="text-foreground">{currentName}</strong>. Most people only need one. Create another?
+          </>
+        }
+        confirmLabel="Create another"
+        pending={pending}
+        onConfirm={onConfirm}
+      />
+    </section>
+  );
+}
+
+// --- Danger zone ----------------------------------------------------------
+
+function DangerZone({ householdId, isOwner, memberCount }: { householdId: string; isOwner: boolean; memberCount: number }) {
+  const navigate = useNavigate();
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onLeave() {
+    setError(null);
+    setPending(true);
+    try {
+      await leaveHousehold({ data: { householdId } });
+      setLeaveOpen(false);
+      await navigate({ to: "/onboarding" });
+    } catch (err) {
+      setError(errorMessage(err));
+      setLeaveOpen(false);
+      setPending(false);
+    }
+  }
+
+  async function onDelete() {
+    setError(null);
+    setPending(true);
+    try {
+      await deleteHousehold({ data: { householdId } });
+      setDeleteOpen(false);
+      await navigate({ to: "/onboarding" });
+    } catch (err) {
+      setError(errorMessage(err));
+      setDeleteOpen(false);
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border-2 border-destructive/30 p-4">
+      <h2 className="m-0 text-sm font-semibold text-destructive">Danger zone</h2>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={() => setLeaveOpen(true)}>
+          <LogOut data-icon="inline-start" aria-hidden="true" />
+          Leave household
+        </Button>
+        {isOwner ? (
+          <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
+            <Trash2 data-icon="inline-start" aria-hidden="true" />
+            Delete household
+          </Button>
+        ) : null}
+      </div>
+      {error ? (
+        <p role="alert" className="m-0 text-sm font-semibold text-destructive">
+          {error}
+        </p>
+      ) : null}
+
+      <ConfirmDialog
+        open={leaveOpen}
+        onOpenChange={setLeaveOpen}
+        title="Leave this household?"
+        description="You'll lose access to its shared data until someone invites you back. If you're the last owner, promote someone else first."
+        confirmLabel="Leave"
+        destructive
+        pending={pending}
+        onConfirm={onLeave}
+      />
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete this household?"
+        description={`This soft-deletes the household for all ${memberCount} ${memberCount === 1 ? "member" : "members"} and revokes every pending invite. This can't be undone from the app.`}
+        confirmLabel="Delete household"
+        destructive
+        pending={pending}
+        onConfirm={onDelete}
+      />
+    </section>
+  );
+}

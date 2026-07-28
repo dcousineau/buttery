@@ -1,6 +1,8 @@
-import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { BookOpenText, CalendarRange, CookingPot, Dices, FolderLock, ShoppingBasket, UtensilsCrossed } from "lucide-react";
+import { authClient } from "../lib/auth-client";
+import { clearPendingInvite, readPendingInvite } from "../lib/household/pending-invite";
 import { normalizeRecipeRef } from "../lib/atproto/recipe-exchange";
 import { fetchRecipe } from "../lib/atproto/recipes";
 import { listRecentRecipes } from "../lib/recipes-browse";
@@ -23,10 +25,30 @@ export const Route = createFileRoute("/")({
   component: App,
 });
 
+/**
+ * Resume a logged-out invite after the atproto OAuth round-trip (§15). The
+ * callback always lands on "/", so if a pending-invite token was stashed before
+ * sign-in and a session now exists, forward to the acceptance route. Renders
+ * nothing.
+ */
+function PendingInviteResume() {
+  const { data: session, isPending } = authClient.useSession();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (isPending || !session) return;
+    const token = readPendingInvite();
+    if (!token) return;
+    clearPendingInvite();
+    void navigate({ to: "/invite/$token", params: { token } });
+  }, [isPending, session, navigate]);
+  return null;
+}
+
 function App() {
   const recipes = Route.useLoaderData();
   return (
     <div className="page-wrap px-4 pt-10 pb-8 sm:pt-14">
+      <PendingInviteResume />
       <section className="rise-in flex flex-col items-start gap-8 sm:flex-row sm:items-center">
         <div className="min-w-0">
           <Badge variant="secondary" className="mb-4">
