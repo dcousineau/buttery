@@ -9,6 +9,14 @@ export default tseslint.config(
   },
   js.configs.recommended,
   tseslint.configs.recommended,
+  {
+    rules: {
+      // Allow intentional throwaways: `_`-prefixed vars/args (convention) and
+      // rest-sibling strips like `const { drop, ...rest } = obj` (common way to
+      // omit a key). Everything else still flags as unused.
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true }],
+    },
+  },
   reactHooks.configs.flat.recommended,
   { ...jsxA11y.flatConfigs.recommended, files: ["**/*.{jsx,tsx}"] },
   {
