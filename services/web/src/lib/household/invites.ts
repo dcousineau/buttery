@@ -286,12 +286,7 @@ export const acceptInvite = createServerFn({ method: "POST" })
 
         // Insert, or REVIVE a soft-deleted `(household_id, did)` row (the PK) to
         // avoid a unique-violation on re-accept after removal.
-        const prior = await trx
-          .selectFrom("household_member")
-          .select(["did"])
-          .where("household_id", "=", invite.household_id)
-          .where("did", "=", did)
-          .executeTakeFirst();
+        const prior = await trx.selectFrom("household_member").select(["did"]).where("household_id", "=", invite.household_id).where("did", "=", did).executeTakeFirst();
 
         if (prior) {
           await trx
@@ -301,10 +296,7 @@ export const acceptInvite = createServerFn({ method: "POST" })
             .where("did", "=", did)
             .execute();
         } else {
-          await trx
-            .insertInto("household_member")
-            .values({ household_id: invite.household_id, did, role: invite.role, invited_by_did: invite.created_by_did })
-            .execute();
+          await trx.insertInto("household_member").values({ household_id: invite.household_id, did, role: invite.role, invited_by_did: invite.created_by_did }).execute();
         }
 
         // Consume a use; flip to `accepted` once exhausted (single-use/bound flip
@@ -342,7 +334,11 @@ export const declineBoundInvite = createServerFn({ method: "POST" })
 
     const invite = await db.selectFrom("household_invite").select(["id", "bound_to_did"]).where("token_hash", "=", tokenHash).executeTakeFirst();
     if (!invite) throw new InvalidInvite();
-    if (invite.bound_to_did !== null && invite.bound_to_did !== did) throw new InviteNotForYou();
+    // Decline is only meaningful for bound invites (§6.4). An open link has no
+    // single invitee, so declining it must NOT disable the shared link for
+    // everyone — reject rather than let any holder grief the owner's link.
+    if (invite.bound_to_did === null) throw new InvalidInvite();
+    if (invite.bound_to_did !== did) throw new InviteNotForYou();
 
     await db.updateTable("household_invite").set({ status: "declined" }).where("id", "=", invite.id).execute();
 

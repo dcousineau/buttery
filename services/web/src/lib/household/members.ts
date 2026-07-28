@@ -23,6 +23,10 @@ async function liveOwnerDids(trx: Kysely<DB>, householdId: string): Promise<stri
     .where("role", "=", "owner")
     .where("deleted_at", "is", null)
     .where("tombstoned", "=", false)
+    // Lock the live-owner rows so two concurrent owner exits/demotions serialize
+    // on the shared owner set — otherwise both read `owners=[A,B]`, both pass
+    // `wouldDropLastOwner`, and both commit, leaving a household with 0 owners.
+    .forUpdate()
     .execute();
   return rows.map((r) => r.did);
 }
