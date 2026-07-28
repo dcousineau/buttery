@@ -44,6 +44,11 @@
   --radius: 0.75rem;
   --shadow-hard: #2a1e12;
 
+  /* Cursor for every interactive control. Themeable single source of truth —
+   * set to `default` to opt the whole app out. Consumed by the unlayered
+   * interactive-cursor rule below (§ "Interactive cursor"). */
+  --cursor-interactive: pointer;
+
   /* Height of the full-width app header; measured + overwritten at runtime in
    * AppShell so the fixed sidebar can start below it. Default ~= header row +
    * gingham band, avoids first-paint jump. */
@@ -174,12 +179,6 @@
     text-underline-offset: 3px;
   }
 
-  /* Tailwind v4 preflight makes buttons cursor:default; clickable = pointer. */
-  button:not(:disabled),
-  [role="button"]:not(:disabled) {
-    cursor: pointer;
-  }
-
   code {
     font-size: 0.9em;
     border: 1.5px solid var(--border);
@@ -196,6 +195,35 @@
     font-size: inherit;
     color: inherit;
   }
+}
+
+/* ---- Interactive cursor ----
+ * Tailwind v4 preflight ships buttons as cursor:default, and shadcn/base-ui menu
+ * & select items carry an explicit `cursor-default` utility. One rule points
+ * every interactive control at --cursor-interactive (default `pointer`).
+ *
+ * UNLAYERED on purpose: unlayered author CSS wins over anything in an @layer,
+ * so this beats the `cursor-default` Tailwind utility without editing each
+ * component. `:where()` keeps specificity at 0 so real intent (e.g. an explicit
+ * `cursor-*` in markup) can still override where needed. Disabled controls
+ * (native, aria, or base-ui's data-attr) are excluded. */
+:where(
+    a[href],
+    button,
+    summary,
+    select,
+    [role="button"],
+    [role="link"],
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"],
+    [role="option"],
+    [role="tab"],
+    [role="switch"],
+    [role="checkbox"],
+    [role="radio"]
+  ):not(:disabled):not([aria-disabled="true"]):not([data-disabled]) {
+  cursor: var(--cursor-interactive);
 }
 
 .page-wrap {

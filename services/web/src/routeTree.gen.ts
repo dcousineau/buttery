@@ -13,8 +13,13 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AiUsageRouteImport } from './routes/ai-usage'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OauthClientMetadataDotjsonRouteImport } from './routes/oauth-client-metadata[.]json'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as PantryRouteImport } from './routes/pantry'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as HouseholdsIndexRouteImport } from './routes/households.index'
+import { Route as HouseholdsSwitchRouteImport } from './routes/households.switch'
+import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as RecipesIdRouteImport } from './routes/recipes.$id'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
@@ -39,6 +44,16 @@ const OauthClientMetadataDotjsonRoute =
     path: '/oauth-client-metadata.json',
     getParentRoute: () => rootRouteImport,
   } as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PantryRoute = PantryRouteImport.update({
+  id: '/pantry',
+  path: '/pantry',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
@@ -47,6 +62,21 @@ const PrivacyRoute = PrivacyRouteImport.update({
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HouseholdsIndexRoute = HouseholdsIndexRouteImport.update({
+  id: '/households/',
+  path: '/households/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HouseholdsSwitchRoute = HouseholdsSwitchRouteImport.update({
+  id: '/households/switch',
+  path: '/households/switch',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: '/invite/$token',
+  path: '/invite/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecipesIdRoute = RecipesIdRouteImport.update({
@@ -65,9 +95,14 @@ export interface FileRoutesByFullPath {
   '/ai-usage': typeof AiUsageRoute
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
+  '/onboarding': typeof OnboardingRoute
+  '/pantry': typeof PantryRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/households/switch': typeof HouseholdsSwitchRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/recipes/$id': typeof RecipesIdRoute
+  '/households/': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
@@ -75,9 +110,14 @@ export interface FileRoutesByTo {
   '/ai-usage': typeof AiUsageRoute
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
+  '/onboarding': typeof OnboardingRoute
+  '/pantry': typeof PantryRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/households/switch': typeof HouseholdsSwitchRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/recipes/$id': typeof RecipesIdRoute
+  '/households': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
@@ -86,9 +126,14 @@ export interface FileRoutesById {
   '/ai-usage': typeof AiUsageRoute
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
+  '/onboarding': typeof OnboardingRoute
+  '/pantry': typeof PantryRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/households/switch': typeof HouseholdsSwitchRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/recipes/$id': typeof RecipesIdRoute
+  '/households/': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
@@ -98,9 +143,14 @@ export interface FileRouteTypes {
     | '/ai-usage'
     | '/login'
     | '/oauth-client-metadata.json'
+    | '/onboarding'
+    | '/pantry'
     | '/privacy'
     | '/terms'
+    | '/households/switch'
+    | '/invite/$token'
     | '/recipes/$id'
+    | '/households/'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -108,9 +158,14 @@ export interface FileRouteTypes {
     | '/ai-usage'
     | '/login'
     | '/oauth-client-metadata.json'
+    | '/onboarding'
+    | '/pantry'
     | '/privacy'
     | '/terms'
+    | '/households/switch'
+    | '/invite/$token'
     | '/recipes/$id'
+    | '/households'
     | '/api/auth/$'
   id:
     | '__root__'
@@ -118,9 +173,14 @@ export interface FileRouteTypes {
     | '/ai-usage'
     | '/login'
     | '/oauth-client-metadata.json'
+    | '/onboarding'
+    | '/pantry'
     | '/privacy'
     | '/terms'
+    | '/households/switch'
+    | '/invite/$token'
     | '/recipes/$id'
+    | '/households/'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
@@ -129,9 +189,14 @@ export interface RootRouteChildren {
   AiUsageRoute: typeof AiUsageRoute
   LoginRoute: typeof LoginRoute
   OauthClientMetadataDotjsonRoute: typeof OauthClientMetadataDotjsonRoute
+  OnboardingRoute: typeof OnboardingRoute
+  PantryRoute: typeof PantryRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
+  HouseholdsSwitchRoute: typeof HouseholdsSwitchRoute
+  InviteTokenRoute: typeof InviteTokenRoute
   RecipesIdRoute: typeof RecipesIdRoute
+  HouseholdsIndexRoute: typeof HouseholdsIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -165,6 +230,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OauthClientMetadataDotjsonRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pantry': {
+      id: '/pantry'
+      path: '/pantry'
+      fullPath: '/pantry'
+      preLoaderRoute: typeof PantryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/privacy': {
       id: '/privacy'
       path: '/privacy'
@@ -177,6 +256,27 @@ declare module '@tanstack/react-router' {
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/households/': {
+      id: '/households/'
+      path: '/households'
+      fullPath: '/households/'
+      preLoaderRoute: typeof HouseholdsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/households/switch': {
+      id: '/households/switch'
+      path: '/households/switch'
+      fullPath: '/households/switch'
+      preLoaderRoute: typeof HouseholdsSwitchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite/$token': {
+      id: '/invite/$token'
+      path: '/invite/$token'
+      fullPath: '/invite/$token'
+      preLoaderRoute: typeof InviteTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recipes/$id': {
@@ -201,9 +301,14 @@ const rootRouteChildren: RootRouteChildren = {
   AiUsageRoute: AiUsageRoute,
   LoginRoute: LoginRoute,
   OauthClientMetadataDotjsonRoute: OauthClientMetadataDotjsonRoute,
+  OnboardingRoute: OnboardingRoute,
+  PantryRoute: PantryRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
+  HouseholdsSwitchRoute: HouseholdsSwitchRoute,
+  InviteTokenRoute: InviteTokenRoute,
   RecipesIdRoute: RecipesIdRoute,
+  HouseholdsIndexRoute: HouseholdsIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

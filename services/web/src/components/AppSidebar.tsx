@@ -22,7 +22,7 @@ type NavEntry = {
 };
 
 const NAV_ENTRIES: Array<NavEntry> = [
-  { label: "Home", icon: Home, to: "/" },
+  { label: "Home", icon: Home, to: "/pantry" },
   { label: "Recipes", icon: BookOpenText, soon: true },
   { label: "Collections", icon: FolderLock, soon: true },
   { label: "Shopping list", icon: ShoppingBasket, soon: true },

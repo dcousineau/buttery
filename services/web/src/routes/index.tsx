@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpenText, CalendarRange, CookingPot, Dices, FolderLock, ShoppingBasket, UtensilsCrossed } from "lucide-react";
+import { resolveHomeRedirect } from "../lib/household/onboarding";
 import { normalizeRecipeRef } from "../lib/atproto/recipe-exchange";
 import { fetchRecipe } from "../lib/atproto/recipes";
 import { listRecentRecipes } from "../lib/recipes-browse";
@@ -19,6 +20,10 @@ import type { RecipeCardData } from "../lib/recipes-browse";
 
 export const Route = createFileRoute("/")({
   validateSearch: (search: Record<string, unknown>): { auth_error?: string } => (typeof search.auth_error === "string" ? { auth_error: search.auth_error } : {}),
+  // Server-side landing decision (see resolveHomeRedirect): a signed-in caller is
+  // routed into the app before this page renders — the OAuth callback lands here,
+  // so this is the post-login pivot. Signed-out callers fall through to marketing.
+  beforeLoad: () => resolveHomeRedirect(),
   loader: () => listRecentRecipes(),
   component: App,
 });
