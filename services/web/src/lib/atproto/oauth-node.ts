@@ -1,7 +1,8 @@
 import { NodeOAuthClient, type NodeSavedSession, type NodeSavedSessionStore, type NodeSavedState, type NodeSavedStateStore } from "@atproto/oauth-client-node";
 import { requestLocalLock } from "@atproto/oauth-client";
 import { atprotoLoopbackClientMetadata } from "@atproto/oauth-types";
-import { getPool } from "../db";
+import { sql } from "kysely";
+import { getDb } from "../db";
 import type { OAuthClientMetadataInput } from "@atproto/oauth-client";
 
 const HANDLE_RESOLVER = "https://bsky.social";
@@ -47,50 +48,47 @@ export const clientMetadata: OAuthClientMetadataInput = isLoopback
 // Tables are created by `npx @better-auth/cli migrate` from the atproto
 // better-auth plugin's schema (see better-auth-plugin.ts).
 function createStateStore(): NodeSavedStateStore {
-  const pool = getPool();
+  const db = getDb();
   return {
     async set(key, state) {
-      await pool.query(
-        `insert into "atproto_oauth_state" ("id", "key", "value", "createdAt")
-         values ($1, $2, $3, now())
-         on conflict ("key") do update
-           set "value" = excluded."value", "createdAt" = now()`,
-        [crypto.randomUUID(), key, JSON.stringify(state)],
-      );
+      await db
+        .insertInto("atproto_oauth_state")
+        .values({ id: crypto.randomUUID(), key, value: JSON.stringify(state), createdAt: sql`now()` })
+        .onConflict((oc) => oc.column("key").doUpdateSet({ value: (eb) => eb.ref("excluded.value"), createdAt: sql`now()` }))
+        .execute();
       // Abandoned sign-in attempts are worthless after the authorize redirect
       // expires; sweep them opportunistically instead of running a job.
-      await pool.query(`delete from "atproto_oauth_state" where "createdAt" < now() - interval '1 hour'`);
+      await db
+        .deleteFrom("atproto_oauth_state")
+        .where("createdAt", "<", sql<Date>`now() - interval '1 hour'`)
+        .execute();
     },
     async get(key) {
-      const res = await pool.query<{ value: string }>(`select "value" from "atproto_oauth_state" where "key" = $1`, [key]);
-      const row = res.rows[0];
+      const row = await db.selectFrom("atproto_oauth_state").select("value").where("key", "=", key).executeTakeFirst();
       return row ? (JSON.parse(row.value) as NodeSavedState) : undefined;
     },
     async del(key) {
-      await pool.query(`delete from "atproto_oauth_state" where "key" = $1`, [key]);
+      await db.deleteFrom("atproto_oauth_state").where("key", "=", key).execute();
     },
   };
 }
 
 function createSessionStore(): NodeSavedSessionStore {
-  const pool = getPool();
+  const db = getDb();
   return {
     async set(did, session) {
-      await pool.query(
-        `insert into "atproto_oauth_session" ("id", "key", "value", "createdAt", "updatedAt")
-         values ($1, $2, $3, now(), now())
-         on conflict ("key") do update
-           set "value" = excluded."value", "updatedAt" = now()`,
-        [crypto.randomUUID(), did, JSON.stringify(session)],
-      );
+      await db
+        .insertInto("atproto_oauth_session")
+        .values({ id: crypto.randomUUID(), key: did, value: JSON.stringify(session), createdAt: sql`now()`, updatedAt: sql`now()` })
+        .onConflict((oc) => oc.column("key").doUpdateSet({ value: (eb) => eb.ref("excluded.value"), updatedAt: sql`now()` }))
+        .execute();
     },
     async get(did) {
-      const res = await pool.query<{ value: string }>(`select "value" from "atproto_oauth_session" where "key" = $1`, [did]);
-      const row = res.rows[0];
+      const row = await db.selectFrom("atproto_oauth_session").select("value").where("key", "=", did).executeTakeFirst();
       return row ? (JSON.parse(row.value) as NodeSavedSession) : undefined;
     },
     async del(did) {
-      await pool.query(`delete from "atproto_oauth_session" where "key" = $1`, [did]);
+      await db.deleteFrom("atproto_oauth_session").where("key", "=", did).execute();
     },
   };
 }
