@@ -1,6 +1,9 @@
 import { redirect } from "@tanstack/react-router";
 import { getRequest } from "@tanstack/react-start/server";
+import type { Kysely } from "kysely";
 import { auth } from "#/lib/auth";
+import { getDb } from "#/lib/db";
+import type { DB } from "#/db/types";
 
 /**
  * Server-only session helpers shared by every household server function
@@ -51,4 +54,19 @@ export async function requireSessionDid(request?: Request): Promise<string> {
     throw redirect({ to: "/login" });
   }
   return did;
+}
+
+/**
+ * Set (or clear, with `null`) the active household on a better-auth `session`
+ * row. `active_household_id` is our own column (§3.4), so we write it directly
+ * through Kysely rather than through a better-auth mutation. Pass the current
+ * `session.id` (from {@link getServerSession}); pass a transaction as `db` to
+ * fold the write into a mutating transaction (join/create/switch/accept all
+ * set the active household as their final step).
+ *
+ * Callers: B's `createHousehold`/`acceptInvite` (set to the joined household),
+ * C's `switchActiveHousehold` (switch), and the §5 stale-active guard (clear).
+ */
+export async function setActiveHousehold(sessionId: string, householdId: string | null, db: Kysely<DB> = getDb()): Promise<void> {
+  await db.updateTable("session").set({ active_household_id: householdId }).where("id", "=", sessionId).execute();
 }
