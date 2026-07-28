@@ -23,7 +23,11 @@
  * human must confirm the round-trip once the dev DB is reachable.
  */
 
-const COOKIE = "buttery_pending_invite";
+/** The first-party cookie carrying a raw invite token across the OAuth hop.
+ * Exported so the server-side home gate (`resolveHomeRedirect`) can read it from
+ * the request headers and resume the invite — the same value written here. */
+export const PENDING_INVITE_COOKIE = "buttery_pending_invite";
+const COOKIE = PENDING_INVITE_COOKIE;
 const MAX_AGE_SECONDS = 10 * 60; // 10 minutes — just long enough to sign in.
 
 /** Stash the raw invite token before redirecting a logged-out visitor to /login. */

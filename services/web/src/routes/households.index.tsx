@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Dialog } from "@base-ui/react/dialog";
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { Check, Copy, Crown, Link2, LogOut, Mail, Pencil, Plus, Shield, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
 import { requireActiveHousehold, listHouseholdMembers } from "#/lib/household/onboarding";
@@ -19,6 +20,19 @@ import type { Role } from "#/lib/household/errors";
 import type { HouseholdMemberView } from "#/lib/household/onboarding";
 import type { InviteSummary } from "#/lib/household/invites";
 import type { FormEvent } from "react";
+
+/** Focus an element via a ref when it becomes `active` — the accessible
+ * equivalent of the `autoFocus` prop for fields that appear on an intentional
+ * user action (opening an inline editor or a dialog), without tripping
+ * `jsx-a11y/no-autofocus`. Pass the flag that gates the field's appearance so
+ * focus lands each time it opens. */
+function useAutoFocus<T extends HTMLElement>(active: boolean = true) {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    if (active) ref.current?.focus();
+  }, [active]);
+  return ref;
+}
 
 /** Household management surface (§7/§10). The loader runs the §8 stale-active
  * guard (`requireActiveHousehold`) so this never renders against a dead/exited
@@ -67,6 +81,7 @@ function HouseholdHeader({ householdId, name, isOwner }: { householdId: string; 
   const [value, setValue] = useState(name);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const focusRef = useAutoFocus<HTMLInputElement>(editing);
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
@@ -93,7 +108,7 @@ function HouseholdHeader({ householdId, name, isOwner }: { householdId: string; 
         <FieldGroup>
           <Field data-invalid={error ? true : undefined}>
             <FieldLabel htmlFor="rename-household">Household name</FieldLabel>
-            <Input id="rename-household" value={value} onChange={(e) => setValue(e.target.value)} maxLength={100} autoFocus aria-invalid={error ? true : undefined} />
+            <Input ref={focusRef} id="rename-household" value={value} onChange={(e) => setValue(e.target.value)} maxLength={100} aria-invalid={error ? true : undefined} />
           </Field>
         </FieldGroup>
         <div className="flex gap-2">
@@ -281,10 +296,7 @@ function CreateInviteForm({ householdId }: { householdId: string }) {
     try {
       const expiresAt = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
       const result = await createInvite({
-        data:
-          mode === "bound"
-            ? { householdId, role, boundHandle: handle.trim(), expiresAt }
-            : { householdId, role, maxUses, expiresAt },
+        data: mode === "bound" ? { householdId, role, boundHandle: handle.trim(), expiresAt } : { householdId, role, maxUses, expiresAt },
       });
       setLink(result.link);
       if (mode === "bound") setHandle("");
@@ -441,82 +453,99 @@ function InviteRow({ invite }: { invite: InviteSummary }) {
   );
 }
 
-// --- Create another (item 11 confirm) -------------------------------------
+// --- Create another (item 11 — deliberately low-emphasis) -----------------
 
+/**
+ * Creating a second household is intentionally de-emphasized (§5 guardrail 4):
+ * the section is muted body copy with a plain text LINK — no button, no visible
+ * form. The link opens a modal that carries the friction copy AND the name input,
+ * so the whole flow (nudge → name → confirm) lives behind one deliberate click.
+ */
 function CreateAnotherSection({ currentName }: { currentName: string }) {
   const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const focusRef = useAutoFocus<HTMLInputElement>(open);
 
-  function onRequest(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!name.trim()) {
       setError("Give the new household a name.");
       return;
     }
     setError(null);
-    setConfirmOpen(true);
-  }
-
-  async function onConfirm() {
     setPending(true);
     try {
       await createHousehold({ data: { name: name.trim() } });
-      setConfirmOpen(false);
+      setOpen(false);
       // createHousehold sets the new one active server-side; land in it.
       await navigate({ to: "/households" });
     } catch (err) {
       setError(errorMessage(err));
-      setConfirmOpen(false);
+      setPending(false);
+    }
+  }
+
+  // Reset transient state whenever the modal closes so a reopened dialog is clean.
+  function onOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) {
+      setName("");
+      setError(null);
       setPending(false);
     }
   }
 
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="m-0 text-sm font-semibold text-muted-foreground">Create another household</h2>
-      <p className="m-0 text-sm text-muted-foreground">Most people only need one. If you really need a separate space, you can create another.</p>
-      <form onSubmit={onRequest} className="mt-1 flex flex-wrap items-end gap-2">
-        <FieldGroup className="min-w-56 flex-1">
-          <Field data-invalid={error ? true : undefined}>
-            <FieldLabel htmlFor="new-household-name">New household name</FieldLabel>
-            <Input
-              id="new-household-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="The lake house"
-              maxLength={100}
-              aria-invalid={error ? true : undefined}
-            />
-          </Field>
-        </FieldGroup>
-        <Button type="submit" variant="outline">
-          <Plus data-icon="inline-start" aria-hidden="true" />
-          Create another
-        </Button>
-      </form>
-      {error ? (
-        <p role="alert" className="m-0 text-sm font-semibold text-destructive">
-          {error}
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <section className="flex flex-col gap-1">
+        <p className="m-0 text-sm text-muted-foreground">
+          Most people only need one household. If you really need a separate space,{" "}
+          <Dialog.Trigger className="font-semibold text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-foreground">create another</Dialog.Trigger>.
         </p>
-      ) : null}
+      </section>
 
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title="Create another household?"
-        description={
-          <>
-            You're already in <strong className="text-foreground">{currentName}</strong>. Most people only need one. Create another?
-          </>
-        }
-        confirmLabel="Create another"
-        pending={pending}
-        onConfirm={onConfirm}
-      />
-    </section>
+      <Dialog.Portal>
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/20 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs" />
+        <Dialog.Popup className="fixed top-1/2 left-1/2 z-50 flex w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col gap-3 rounded-xl border-2 border-border bg-card p-5 text-card-foreground shadow-pop-md transition duration-150 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+          <Dialog.Title className="display-title text-lg text-foreground">Create another household?</Dialog.Title>
+          <Dialog.Description className="m-0 text-sm text-muted-foreground">
+            You're already in <strong className="text-foreground">{currentName}</strong>. Most people only need one — a household is shared with everyone you invite, so you rarely
+            need a second.
+          </Dialog.Description>
+          <form onSubmit={onSubmit} className="mt-1 flex flex-col gap-3">
+            <FieldGroup>
+              <Field data-invalid={error ? true : undefined}>
+                <FieldLabel htmlFor="new-household-name">New household name</FieldLabel>
+                <Input
+                  ref={focusRef}
+                  id="new-household-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="The lake house"
+                  maxLength={100}
+                  aria-invalid={error ? true : undefined}
+                />
+              </Field>
+            </FieldGroup>
+            {error ? (
+              <p role="alert" className="m-0 text-sm font-semibold text-destructive">
+                {error}
+              </p>
+            ) : null}
+            <div className="mt-1 flex flex-wrap justify-end gap-2">
+              <Dialog.Close render={<Button type="button" variant="ghost" disabled={pending} />}>Cancel</Dialog.Close>
+              <Button type="submit" variant="outline" disabled={pending}>
+                {pending ? <Spinner data-icon="inline-start" /> : <Plus data-icon="inline-start" aria-hidden="true" />}
+                Create another
+              </Button>
+            </div>
+          </form>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 

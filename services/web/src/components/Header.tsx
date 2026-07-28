@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { authClient } from "../lib/auth-client";
+import { authClient, signOutAndGoHome } from "../lib/auth-client";
 import ButterStick from "./ButterStick";
 import HouseholdSwitcher from "./HouseholdSwitcher";
 import ThemeToggle from "./ThemeToggle";
@@ -7,6 +7,20 @@ import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Skeleton } from "#/components/ui/skeleton";
 import type { ReactNode, Ref } from "react";
+
+/** The wordmark's destination depends on auth: a signed-in user goes to their
+ * logged-in landing (`/pantry`, which itself routes on to the household picker /
+ * onboarding when there's no active household); a signed-out (or still-loading)
+ * visitor goes to the public marketing home (`/`). */
+function Wordmark() {
+  const { data: session } = authClient.useSession();
+  return (
+    <Link to={session ? "/pantry" : "/"} className="flex items-center gap-2 text-foreground no-underline">
+      <ButterStick className="h-6 w-auto" />
+      <span className="display-title text-lg leading-none">Buttery</span>
+    </Link>
+  );
+}
 
 function AuthState() {
   const { data: session, isPending } = authClient.useSession();
@@ -21,7 +35,7 @@ function AuthState() {
         <Badge variant="secondary" className="max-w-40 truncate" title={session.user.name}>
           @{session.user.name}
         </Badge>
-        <Button variant="ghost" size="sm" onClick={() => void authClient.signOut()}>
+        <Button variant="ghost" size="sm" onClick={() => void signOutAndGoHome()}>
           Sign out
         </Button>
       </div>
@@ -53,10 +67,7 @@ export default function Header({ ref, leftSlot, hidden = false }: { ref?: Ref<HT
     >
       <div className="flex items-center gap-2 px-3 py-2.5 sm:px-5">
         {leftSlot}
-        <Link to="/" className="flex items-center gap-2 text-foreground no-underline">
-          <ButterStick className="h-6 w-auto" />
-          <span className="display-title text-lg leading-none">Buttery</span>
-        </Link>
+        <Wordmark />
 
         <div className="ml-auto flex items-center gap-2">
           <HouseholdSwitcher />

@@ -54,9 +54,7 @@ export interface HouseholdMemberView {
  *   the caller's pending bound invites (empty array → empty state).
  */
 export type OnboardingVerdict =
-  | { kind: "active"; householdId: string; name: string }
-  | { kind: "pick"; households: HouseholdSummary[] }
-  | { kind: "onboard"; pendingInvites: PendingInvite[] };
+  { kind: "active"; householdId: string; name: string } | { kind: "pick"; households: HouseholdSummary[] } | { kind: "onboard"; pendingInvites: PendingInvite[] };
 
 /** Coerce a free-text DB role to the ranked `Role` union (unknown → member). */
 function asRole(role: string): Role {
@@ -185,6 +183,49 @@ async function computeOnboarding(): Promise<OnboardingVerdict> {
  */
 export const resolveOnboarding = createServerFn({ method: "GET" }).handler((): Promise<OnboardingVerdict> => computeOnboarding());
 
+/** Read a single cookie value out of a raw `Cookie:` header (server-side). */
+function readCookie(header: string, name: string): string | null {
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return null;
+}
+
+/**
+ * The single, SERVER-SIDE decision for where the marketing home (`/`) should
+ * send the caller. Called from `/`'s `beforeLoad`, so the routing is decided
+ * before render — no client-effect race, no redirect flicker, and it runs
+ * deterministically on the full-page load the atproto OAuth callback lands on.
+ *
+ * - Unauthenticated → `{ authed: false }`; the marketing page renders.
+ * - Authenticated, with a pending-invite cookie carried through the logged-out
+ *   invite → OAuth round-trip (§15) → resume it at `/invite/$token`.
+ * - Authenticated otherwise → the §5 landing: `/pantry` (active/single),
+ *   `/households/switch` (2+, none active), or `/onboarding` (no household).
+ *
+ * A signed-in user therefore never sits on the marketing page — they are always
+ * routed into the app (or onward to onboarding until they have a household).
+ */
+export const resolveHomeRedirect = createServerFn({ method: "GET" }).handler(async (): Promise<{ authed: false }> => {
+  const { getServerSession } = await import("./session");
+  const { getRequest } = await import("@tanstack/react-start/server");
+  const { PENDING_INVITE_COOKIE } = await import("./pending-invite");
+
+  const session = await getServerSession();
+  if (!session?.user.did) return { authed: false };
+
+  // A stashed invite token (logged-out invite → OAuth round-trip) wins: resume it.
+  const token = readCookie(getRequest().headers.get("cookie") ?? "", PENDING_INVITE_COOKIE);
+  if (token) throw redirect({ to: "/invite/$token", params: { token } });
+
+  const verdict = await computeOnboarding();
+  if (verdict.kind === "active") throw redirect({ to: "/pantry" });
+  if (verdict.kind === "pick") throw redirect({ to: "/households/switch" });
+  throw redirect({ to: "/onboarding" });
+});
+
 /**
  * Per-request STALE-ACTIVE GUARD (§8). Every household-scoped screen calls this
  * from its loader so it never renders against a dead/exited household. Returns
@@ -244,12 +285,17 @@ export const listHouseholdMembers = createServerFn({ method: "GET" })
     const rows = await getDb()
       .selectFrom("household_member as hm")
       .innerJoin("household as h", "h.id", "hm.household_id")
+      // Handle sources, best-effort: the better-auth `user` row (set on every
+      // sign-in, so present for anyone who has logged in) is authoritative;
+      // `atproto_repo` (populated only by the cron sweep, i.e. recipe authors)
+      // is a fallback for members who haven't logged in via this app yet.
+      .leftJoin("user as u", "u.did", "hm.did")
       .leftJoin("atproto_repo as r", "r.did", "hm.did")
       .where("hm.household_id", "=", data.householdId)
       .where("hm.deleted_at", "is", null)
       .where("hm.tombstoned", "=", false)
       .where("h.deleted_at", "is", null)
-      .select(["hm.did as did", "hm.role as role", "hm.joined_at as joinedAt", "hm.invited_by_did as invitedByDid", "r.handle as handle"])
+      .select(["hm.did as did", "hm.role as role", "hm.joined_at as joinedAt", "hm.invited_by_did as invitedByDid", "u.handle as userHandle", "r.handle as repoHandle"])
       .orderBy("hm.joined_at", "asc")
       .execute();
 
@@ -258,7 +304,7 @@ export const listHouseholdMembers = createServerFn({ method: "GET" })
       role: asRole(r.role),
       joinedAt: new Date(r.joinedAt).toISOString(),
       invitedByDid: r.invitedByDid,
-      handle: r.handle,
+      handle: r.userHandle ?? r.repoHandle,
       isSelf: r.did === did,
     }));
   });

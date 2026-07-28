@@ -4,7 +4,15 @@ import { ChevronsUpDown, Home } from "lucide-react";
 import { authClient } from "#/lib/auth-client";
 import { resolveOnboarding } from "#/lib/household/onboarding";
 import { Button } from "#/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "#/components/ui/dropdown-menu";
 import type { OnboardingVerdict } from "#/lib/household/onboarding";
 
 /**
@@ -19,17 +27,17 @@ import type { OnboardingVerdict } from "#/lib/household/onboarding";
 export default function HouseholdSwitcher() {
   const { data: session } = authClient.useSession();
   const userId = session?.user.id ?? null;
-  const [verdict, setVerdict] = useState<OnboardingVerdict | null>(null);
+  // Tag the fetched verdict with the userId it belongs to, so a stale/removed
+  // session is cleared by DERIVING null at render (below) rather than a
+  // synchronous setState inside the effect (which triggers cascading renders).
+  const [state, setState] = useState<{ userId: string; verdict: OnboardingVerdict } | null>(null);
 
   useEffect(() => {
-    if (!userId) {
-      setVerdict(null);
-      return;
-    }
+    if (!userId) return;
     let cancelled = false;
     resolveOnboarding()
       .then((v) => {
-        if (!cancelled) setVerdict(v);
+        if (!cancelled) setState({ userId, verdict: v });
       })
       .catch(() => {
         // Swallow (e.g. an unauthenticated redirect) — the switcher just hides.
@@ -39,6 +47,7 @@ export default function HouseholdSwitcher() {
     };
   }, [userId]);
 
+  const verdict = state && state.userId === userId ? state.verdict : null;
   if (!userId || !verdict) return null;
 
   // No active household yet (onboarding). Nothing to indicate.
@@ -66,9 +75,11 @@ export default function HouseholdSwitcher() {
         }
       />
       <DropdownMenuContent align="end" className="min-w-48">
-        <DropdownMenuLabel>Active household</DropdownMenuLabel>
-        <DropdownMenuItem render={<Link to="/households" />}>Manage household</DropdownMenuItem>
-        <DropdownMenuItem render={<Link to="/households/switch" />}>Switch household</DropdownMenuItem>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Active household</DropdownMenuLabel>
+          <DropdownMenuItem render={<Link to="/households" />}>Manage household</DropdownMenuItem>
+          <DropdownMenuItem render={<Link to="/households/switch" />}>Switch household</DropdownMenuItem>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link to="/onboarding" />}>Join or create another</DropdownMenuItem>
       </DropdownMenuContent>

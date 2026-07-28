@@ -14,6 +14,7 @@ import { Route as AiUsageRouteImport } from './routes/ai-usage'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OauthClientMetadataDotjsonRouteImport } from './routes/oauth-client-metadata[.]json'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as PantryRouteImport } from './routes/pantry'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as HouseholdsIndexRouteImport } from './routes/households.index'
@@ -46,6 +47,11 @@ const OauthClientMetadataDotjsonRoute =
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PantryRoute = PantryRouteImport.update({
+  id: '/pantry',
+  path: '/pantry',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrivacyRoute = PrivacyRouteImport.update({
@@ -90,6 +96,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
   '/onboarding': typeof OnboardingRoute
+  '/pantry': typeof PantryRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/households/switch': typeof HouseholdsSwitchRoute
@@ -104,6 +111,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
   '/onboarding': typeof OnboardingRoute
+  '/pantry': typeof PantryRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/households/switch': typeof HouseholdsSwitchRoute
@@ -119,6 +127,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
   '/onboarding': typeof OnboardingRoute
+  '/pantry': typeof PantryRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/households/switch': typeof HouseholdsSwitchRoute
@@ -135,6 +144,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/oauth-client-metadata.json'
     | '/onboarding'
+    | '/pantry'
     | '/privacy'
     | '/terms'
     | '/households/switch'
@@ -149,6 +159,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/oauth-client-metadata.json'
     | '/onboarding'
+    | '/pantry'
     | '/privacy'
     | '/terms'
     | '/households/switch'
@@ -163,6 +174,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/oauth-client-metadata.json'
     | '/onboarding'
+    | '/pantry'
     | '/privacy'
     | '/terms'
     | '/households/switch'
@@ -178,6 +190,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   OauthClientMetadataDotjsonRoute: typeof OauthClientMetadataDotjsonRoute
   OnboardingRoute: typeof OnboardingRoute
+  PantryRoute: typeof PantryRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
   HouseholdsSwitchRoute: typeof HouseholdsSwitchRoute
@@ -222,6 +235,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pantry': {
+      id: '/pantry'
+      path: '/pantry'
+      fullPath: '/pantry'
+      preLoaderRoute: typeof PantryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/privacy': {
@@ -282,6 +302,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   OauthClientMetadataDotjsonRoute: OauthClientMetadataDotjsonRoute,
   OnboardingRoute: OnboardingRoute,
+  PantryRoute: PantryRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
   HouseholdsSwitchRoute: HouseholdsSwitchRoute,
