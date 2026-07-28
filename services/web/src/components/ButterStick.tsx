@@ -5,8 +5,8 @@
 export default function ButterStick({ className, label }: { className?: string; label?: string }) {
   return (
     <svg viewBox="0 0 240 130" className={className} role={label ? "img" : "presentation"} aria-label={label} aria-hidden={label ? undefined : true}>
-      {/* top face */}
-      <polygon points="20,55 62,22 226,22 184,55" fill="var(--butter-pale)" stroke="var(--border)" strokeWidth="5" strokeLinejoin="round" />
+      {/* top face — manual highlight shade so it stays light in both themes */}
+      <polygon points="20,55 62,22 226,22 184,55" fill="#ffe9a0" stroke="var(--border)" strokeWidth="5" strokeLinejoin="round" />
       {/* right end face */}
       <polygon points="184,55 226,22 226,78 184,111" fill="var(--butter-deep)" stroke="var(--border)" strokeWidth="5" strokeLinejoin="round" />
       {/* front face */}

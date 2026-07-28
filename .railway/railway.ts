@@ -62,10 +62,40 @@ export default defineRailway((ctx) => {
   // independently of web:
   //   - a dedicated api service      → filter @buttery/api...,    watch services/api/** + shared packages
   //   - atproto sync listeners/workers → filter @buttery/worker..., long-running
-  //   - a cron for periodic repo sync  → same, plus deploy.cronSchedule
   // Shared code they consume (lexicons today; db later) goes under packages/.
 
+  // Cron: sweep the atproto network and reconcile the Postgres recipe index.
+  // A cron service's container is stopped between runs (true scale-to-zero,
+  // $0 idle) — do NOT enable the Serverless/app-sleeping toggle here (that's
+  // for always-on HTTP services and adds cold-boot 502s). See plan §5.
+  //
+  // No build step: Node 26 runs the TypeScript directly. Same monorepo build
+  // model as web — install the whole workspace, run the package's start. It's
+  // a pure DB writer, so it owns no migrations (web's preDeploy ships the DDL).
+  const sync = service("atproto-cron-sync", {
+    source: github("dcousineau/buttery"),
+    build: {
+      buildCommand: "pnpm install --frozen-lockfile",
+      watchPatterns: ["services/atproto-cron-sync/**", "pnpm-lock.yaml"],
+    },
+    start: "pnpm --filter @buttery/atproto-cron-sync start",
+    deploy: {
+      // Hourly (UTC). Cost-optimal default; index-on-write covers Buttery's own
+      // writes, so this only reconciles cross-app edits. Tighten to */15 only
+      // if freshness demands (measure the first real sweep first — plan §8).
+      cronSchedule: "0 * * * *",
+      // A completed cron must not be restarted into a loop. Use ON_FAILURE with
+      // a small maxRetries only if you want auto-retry before the next run.
+      restartPolicyType: "NEVER",
+    },
+    env: {
+      // Private networking; reuse the same Postgres (ingress not billed as egress).
+      DATABASE_URL: db.env.DATABASE_URL,
+      RELAY_URL: "https://relay1.us-east.bsky.network",
+    },
+  });
+
   return project("buttery", {
-    resources: [db, web],
+    resources: [db, web, sync],
   });
 });

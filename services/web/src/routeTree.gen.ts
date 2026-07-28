@@ -15,6 +15,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as OauthClientMetadataDotjsonRouteImport } from './routes/oauth-client-metadata[.]json'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as RecipesIdRouteImport } from './routes/recipes.$id'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
@@ -48,6 +49,11 @@ const TermsRoute = TermsRouteImport.update({
   path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RecipesIdRoute = RecipesIdRouteImport.update({
+  id: '/recipes/$id',
+  path: '/recipes/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -61,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/recipes/$id': typeof RecipesIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
@@ -70,6 +77,7 @@ export interface FileRoutesByTo {
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/recipes/$id': typeof RecipesIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/recipes/$id': typeof RecipesIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/oauth-client-metadata.json'
     | '/privacy'
     | '/terms'
+    | '/recipes/$id'
     | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/oauth-client-metadata.json'
     | '/privacy'
     | '/terms'
+    | '/recipes/$id'
     | '/api/auth/$'
   id:
     | '__root__'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/oauth-client-metadata.json'
     | '/privacy'
     | '/terms'
+    | '/recipes/$id'
     | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
@@ -119,6 +131,7 @@ export interface RootRouteChildren {
   OauthClientMetadataDotjsonRoute: typeof OauthClientMetadataDotjsonRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
+  RecipesIdRoute: typeof RecipesIdRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
@@ -166,6 +179,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/recipes/$id': {
+      id: '/recipes/$id'
+      path: '/recipes/$id'
+      fullPath: '/recipes/$id'
+      preLoaderRoute: typeof RecipesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -183,6 +203,7 @@ const rootRouteChildren: RootRouteChildren = {
   OauthClientMetadataDotjsonRoute: OauthClientMetadataDotjsonRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
+  RecipesIdRoute: RecipesIdRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport

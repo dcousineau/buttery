@@ -84,6 +84,7 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
 - Components are vendored source in `src/components/ui/`, on-purpose customized (border-2 ink, `shadow-pop*` hard shadows, sticker hover physics in button). New primitive: `pnpm dlx shadcn@latest add <x>`, then pop-art-ify to match before use.
 - App code: semantic tokens only (`bg-primary`, `text-muted-foreground`); never raw hexes or `bg-[var(--butter)]` (brand colors shown as `bg-butter*` for rare mascot/hero moments).
 - Dark mode keys off `.dark` class (`@custom-variant dark` in `src/styles.css`); theme init script in `__root.tsx` + ThemeToggle keep it.
+- Dark-mode borders/strokes = a dark color lifted just above bg, NOT the near-white foreground (`--border`/`--input`/`--sidebar-border` in `.dark`). Brand logo (`ButterStick`) faces use fixed light fills so they don't flip dark with the theme.
 
 ## SEO / social meta
 
@@ -93,6 +94,7 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
 - **We do absolutely nothing Twitter/X-specific.** No `twitter:card`, `twitter:*`, `twitter:site` tags. We emit only standards-based Open Graph (`og:*`) + plain `<meta name="description">`. Twitter/X consumes OG tags fine; every other platform (Slack, Discord, Signal, iMessage, Mastodon, Bluesky, LinkedIn) reads OG too. One standard, no vendor carve-outs. Don't add Twitter tags.
 - OG image is a static asset (`public/og-image.png`, 1200×630; source SVG at `public/og-image.svg`) — TanStack Start has no built-in OG image generator. `seo()` resolves it absolute against `SITE_URL` and hardcodes `og:image:width/height/type` to the 1200×630 PNG (fix those if a route ships a different image).
 - `public/robots.txt` **disallows all crawlers** during alpha (`Disallow: /`) — flip to `Disallow:` at public launch.
+- Recipe detail (`src/routes/recipes.$id.tsx`) emits schema.org/Recipe two ways: JSON-LD via `buildRecipeLd()` AND inline microdata (`itemProp`) on the visible DOM — keep the two in sync. Recipe time fields (`prepTime`/`cookTime`/`totalTime`) are ISO-8601 durations, passed raw to schema.
 
 ## Accessibility (non-negotiable)
 
@@ -144,6 +146,7 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 ## Database (Kysely + migrations)
 
 - All SQL goes through shared, typed Kysely instance from `src/lib/db.ts` (`getDb()`). better-auth shares same instance (`database: { db: getDb(), type: "postgres" }` in `src/lib/auth.ts`). Prefer Kysely query-builder primitives over raw `sql`.
+- Read-side data loaders: `createServerFn({ method: "GET" })` + dynamically `import` `getDb` from `#/lib/db` INSIDE the handler (mirror `src/lib/config.ts`'s dynamic `railway` import) — keeps `pg` out of the client bundle when the module is also imported client-side (e.g. `src/lib/recipes-browse.ts`).
 - Schema owned by **kysely-ctl migrations** in `src/db/migrations/` (config: `services/web/kysely.config.ts`, reuses shared pool + loads `services/web/.env`). Initial migration ports whole better-auth + atproto schema. `scripts/better-auth.sql` is historical source, now superseded.
 - **ALWAYS run `pnpm db:codegen` right after `pnpm db:migrate:up` when work locally** — regen `src/db/types.ts` (the `DB` interface) from live DB so types match schema. `types.ts` generated; never hand-edit.
 - Prod migrations run auto on deploy via Railway pre-deploy (`preDeploy: "pnpm db:migrate:up"` in `.railway/railway.ts`). This why `kysely-ctl` lives in `dependencies` (Railpack prunes devDeps from runtime image); `kysely-codegen` is true devDependency and never runs in prod.
@@ -166,12 +169,14 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 
 - Claude Code command sandbox network allowlist excludes the dev DB host AND `localhost:3000` — `curl localhost:3000` returns `000`, DB/migration commands can't connect. Run those via `!` in the prompt (or sandbox-disabled); verify running pages through the Chrome MCP tools, not `curl`.
 - `pnpm add`/`pnpm install` fail under Claude Code command sandbox (`ERR_PNPM_UNEXPECTED_STORE` / `ERR_SQLITE_ERROR` — store sqlite write blocked). Run pnpm installs with sandbox disabled.
+- `pnpm install` also fails with `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` (non-interactive modules-dir removal) — run `CI=true pnpm install`; add `--no-frozen-lockfile` after editing a package.json (else `ERR_PNPM_OUTDATED_LOCKFILE`).
 - pnpm 11 warns `pnpm.onlyBuiltDependencies` in package.json ignored (moved to pnpm settings); harmless, esbuild/lightningcss build scripts still work.
 - Several TanStack deps pinned to `latest` in package.json (CLI default); lockfile pins real versions.
 - Use intent skills above before router/start architectural changes — no guessing patterns.
 - Local port 5432 usually unrelated `core-api-postgres-1` container — NOT buttery's DB. Use `railway dev` or throwaway container on another port.
 - Dev OAuth: browse http://127.0.0.1:3000, never localhost — atproto loopback redirect and session cookie bound to 127.0.0.1 (vite already binds that host).
 - Railway iac secrets: `{ generator: "secret(44)", preserveExisting: true }` gen per-environment on first apply, never overwrite existing values.
+- Recipe ids ARE atproto rkeys — permit `-`, `.`, `_`, `:`, `~`, up to 512 chars, NOT just ULID/TID shape. Don't validate id format (a shape regex WILL reject real ids); DB existence is the only source of truth. Missing id → return null → NotFound. `getRecipe` validator caps length only.
 - `pnpm test` exits 1 — no test files yet.
 - `tsr generate` rewrites `createFileRoute()` path literals (e.g. normalizes `[.]` escapes) — don't fight it.
 - Prettier enabled but make NO special effort to run — husky pre-commit hook runs

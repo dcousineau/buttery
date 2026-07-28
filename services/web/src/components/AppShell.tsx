@@ -9,6 +9,11 @@ import Header from "./Header";
 /** Routes that render without the sidebar — just the shared header + footer. */
 const NAVLESS_ROUTES = new Set(["/", "/login", "/terms", "/privacy", "/ai-usage"]);
 
+/** Recipe detail pages render full-width (no sidebar) so the recipe owns the page. */
+function isNavless(pathname: string): boolean {
+  return NAVLESS_ROUTES.has(pathname) || pathname.startsWith("/recipes/");
+}
+
 function SkipLink() {
   return (
     <a
@@ -45,7 +50,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const headerRef = useHeaderHeightVar();
 
-  if (NAVLESS_ROUTES.has(pathname)) {
+  if (isNavless(pathname)) {
     return (
       <div className="flex min-h-svh flex-col pt-[var(--header-height,4rem)]">
         <SkipLink />

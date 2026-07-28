@@ -7,6 +7,22 @@ import type { ColumnType } from "kysely";
 
 export type Generated<T> = T extends ColumnType<infer S, infer I, infer U> ? ColumnType<S, I | undefined, U> : ColumnType<T, T | undefined, T>;
 
+export type Int8 = ColumnType<string, bigint | number | string, bigint | number | string>;
+
+export type Json = JsonValue;
+
+export type JsonArray = JsonValue[];
+
+export type JsonObject = {
+  [x: string]: JsonValue | undefined;
+};
+
+export type JsonPrimitive = boolean | number | string | null;
+
+export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
+
+export type Numeric = ColumnType<string, number | string, number | string>;
+
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
 export interface Account {
@@ -25,6 +41,22 @@ export interface Account {
   userId: string;
 }
 
+export interface AtprotoCollectionRecipe {
+  cid: string;
+  collection: Generated<string>;
+  deleted_at: Timestamp | null;
+  did: string;
+  indexed_at: Generated<Timestamp>;
+  name: string | null;
+  record: Json;
+  record_created_at: Timestamp | null;
+  record_updated_at: Timestamp | null;
+  rev: string;
+  rkey: string;
+  uri: string;
+  validation_status: Generated<string>;
+}
+
 export interface AtprotoOauthSession {
   createdAt: Timestamp;
   id: string;
@@ -38,6 +70,118 @@ export interface AtprotoOauthState {
   id: string;
   key: string;
   value: string;
+}
+
+export interface AtprotoRepo {
+  did: string;
+  first_seen_at: Generated<Timestamp>;
+  handle: string | null;
+  last_error: string | null;
+  last_synced_at: Timestamp | null;
+  missing_since: Timestamp | null;
+  pds: string | null;
+  status: Generated<string>;
+}
+
+export interface AtprotoSyncRun {
+  error: string | null;
+  finished_at: Timestamp | null;
+  id: Generated<Int8>;
+  records_deleted: Generated<number>;
+  records_upserted: Generated<number>;
+  repos_failed: Generated<number>;
+  repos_seen: Generated<number>;
+  started_at: Generated<Timestamp>;
+  status: Generated<string>;
+}
+
+export interface Recipe {
+  calories: number | null;
+  carbohydrate_content: Numeric | null;
+  cid: string | null;
+  cook_time: string | null;
+  cook_time_seconds: number | null;
+  cooking_method: string | null;
+  description: string | null;
+  did: string | null;
+  fat_content: Numeric | null;
+  id: string;
+  indexed_at: Generated<Timestamp>;
+  name: string;
+  origin: string;
+  prep_time: string | null;
+  prep_time_seconds: number | null;
+  protein_content: Numeric | null;
+  published_at: Timestamp | null;
+  recipe_category: string | null;
+  recipe_cuisine: string | null;
+  recipe_yield: string | null;
+  record_created_at: Timestamp | null;
+  record_updated_at: Timestamp | null;
+  rev: string | null;
+  rkey: string | null;
+  suitable_for_diet: string[] | null;
+  total_time: string | null;
+  total_time_seconds: number | null;
+  uri: string | null;
+  visibility: Generated<string>;
+}
+
+export interface RecipeAttribution {
+  author: string | null;
+  display_name: string | null;
+  kind: string;
+  license: string | null;
+  publisher: string | null;
+  raw: Json;
+  recipe_id: string;
+  url: string | null;
+}
+
+export interface RecipeImage {
+  alt: string | null;
+  aspect_h: number | null;
+  aspect_w: number | null;
+  blob_cid: string | null;
+  blob_mime: string | null;
+  blob_size: number | null;
+  ordinal: number;
+  recipe_id: string;
+}
+
+export interface RecipeIngredient {
+  ordinal: number;
+  recipe_id: string;
+  text: string;
+}
+
+export interface RecipeInstruction {
+  ordinal: number;
+  recipe_id: string;
+  text: string;
+}
+
+export interface RecipeKeyword {
+  keyword: string;
+  recipe_id: string;
+}
+
+export interface RecipeSearch {
+  recipe_id: string;
+  search_tsv: string;
+}
+
+export interface RecipeVocab {
+  dimension: string;
+  label: string;
+  slug: string;
+  source: Generated<string>;
+}
+
+export interface RecipeVocabAlias {
+  dimension: string;
+  external_ref: string;
+  slug: string;
 }
 
 export interface Session {
@@ -74,8 +218,20 @@ export interface Verification {
 
 export interface DB {
   account: Account;
+  atproto_collection_recipe: AtprotoCollectionRecipe;
   atproto_oauth_session: AtprotoOauthSession;
   atproto_oauth_state: AtprotoOauthState;
+  atproto_repo: AtprotoRepo;
+  atproto_sync_run: AtprotoSyncRun;
+  recipe: Recipe;
+  recipe_attribution: RecipeAttribution;
+  recipe_image: RecipeImage;
+  recipe_ingredient: RecipeIngredient;
+  recipe_instruction: RecipeInstruction;
+  recipe_keyword: RecipeKeyword;
+  recipe_search: RecipeSearch;
+  recipe_vocab: RecipeVocab;
+  recipe_vocab_alias: RecipeVocabAlias;
   session: Session;
   user: User;
   verification: Verification;

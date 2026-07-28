@@ -1,0 +1,24 @@
+{
+  "name": "@buttery/atproto-cron-sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "sync:once": "node src/main.ts --once",
+    "typecheck": "tsc6 --noEmit"
+  },
+  "dependencies": {
+    "dayjs": "^1.11.13",
+    "es-toolkit": "^1.50.0",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.20.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
+  }
+}
