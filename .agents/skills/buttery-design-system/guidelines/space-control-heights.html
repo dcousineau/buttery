@@ -1,0 +1,28 @@
+<!-- @dsCard group="Spacing" viewport="700x220" name="Control heights" subtitle="One scale: badge, button, input and select line up at every step" -->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css">
+<style>body{padding:16px 20px;font-size:13px}.row{display:flex;align-items:center;gap:10px;margin-bottom:10px}.k{width:74px;flex-shrink:0;font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted-foreground);font-variant-numeric:tabular-nums}</style>
+</head><body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../_ds_bundle.js"></script>
+<script type="text/babel">
+const { Badge, Button, Input, Select } = window.ButteryDesignSystem_79cab4;
+const STEPS=[['xs','24px'],['sm','28px'],['default','32px'],['lg','36px']];
+function Demo(){return (<>
+  {STEPS.map(([s,px])=>(
+    <div className="row" key={s}>
+      <span className="k">{s} · {px}</span>
+      <Badge size={s} variant="secondary">Badge</Badge>
+      <Button size={s} variant="outline">Button</Button>
+      <Input size={s} defaultValue="Input" style={{width:120}}/>
+      <Select size={s} style={{width:110}}><option>Select</option></Select>
+    </div>
+  ))}
+  <p style={{margin:'.5rem 0 0',color:'var(--muted-foreground)',fontSize:11}}>xl (48px) and 2xl (64px) continue the same scale for cook mode.</p>
+</>);}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script>
+</body></html>

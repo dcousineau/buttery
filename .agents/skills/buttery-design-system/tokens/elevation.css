@@ -1,0 +1,12 @@
+/* Neo-brutalist elevation: hard offset shadows, zero blur, always ink-colored.
+ * There is no blurred shadow, glow, or glass anywhere in Buttery. */
+:root {
+  --shadow-pop-sm: 2px 2px 0 var(--shadow-hard);
+  --shadow-pop: 3px 3px 0 var(--shadow-hard);
+  --shadow-pop-md: 4px 4px 0 var(--shadow-hard);
+  --shadow-pop-lg: 6px 6px 0 var(--shadow-hard);
+
+  /* sticker physics offsets (solid button variants) */
+  --lift-hover: -2px;
+  --lift-press: 2px;
+}

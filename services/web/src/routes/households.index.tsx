@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Dialog } from "@base-ui/react/dialog";
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { Check, Copy, Crown, Link2, LogOut, Mail, Pencil, Plus, Shield, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
 import { requireActiveHousehold, listHouseholdMembers } from "#/lib/household/onboarding";
@@ -11,6 +10,7 @@ import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
+import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter, DialogClose, DialogTrigger } from "#/components/ui/dialog.tsx";
 import { Field, FieldGroup, FieldLabel } from "#/components/ui/field";
 import { Input } from "#/components/ui/input";
 import { Separator } from "#/components/ui/separator";
@@ -209,11 +209,13 @@ function MemberRow({ householdId, member, isOwner }: { householdId: string; memb
             {label}
           </span>
           {member.isSelf ? (
-            <Badge variant="outline" className="text-[0.65rem]">
+            <Badge variant="outline" size="xs">
               you
             </Badge>
           ) : null}
-          <Badge variant={member.role === "owner" ? "secondary" : "outline"}>{member.role}</Badge>
+          <Badge variant={member.role === "owner" ? "secondary" : "outline"} size="xs">
+            {member.role}
+          </Badge>
         </div>
         {showControls ? (
           <div className="flex flex-wrap gap-1.5">
@@ -432,8 +434,12 @@ function InviteRow({ invite }: { invite: InviteSummary }) {
     <li className="flex flex-col gap-1 border-b border-border/60 py-2 last:border-b-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-          <Badge variant={invite.boundToDid ? "outline" : "secondary"}>{invite.boundToDid ? "handle" : "link"}</Badge>
-          <Badge variant={invite.role === "owner" ? "secondary" : "outline"}>{invite.role}</Badge>
+          <Badge variant={invite.boundToDid ? "outline" : "secondary"} size="xs">
+            {invite.boundToDid ? "handle" : "link"}
+          </Badge>
+          <Badge variant={invite.role === "owner" ? "secondary" : "outline"} size="xs">
+            {invite.role}
+          </Badge>
           <span className="text-muted-foreground">
             {invite.uses}/{invite.maxUses} used
           </span>
@@ -499,53 +505,50 @@ function CreateAnotherSection({ currentName }: { currentName: string }) {
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <section className="flex flex-col gap-1">
         <p className="m-0 text-sm text-muted-foreground">
           Most people only need one household. If you really need a separate space,{" "}
-          <Dialog.Trigger className="font-semibold text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-foreground">create another</Dialog.Trigger>.
+          <DialogTrigger className="font-semibold text-muted-foreground underline decoration-dotted underline-offset-4 hover:text-foreground">create another</DialogTrigger>.
         </p>
       </section>
 
-      <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/20 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs" />
-        <Dialog.Popup className="fixed top-1/2 left-1/2 z-50 flex w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col gap-3 rounded-xl border-2 border-border bg-card p-5 text-card-foreground shadow-pop-md transition duration-150 data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-          <Dialog.Title className="display-title text-lg text-foreground">Create another household?</Dialog.Title>
-          <Dialog.Description className="m-0 text-sm text-muted-foreground">
-            You're already in <strong className="text-foreground">{currentName}</strong>. Most people only need one — a household is shared with everyone you invite, so you rarely
-            need a second.
-          </Dialog.Description>
-          <form onSubmit={onSubmit} className="mt-1 flex flex-col gap-3">
-            <FieldGroup>
-              <Field data-invalid={error ? true : undefined}>
-                <FieldLabel htmlFor="new-household-name">New household name</FieldLabel>
-                <Input
-                  ref={focusRef}
-                  id="new-household-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="The lake house"
-                  maxLength={100}
-                  aria-invalid={error ? true : undefined}
-                />
-              </Field>
-            </FieldGroup>
-            {error ? (
-              <p role="alert" className="m-0 text-sm font-semibold text-destructive">
-                {error}
-              </p>
-            ) : null}
-            <div className="mt-1 flex flex-wrap justify-end gap-2">
-              <Dialog.Close render={<Button type="button" variant="ghost" disabled={pending} />}>Cancel</Dialog.Close>
-              <Button type="submit" variant="outline" disabled={pending}>
-                {pending ? <Spinner data-icon="inline-start" /> : <Plus data-icon="inline-start" aria-hidden="true" />}
-                Create another
-              </Button>
-            </div>
-          </form>
-        </Dialog.Popup>
-      </Dialog.Portal>
-    </Dialog.Root>
+      <DialogContent>
+        <DialogTitle>Create another household?</DialogTitle>
+        <DialogDescription>
+          You're already in <strong className="text-foreground">{currentName}</strong>. Most people only need one — a household is shared with everyone you invite, so you rarely
+          need a second.
+        </DialogDescription>
+        <form onSubmit={onSubmit} className="mt-1 flex flex-col gap-3">
+          <FieldGroup>
+            <Field data-invalid={error ? true : undefined}>
+              <FieldLabel htmlFor="new-household-name">New household name</FieldLabel>
+              <Input
+                ref={focusRef}
+                id="new-household-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="The lake house"
+                maxLength={100}
+                aria-invalid={error ? true : undefined}
+              />
+            </Field>
+          </FieldGroup>
+          {error ? (
+            <p role="alert" className="m-0 text-sm font-semibold text-destructive">
+              {error}
+            </p>
+          ) : null}
+          <DialogFooter className="mt-1">
+            <DialogClose render={<Button type="button" variant="ghost" disabled={pending} />}>Cancel</DialogClose>
+            <Button type="submit" variant="outline" disabled={pending}>
+              {pending ? <Spinner data-icon="inline-start" /> : <Plus data-icon="inline-start" aria-hidden="true" />}
+              Create another
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

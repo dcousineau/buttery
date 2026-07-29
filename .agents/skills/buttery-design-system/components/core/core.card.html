@@ -1,0 +1,41 @@
+<!-- @dsCard group="Components" viewport="700x300" name="Core — Button" subtitle="Six variants, eight sizes, sticker physics" -->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<style>body{padding:20px;display:flex;flex-direction:column;gap:16px}.row{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.k{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);width:100%}</style>
+</head><body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@0.474.0/dist/umd/lucide.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel">
+const { Button } = window.ButteryDesignSystem_79cab4;
+const I = ({n}) => <i data-lucide={n}></i>;
+function Card(){return (<>
+  <div className="row"><span className="k">variants</span>
+    <Button>Save recipe</Button>
+    <Button variant="secondary">Fetch</Button>
+    <Button variant="outline">Rename</Button>
+    <Button variant="ghost">Decline</Button>
+    <Button variant="destructive">Delete household</Button>
+    <Button variant="link">Learn more</Button>
+  </div>
+  <div className="row"><span className="k">sizes</span>
+    <Button size="xs">xs</Button><Button size="sm">sm</Button><Button size="default">default</Button><Button size="lg">lg</Button>
+    <Button size="icon-xs" variant="outline"><I n="pencil"/></Button>
+    <Button size="icon-sm" variant="outline"><I n="panel-left"/></Button>
+    <Button size="icon" variant="outline"><I n="sun"/></Button>
+    <Button size="icon-lg" variant="outline"><I n="dices"/></Button>
+  </div>
+  <div className="row"><span className="k">with icon / disabled</span>
+    <Button><I n="arrow-left"/>Back to the pantry</Button>
+    <Button variant="secondary"><I n="user-plus"/>Create invite</Button>
+    <Button variant="outline" disabled>Disabled</Button>
+    <Button disabled>Disabled</Button>
+  </div>
+</>);}
+ReactDOM.createRoot(document.getElementById('root')).render(<Card/>);
+setTimeout(()=>lucide.createIcons(),0);
+</script>
+</body></html>

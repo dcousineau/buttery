@@ -160,6 +160,7 @@ function SignInCard() {
               <Input
                 id="atproto-handle"
                 type="text"
+                size="lg"
                 value={handle}
                 onChange={(e) => setHandle(e.target.value)}
                 placeholder="alice.bsky.social"

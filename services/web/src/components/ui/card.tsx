@@ -2,13 +2,13 @@ import * as React from "react";
 
 import { cn } from "#/lib/utils.ts";
 
-function Card({ className, size = "default", ...props }: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
+function Card({ className, size = "default", ...props }: React.ComponentProps<"div"> & { size?: "sm" | "default" | "lg" | "xl" }) {
   return (
     <div
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl border-2 border-border bg-card py-(--card-spacing) text-sm text-card-foreground shadow-pop-md [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl border-2 border-border bg-card py-(--card-spacing) text-sm text-card-foreground shadow-pop-md [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 data-[size=lg]:[--card-spacing:--spacing(6)] data-[size=lg]:text-base data-[size=xl]:[--card-spacing:--spacing(8)] data-[size=xl]:text-lg data-[size=xl]:shadow-pop-lg data-[size=lg]:has-data-[slot=card-footer]:pb-0 data-[size=xl]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
         className,
       )}
       {...props}
@@ -30,7 +30,13 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
 }
 
 function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="card-title" className={cn("text-base leading-snug font-medium group-data-[size=sm]/card:text-sm", className)} {...props} />;
+  return (
+    <div
+      data-slot="card-title"
+      className={cn("text-base leading-snug font-medium group-data-[size=sm]/card:text-sm group-data-[size=lg]/card:text-lg group-data-[size=xl]/card:text-2xl", className)}
+      {...props}
+    />
+  );
 }
 
 function CardDescription({ className, ...props }: React.ComponentProps<"div">) {

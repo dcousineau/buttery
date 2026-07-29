@@ -1,0 +1,8 @@
+/* The four brand utilities that live in the app's stylesheet. Gingham is TRIM,
+ * not wallpaper — thin bands at header/footer edges, built in CSS, never an image. */
+.page-wrap{width:min(var(--content-width),calc(100% - 2rem));margin-inline:auto}
+.display-title{font-family:var(--font-display);font-weight:400;letter-spacing:var(--tracking-display)}
+.gingham{background-color:var(--gingham-base);background-image:repeating-linear-gradient(0deg,transparent 0 10px,var(--gingham-check) 10px 20px),repeating-linear-gradient(90deg,transparent 0 10px,var(--gingham-check) 10px 20px)}
+.gingham-band{height:var(--gingham-band-height);background-color:var(--gingham-base);background-image:repeating-linear-gradient(0deg,transparent 0 7px,var(--gingham-check) 7px 14px),repeating-linear-gradient(90deg,transparent 0 7px,var(--gingham-check) 7px 14px)}
+.rise-in{animation:rise-in var(--duration-entrance) var(--ease-out-expo) both}
+@keyframes rise-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}

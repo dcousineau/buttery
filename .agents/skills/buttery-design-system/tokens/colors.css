@@ -1,0 +1,89 @@
+/* Buttery color system.
+ * Layer 1 — brand palette (the raw paint: butter, Crocker red, ink, cream).
+ * Layer 2 — semantic tokens (shadcn names). App/product code uses ONLY layer 2.
+ * Dark mode ("toasted") keys off .dark on <html>. Butter yellow is identical in
+ * both themes — it is the brand constant. */
+:root {
+  /* ---- brand palette ---- */
+  --butter: #ffd84d;
+  --butter-pale: #ffe9a0;
+  --butter-deep: #f0bd1f;
+  --crock-red: #e2231a;
+  --ink: #2a1e12;
+  --cream: #fff6e3;
+  --paper: #fffdf4;
+  --gingham-check: rgba(226, 35, 26, 0.55);
+  --gingham-base: #fffdf4;
+
+  /* ---- semantic layer ---- */
+  --background: #fff6e3;
+  --foreground: #2a1e12;
+  --card: #fffdf4;
+  --card-foreground: #2a1e12;
+  --popover: #fffdf4;
+  --popover-foreground: #2a1e12;
+  --primary: #e2231a;
+  --primary-foreground: #fffdf4;
+  --secondary: #ffd84d;
+  --secondary-foreground: #2a1e12;
+  --muted: #f7ead0;
+  --muted-foreground: #6b5b46;
+  --accent: #ffe9a0;
+  --accent-foreground: #2a1e12;
+  --destructive: #c21807;
+  --border: #2a1e12;
+  --input: #2a1e12;
+  --ring: #e2231a;
+  --shadow-hard: #2a1e12;
+
+  /* ---- sidebar scope ---- */
+  --sidebar: #fff6e3;
+  --sidebar-foreground: #2a1e12;
+  --sidebar-primary: #e2231a;
+  --sidebar-primary-foreground: #fffdf4;
+  --sidebar-accent: #ffd84d;
+  --sidebar-accent-foreground: #2a1e12;
+  --sidebar-border: #2a1e12;
+  --sidebar-ring: #e2231a;
+}
+
+.dark {
+  --butter: #ffd84d;
+  --butter-pale: #3d2b10;
+  --butter-deep: #f0bd1f;
+  --crock-red: #ff6242;
+  --ink: #fff4da;
+  --cream: #1c1106;
+  --paper: #2a1b0c;
+  --gingham-check: rgba(255, 98, 66, 0.4);
+  --gingham-base: #241507;
+
+  --background: #1c1106;
+  --foreground: #fff4da;
+  --card: #2a1b0c;
+  --card-foreground: #fff4da;
+  --popover: #2a1b0c;
+  --popover-foreground: #fff4da;
+  --primary: #ff6242;
+  --primary-foreground: #1c1106;
+  --secondary: #ffd84d;
+  --secondary-foreground: #2a1e12;
+  --muted: #3a2812;
+  --muted-foreground: #cbb789;
+  --accent: #3d2b10;
+  --accent-foreground: #fff4da;
+  --destructive: #ff6242;
+  --border: #4d3a22;
+  --input: #4d3a22;
+  --ring: #ffd84d;
+  --shadow-hard: #000000;
+
+  --sidebar: #1c1106;
+  --sidebar-foreground: #fff4da;
+  --sidebar-primary: #ff6242;
+  --sidebar-primary-foreground: #1c1106;
+  --sidebar-accent: #ffd84d;
+  --sidebar-accent-foreground: #2a1e12;
+  --sidebar-border: #4d3a22;
+  --sidebar-ring: #ffd84d;
+}

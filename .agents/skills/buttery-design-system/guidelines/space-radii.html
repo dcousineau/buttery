@@ -1,0 +1,9 @@
+<!-- @dsCard group="Spacing" viewport="700x150" name="Corner radii" subtitle="One --radius knob at 0.75rem, four derived steps" -->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Radii</title><link rel="stylesheet" href="../styles.css">
+<style>body{padding:16px 20px;font-size:13px}.sw{display:flex;gap:10px;flex-wrap:wrap}.chip{width:104px}.box{height:52px;border:2px solid var(--border);border-radius:var(--radius-md)}.nm{margin-top:5px;font-weight:600;font-size:11px;letter-spacing:.02em}.hx{font-size:10px;color:var(--muted-foreground);font-variant-numeric:tabular-nums}.lbl{font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted-foreground)}</style>
+</head><body>
+<div class="sw">
+<div class="chip"><div class="box" style="background:var(--card);border-radius:calc(var(--radius) - 4px)"></div><div class="nm">--radius-sm</div><div class="hx">8px</div></div><div class="chip"><div class="box" style="background:var(--card);border-radius:calc(var(--radius) - 2px)"></div><div class="nm">--radius-md</div><div class="hx">10px</div></div><div class="chip"><div class="box" style="background:var(--card);border-radius:var(--radius)"></div><div class="nm">--radius-lg</div><div class="hx">12px</div></div><div class="chip"><div class="box" style="background:var(--card);border-radius:calc(var(--radius) + 4px)"></div><div class="nm">--radius-xl</div><div class="hx">16px</div></div><div class="chip"><div class="box" style="background:var(--card);border-radius:var(--radius-pill)"></div><div class="nm">--radius-pill</div><div class="hx">32px</div></div>
+</div>
+</body></html>

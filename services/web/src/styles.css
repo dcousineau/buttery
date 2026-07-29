@@ -44,6 +44,17 @@
   --radius: 0.75rem;
   --shadow-hard: #2a1e12;
 
+  /* ---- control heights ----
+   * ONE scale shared by Button, Badge, Input, Select and Textarea, so a badge, a
+   * button and a field at the same `size` line up pixel-for-pixel.
+   * xs/sm/default/lg are app density; xl/2xl are the cook-mode tier. */
+  --control-h-xs: 24px; /* h-6  */
+  --control-h-sm: 28px; /* h-7  */
+  --control-h: 32px; /* h-8  */
+  --control-h-lg: 36px; /* h-9  */
+  --control-h-xl: 48px; /* h-12 — cook mode */
+  --control-h-2xl: 64px; /* h-16 — cook mode, full screen */
+
   /* Cursor for every interactive control. Themeable single source of truth —
    * set to `default` to opt the whole app out. Consumed by the unlayered
    * interactive-cursor rule below (§ "Interactive cursor"). */
@@ -149,6 +160,9 @@
   --shadow-pop: 3px 3px 0 var(--shadow-hard);
   --shadow-pop-md: 4px 4px 0 var(--shadow-hard);
   --shadow-pop-lg: 6px 6px 0 var(--shadow-hard);
+
+  /* Toast viewport sits above dialogs (z-50) so a confirmation is never buried. */
+  --z-toast: 60;
 }
 
 @layer base {

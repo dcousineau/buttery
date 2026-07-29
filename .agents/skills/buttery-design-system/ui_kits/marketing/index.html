@@ -1,0 +1,45 @@
+<!-- @dsCard group="Marketing site" viewport="1280x760" name="buttery.recipes — public web" subtitle="Landing, recipe detail, and sign-in, click-through" -->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Buttery — public web</title><link rel="stylesheet" href="../../styles.css">
+<style>body{margin:0}#root{min-height:100vh;display:flex;flex-direction:column}main{flex:1}</style>
+</head><body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@0.474.0/dist/umd/lucide.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel" src="../shared/Chrome.jsx"></script>
+<script type="text/babel" src="./Landing.jsx"></script>
+<script type="text/babel" src="./Login.jsx"></script>
+<script type="text/babel" src="./RecipeDetail.jsx"></script>
+<script type="text/babel">
+function App(){
+  const [screen,setScreen]=React.useState('landing');
+  const [handle,setHandle]=React.useState(null);
+  function signIn(h){setHandle(h);setScreen('signedIn');}
+  if(screen==='signedIn'){
+    return (<>
+      <Header signedIn handle={handle} household="The Cousineau kitchen" onNavigate={()=>{}} onSignOut={()=>{setHandle(null);setScreen('landing');}}/>
+      <main className="page-wrap" style={{padding:'3.5rem 1rem'}}>
+        <div className="rise-in" style={{maxWidth:'34rem'}}>
+          <h1 className="display-title" style={{margin:0,fontSize:'2.25rem',lineHeight:1.1}}>Signed in as {handle}</h1>
+          <p style={{marginTop:'.75rem',color:'var(--muted-foreground)'}}>The signed-in app lives in the <strong style={{color:'var(--foreground)'}}>Buttery app</strong> UI kit — this kit covers the public surfaces only.</p>
+        </div>
+      </main>
+      <Footer/>
+    </>);
+  }
+  return (<>
+    <Header onNavigate={setScreen} onSignOut={()=>{}}/>
+    <main>
+      {screen==='landing' && <Landing onNavigate={setScreen}/>}
+      {screen==='login' && <Login onNavigate={setScreen} onSignIn={signIn}/>}
+      {screen==='recipe' && <RecipeDetail onNavigate={setScreen}/>}
+    </main>
+    <Footer/>
+  </>);
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body></html>

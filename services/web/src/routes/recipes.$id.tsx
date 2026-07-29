@@ -193,7 +193,7 @@ function RecipeDetail({ recipe }: { recipe: RecipeDetailData }) {
           {facets.length > 0 && (
             <div className="mt-5 flex flex-wrap gap-2">
               {facets.map((f) => (
-                <Badge key={f} variant="outline">
+                <Badge key={f} variant="outline" size="xs">
                   {f}
                 </Badge>
               ))}
@@ -275,7 +275,7 @@ function RecipeDetail({ recipe }: { recipe: RecipeDetailData }) {
       {recipe.keywords.length > 0 && (
         <div className="mt-12 flex flex-wrap gap-2">
           {recipe.keywords.map((k) => (
-            <Badge key={k} variant="ghost" className="border-border" itemProp="keywords">
+            <Badge key={k} variant="ghost" size="xs" className="border-border" itemProp="keywords">
               {k}
             </Badge>
           ))}

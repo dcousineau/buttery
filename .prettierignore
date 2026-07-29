@@ -2,6 +2,8 @@ dist
 .tanstack
 .nitro
 .output
+.agents
+.claude
 pnpm-lock.yaml
 src/routeTree.gen.ts
 skills-lock.json

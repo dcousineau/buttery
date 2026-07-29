@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="App screen" description="Buttery signed-in shell: header with household switcher, 16rem nav rail with soon chips, page-wrap content column." -->
+<helmet><script src="./ds-base.js"></script>
+<style>body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column">
+<header style="position:sticky;top:0;z-index:40;border-bottom:2px solid var(--border);background:var(--background)">
+<div style="display:flex;align-items:center;gap:8px;padding:10px 20px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.ButterStick" style="height:24px;width:auto" hint-size="42px,24px"></x-import>
+<span class="display-title" style="font-size:1.125rem;line-height:1">Buttery</span>
+<div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Button" variant="outline" size="sm" hint-size="170px,28px">The Cousineau kitchen</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Badge" variant="secondary" hint-size="140px,24px">@dcousineau.com</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Button" variant="ghost" size="sm" hint-size="70px,28px">Sign out</x-import>
+</div>
+</div>
+<div class="gingham-band"></div>
+</header>
+<div style="display:flex;flex:1;min-height:0">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Sidebar" hint-size="256px,100%">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarContent" style="padding-top:0.5rem" hint-size="100%,300px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarGroup" hint-size="100%,280px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarGroupLabel" hint-size="100%,32px">The pantry</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenu" hint-size="100%,200px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuItem" hint-size="100%,32px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuButton" isActive="{{ true }}" hint-size="100%,32px"><span>Home</span></x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuItem" hint-size="100%,32px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuButton" aria-disabled="true" hint-size="100%,32px"><span>Recipes</span></x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuBadge" style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase" hint-size="36px,20px">soon</x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuItem" hint-size="100%,32px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuButton" aria-disabled="true" hint-size="100%,32px"><span>Collections</span></x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuBadge" style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase" hint-size="36px,20px">soon</x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuItem" hint-size="100%,32px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuButton" aria-disabled="true" hint-size="100%,32px"><span>Shopping list</span></x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuBadge" style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase" hint-size="36px,20px">soon</x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuItem" hint-size="100%,32px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuButton" aria-disabled="true" hint-size="100%,32px"><span>Meal planner</span></x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuBadge" style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase" hint-size="36px,20px">soon</x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuItem" hint-size="100%,32px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuButton" aria-disabled="true" hint-size="100%,32px"><span>Randomizer</span></x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuBadge" style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase" hint-size="36px,20px">soon</x-import>
+</x-import>
+</x-import>
+</x-import>
+</x-import>
+</x-import>
+<div style="flex:1;min-width:0;display:flex;flex-direction:column">
+<main style="flex:1">
+<div class="page-wrap" style="padding:3.5rem 1rem 3rem">
+<div style="display:flex;flex-direction:column;gap:1.5rem">
+<header style="display:flex;flex-direction:column;align-items:flex-start">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Badge" variant="secondary" style="margin-bottom:0.75rem" hint-size="170px,24px">The Cousineau kitchen</x-import>
+<h1 class="display-title" style="margin:0;font-size:2.25rem;line-height:1.1">Your pantry</h1>
+<p style="margin:0.75rem 0 0;max-width:36rem;font-size:1rem;color:var(--muted-foreground);text-wrap:pretty">This is the home for <strong style="color:var(--foreground)">The Cousineau kitchen</strong>. Replace this block with the screen's real content — the shell above is the whole layout contract.</p>
+</header>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Card" hint-size="100%,160px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.CardHeader" hint-size="100%,24px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.CardTitle" class="display-title" style="font-size:1.125rem" hint-size="100%,24px">Overview coming soon</x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.CardContent" hint-size="100%,80px">
+<p style="margin:0 0 1rem;font-size:0.875rem;color:var(--muted-foreground)">Once recipes, collections, and the meal planner are live, this page will pull them together at a glance.</p>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Button" variant="outline" hint-size="170px,32px">Manage household</x-import>
+</x-import>
+</x-import>
+</div>
+</div>
+</main>
+<footer style="margin-top:4rem">
+<div class="gingham-band"></div>
+<div style="border-top:2px solid var(--border);background:var(--card);padding:2rem 1rem 3rem;color:var(--muted-foreground)">
+<div class="page-wrap" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px">
+<p style="margin:0;font-size:0.875rem">© 2026 Buttery — the pantry where the good stuff is kept.</p>
+<nav style="display:flex;flex-wrap:wrap;gap:0 1rem;font-size:0.875rem;font-weight:600"><a href="#" style="color:var(--muted-foreground);text-decoration:none">Terms</a><a href="#" style="color:var(--muted-foreground);text-decoration:none">Privacy</a><a href="#" style="color:var(--muted-foreground);text-decoration:none">AI Usage</a></nav>
+</div>
+</div>
+</footer>
+</div>
+</div>
+</div>
+</x-dc>
+</body>
+</html>

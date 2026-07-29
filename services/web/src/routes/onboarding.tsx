@@ -199,6 +199,7 @@ function PasteInviteCard() {
               <Input
                 id="invite-link"
                 type="text"
+                size="lg"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 placeholder="https://buttery.recipes/invite/…"
@@ -264,6 +265,7 @@ function CreateHouseholdCard() {
             <Input
               id="household-name"
               type="text"
+              size="lg"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="The Cousineau kitchen"

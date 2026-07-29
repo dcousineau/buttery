@@ -1,0 +1,10 @@
+/* Element defaults lifted from the app's @layer base. */
+*{box-sizing:border-box}
+body{margin:0;color:var(--foreground);background:var(--background);font-family:var(--font-sans);font-size:var(--text-base);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+/* Prose links only — buttons and nav items carry their own styling. */
+a{color:var(--primary);text-decoration-thickness:2px;text-underline-offset:3px}
+a:hover{color:var(--foreground)}
+code{font-family:var(--font-mono);font-size:0.9em;border:1.5px solid var(--border);background:var(--card);border-radius:6px;padding:2px 6px}
+pre code{border:0;background:transparent;padding:0;border-radius:0;font-size:inherit;color:inherit}
+:where(a[href],button,summary,select,[role="button"],[role="link"],[role="menuitem"],[role="option"],[role="tab"],[role="switch"],[role="checkbox"],[role="radio"]):not(:disabled):not([aria-disabled="true"]):not([data-disabled]){cursor:var(--cursor-interactive)}
+:focus-visible{outline:3px solid var(--ring);outline-offset:2px}

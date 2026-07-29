@@ -1,0 +1,26 @@
+/* Motion is small and mechanical: lifts, presses, and one entrance. No parallax,
+ * no scroll-jacking, no springs. Everything is disabled under reduced-motion.
+ * fast = menus/tooltips · base = dialogs+sheets · nav = sidebar/header slide ·
+ * image = recipe card zoom · entrance = .rise-in */
+:root {
+  --duration-fast: 100ms; /* @kind other */
+  --duration-base: 150ms; /* @kind other */
+  --duration-nav: 200ms; /* @kind other */
+  --duration-image: 300ms; /* @kind other */
+  --duration-entrance: 500ms; /* @kind other */
+
+  --ease-linear: linear; /* @kind other */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1); /* @kind other */
+
+  --cursor-interactive: pointer; /* @kind other */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

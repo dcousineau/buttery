@@ -79,9 +79,9 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
 
 ## Design system (shadcn + Buttery brand)
 
-- Read `docs/BRAND.md` BEFORE any UI/design work — palette, type, pop-art kit, token mapping, don'ts.
+- Read `docs/BRAND.md` BEFORE any UI/design work — palette, type, neo-brutalist kit, one control-height scale, token mapping, don'ts.
 - shadcn style `base-nova` = **Base UI primitives, not Radix**: custom triggers use `render={<a/>}` prop, never `asChild`. When `render` swap Button to non-`<button>` (`<a>`, `<Link>`), add `nativeButton={false}` or Base UI warn at runtime and drop button semantics.
-- Components are vendored source in `src/components/ui/`, on-purpose customized (border-2 ink, `shadow-pop*` hard shadows, sticker hover physics in button). New primitive: `pnpm dlx shadcn@latest add <x>`, then pop-art-ify to match before use.
+- Components are vendored source in `src/components/ui/`, on-purpose customized (border-2 ink, `shadow-pop*` hard shadows, sticker hover physics in button). Inline controls (Button/Badge/Input/Select/Textarea) share ONE `size` scale — pick a size, never hand-set a height. New primitive: `pnpm dlx shadcn@latest add <x>`, then neo-brutalise to match before use.
 - App code: semantic tokens only (`bg-primary`, `text-muted-foreground`); never raw hexes or `bg-[var(--butter)]` (brand colors shown as `bg-butter*` for rare mascot/hero moments).
 - Dark mode keys off `.dark` class (`@custom-variant dark` in `src/styles.css`); theme init script in `__root.tsx` + ThemeToggle keep it.
 - Dark-mode borders/strokes = a dark color lifted just above bg, NOT the near-white foreground (`--border`/`--input`/`--sidebar-border` in `.dark`). Brand logo (`ButterStick`) faces use fixed light fills so they don't flip dark with the theme.

@@ -1,0 +1,4 @@
+/* Buttery uses two Google Fonts, loaded from the Google CDN exactly as the app
+ * does (services/web/src/styles.css line 1). No self-hosted binaries exist in
+ * the source repo, so none are vendored here. */
+@import url("https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Rubik:wght@400;500;600;700&display=swap");

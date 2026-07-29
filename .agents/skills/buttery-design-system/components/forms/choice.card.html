@@ -1,0 +1,48 @@
+<!-- @dsCard group="Components" viewport="700x360" name="Forms — Checkbox, Radio, Switch" subtitle="Checklist rows and pick-one cards, through to cook-mode XL" -->
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<style>body{padding:20px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}.k{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted-foreground);margin-bottom:8px}</style>
+</head><body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel">
+const { Checkbox, CheckboxRow, RadioGroup, Radio, RadioCard, Switch } = window.ButteryDesignSystem_79cab4;
+function Demo(){
+  const [done,setDone]=React.useState({a:true,b:false,c:false});
+  const [diet,setDiet]=React.useState('veg');
+  return (<div className="grid">
+    <div>
+      <div className="k">checklist rows — sm / default / lg</div>
+      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+        <CheckboxRow size="sm" checked={done.a} onCheckedChange={v=>setDone({...done,a:v})} meta="1 cup">Medium-grind cornmeal</CheckboxRow>
+        <CheckboxRow checked={done.b} onCheckedChange={v=>setDone({...done,b:v})} meta="1 tbsp">Baking powder</CheckboxRow>
+        <CheckboxRow size="lg" checked={done.c} onCheckedChange={v=>setDone({...done,c:v})} meta="6 tbsp">Unsalted butter, browned</CheckboxRow>
+      </div>
+      <div className="k" style={{marginTop:16}}>boxes — sm / default / lg / xl + indeterminate</div>
+      <div style={{display:'flex',alignItems:'center',gap:14}}>
+        <Checkbox size="sm" defaultChecked/><Checkbox defaultChecked/><Checkbox size="lg" defaultChecked/><Checkbox size="xl" defaultChecked/><Checkbox size="lg" indeterminate/><Checkbox size="lg" disabled/>
+      </div>
+    </div>
+    <div>
+      <div className="k">radio cards — pick one</div>
+      <RadioGroup>
+        <RadioCard name="diet" checked={diet==='veg'} onChange={()=>setDiet('veg')} title="Vegetarian" description="Hide recipes with meat or fish from the randomizer."/>
+        <RadioCard name="diet" checked={diet==='gf'} onChange={()=>setDiet('gf')} title="Gluten free" description="Also filters wheat-thickened sauces."/>
+      </RadioGroup>
+      <div className="k" style={{marginTop:16}}>inline radios &amp; switches</div>
+      <RadioGroup orientation="horizontal">
+        <label style={{display:'flex',alignItems:'center',gap:6,fontSize:14}}><Radio name="m" defaultChecked/>Invite a handle</label>
+        <label style={{display:'flex',alignItems:'center',gap:6,fontSize:14}}><Radio name="m"/>Shareable link</label>
+      </RadioGroup>
+      <div style={{display:'flex',alignItems:'center',gap:14,marginTop:12}}>
+        <Switch size="sm" defaultChecked/><Switch defaultChecked/><Switch size="lg" defaultChecked/><Switch size="xl" defaultChecked/>
+      </div>
+    </div>
+  </div>);
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script>
+</body></html>

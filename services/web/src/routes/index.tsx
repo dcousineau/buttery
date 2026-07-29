@@ -199,6 +199,7 @@ function RecipeLookupCard() {
               <Input
                 id="recipe-ref"
                 type="text"
+                size="lg"
                 value={ref}
                 onChange={(e) => setRef(e.target.value)}
                 placeholder="01JMTK16MTE4AVXYSSTGB5B1TR"

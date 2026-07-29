@@ -1,0 +1,57 @@
+/* Tailwind's 0.25rem step, plus the layout constants the app actually pins. */
+:root {
+  --space-0-5: 0.125rem;
+  --space-1: 0.25rem;
+  --space-1-5: 0.375rem;
+  --space-2: 0.5rem;
+  --space-2-5: 0.625rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* radii — one --radius knob, four derived steps */
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-pill: 2rem; /* badges: rounded-4xl */
+
+  /* borders — the neo-brutalist outline is 2px everywhere */
+  --border-width: 2px;
+  --border-width-hairline: 1px; /* internal row dividers only */
+
+  /* ---- control heights ----
+   * ONE scale shared by Button, Badge, Input, Select, Textarea and any other
+   * inline control, so a badge, a button and a field at the same `size` line up
+   * pixel-for-pixel. (This harmonises the source app, where buttons were 32px
+   * and inputs 36px; the 36px step is still available as `lg`.) */
+  --control-h-xs: 24px;
+  --control-h-sm: 28px;
+  --control-h: 32px;
+  --control-h-lg: 36px;
+  --control-h-xl: 48px; /* cook mode */
+  --control-h-2xl: 64px; /* cook mode, full screen */
+
+  --control-px-xs: 8px;
+  --control-px-sm: 10px;
+  --control-px: 12px;
+  --control-px-lg: 14px;
+  --control-px-xl: 20px;
+  --control-px-2xl: 28px;
+
+  /* layout constants */
+  --content-width: 1080px;
+  --header-height: 3.75rem;
+  --sidebar-width: 16rem;
+  --sidebar-width-mobile: 18rem;
+  --sidebar-width-icon: 3rem;
+  --gingham-band-height: 14px;
+  --card-spacing: 1rem;
+  --card-spacing-sm: 0.75rem;
+}

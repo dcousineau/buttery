@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Marketing page" description="Buttery public-web page: fixed header with gingham trim, display hero, feature card grid, tablecloth footer." -->
+<helmet><script src="./ds-base.js"></script>
+<style>body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column">
+<header style="position:sticky;top:0;z-index:40;border-bottom:2px solid var(--border);background:var(--background)">
+<div style="display:flex;align-items:center;gap:8px;padding:10px 20px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.ButterStick" style="height:24px;width:auto" hint-size="42px,24px"></x-import>
+<span class="display-title" style="font-size:1.125rem;line-height:1">Buttery</span>
+<div style="margin-left:auto;display:flex;gap:8px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Button" hint-size="82px,32px">Sign in</x-import>
+</div>
+</div>
+<div class="gingham-band"></div>
+</header>
+<main style="flex:1">
+<div class="page-wrap" style="padding:3.5rem 1rem 2rem">
+<section style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap">
+<div style="min-width:0;flex:1 1 420px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Badge" variant="secondary" style="margin-bottom:1rem" hint-size="240px,24px">A social recipe box on the open web</x-import>
+<h1 class="display-title" style="margin:0;max-width:42rem;font-size:3.75rem;line-height:1.08">Good recipes,<br>spread <span style="color:var(--primary)">generously.</span></h1>
+<p style="margin-top:1.25rem;max-width:36rem;font-size:1.125rem;color:var(--muted-foreground);text-wrap:pretty"><strong style="color:var(--foreground)">but·ter·y</strong> <em>(noun)</em> — a pantry; a room where the good stuff is kept. Buttery keeps your recipes on your own atproto account, ready to share with friends — and big and bright on the counter while you cook.</p>
+<div style="margin-top:1.5rem;display:flex;flex-wrap:wrap;gap:12px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Button" size="lg" hint-size="180px,36px">Sign in with atproto</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Button" size="lg" variant="outline" hint-size="140px,36px">What's cooking</x-import>
+</div>
+</div>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.ButterStick" label="A pop-art stick of butter" style="width:256px;flex-shrink:0;align-self:center" hint-size="256px,139px"></x-import>
+</section>
+<section style="margin-top:4rem">
+<h2 class="display-title" style="margin:0;font-size:1.875rem">What's in the pantry</h2>
+<div style="margin-top:1.5rem;display:grid;gap:1.25rem;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Card" style="background:var(--secondary);color:var(--secondary-foreground)" hint-size="100%,150px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.CardHeader" hint-size="100%,24px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.CardTitle" style="font-weight:700" hint-size="100%,22px">Cook mode</x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.CardContent" hint-size="100%,60px"><p style="margin:0;font-size:0.875rem">The whole point. Recipes rendered huge and glare-proof for the counter — no sleep, no scrolling with buttery thumbs.</p></x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Card" hint-size="100%,150px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.CardHeader" hint-size="100%,24px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.CardTitle" style="font-weight:700" hint-size="100%,22px">Private collections</x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.CardContent" hint-size="100%,60px"><p style="margin:0;font-size:0.875rem;color:var(--muted-foreground)">Sort recipes into shelves only you (or your chosen few) can open.</p></x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Card" hint-size="100%,150px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.CardHeader" hint-size="100%,24px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.CardTitle" style="font-weight:700" hint-size="100%,22px">Shopping lists</x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.CardContent" hint-size="100%,60px"><p style="margin:0;font-size:0.875rem;color:var(--muted-foreground)">Pick recipes, get one consolidated list for the store.</p></x-import>
+</x-import>
+</div>
+</section>
+</div>
+</main>
+<footer style="margin-top:4rem">
+<div class="gingham-band"></div>
+<div style="border-top:2px solid var(--border);background:var(--card);padding:2rem 1rem 3rem;color:var(--muted-foreground)">
+<div class="page-wrap" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px">
+<p style="margin:0;font-size:0.875rem">© 2026 Buttery — the pantry where the good stuff is kept.</p>
+<nav style="display:flex;flex-wrap:wrap;gap:0 1rem;font-size:0.875rem;font-weight:600"><a href="#" style="color:var(--muted-foreground);text-decoration:none">Terms</a><a href="#" style="color:var(--muted-foreground);text-decoration:none">Privacy</a><a href="#" style="color:var(--muted-foreground);text-decoration:none">AI Usage</a></nav>
+</div>
+</div>
+</footer>
+</div>
+</x-dc>
+</body>
+</html>
