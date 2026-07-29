@@ -34,7 +34,7 @@ function RadioGroup({ className, orientation = "vertical", ...props }: React.Com
       data-slot="radio-group"
       data-orientation={orientation}
       className={cn(
-        "flex data-vertical:flex-col data-vertical:gap-2 data-horizontal:flex-row data-horizontal:flex-wrap data-horizontal:items-center data-horizontal:gap-4",
+        "flex data-[orientation=vertical]:flex-col data-[orientation=vertical]:gap-2 data-[orientation=horizontal]:flex-row data-[orientation=horizontal]:flex-wrap data-[orientation=horizontal]:items-center data-[orientation=horizontal]:gap-4",
         className,
       )}
       {...props}

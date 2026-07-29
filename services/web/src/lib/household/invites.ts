@@ -88,7 +88,7 @@ export const createInvite = createServerFn({ method: "POST" })
     }
     return { householdId, role, boundHandle: boundHandle || undefined, maxUses, expiresAt };
   })
-  .handler(async ({ data }): Promise<{ link: string }> => {
+  .handler(async ({ data }): Promise<{ link: string; id: string }> => {
     const { requireSessionDid } = await import("./session");
     const { assertMember } = await import("./authz");
     const { getDb } = await import("#/lib/db");
@@ -135,7 +135,7 @@ export const createInvite = createServerFn({ method: "POST" })
     // TODO(email): if this is a bound invite and `boundToDid` has a known contact
     // path, send the transactional invite email here (§6.2 / §11).
 
-    return { link: `${APP_URL}/invite/${token}` };
+    return { link: `${APP_URL}/invite/${token}`, id };
   });
 
 /**
