@@ -15,6 +15,13 @@ function isNavless(pathname: string): boolean {
   return NAVLESS_ROUTES.has(pathname) || pathname.startsWith("/recipes/") || pathname.startsWith("/invite/");
 }
 
+/** Fixed-height, non-scrolling application views (the `/household/*` surfaces,
+ * e.g. the recipes master–detail). They keep the sidebar but drop the marketing
+ * footer and pin `main` to the viewport so only the inner panes scroll. */
+function isAppView(pathname: string): boolean {
+  return pathname.startsWith("/household/");
+}
+
 function SkipLink() {
   return (
     <a
@@ -64,6 +71,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const appView = isAppView(pathname);
   return (
     <TooltipProvider>
       <SidebarProvider className="flex-col">
@@ -73,10 +81,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <AppSidebar />
           <SidebarFloatingToggle />
           <div className="relative flex w-full min-w-0 flex-1 flex-col bg-background">
-            <main id="main-content" tabIndex={-1} className="flex-1 focus-visible:outline-none">
+            <main
+              id="main-content"
+              tabIndex={-1}
+              className={appView ? "flex min-h-0 flex-1 flex-col overflow-hidden focus-visible:outline-none" : "flex-1 focus-visible:outline-none"}
+            >
               {children}
             </main>
-            <Footer />
+            {appView ? null : <Footer />}
           </div>
         </div>
       </SidebarProvider>

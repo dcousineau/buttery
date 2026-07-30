@@ -325,7 +325,13 @@ update recipe set cid = $2, rev = $3, indexed_at = now()
 where id = $1 and origin = 'local' and (rev is null or rev < $3)
 `;
 
-const DELETE_RENDERED_SQL = `delete from recipe where id = $1 and origin = 'sync'`;
+// Save-guard (recipes plan §9.1): never delete a rendered row that a household
+// has boxed — it is that household's durable cache. The `household_recipe`
+// RESTRICT FK would otherwise throw 23503 and break the sweep; the guard leaves
+// the saved row in place (availability is recomputed at read time from the raw
+// layer) while deleting unsaved invalid/unseen rows exactly as before. The
+// `household_recipe (recipe_id)` index keeps the NOT EXISTS cheap.
+const DELETE_RENDERED_SQL = `delete from recipe where id = $1 and origin = 'sync' and not exists (select 1 from household_recipe hr where hr.recipe_id = recipe.id)`;
 
 const DEL_INGREDIENTS = `delete from recipe_ingredient where recipe_id = $1`;
 const DEL_INSTRUCTIONS = `delete from recipe_instruction where recipe_id = $1`;
@@ -469,6 +475,12 @@ export async function renderRecipe(client: PoolClient, row: RecipeRow): Promise<
  * are exempt (they are never keyed by a network sweep's did). Returns rows deleted.
  */
 export async function deleteRenderedForDid(pool: Pool, did: string, seenRkeys: string[]): Promise<number> {
-  const res = await pool.query(`delete from recipe where did = $1 and origin = 'sync' and id <> all($2::text[])`, [did, seenRkeys]);
+  // Save-guard (recipes plan §9.1): a boxed recipe's rendered row is retained as
+  // the household's cache even when its rkey vanishes from the network sweep. See
+  // DELETE_RENDERED_SQL above for the rationale; same NOT EXISTS predicate.
+  const res = await pool.query(
+    `delete from recipe where did = $1 and origin = 'sync' and id <> all($2::text[]) and not exists (select 1 from household_recipe hr where hr.recipe_id = recipe.id)`,
+    [did, seenRkeys],
+  );
   return res.rowCount ?? 0;
 }

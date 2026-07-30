@@ -17,11 +17,14 @@ import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as PantryRouteImport } from './routes/pantry'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as HouseholdRecipesRouteImport } from './routes/household.recipes'
 import { Route as HouseholdsIndexRouteImport } from './routes/households.index'
 import { Route as HouseholdsSwitchRouteImport } from './routes/households.switch'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as RecipesIdRouteImport } from './routes/recipes.$id'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as HouseholdRecipesIndexRouteImport } from './routes/household.recipes.index'
+import { Route as HouseholdRecipesIdRouteImport } from './routes/household.recipes.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -64,6 +67,11 @@ const TermsRoute = TermsRouteImport.update({
   path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HouseholdRecipesRoute = HouseholdRecipesRouteImport.update({
+  id: '/household/recipes',
+  path: '/household/recipes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HouseholdsIndexRoute = HouseholdsIndexRouteImport.update({
   id: '/households/',
   path: '/households/',
@@ -89,6 +97,16 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HouseholdRecipesIndexRoute = HouseholdRecipesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => HouseholdRecipesRoute,
+} as any)
+const HouseholdRecipesIdRoute = HouseholdRecipesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => HouseholdRecipesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -99,11 +117,14 @@ export interface FileRoutesByFullPath {
   '/pantry': typeof PantryRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/household/recipes': typeof HouseholdRecipesRouteWithChildren
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
   '/recipes/$id': typeof RecipesIdRoute
   '/households/': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/household/recipes/$id': typeof HouseholdRecipesIdRoute
+  '/household/recipes/': typeof HouseholdRecipesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -119,6 +140,8 @@ export interface FileRoutesByTo {
   '/recipes/$id': typeof RecipesIdRoute
   '/households': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/household/recipes/$id': typeof HouseholdRecipesIdRoute
+  '/household/recipes': typeof HouseholdRecipesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -130,11 +153,14 @@ export interface FileRoutesById {
   '/pantry': typeof PantryRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/household/recipes': typeof HouseholdRecipesRouteWithChildren
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
   '/recipes/$id': typeof RecipesIdRoute
   '/households/': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/household/recipes/$id': typeof HouseholdRecipesIdRoute
+  '/household/recipes/': typeof HouseholdRecipesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -147,11 +173,14 @@ export interface FileRouteTypes {
     | '/pantry'
     | '/privacy'
     | '/terms'
+    | '/household/recipes'
     | '/households/switch'
     | '/invite/$token'
     | '/recipes/$id'
     | '/households/'
     | '/api/auth/$'
+    | '/household/recipes/$id'
+    | '/household/recipes/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -167,6 +196,8 @@ export interface FileRouteTypes {
     | '/recipes/$id'
     | '/households'
     | '/api/auth/$'
+    | '/household/recipes/$id'
+    | '/household/recipes'
   id:
     | '__root__'
     | '/'
@@ -177,11 +208,14 @@ export interface FileRouteTypes {
     | '/pantry'
     | '/privacy'
     | '/terms'
+    | '/household/recipes'
     | '/households/switch'
     | '/invite/$token'
     | '/recipes/$id'
     | '/households/'
     | '/api/auth/$'
+    | '/household/recipes/$id'
+    | '/household/recipes/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -193,6 +227,7 @@ export interface RootRouteChildren {
   PantryRoute: typeof PantryRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
+  HouseholdRecipesRoute: typeof HouseholdRecipesRouteWithChildren
   HouseholdsSwitchRoute: typeof HouseholdsSwitchRoute
   InviteTokenRoute: typeof InviteTokenRoute
   RecipesIdRoute: typeof RecipesIdRoute
@@ -258,6 +293,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/household/recipes': {
+      id: '/household/recipes'
+      path: '/household/recipes'
+      fullPath: '/household/recipes'
+      preLoaderRoute: typeof HouseholdRecipesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/households/': {
       id: '/households/'
       path: '/households'
@@ -293,8 +335,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/household/recipes/': {
+      id: '/household/recipes/'
+      path: '/'
+      fullPath: '/household/recipes/'
+      preLoaderRoute: typeof HouseholdRecipesIndexRouteImport
+      parentRoute: typeof HouseholdRecipesRoute
+    }
+    '/household/recipes/$id': {
+      id: '/household/recipes/$id'
+      path: '/$id'
+      fullPath: '/household/recipes/$id'
+      preLoaderRoute: typeof HouseholdRecipesIdRouteImport
+      parentRoute: typeof HouseholdRecipesRoute
+    }
   }
 }
+
+interface HouseholdRecipesRouteChildren {
+  HouseholdRecipesIdRoute: typeof HouseholdRecipesIdRoute
+  HouseholdRecipesIndexRoute: typeof HouseholdRecipesIndexRoute
+}
+
+const HouseholdRecipesRouteChildren: HouseholdRecipesRouteChildren = {
+  HouseholdRecipesIdRoute: HouseholdRecipesIdRoute,
+  HouseholdRecipesIndexRoute: HouseholdRecipesIndexRoute,
+}
+
+const HouseholdRecipesRouteWithChildren =
+  HouseholdRecipesRoute._addFileChildren(HouseholdRecipesRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -305,6 +374,7 @@ const rootRouteChildren: RootRouteChildren = {
   PantryRoute: PantryRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
+  HouseholdRecipesRoute: HouseholdRecipesRouteWithChildren,
   HouseholdsSwitchRoute: HouseholdsSwitchRoute,
   InviteTokenRoute: InviteTokenRoute,
   RecipesIdRoute: RecipesIdRoute,
