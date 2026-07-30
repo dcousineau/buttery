@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { createFileRoute, redirect, useNavigate, useRouter } from "@tanstack/react-router";
 import { Mail, MailQuestion, Plus } from "lucide-react";
-import { resolveOnboarding, acceptBoundInviteById, declineBoundInviteById } from "#/lib/household/onboarding";
-import { createHousehold } from "#/lib/household/households";
-import { errorMessage } from "#/lib/household/pending-invite";
+import { resolveOnboarding, acceptBoundInviteById, declineBoundInviteById } from "#/server/household/onboarding";
+import { createHousehold } from "#/server/household/households";
+import { errorMessage } from "#/server/household/pending-invite";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
@@ -12,7 +12,7 @@ import { Input } from "#/components/ui/input";
 import { Separator } from "#/components/ui/separator";
 import { Spinner } from "#/components/ui/spinner";
 import { seo } from "#/lib/seo";
-import type { PendingInvite } from "#/lib/household/onboarding";
+import type { PendingInvite } from "#/server/household/onboarding";
 import type { FormEvent } from "react";
 
 /** The single onboarding screen (§5/§10) for users with no live membership.

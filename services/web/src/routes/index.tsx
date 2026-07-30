@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpenText, CalendarRange, CookingPot, Dices, FolderLock, ShoppingBasket, UtensilsCrossed } from "lucide-react";
-import { resolveHomeRedirect } from "../lib/household/onboarding";
+import { resolveHomeRedirect } from "../server/household/onboarding";
 import { normalizeRecipeRef } from "../lib/atproto/recipe-exchange";
 import { fetchRecipe } from "../lib/atproto/recipes";
-import { listRecentRecipes } from "../lib/recipes-browse";
+import { listRecentRecipes } from "../server/recipes";
 import { formatDuration, formatPublished } from "../lib/format";
 import ButterStick from "../components/ButterStick";
 import { Badge } from "#/components/ui/badge";
@@ -16,7 +16,7 @@ import { Separator } from "#/components/ui/separator";
 import { Spinner } from "#/components/ui/spinner";
 import type { FormEvent } from "react";
 import type { RecipeResult } from "../lib/atproto/recipes";
-import type { RecipeCardData } from "../lib/recipes-browse";
+import type { RecipeCardData } from "../server/recipes";
 
 export const Route = createFileRoute("/")({
   validateSearch: (search: Record<string, unknown>): { auth_error?: string } => (typeof search.auth_error === "string" ? { auth_error: search.auth_error } : {}),

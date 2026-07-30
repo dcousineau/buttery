@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useLocalStorage } from "@mantine/hooks";
 
 /**
  * Theme mode state, shared by the standalone `ThemeToggle` (cycle button, public
@@ -13,11 +14,8 @@ export type ThemeMode = "light" | "dark" | "auto";
 
 const STORAGE_KEY = "theme";
 
-export function getInitialThemeMode(): ThemeMode {
-  if (typeof window === "undefined") return "auto";
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (stored === "light" || stored === "dark" || stored === "auto") return stored;
-  return "auto";
+function isThemeMode(value: string | undefined): value is ThemeMode {
+  return value === "light" || value === "dark" || value === "auto";
 }
 
 export function applyThemeMode(mode: ThemeMode): void {
@@ -41,7 +39,14 @@ export function applyThemeMode(mode: ThemeMode): void {
  * `auto` in sync with the OS. `setMode` both stores and applies immediately.
  */
 export function useTheme(): { mode: ThemeMode; setMode: (mode: ThemeMode) => void } {
-  const [mode, setModeState] = useState<ThemeMode>(() => getInitialThemeMode());
+  // Identity serialize/deserialize keeps the raw string in storage (not JSON),
+  // matching the pre-hydration `THEME_INIT_SCRIPT` in `__root.tsx` that reads it.
+  const [mode, setMode] = useLocalStorage<ThemeMode>({
+    key: STORAGE_KEY,
+    defaultValue: "auto",
+    serialize: (value) => value,
+    deserialize: (value) => (isThemeMode(value) ? value : "auto"),
+  });
 
   useEffect(() => {
     applyThemeMode(mode);
@@ -54,12 +59,6 @@ export function useTheme(): { mode: ThemeMode; setMode: (mode: ThemeMode) => voi
     media.addEventListener("change", onChange);
     return () => media.removeEventListener("change", onChange);
   }, [mode]);
-
-  function setMode(next: ThemeMode) {
-    setModeState(next);
-    applyThemeMode(next);
-    window.localStorage.setItem(STORAGE_KEY, next);
-  }
 
   return { mode, setMode };
 }

@@ -14,7 +14,7 @@ export const auth = betterAuth({
   trustedOrigins: [APP_URL],
   // The household the UI is currently scoped to (§3.4 of the households plan).
   // Persisted on the better-auth `session` row and re-validated against a live
-  // membership on every request (see src/lib/household/authz.ts). The physical
+  // membership on every request (see src/server/authz.ts). The physical
   // `session.active_household_id` column is added by migration
   // 1785400000000_create_household_tables. Declaring it here is what makes
   // better-auth read/write the value; `input: false` keeps it server-set only

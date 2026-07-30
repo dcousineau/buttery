@@ -1,14 +1,14 @@
 import type { Kysely, Selectable } from "kysely";
 import type { DB, HouseholdMember } from "#/db/types";
 import { getDb } from "#/lib/db";
-import { InsufficientRoleError, NotAMemberError, type Role, roleRank } from "./errors";
+import { InsufficientRoleError, NotAMemberError, type Role, roleRank } from "./household/errors";
 
 /**
  * The SINGLE authorization chokepoint for every household-scoped read and write
  * (§4.1). Nothing may touch private household data without passing through here.
  *
  * `did` MUST come from the server-validated session (see
- * `src/lib/household/session.ts`) — never from a client argument. `householdId`
+ * `src/server/household/session.ts`) — never from a client argument. `householdId`
  * is normally `session.active_household_id`, or an explicit id for
  * cross-household operations (e.g. accepting an invite to a household you are
  * not yet active in).

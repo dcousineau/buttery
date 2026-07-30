@@ -6,7 +6,7 @@ import type { Role } from "./errors";
  * Household lifecycle server functions (§7, §9). Every function is server-only:
  * heavy server deps (`getDb`, kysely `sql`, the authz/session helpers) are
  * pulled in via dynamic `import()` inside each handler so this module stays safe
- * to reference from the client bundle — the same pattern `lib/recipes-browse.ts`
+ * to reference from the client bundle — the same pattern `server/recipes.ts`
  * uses. The client-safe `Role` type and `createServerFn` stub are the only
  * static imports.
  *
@@ -82,7 +82,7 @@ export const renameHousehold = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }): Promise<{ id: string; name: string }> => {
     const { requireSessionDid } = await import("./session");
-    const { assertMember } = await import("./authz");
+    const { assertMember } = await import("../authz");
     const { getDb } = await import("#/lib/db");
     const { sql } = await import("kysely");
 
@@ -159,7 +159,7 @@ export const deleteHousehold = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }): Promise<{ id: string; deleted: true }> => {
     const { requireSessionDid } = await import("./session");
-    const { assertMember } = await import("./authz");
+    const { assertMember } = await import("../authz");
     const { getDb } = await import("#/lib/db");
     const { sql } = await import("kysely");
 

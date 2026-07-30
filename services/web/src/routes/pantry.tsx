@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Compass, Settings2 } from "lucide-react";
-import { requireActiveHousehold } from "#/lib/household/onboarding";
+import { requireActiveHousehold } from "#/server/household/onboarding";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";

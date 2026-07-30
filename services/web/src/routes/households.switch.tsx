@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { Check, Users } from "lucide-react";
-import { listMyHouseholds } from "#/lib/household/households";
-import { switchActiveHousehold } from "#/lib/household/onboarding";
-import { errorMessage } from "#/lib/household/pending-invite";
+import { listMyHouseholds } from "#/server/household/households";
+import { switchActiveHousehold } from "#/server/household/onboarding";
+import { errorMessage } from "#/server/household/pending-invite";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent } from "#/components/ui/card";
 import { Spinner } from "#/components/ui/spinner";
 import { seo } from "#/lib/seo";
-import type { HouseholdSummary } from "#/lib/household/households";
+import type { HouseholdSummary } from "#/server/household/households";
 
 /** The multi-household picker (§5). Reached from the §5 state machine (2+ live
  * memberships, no active) and from the chrome switcher at any time. */
