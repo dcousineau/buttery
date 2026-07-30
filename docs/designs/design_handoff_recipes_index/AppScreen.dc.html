@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#ffd84d"/><g fill="none" stroke="#2a1e12" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><rect x="30" y="30" width="40" height="40" rx="6" fill="#fffdf4"/><path d="M38 42h24M38 50h24M38 58h14"/></g></svg></template>
+<!-- @template name="App screen" description="Buttery signed-in shell: dense recipes index with master-detail browsing." -->
+<helmet><script src="./ds-base.js"></script>
+<script src="https://unpkg.com/lucide@0.474.0/dist/umd/lucide.js"></script>
+<style>body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}a{color:var(--primary)}a:hover{color:var(--foreground)}</style>
+</helmet>
+<div style="height:100vh;display:flex;flex-direction:column;overflow:hidden">
+<header style="flex:none;border-bottom:2px solid var(--border);background:var(--background)">
+<div style="display:flex;align-items:center;gap:8px;padding:8px 16px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.ButterStick" style="height:22px;width:auto" hint-size="38px,22px"></x-import>
+<span class="display-title" style="font-size:1rem;line-height:1">Buttery</span>
+<div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Button" variant="outline" size="sm" hint-size="170px,28px">The Cousineau kitchen</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Badge" variant="secondary" hint-size="140px,24px">@dcousineau.com</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Button" variant="ghost" size="sm" hint-size="70px,28px">Sign out</x-import>
+</div>
+</div>
+<div class="gingham-band"></div>
+</header>
+<div style="display:flex;flex:1;min-height:0">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Sidebar" hint-size="256px,100%">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarContent" style="padding-top:0.5rem" hint-size="100%,300px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarGroup" hint-size="100%,280px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarGroupLabel" hint-size="100%,32px">The pantry</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenu" hint-size="100%,200px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuItem" hint-size="100%,32px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuButton" hint-size="100%,32px"><span>Home</span></x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuItem" hint-size="100%,32px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuButton" isActive="{{ true }}" hint-size="100%,32px"><span>Recipes</span></x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuItem" hint-size="100%,32px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuButton" aria-disabled="true" hint-size="100%,32px"><span>Collections</span></x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuBadge" style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase" hint-size="36px,20px">soon</x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuItem" hint-size="100%,32px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuButton" aria-disabled="true" hint-size="100%,32px"><span>Shopping list</span></x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuBadge" style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase" hint-size="36px,20px">soon</x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuItem" hint-size="100%,32px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuButton" aria-disabled="true" hint-size="100%,32px"><span>Meal planner</span></x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuBadge" style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase" hint-size="36px,20px">soon</x-import>
+</x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuItem" hint-size="100%,32px">
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuButton" aria-disabled="true" hint-size="100%,32px"><span>Randomizer</span></x-import>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.SidebarMenuBadge" style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase" hint-size="36px,20px">soon</x-import>
+</x-import>
+</x-import>
+</x-import>
+</x-import>
+</x-import>
+
+<div style="flex:1;min-width:0;display:grid;grid-template-columns:minmax(320px,380px) minmax(0,1fr)">
+
+<div style="display:flex;flex-direction:column;min-height:0;border-right:2px solid var(--border)">
+<div style="flex:none;display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-bottom:2px solid var(--border);background:var(--card)">
+<div style="display:flex;align-items:center;gap:6px">
+<span style="display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;height:30px;padding:0 9px;border:2px solid var(--border);border-radius:var(--radius-lg);background:var(--background)">
+<x-import component-from-global-scope="Icon" n="book-open-text" size="{{ 13 }}" hint-size="13px,13px"></x-import>
+<input value="{{ q }}" onChange="{{ onSearch }}" placeholder="Search 10 recipes" aria-label="Search recipes" style="flex:1;min-width:0;border:0;background:transparent;color:var(--foreground);font-family:inherit;font-size:0.8125rem;font-weight:500;outline:none">
+</span>
+<select key="{{ sort }}" defaultValue="{{ sort }}" onChange="{{ onSort }}" aria-label="Sort recipes" style="flex:none;height:30px;padding:0 4px;border:2px solid var(--border);border-radius:var(--radius-lg);background:var(--background);color:var(--foreground);font-family:inherit;font-size:0.75rem;font-weight:600">
+<option value="recent">Recent</option>
+<option value="time">Quickest</option>
+<option value="title">A–Z</option>
+</select>
+<x-import component-from-global-scope="ButteryDesignSystem_79cab4.Button" size="sm" hint-size="52px,28px">Add</x-import>
+</div>
+<div style="display:flex;flex-wrap:wrap;gap:4px">
+<sc-for list="{{ chips }}" as="c" hint-placeholder-count="6">
+<button type="button" onClick="{{ c.pick }}" style="height:22px;padding:0 9px;border:2px solid var(--border);border-radius:var(--radius-pill);font-family:inherit;font-size:0.6875rem;font-weight:600;line-height:1;cursor:pointer;background:{{ c.bg }};color:{{ c.fg }}">{{ c.label }}</button>
+</sc-for>
+</div>
+</div>
+
+<div style="flex:1;min-height:0;overflow:auto">
+<sc-for list="{{ rows }}" as="r" hint-placeholder-count="10">
+<div role="button" tabindex="0" onClick="{{ r.open }}" style="display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 10px;border-bottom:2px solid color-mix(in oklab, var(--border) 45%, transparent);cursor:pointer;background:{{ r.bg }}">
+<div style="width:44px;height:44px;border:2px solid var(--border);border-radius:var(--radius-sm);background:var(--muted);display:flex;align-items:center;justify-content:center;color:var(--muted-foreground)">
+<x-import component-from-global-scope="Icon" n="utensils-crossed" size="{{ 16 }}" hint-size="16px,16px"></x-import>
+</div>
+<div style="min-width:0;display:flex;flex-direction:column;gap:2px">
+<span style="display:flex;align-items:center;gap:5px;min-width:0">
+<span style="font-size:0.8125rem;font-weight:700;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.title }}</span>
+<sc-if value="{{ r.fav }}" hint-placeholder-val="{{ false }}"><span style="flex:none;display:inline-flex;color:var(--primary)"><x-import component-from-global-scope="Icon" n="star" size="{{ 12 }}" hint-size="12px,12px"></x-import></span></sc-if>
+</span>
+<span style="display:flex;align-items:center;gap:5px;min-width:0;font-size:0.6875rem;font-weight:600;color:var(--muted-foreground)">
+<x-import component-from-global-scope="Icon" n="{{ r.sourceIcon }}" size="{{ 11 }}" hint-size="11px,11px"></x-import><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.source }}</span>
+</span>
+<span style="font-size:0.6875rem;color:var(--muted-foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.tagText }}</span>
+</div>
+<span style="flex:none;font-size:0.6875rem;font-weight:700;color:var(--muted-foreground);white-space:nowrap">{{ r.time }}</span>
+</div>
+</sc-for>
+<sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:2.5rem 1.25rem;text-align:center;color:var(--muted-foreground)">
+<x-import component-from-global-scope="Icon" n="utensils-crossed" size="{{ 32 }}" hint-size="32px,32px"></x-import>
+<p style="margin:0;font-size:0.8125rem;font-weight:700;color:var(--foreground)">Nothing matches that.</p>
+<p style="margin:0;max-width:20rem;font-size:0.75rem">Clear the tag filter to see the whole household's shelf again.</p>
+</div>
+</sc-if>
+</div>
+</div>
+
+<div style="min-width:0;min-height:0;overflow:auto;background:var(--background)">
+<div style="display:flex;flex-direction:column;gap:14px;padding:16px 20px 32px;max-width:54rem">
+<div style="display:flex;flex-direction:column;gap:10px">
+<div style="min-width:0;display:flex;flex-direction:column;gap:6px">
+<h1 class="display-title" style="margin:0;font-size:1.625rem;line-height:1.1;text-wrap:pretty">{{ sel.title }}</h1>
+<p style="margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:0.75rem;font-weight:600;color:var(--muted-foreground)">
+<span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><x-import component-from-global-scope="Icon" n="{{ sel.sourceIcon }}" size="{{ 12 }}" hint-size="12px,12px"></x-import>{{ sel.source }}</span>
+<span>·</span>
+<span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><x-import component-from-global-scope="Icon" n="clock" size="{{ 12 }}" hint-size="12px,12px"></x-import>{{ sel.time }}</span>
+<span>·</span>
+<span style="white-space:nowrap">{{ sel.tagText }}</span>
+<span>·</span>
+<span style="white-space:nowrap">saved by {{ sel.saver }}</span>
+</p>
+</div>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding-bottom:2px">
+<button type="button" onClick="{{ startCooking }}" style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 16px;border:2px solid var(--border);border-radius:var(--radius-lg);background:var(--primary);color:var(--primary-foreground);box-shadow:var(--shadow-pop);font-family:inherit;font-size:0.875rem;font-weight:700;cursor:pointer;transition:transform 100ms linear, box-shadow 100ms linear" style-hover="transform:translate(-2px,-2px);box-shadow:var(--shadow-pop-lg)" style-active="transform:translate(2px,2px);box-shadow:var(--shadow-pop-sm)">
+<x-import component-from-global-scope="Icon" n="cooking-pot" size="{{ 16 }}" hint-size="16px,16px"></x-import>Apron on
+</button>
+<button type="button" onClick="{{ toggleFav }}" aria-pressed="{{ sel.fav }}" style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:2px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-pop-sm);font-family:inherit;font-size:0.8125rem;font-weight:600;cursor:pointer;background:{{ sel.favBg }};color:{{ sel.favFg }}">
+<x-import component-from-global-scope="Icon" n="star" size="{{ 14 }}" hint-size="14px,14px"></x-import>{{ sel.favLabel }}
+</button>
+<button type="button" onClick="{{ addToList }}" style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:2px solid var(--border);border-radius:var(--radius-lg);background:var(--card);color:var(--foreground);box-shadow:var(--shadow-pop-sm);font-family:inherit;font-size:0.8125rem;font-weight:600;cursor:pointer" style-hover="background:var(--accent)">
+<x-import component-from-global-scope="Icon" n="shopping-basket" size="{{ 14 }}" hint-size="14px,14px"></x-import>Add to shopping list
+</button>
+<button type="button" onClick="{{ addToPlan }}" style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:2px solid var(--border);border-radius:var(--radius-lg);background:var(--card);color:var(--foreground);box-shadow:var(--shadow-pop-sm);font-family:inherit;font-size:0.8125rem;font-weight:600;cursor:pointer" style-hover="background:var(--accent)">
+<x-import component-from-global-scope="Icon" n="calendar-range" size="{{ 14 }}" hint-size="14px,14px"></x-import>Add to meal planner
+</button>
+<sc-if value="{{ hasFlash }}" hint-placeholder-val="{{ false }}">
+<span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:2px solid var(--border);border-radius:var(--radius-lg);background:var(--secondary);color:var(--secondary-foreground);font-size:0.8125rem;font-weight:600">
+<x-import component-from-global-scope="Icon" n="check" size="{{ 14 }}" hint-size="14px,14px"></x-import>{{ flashMsg }}
+</span>
+</sc-if>
+</div>
+</div>
+
+<div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
+<div style="flex:1 1 240px;min-width:240px;display:flex;flex-direction:column;gap:8px">
+<div style="width:100%;aspect-ratio:4/3;border:2px solid var(--border);border-radius:var(--radius-lg);background:var(--muted);display:flex;align-items:center;justify-content:center;color:var(--muted-foreground)">
+<x-import component-from-global-scope="Icon" n="utensils-crossed" size="{{ 40 }}" hint-size="40px,40px"></x-import>
+</div>
+<div style="display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 8px;margin-top:6px;min-width:0">
+<h2 class="display-title" style="margin:0;font-size:1rem">Ingredients</h2>
+<button type="button" onClick="{{ toggleScale }}" aria-expanded="{{ scaleOpen }}" style="display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--muted-foreground);font-family:inherit;font-size:0.6875rem;font-weight:700;cursor:pointer" style-hover="background:var(--accent);color:var(--foreground)">
+<x-import component-from-global-scope="Icon" n="settings-2" size="{{ 12 }}" hint-size="12px,12px"></x-import>{{ scaleLabel }}
+</button>
+</div>
+<sc-if value="{{ scaleOpen }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px;border:2px solid var(--border);border-radius:var(--radius-lg);background:var(--card)">
+<label style="display:inline-flex;align-items:center;gap:6px;font-size:0.6875rem;font-weight:700;color:var(--muted-foreground)">Scale
+<select key="{{ factor }}" defaultValue="{{ factor }}" onChange="{{ onFactor }}" style="height:26px;padding:0 4px;border:2px solid var(--border);border-radius:var(--radius-sm);background:var(--background);color:var(--foreground);font-family:inherit;font-size:0.75rem;font-weight:600">
+<option value="0.5">0.5×</option>
+<option value="1">1×</option>
+<option value="1.5">1.5×</option>
+<option value="2">2×</option>
+<option value="3">3×</option>
+</select>
+</label>
+<label style="display:inline-flex;align-items:center;gap:6px;font-size:0.6875rem;font-weight:700;color:var(--muted-foreground)">Units
+<select key="{{ units }}" defaultValue="{{ units }}" onChange="{{ onUnits }}" style="height:26px;padding:0 4px;border:2px solid var(--border);border-radius:var(--radius-sm);background:var(--background);color:var(--foreground);font-family:inherit;font-size:0.75rem;font-weight:600">
+<option value="us">Imperial (US)</option>
+<option value="metric">Metric</option>
+</select>
+</label>
+<button type="button" onClick="{{ resetScale }}" style="margin-left:auto;border:0;background:transparent;color:var(--muted-foreground);font-family:inherit;font-size:0.6875rem;font-weight:700;cursor:pointer;text-decoration:underline">Reset</button>
+</div>
+</sc-if>
+<ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:5px;font-size:0.8125rem;line-height:1.35">
+<sc-for list="{{ sel.ingredients }}" as="i" hint-placeholder-count="6">
+<li style="display:flex;align-items:flex-start;gap:7px"><span style="flex:none;margin-top:5px;width:5px;height:5px;border-radius:50%;background:var(--primary)"></span><span>{{ i }}</span></li>
+</sc-for>
+</ul>
+<div style="margin-top:4px;border:2px solid var(--border);border-radius:var(--radius-lg);background:var(--card);overflow:hidden">
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:6px;padding:6px 10px;border-bottom:2px solid var(--border)">
+<span class="display-title" style="font-size:0.8125rem">Nutrition</span>
+<span style="font-size:0.6875rem;font-weight:600;color:var(--muted-foreground)">per serving · {{ sel.servesLabel }}</span>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(74px,1fr));gap:2px;background:color-mix(in oklab, var(--border) 45%, transparent)">
+<div style="display:flex;flex-direction:column;gap:1px;padding:7px 10px;background:var(--card)"><span style="font-size:0.9375rem;font-weight:700;line-height:1;white-space:nowrap">{{ sel.nutrition.kcal }}</span><span style="font-size:0.625rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted-foreground)">kcal</span></div>
+<div style="display:flex;flex-direction:column;gap:1px;padding:7px 10px;background:var(--card)"><span style="font-size:0.9375rem;font-weight:700;line-height:1;white-space:nowrap">{{ sel.nutrition.protein }} g</span><span style="font-size:0.625rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted-foreground)">protein</span></div>
+<div style="display:flex;flex-direction:column;gap:1px;padding:7px 10px;background:var(--card)"><span style="font-size:0.9375rem;font-weight:700;line-height:1;white-space:nowrap">{{ sel.nutrition.carbs }} g</span><span style="font-size:0.625rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted-foreground)">carbs</span></div>
+<div style="display:flex;flex-direction:column;gap:1px;padding:7px 10px;background:var(--card)"><span style="font-size:0.9375rem;font-weight:700;line-height:1;white-space:nowrap">{{ sel.nutrition.fat }} g</span><span style="font-size:0.625rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted-foreground)">fat</span></div>
+</div>
+</div>
+</div>
+<div style="flex:1.35 1 320px;min-width:300px;display:flex;flex-direction:column;gap:8px">
+<h2 class="display-title" style="margin:0;font-size:1rem">Method</h2>
+<ol style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:0.875rem;line-height:1.45;text-wrap:pretty">
+<sc-for list="{{ sel.steps }}" as="s" hint-placeholder-count="3">
+<li style="display:flex;align-items:flex-start;gap:9px"><span style="flex:none;display:flex;align-items:center;justify-content:center;width:20px;height:20px;border:2px solid var(--border);border-radius:50%;background:var(--primary);color:var(--primary-foreground);font-size:0.6875rem;font-weight:700">{{ s.n }}</span><span>{{ s.text }}</span></li>
+</sc-for>
+</ol>
+<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px;padding-top:12px;border-top:2px solid color-mix(in oklab, var(--border) 45%, transparent)">
+<div style="display:flex;align-items:baseline;gap:8px">
+<h2 class="display-title" style="margin:0;font-size:1rem">Notes</h2>
+<span style="display:inline-flex;align-items:center;gap:5px;font-size:0.6875rem;font-weight:600;color:var(--muted-foreground)"><x-import component-from-global-scope="Icon" n="eye-off" size="{{ 12 }}" hint-size="12px,12px"></x-import>Never leaves this household</span>
+</div>
+<textarea value="{{ note }}" onChange="{{ onNote }}" rows="4" placeholder="What you'd change next time — the oven that runs hot, the swap that worked." style="width:100%;padding:8px 10px;border:2px solid var(--border);border-radius:var(--radius-lg);background:var(--card);color:var(--foreground);font-family:inherit;font-size:0.8125rem;line-height:1.45;resize:vertical;outline:none"></textarea>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+const RECIPES = [
+  { id: "cornbread", title: "Brown butter skillet cornbread", source: "smittenkitchen.com", kind: "web", mins: 45, time: "45 min", tags: ["Baking", "Sides"], saver: "@dcousineau.com",
+    ingredients: ["1 cup stone-ground cornmeal", "1 cup all-purpose flour", "6 tbsp butter, browned", "1¼ cups buttermilk", "2 eggs", "1 tbsp honey"],
+    steps: ["Heat the skillet in a 425°F oven while you mix.", "Brown the butter until it smells like toffee, then let it cool slightly.", "Fold the wet into the dry, pour into the screaming-hot skillet, bake 22 minutes.", "Turn it out while it's still hot or the bottom steams."] },
+  { id: "dal", title: "Weeknight red lentil dal", source: "bonappetit.com", kind: "web", mins: 30, time: "30 min", tags: ["Vegetarian", "Weeknight"], saver: "@rcousineau.bsky.social",
+    ingredients: ["1½ cups red lentils", "1 onion, sliced thin", "2 tbsp ghee", "1 tbsp garam masala", "1 can coconut milk", "Lemon, to finish"],
+    steps: ["Simmer the lentils with turmeric until collapsing, about 18 minutes.", "Bloom the spices in ghee with the onion until dark and sweet.", "Stir the tempering through, add coconut milk, finish with lemon."] },
+  { id: "potroast", title: "Grandma Ro's pot roast", source: "Index card, Ro's box", kind: "note", mins: 210, time: "3 hr 30 min", tags: ["Sunday", "Beef"], saver: "@dcousineau.com",
+    ingredients: ["4 lb chuck roast", "2 onions, quartered", "1 cup red wine", "6 carrots", "3 sprigs thyme", "1 bay leaf"],
+    steps: ["Sear the roast hard on every side — patience here pays.", "Deglaze with the wine, add the aromatics, cover, 300°F for three hours.", "Rest 20 minutes before pulling it apart."] },
+  { id: "soba", title: "Cold soba with sesame", source: "justonecookbook.com", kind: "web", mins: 20, time: "20 min", tags: ["Noodles", "Weeknight"], saver: "@rcousineau.bsky.social",
+    ingredients: ["200g dried soba", "3 tbsp toasted sesame paste", "2 tbsp soy sauce", "1 tbsp rice vinegar", "Scallions", "Ice water"],
+    steps: ["Boil the soba, then shock it in ice water and drain hard.", "Whisk the sesame sauce until it pours.", "Toss, top with scallions, eat cold."] },
+  { id: "sheetpan", title: "Sheet-pan chicken thighs with lemon", source: "cooking.nytimes.com", kind: "web", mins: 50, time: "50 min", tags: ["Weeknight", "Chicken"], saver: "@dcousineau.com",
+    ingredients: ["8 bone-in chicken thighs", "2 lemons, sliced", "1 head garlic", "Olive oil", "Dried oregano", "Flaky salt"],
+    steps: ["Salt the thighs an hour ahead if you can.", "Roast skin-up at 425°F for 40 minutes on a bed of lemon slices.", "Broil two minutes for the skin."] },
+  { id: "crackers", title: "Sourdough discard crackers", source: "kingarthurbaking.com", kind: "web", mins: 35, time: "35 min", tags: ["Baking", "Snacks"], saver: "@rcousineau.bsky.social",
+    ingredients: ["1 cup sourdough discard", "4 tbsp butter, soft", "½ cup flour", "1 tsp salt", "Rosemary", "Flaky salt for the top"],
+    steps: ["Mix to a stiff dough and chill 30 minutes.", "Roll paper-thin between parchment, score into squares.", "Bake at 350°F until snapping-crisp."] },
+  { id: "cabbage", title: "Charred cabbage, anchovy butter", source: "@maddy.kitchen", kind: "handle", mins: 25, time: "25 min", tags: ["Vegetarian", "Sides"], saver: "@dcousineau.com",
+    ingredients: ["1 small green cabbage", "6 anchovy fillets", "6 tbsp butter", "Lemon zest", "Black pepper", "Toasted breadcrumbs"],
+    steps: ["Cut the cabbage into thick wedges and char them cut-side down.", "Melt the anchovies into the butter until they disappear.", "Spoon over and shower with crumbs."] },
+  { id: "birria", title: "Birria-ish short rib tacos", source: "seriouseats.com", kind: "web", mins: 240, time: "4 hr", tags: ["Weekend", "Beef"], saver: "@dcousineau.com",
+    ingredients: ["3 lb short ribs", "4 guajillo chiles", "2 ancho chiles", "1 cinnamon stick", "Corn tortillas", "White onion and cilantro"],
+    steps: ["Toast and soak the chiles, then blend to a smooth adobo.", "Braise the ribs in it for three hours, until the meat gives up.", "Dip the tortillas in the fat, griddle, fill, fold."] },
+  { id: "ranch", title: "Buttermilk ranch, actually good", source: "Handwritten, Dad", kind: "note", mins: 10, time: "10 min", tags: ["Sauces", "Sides"], saver: "@rcousineau.bsky.social",
+    ingredients: ["½ cup buttermilk", "½ cup mayonnaise", "¼ cup sour cream", "Dill, chives, parsley", "1 clove garlic, grated", "Lots of black pepper"],
+    steps: ["Grate the garlic into the buttermilk and wait ten minutes.", "Whisk everything together, herbs chopped fine.", "Rest an hour before serving — it needs the time."] },
+  { id: "eggs", title: "Six-minute jammy eggs", source: "buttery.recipes", kind: "web", mins: 6, time: "6 min", tags: ["Basics", "Breakfast"], saver: "@dcousineau.com",
+    ingredients: ["4 eggs, fridge-cold", "A pot of boiling water", "A bowl of ice water", "Flaky salt"],
+    steps: ["Lower cold eggs into rolling water.", "Six minutes exactly, then straight into the ice water.", "Peel under running water."] }
+];
+
+const ICONS = { web: "external-link", note: "pencil", handle: "book-open-text" };
+
+const NUTRITION = {
+  cornbread: { serves: 8, kcal: 240, protein: 5, carbs: 29, fat: 12 },
+  dal: { serves: 4, kcal: 410, protein: 18, carbs: 46, fat: 17 },
+  potroast: { serves: 6, kcal: 620, protein: 52, carbs: 14, fat: 38 },
+  soba: { serves: 2, kcal: 480, protein: 17, carbs: 68, fat: 14 },
+  sheetpan: { serves: 4, kcal: 530, protein: 44, carbs: 6, fat: 36 },
+  crackers: { serves: 6, kcal: 180, protein: 3, carbs: 18, fat: 10 },
+  cabbage: { serves: 4, kcal: 210, protein: 4, carbs: 11, fat: 17 },
+  birria: { serves: 6, kcal: 710, protein: 46, carbs: 24, fat: 48 },
+  ranch: { serves: 12, kcal: 90, protein: 1, carbs: 1, fat: 9 },
+  eggs: { serves: 2, kcal: 140, protein: 12, carbs: 1, fat: 10 }
+};
+
+const FRACS = { "¼": 0.25, "½": 0.5, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3, "⅛": 0.125 };
+const EIGHTHS = ["", "⅛", "¼", "⅜", "½", "⅝", "¾", "⅞"];
+const TO_ML = { cup: 236.6, cups: 236.6, tbsp: 14.8, tsp: 4.9 };
+const TO_G = { lb: 453.6, oz: 28.35 };
+
+function fmtUS(n) {
+  if (n >= 10) return String(Math.round(n));
+  const whole = Math.floor(n);
+  const e = Math.round((n - whole) * 8);
+  if (e === 8) return String(whole + 1);
+  const f = EIGHTHS[e];
+  if (!f) return String(whole || 0);
+  return (whole ? whole : "") + f;
+}
+const round5 = n => (n >= 100 ? Math.round(n / 10) * 10 : Math.round(n / 5) * 5);
+
+function convertLine(line, factor, metric) {
+  const m = line.match(/^(\d+\s*[¼½¾⅓⅔⅛]|\d+\/\d+|[¼½¾⅓⅔⅛]|\d+(?:\.\d+)?)\s*([a-zA-Z]+)?(.*)$/);
+  if (!m) return line;
+  const [, rawQty, rawUnit, rest] = m;
+  let qty = 0;
+  if (rawQty.includes("/")) { const [a, b] = rawQty.split("/"); qty = Number(a) / Number(b); }
+  else {
+    const f = rawQty.match(/[¼½¾⅓⅔⅛]/);
+    qty = Number(rawQty.replace(/[¼½¾⅓⅔⅛]/g, "").trim() || 0) + (f ? FRACS[f[0]] : 0);
+  }
+  qty *= factor;
+  const unit = (rawUnit || "").toLowerCase();
+  const tail = (rest || "").replace(/^\s+/, " ");
+  if (metric) {
+    if (TO_ML[unit]) return round5(qty * TO_ML[unit]) + " ml" + tail;
+    if (TO_G[unit]) return round5(qty * TO_G[unit]) + " g" + tail;
+    if (unit === "g" || unit === "ml") return round5(qty) + " " + unit + tail;
+  } else {
+    if (unit === "g") return fmtUS((qty / 28.35)) + " oz" + tail;
+    if (unit === "ml") return fmtUS(qty / 236.6) + " cups" + tail;
+  }
+  return fmtUS(qty) + (rawUnit ? " " + rawUnit : "") + tail;
+}
+
+class Component extends DCLogic {
+  state = { q: "", tag: "All", sort: "recent", open: "cornbread", favs: ["potroast"], flash: "", scaleOpen: false, factor: 1, metric: false, notes: {} };
+
+  flash(msg) {
+    this.setState({ flash: msg });
+    clearTimeout(this._t);
+    this._t = setTimeout(() => this.setState({ flash: "" }), 2400);
+  }
+
+  list() {
+    const { q, tag, sort } = this.state;
+    const needle = q.trim().toLowerCase();
+    let out = RECIPES.filter(r =>
+      (tag === "All" || r.tags.includes(tag)) &&
+      (!needle || (r.title + " " + r.source + " " + r.tags.join(" ")).toLowerCase().includes(needle)));
+    if (sort === "time") out = out.slice().sort((a, b) => a.mins - b.mins);
+    if (sort === "title") out = out.slice().sort((a, b) => a.title.localeCompare(b.title));
+    return out;
+  }
+
+  toggle(key, id) {
+    this.setState(s => ({ [key]: s[key].includes(id) ? s[key].filter(x => x !== id) : [...s[key], id] }));
+  }
+
+  renderVals() {
+    const rows = this.list();
+    const tags = ["All", ...Array.from(new Set(RECIPES.flatMap(r => r.tags)))];
+    const sel = RECIPES.find(r => r.id === this.state.open) || RECIPES[0];
+    const fav = this.state.favs.includes(sel.id);
+    return {
+      q: this.state.q,
+      sort: this.state.sort,
+      onSearch: e => this.setState({ q: e.target.value }),
+      onSort: e => this.setState({ sort: e.target.value }),
+      chips: tags.map(t => ({
+        key: t, label: t, pick: () => this.setState({ tag: t }),
+        bg: this.state.tag === t ? "var(--primary)" : "var(--background)",
+        fg: this.state.tag === t ? "var(--primary-foreground)" : "var(--foreground)"
+      })),
+      rows: rows.map(r => ({
+        key: r.id,
+        title: r.title,
+        source: r.source,
+        sourceIcon: ICONS[r.kind],
+        time: r.time,
+        tagText: r.tags.join(" · "),
+        fav: this.state.favs.includes(r.id),
+        bg: r.id === sel.id ? "var(--accent)" : "transparent",
+        open: () => this.setState({ open: r.id })
+      })),
+      isEmpty: rows.length === 0,
+      sel: {
+        title: sel.title,
+        source: sel.source,
+        sourceIcon: ICONS[sel.kind],
+        time: sel.time,
+        tagText: sel.tags.join(" · "),
+        saver: sel.saver,
+        ingredients: sel.ingredients.map(l => convertLine(l, this.state.factor, this.state.metric)),
+        steps: sel.steps.map((text, i) => ({ key: i, n: i + 1, text })),
+        fav,
+        favBg: fav ? "var(--primary)" : "var(--card)",
+        favFg: fav ? "var(--primary-foreground)" : "var(--foreground)",
+        favLabel: fav ? "Favorited" : "Favorite",
+        nutrition: NUTRITION[sel.id],
+        servesLabel: Math.round(NUTRITION[sel.id].serves * this.state.factor) + " servings"
+      },
+      toggleFav: () => this.toggle("favs", sel.id),
+      addToList: () => this.flash("Added to the shopping list"),
+      addToPlan: () => this.flash("Added to this week's plan"),
+      flashMsg: this.state.flash,
+      hasFlash: !!this.state.flash,
+      startCooking: () => {},
+      scaleOpen: this.state.scaleOpen,
+      scaleLabel: (this.state.factor === 1 && !this.state.metric) ? "Scale & convert" : this.state.factor + "× · " + (this.state.metric ? "metric" : "US"),
+      toggleScale: () => this.setState(s => ({ scaleOpen: !s.scaleOpen })),
+      factor: String(this.state.factor),
+      onFactor: e => this.setState({ factor: Number(e.target.value) }),
+      units: this.state.metric ? "metric" : "us",
+      onUnits: e => this.setState({ metric: e.target.value === "metric" }),
+      resetScale: () => this.setState({ factor: 1, metric: false }),
+      note: this.state.notes[sel.id] || "",
+      onNote: e => { const v = e.target.value; this.setState(s => ({ notes: { ...s.notes, [sel.id]: v } })); }
+    };
+  }
+}
+</script>
+</body>
+</html>
