@@ -72,8 +72,10 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
 - `src/routes/` — file-based routes (`__root.tsx` document shell, `index.tsx`, `about.tsx`)
 - `src/router.tsx` — `getRouter()` factory
 - `src/routeTree.gen.ts` — generated; never hand-edit
+- `src/server/` — server business logic (the `createServerFn` RPC/data surface + its pure, tested domain modules); first-class as routes, NOT generic `lib/` utils. `server/recipes.ts` (recipe read loaders), `server/authz.ts` (generic membership/role assertion, cross-feature), `server/household/` (household feature: server fns + `ids`/`invite-token`/`errors`/… + tests). Intra-folder deps import via `./`; reach into shared code via `#/lib/*`.
+- `src/lib/` — shared, mostly client-safe utils: `format`, `seo`, `utils` (`cn()`), `config`, `db` (`getDb()`), `auth`/`auth-client`, `hooks/`, `atproto/`
 - `src/components/` — AppShell (SidebarProvider layout), AppSidebar, Header, Footer, ThemeToggle, ButterStick (brand mark)
-- `src/components/ui/` — vendored shadcn primitives (ours to edit); `src/hooks/use-mobile.ts`, `src/lib/utils.ts` (`cn()`)
+- `src/components/ui/` — vendored shadcn primitives (ours to edit); `src/lib/hooks/` (`use-mobile.ts`, `use-theme.ts`), `src/lib/utils.ts` (`cn()`)
 - `#/*` import alias → `./src/*` (package.json `imports` field)
 - `tsr.config.json` — router CLI config; `vite.config.ts` — plugin order matters (`devtools-vite` must stay first)
 
@@ -146,7 +148,7 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 ## Database (Kysely + migrations)
 
 - All SQL goes through shared, typed Kysely instance from `src/lib/db.ts` (`getDb()`). better-auth shares same instance (`database: { db: getDb(), type: "postgres" }` in `src/lib/auth.ts`). Prefer Kysely query-builder primitives over raw `sql`.
-- Read-side data loaders: `createServerFn({ method: "GET" })` + dynamically `import` `getDb` from `#/lib/db` INSIDE the handler (mirror `src/lib/config.ts`'s dynamic `railway` import) — keeps `pg` out of the client bundle when the module is also imported client-side (e.g. `src/lib/recipes-browse.ts`).
+- Read-side data loaders: `createServerFn({ method: "GET" })` + dynamically `import` `getDb` from `#/lib/db` INSIDE the handler (mirror `src/lib/config.ts`'s dynamic `railway` import) — keeps `pg` out of the client bundle when the module is also imported client-side (e.g. `src/server/recipes.ts`).
 - Schema owned by **kysely-ctl migrations** in `src/db/migrations/` (config: `services/web/kysely.config.ts`, reuses shared pool + loads `services/web/.env`). Initial migration ports whole better-auth + atproto schema. `scripts/better-auth.sql` is historical source, now superseded.
 - **ALWAYS run `pnpm db:codegen` right after `pnpm db:migrate:up` when work locally** — regen `src/db/types.ts` (the `DB` interface) from live DB so types match schema. `types.ts` generated; never hand-edit.
 - Prod migrations run auto on deploy via Railway pre-deploy (`preDeploy: "pnpm db:migrate:up"` in `.railway/railway.ts`). This why `kysely-ctl` lives in `dependencies` (Railpack prunes devDeps from runtime image); `kysely-codegen` is true devDependency and never runs in prod.

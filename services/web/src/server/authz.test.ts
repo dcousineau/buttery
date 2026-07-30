@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assertMember, type Membership, type MembershipLoader } from "./authz";
-import { InsufficientRoleError, NotAMemberError } from "./errors";
+import { InsufficientRoleError, NotAMemberError } from "./household/errors";
 
 /**
  * Unit tests for the §4.1 authorization chokepoint. The DB is not reachable
@@ -30,9 +30,7 @@ function member(overrides: Partial<MemberRow> & Pick<MemberRow, "household_id" |
 /** A loader over an in-memory row set, applying the same liveness predicate. */
 function makeLoader(rows: MemberRow[]): MembershipLoader {
   return async (did, householdId) => {
-    const row = rows.find(
-      (r) => r.household_id === householdId && r.did === did && r.deleted_at === null && !r.tombstoned && !r.household_deleted,
-    );
+    const row = rows.find((r) => r.household_id === householdId && r.did === did && r.deleted_at === null && !r.tombstoned && !r.household_deleted);
     if (!row) return undefined;
     // Strip the test-only `household_deleted` flag; return a clean Membership.
     const { household_deleted: _ignored, ...membership } = row;

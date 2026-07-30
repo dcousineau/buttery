@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { blobImageUrl } from "./atproto/images";
+import { blobImageUrl } from "#/lib/atproto/images";
 
 // Read-side browse/detail queries over the rendered `recipe` layer (see the
 // recipe_rendered migration + the cron's render.ts). These power the home-page
@@ -148,7 +148,7 @@ function toCard(row: CardRow): RecipeCardData {
 /** The 10 most recently published public recipes, for the home-page grid. */
 export const listRecentRecipes = createServerFn({ method: "GET" }).handler(async (): Promise<RecipeCardData[]> => {
   try {
-    const { getDb } = await import("./db");
+    const { getDb } = await import("#/lib/db");
     const { sql } = await import("kysely");
     const rows = (await getDb()
       .selectFrom("recipe as r")
@@ -198,7 +198,7 @@ export const getRecipe = createServerFn({ method: "GET" })
     return id;
   })
   .handler(async ({ data: id }): Promise<RecipeDetailData | null> => {
-    const { getDb } = await import("./db");
+    const { getDb } = await import("#/lib/db");
     const db = getDb();
 
     const row = await db

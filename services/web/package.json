@@ -27,6 +27,7 @@
     "@atproto/oauth-types": "^0.7.5",
     "@base-ui/react": "^1.6.0",
     "@buttery/lexicons": "workspace:*",
+    "@mantine/hooks": "^9.5.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-devtools": "latest",
     "@tanstack/react-router": "latest",

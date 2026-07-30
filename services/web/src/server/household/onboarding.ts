@@ -84,7 +84,7 @@ function validateInviteId(id: unknown): string {
  */
 async function computeOnboarding(): Promise<OnboardingVerdict> {
   const { getServerSession, setActiveHousehold } = await import("./session");
-  const { loadLiveMembership } = await import("./authz");
+  const { loadLiveMembership } = await import("../authz");
   const { getDb } = await import("#/lib/db");
   const { sql } = await import("kysely");
 
@@ -254,7 +254,7 @@ export const switchActiveHousehold = createServerFn({ method: "POST" })
   .validator((data: { householdId: string }) => ({ householdId: validateHouseholdId(data?.householdId) }))
   .handler(async ({ data }): Promise<{ householdId: string }> => {
     const { getServerSession, setActiveHousehold } = await import("./session");
-    const { assertMember } = await import("./authz");
+    const { assertMember } = await import("../authz");
 
     const session = await getServerSession();
     if (!session?.user.did) throw redirect({ to: "/login" });
@@ -276,7 +276,7 @@ export const listHouseholdMembers = createServerFn({ method: "GET" })
   .validator((data: { householdId: string }) => ({ householdId: validateHouseholdId(data?.householdId) }))
   .handler(async ({ data }): Promise<HouseholdMemberView[]> => {
     const { requireSessionDid } = await import("./session");
-    const { assertMember } = await import("./authz");
+    const { assertMember } = await import("../authz");
     const { getDb } = await import("#/lib/db");
 
     const did = await requireSessionDid();
@@ -329,7 +329,7 @@ export const acceptBoundInviteById = createServerFn({ method: "POST" })
     const { getDb } = await import("#/lib/db");
     const { sql } = await import("kysely");
     const { assessInviteForAcceptance } = await import("./invite-assess");
-    const { loadLiveMembership } = await import("./authz");
+    const { loadLiveMembership } = await import("../authz");
     const { InvalidInvite, InviteNotForYou, InviteHouseholdGone } = await import("./errors");
 
     const session = await getServerSession();

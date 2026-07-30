@@ -31,12 +31,12 @@ describe.skipIf(!HAS_DB)("household DB integration", () => {
   // Loaded lazily so the module import doesn't touch `getDb()` when skipped.
   let getDb: typeof import("#/lib/db").getDb;
   let tombstoneMemberForDeletedAccount: typeof import("./members").tombstoneMemberForDeletedAccount;
-  let loadLiveMembership: typeof import("./authz").loadLiveMembership;
+  let loadLiveMembership: typeof import("../authz").loadLiveMembership;
 
   beforeAll(async () => {
     ({ getDb } = await import("#/lib/db"));
     ({ tombstoneMemberForDeletedAccount } = await import("./members"));
-    ({ loadLiveMembership } = await import("./authz"));
+    ({ loadLiveMembership } = await import("../authz"));
 
     const db = getDb();
     await db.insertInto("household").values({ id: soleHousehold, name: "Sole", created_by_did: OWNER_A }).execute();
@@ -70,7 +70,12 @@ describe.skipIf(!HAS_DB)("household DB integration", () => {
 
     // Tombstoned member no longer live.
     expect(await loadLiveMembership(OWNER_B, dualHousehold)).toBeUndefined();
-    const bRow = await db.selectFrom("household_member").select(["tombstoned", "deleted_at"]).where("household_id", "=", dualHousehold).where("did", "=", OWNER_B).executeTakeFirst();
+    const bRow = await db
+      .selectFrom("household_member")
+      .select(["tombstoned", "deleted_at"])
+      .where("household_id", "=", dualHousehold)
+      .where("did", "=", OWNER_B)
+      .executeTakeFirst();
     expect(bRow?.tombstoned).toBe(true);
     expect(bRow?.deleted_at).not.toBeNull();
 

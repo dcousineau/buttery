@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { ChevronsUpDown, Home } from "lucide-react";
 import { authClient } from "#/lib/auth-client";
-import { resolveOnboarding } from "#/lib/household/onboarding";
+import { resolveOnboarding } from "#/server/household/onboarding";
 import { Button } from "#/components/ui/button";
 import {
   DropdownMenu,
@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "#/components/ui/dropdown-menu";
-import type { OnboardingVerdict } from "#/lib/household/onboarding";
+import type { OnboardingVerdict } from "#/server/household/onboarding";
 
 /**
  * Active-household indicator + switcher for the app chrome (§8, deliverable 3).

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { Check, Copy, Crown, Link2, LogOut, Mail, Pencil, Plus, Shield, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
-import { requireActiveHousehold, listHouseholdMembers } from "#/lib/household/onboarding";
-import { listMyHouseholds, renameHousehold, deleteHousehold, createHousehold } from "#/lib/household/households";
-import { listInvites, createInvite, revokeInvite } from "#/lib/household/invites";
-import { removeMember, setMemberRole, leaveHousehold } from "#/lib/household/members";
-import { errorMessage } from "#/lib/household/pending-invite";
+import { requireActiveHousehold, listHouseholdMembers } from "#/server/household/onboarding";
+import { listMyHouseholds, renameHousehold, deleteHousehold, createHousehold } from "#/server/household/households";
+import { listInvites, createInvite, revokeInvite } from "#/server/household/invites";
+import { removeMember, setMemberRole, leaveHousehold } from "#/server/household/members";
+import { errorMessage } from "#/server/household/pending-invite";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -18,9 +18,9 @@ import { Select } from "#/components/ui/select";
 import { Separator } from "#/components/ui/separator";
 import { Spinner } from "#/components/ui/spinner";
 import { seo } from "#/lib/seo";
-import type { Role } from "#/lib/household/errors";
-import type { HouseholdMemberView } from "#/lib/household/onboarding";
-import type { InviteSummary } from "#/lib/household/invites";
+import type { Role } from "#/server/household/errors";
+import type { HouseholdMemberView } from "#/server/household/onboarding";
+import type { InviteSummary } from "#/server/household/invites";
 import type { FormEvent } from "react";
 
 /** Focus an element via a ref when it becomes `active` — the accessible

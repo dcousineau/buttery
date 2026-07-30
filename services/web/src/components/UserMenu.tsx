@@ -6,7 +6,7 @@ import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
 import { Skeleton } from "#/components/ui/skeleton";
 import { serviceNameFromPds } from "#/lib/atproto/service-name";
-import { useTheme, type ThemeMode } from "#/lib/theme";
+import { useTheme, type ThemeMode } from "#/lib/hooks/use-theme";
 
 // Single-item theme control: clicking cycles light → dark → auto. The icon and
 // label reflect the CURRENT mode; `next` is what the click will switch to.

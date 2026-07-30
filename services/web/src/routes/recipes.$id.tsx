@@ -1,11 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Clock, CookingPot, UtensilsCrossed, Users } from "lucide-react";
-import { getRecipe } from "../lib/recipes-browse";
+import { getRecipe } from "../server/recipes";
 import { formatDuration, formatPublished } from "../lib/format";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
-import type { RecipeDetailData } from "../lib/recipes-browse";
+import type { RecipeDetailData } from "../server/recipes";
 
 export const Route = createFileRoute("/recipes/$id")({
   loader: ({ params }) => getRecipe({ data: params.id }),

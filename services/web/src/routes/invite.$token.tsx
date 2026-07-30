@@ -2,21 +2,21 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DoorOpen, UtensilsCrossed } from "lucide-react";
 import { authClient } from "#/lib/auth-client";
-import { getInvitePreview, acceptInvite, declineBoundInvite } from "#/lib/household/invites";
-import { stashPendingInvite, clearPendingInvite, errorMessage } from "#/lib/household/pending-invite";
+import { getInvitePreview, acceptInvite, declineBoundInvite } from "#/server/household/invites";
+import { stashPendingInvite, clearPendingInvite, errorMessage } from "#/server/household/pending-invite";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Spinner } from "#/components/ui/spinner";
 import { seo } from "#/lib/seo";
-import type { InvitePreview } from "#/lib/household/invites";
+import type { InvitePreview } from "#/server/household/invites";
 
 type LoaderData = { ok: true; token: string; preview: InvitePreview } | { ok: false; token: string; message: string };
 
 /** Invite acceptance (§10, §15). The preview loader needs NO auth, so this route
  * renders for logged-out visitors too — they sign in first and are returned here
- * via the pending-invite cookie (see `lib/household/pending-invite.ts`). */
+ * via the pending-invite cookie (see `server/household/pending-invite.ts`). */
 export const Route = createFileRoute("/invite/$token")({
   loader: async ({ params }): Promise<LoaderData> => {
     try {
@@ -34,7 +34,9 @@ function InvitePage() {
   const data = Route.useLoaderData();
   return (
     <div className="page-wrap px-4 pt-10 pb-12 sm:pt-14">
-      <div className="rise-in mx-auto flex max-w-md flex-col gap-6">{data.ok ? <ValidInvite token={data.token} preview={data.preview} /> : <InvalidInvite message={data.message} />}</div>
+      <div className="rise-in mx-auto flex max-w-md flex-col gap-6">
+        {data.ok ? <ValidInvite token={data.token} preview={data.preview} /> : <InvalidInvite message={data.message} />}
+      </div>
     </div>
   );
 }
