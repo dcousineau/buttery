@@ -13,6 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter, DialogClose, DialogTrigger } from "#/components/ui/dialog.tsx";
 import { Field, FieldGroup, FieldLabel } from "#/components/ui/field";
 import { Input } from "#/components/ui/input";
+import { RadioCard, RadioGroup } from "#/components/ui/radio-group";
+import { Select } from "#/components/ui/select";
 import { Separator } from "#/components/ui/separator";
 import { Spinner } from "#/components/ui/spinner";
 import { seo } from "#/lib/seo";
@@ -181,6 +183,7 @@ function MemberRow({ householdId, member, isOwner }: { householdId: string; memb
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [removeOpen, setRemoveOpen] = useState(false);
 
   async function run(action: () => Promise<unknown>) {
     setError(null);
@@ -195,6 +198,13 @@ function MemberRow({ householdId, member, isOwner }: { householdId: string; memb
   }
 
   const label = member.handle ? `@${member.handle}` : member.did;
+
+  async function onRemove() {
+    // On success the member row unmounts after invalidate; on error `run`
+    // surfaces it inline below, so close the dialog either way.
+    await run(() => removeMember({ data: { householdId, did: member.did } }));
+    setRemoveOpen(false);
+  }
   // Owner controls apply to OTHER members only; self-management is "Leave" in the
   // danger zone. The last-owner invariant is enforced server-side (LastOwnerError
   // → friendly message surfaced here) — we don't try to predict it in the client.
@@ -229,7 +239,7 @@ function MemberRow({ householdId, member, isOwner }: { householdId: string; memb
                 Make member
               </Button>
             )}
-            <Button size="xs" variant="ghost" disabled={pending} onClick={() => run(() => removeMember({ data: { householdId, did: member.did } }))}>
+            <Button size="xs" variant="ghost" disabled={pending} onClick={() => setRemoveOpen(true)}>
               <UserMinus aria-hidden="true" />
               Remove
             </Button>
@@ -241,6 +251,21 @@ function MemberRow({ householdId, member, isOwner }: { householdId: string; memb
           {error}
         </p>
       ) : null}
+
+      <ConfirmDialog
+        open={removeOpen}
+        onOpenChange={setRemoveOpen}
+        title="Remove this member?"
+        description={
+          <>
+            <strong className="text-foreground">{label}</strong> loses access to this household's shared data. You can invite them back later.
+          </>
+        }
+        confirmLabel="Remove"
+        destructive
+        pending={pending}
+        onConfirm={onRemove}
+      />
     </div>
   );
 }
@@ -257,7 +282,7 @@ function InvitesSection({ householdId, invites }: { householdId: string; invites
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <CreateInviteForm householdId={householdId} />
+        <CreateInviteForm householdId={householdId} invites={invites} />
         <Separator />
         {invites.length === 0 ? (
           <p className="m-0 text-sm text-muted-foreground">No pending invites.</p>
@@ -273,7 +298,7 @@ function InvitesSection({ householdId, invites }: { householdId: string; invites
   );
 }
 
-function CreateInviteForm({ householdId }: { householdId: string }) {
+function CreateInviteForm({ householdId, invites }: { householdId: string; invites: InviteSummary[] }) {
   const router = useRouter();
   const [mode, setMode] = useState<"bound" | "open">("bound");
   const [role, setRole] = useState<Role>("member");
@@ -282,13 +307,21 @@ function CreateInviteForm({ householdId }: { householdId: string }) {
   const [expiryDays, setExpiryDays] = useState(7);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [link, setLink] = useState<string | null>(null);
+  // The freshly-minted invite: the raw token in `link` is shown ONCE. Keyed by
+  // `id` so we can drop the box the moment that invite leaves the list (e.g. it
+  // was revoked) rather than dangling a dead link.
+  const [created, setCreated] = useState<{ id: string; link: string } | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Only show the just-minted link while its invite still exists in the
+  // (loader-refreshed) list — revoking it drops the box on the next render.
+  // Derived, not an effect, to avoid cascading setState.
+  const activeCreated = created && invites.some((i) => i.id === created.id) ? created : null;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setLink(null);
+    setCreated(null);
     setCopied(false);
     if (mode === "bound" && !handle.trim()) {
       setError("Enter the handle to invite.");
@@ -300,7 +333,7 @@ function CreateInviteForm({ householdId }: { householdId: string }) {
       const result = await createInvite({
         data: mode === "bound" ? { householdId, role, boundHandle: handle.trim(), expiresAt } : { householdId, role, maxUses, expiresAt },
       });
-      setLink(result.link);
+      setCreated({ id: result.id, link: result.link });
       if (mode === "bound") setHandle("");
       await router.invalidate();
     } catch (err) {
@@ -311,9 +344,9 @@ function CreateInviteForm({ householdId }: { householdId: string }) {
   }
 
   async function onCopy() {
-    if (!link) return;
+    if (!activeCreated) return;
     try {
-      await navigator.clipboard.writeText(link);
+      await navigator.clipboard.writeText(activeCreated.link);
       setCopied(true);
     } catch {
       setCopied(false);
@@ -322,66 +355,75 @@ function CreateInviteForm({ householdId }: { householdId: string }) {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
-      <fieldset className="flex flex-wrap gap-4 border-0 p-0">
-        <legend className="mb-1 text-sm font-semibold text-foreground">New invite</legend>
-        <label className="flex items-center gap-1.5 text-sm">
-          <input type="radio" name="invite-mode" checked={mode === "bound"} onChange={() => setMode("bound")} />
-          Invite a handle
-        </label>
-        <label className="flex items-center gap-1.5 text-sm">
-          <input type="radio" name="invite-mode" checked={mode === "open"} onChange={() => setMode("open")} />
-          Shareable link
-        </label>
+      <fieldset className="m-0 border-0 p-0">
+        <legend className="mb-2 text-sm font-semibold text-foreground">New invite</legend>
+        <RadioGroup orientation="horizontal" aria-label="Invite type">
+          <RadioCard
+            size="sm"
+            name="invite-mode"
+            value="bound"
+            checked={mode === "bound"}
+            onChange={() => setMode("bound")}
+            title="Invite a handle"
+            description="Locked to one person"
+            className="flex-1"
+          />
+          <RadioCard
+            size="sm"
+            name="invite-mode"
+            value="open"
+            checked={mode === "open"}
+            onChange={() => setMode("open")}
+            title="Shareable link"
+            description="Anyone with the link"
+            className="flex-1"
+          />
+        </RadioGroup>
       </fieldset>
 
-      {mode === "bound" ? (
-        <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="invite-handle">Handle to invite</FieldLabel>
-            <Input
-              id="invite-handle"
-              value={handle}
-              onChange={(e) => setHandle(e.target.value)}
-              placeholder="alice.bsky.social"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-          </Field>
-        </FieldGroup>
-      ) : (
-        <div className="flex flex-wrap gap-3">
-          <FieldGroup className="w-28">
-            <Field>
-              <FieldLabel htmlFor="invite-max-uses">Max uses</FieldLabel>
-              <Input id="invite-max-uses" type="number" min={1} max={100} value={maxUses} onChange={(e) => setMaxUses(Math.max(1, Number(e.target.value) || 1))} />
-            </Field>
-          </FieldGroup>
-          <FieldGroup className="w-28">
-            <Field>
-              <FieldLabel htmlFor="invite-expiry">Expires (days)</FieldLabel>
-              <Input id="invite-expiry" type="number" min={1} max={365} value={expiryDays} onChange={(e) => setExpiryDays(Math.max(1, Number(e.target.value) || 1))} />
-            </Field>
-          </FieldGroup>
-        </div>
-      )}
-
+      {/* Everything on one line: mode-specific field(s) + role + submit, bottom-aligned. */}
       <div className="flex flex-wrap items-end gap-3">
-        <FieldGroup className="w-40">
+        {mode === "bound" ? (
+          <FieldGroup className="w-64 max-w-full">
+            <Field>
+              <FieldLabel htmlFor="invite-handle">Handle to invite</FieldLabel>
+              <Input
+                id="invite-handle"
+                value={handle}
+                onChange={(e) => setHandle(e.target.value)}
+                placeholder="alice.bsky.social"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+            </Field>
+          </FieldGroup>
+        ) : (
+          <>
+            <FieldGroup className="w-24">
+              <Field>
+                <FieldLabel htmlFor="invite-max-uses">Max uses</FieldLabel>
+                <Input id="invite-max-uses" type="number" min={1} max={100} value={maxUses} onChange={(e) => setMaxUses(Math.max(1, Number(e.target.value) || 1))} />
+              </Field>
+            </FieldGroup>
+            <FieldGroup className="w-28">
+              <Field>
+                <FieldLabel htmlFor="invite-expiry">Expires (days)</FieldLabel>
+                <Input id="invite-expiry" type="number" min={1} max={365} value={expiryDays} onChange={(e) => setExpiryDays(Math.max(1, Number(e.target.value) || 1))} />
+              </Field>
+            </FieldGroup>
+          </>
+        )}
+        <FieldGroup className="w-32">
           <Field>
             <FieldLabel htmlFor="invite-role">Role</FieldLabel>
-            <select
-              id="invite-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value === "owner" ? "owner" : "member")}
-              className="h-8 rounded-lg border-2 border-border bg-card px-2 text-sm text-foreground"
-            >
+            <Select id="invite-role" value={role} onChange={(e) => setRole(e.target.value === "owner" ? "owner" : "member")}>
               <option value="member">Member</option>
               <option value="owner">Owner</option>
-            </select>
+            </Select>
           </Field>
         </FieldGroup>
-        <Button type="submit" size="sm" variant="secondary" disabled={pending}>
+        <Button type="submit" variant="secondary" disabled={pending}>
           {pending ? <Spinner data-icon="inline-start" /> : <UserPlus data-icon="inline-start" aria-hidden="true" />}
           Create invite
         </Button>
@@ -393,14 +435,14 @@ function CreateInviteForm({ householdId }: { householdId: string }) {
         </p>
       ) : null}
 
-      {link ? (
+      {activeCreated ? (
         <div className="flex flex-col gap-2 rounded-lg border-2 border-border bg-muted/40 p-3">
           <p className="m-0 flex items-center gap-1.5 text-sm font-semibold text-foreground">
             <Link2 aria-hidden="true" className="size-4" />
             Invite link
           </p>
           <div className="flex items-center gap-2">
-            <Input readOnly value={link} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
+            <Input readOnly value={activeCreated.link} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
             <Button type="button" size="sm" variant="outline" onClick={onCopy}>
               {copied ? <Check data-icon="inline-start" aria-hidden="true" /> : <Copy data-icon="inline-start" aria-hidden="true" />}
               {copied ? "Copied" : "Copy"}
@@ -417,6 +459,7 @@ function InviteRow({ invite }: { invite: InviteSummary }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [revokeOpen, setRevokeOpen] = useState(false);
 
   async function onRevoke() {
     setError(null);
@@ -427,6 +470,7 @@ function InviteRow({ invite }: { invite: InviteSummary }) {
     } catch (err) {
       setError(errorMessage(err));
       setPending(false);
+      setRevokeOpen(false);
     }
   }
 
@@ -445,7 +489,7 @@ function InviteRow({ invite }: { invite: InviteSummary }) {
           </span>
           {invite.expiresAt ? <span className="text-muted-foreground">· expires {invite.expiresAt.slice(0, 10)}</span> : null}
         </div>
-        <Button size="xs" variant="ghost" disabled={pending} onClick={onRevoke}>
+        <Button size="xs" variant="ghost" disabled={pending} onClick={() => setRevokeOpen(true)}>
           {pending ? <Spinner data-icon="inline-start" /> : <Trash2 aria-hidden="true" />}
           Revoke
         </Button>
@@ -455,6 +499,21 @@ function InviteRow({ invite }: { invite: InviteSummary }) {
           {error}
         </p>
       ) : null}
+
+      <ConfirmDialog
+        open={revokeOpen}
+        onOpenChange={setRevokeOpen}
+        title="Revoke this invite?"
+        description={
+          invite.boundToDid
+            ? "The invited person won't be able to use it. You can create a new invite anytime."
+            : "The shared link stops working immediately, even if you've already sent it. You can create a new one anytime."
+        }
+        confirmLabel="Revoke"
+        destructive
+        pending={pending}
+        onConfirm={onRevoke}
+      />
     </li>
   );
 }

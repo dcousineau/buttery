@@ -239,6 +239,7 @@ export interface User {
   id: string;
   image: string | null;
   name: string;
+  pds: string | null;
   updatedAt: Generated<Timestamp>;
 }
 

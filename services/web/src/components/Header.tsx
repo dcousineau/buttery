@@ -1,11 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { authClient, signOutAndGoHome } from "../lib/auth-client";
+import { authClient } from "../lib/auth-client";
 import ButterStick from "./ButterStick";
 import HouseholdSwitcher from "./HouseholdSwitcher";
-import ThemeToggle from "./ThemeToggle";
-import { Badge } from "#/components/ui/badge";
-import { Button } from "#/components/ui/button";
-import { Skeleton } from "#/components/ui/skeleton";
+import UserMenu from "./UserMenu";
 import type { ReactNode, Ref } from "react";
 
 /** The wordmark's destination depends on auth: a signed-in user goes to their
@@ -19,33 +16,6 @@ function Wordmark() {
       <ButterStick className="h-6 w-auto" />
       <span className="display-title text-lg leading-none">Buttery</span>
     </Link>
-  );
-}
-
-function AuthState() {
-  const { data: session, isPending } = authClient.useSession();
-
-  if (isPending) {
-    return <Skeleton className="h-8 w-24 rounded-lg" />;
-  }
-
-  if (session) {
-    return (
-      <div className="flex items-center gap-2">
-        <Badge variant="secondary" className="max-w-40 truncate" title={session.user.name}>
-          @{session.user.name}
-        </Badge>
-        <Button variant="ghost" size="sm" onClick={() => void signOutAndGoHome()}>
-          Sign out
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <Button render={<Link to="/login" />} nativeButton={false}>
-      Sign in
-    </Button>
   );
 }
 
@@ -71,8 +41,7 @@ export default function Header({ ref, leftSlot, hidden = false }: { ref?: Ref<HT
 
         <div className="ml-auto flex items-center gap-2">
           <HouseholdSwitcher />
-          <AuthState />
-          <ThemeToggle />
+          <UserMenu />
         </div>
       </div>
       <div className="gingham-band" aria-hidden="true" />

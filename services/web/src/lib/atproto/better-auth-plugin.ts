@@ -4,12 +4,23 @@ import { setSessionCookie } from "better-auth/cookies";
 import { getAtprotoOAuthClient } from "./oauth-node";
 import type { BetterAuthPlugin } from "better-auth";
 
+const APPVIEW = "https://public.api.bsky.app";
+
+/** What we learn about an account from its DID document. Both fields are
+ * best-effort — the DID alone is enough to sign in. */
+interface DidIdentity {
+  /** Current handle from `alsoKnownAs` (`at://handle`), or null. */
+  handle: string | null;
+  /** PDS service endpoint URL (`#atproto_pds`), or null. */
+  pds: string | null;
+}
+
 /**
- * Resolve the current handle for a DID from its DID document's alsoKnownAs
- * (`at://handle`). Returns null when the doc can't be fetched — the DID
- * alone is enough to sign in.
+ * Resolve a DID's document and extract its current handle and PDS endpoint in
+ * one fetch. Returns nulls (never throws) when the doc can't be fetched — the
+ * DID alone is enough to sign in.
  */
-async function resolveHandleForDid(did: string): Promise<string | null> {
+async function resolveDidIdentity(did: string): Promise<DidIdentity> {
   try {
     let docUrl: string;
     if (did.startsWith("did:plc:")) {
@@ -18,13 +29,35 @@ async function resolveHandleForDid(did: string): Promise<string | null> {
       const host = did.slice("did:web:".length).split(":").join("/");
       docUrl = `https://${decodeURIComponent(host)}/.well-known/did.json`;
     } else {
-      return null;
+      return { handle: null, pds: null };
     }
     const res = await fetch(docUrl);
-    if (!res.ok) return null;
-    const doc = (await res.json()) as { alsoKnownAs?: Array<string> };
+    if (!res.ok) return { handle: null, pds: null };
+    const doc = (await res.json()) as {
+      alsoKnownAs?: Array<string>;
+      service?: Array<{ id: string; type: string; serviceEndpoint: string }>;
+    };
     const aka = doc.alsoKnownAs?.find((a) => a.startsWith("at://"));
-    return aka ? aka.slice("at://".length) : null;
+    const handle = aka ? aka.slice("at://".length) : null;
+    const pds = doc.service?.find((s) => s.id.endsWith("#atproto_pds") || s.type === "AtprotoPersonalDataServer")?.serviceEndpoint ?? null;
+    return { handle, pds };
+  } catch {
+    return { handle: null, pds: null };
+  }
+}
+
+/**
+ * Best-effort fetch of the account's profile avatar via the public Bluesky
+ * appview (`app.bsky.actor.getProfile`). Returns a ready-to-use CDN image URL,
+ * or null when the account has no avatar / isn't indexed / the call fails.
+ * Cosmetic only — never blocks sign-in.
+ */
+async function fetchAvatarUrl(did: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${APPVIEW}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`);
+    if (!res.ok) return null;
+    const profile = (await res.json()) as { avatar?: string };
+    return profile.avatar ?? null;
   } catch {
     return null;
   }
@@ -77,7 +110,9 @@ export const atprotoPlugin = () => {
           throw ctx.redirect("/login?auth_error=atproto");
         }
 
-        const handle = await resolveHandleForDid(did);
+        // Resolve identity (handle + PDS) and profile avatar in parallel — both
+        // best-effort and non-blocking; the DID alone is enough to sign in.
+        const [{ handle, pds }, image] = await Promise.all([resolveDidIdentity(did), fetchAvatarUrl(did)]);
         const { internalAdapter } = ctx.context;
 
         const account = await internalAdapter.findAccountByProviderId(did, "atproto");
@@ -92,17 +127,30 @@ export const atprotoPlugin = () => {
             name: handle ?? did,
             did,
             handle,
+            image,
+            pds,
           });
           await internalAdapter.createAccount({
             userId: user.id,
             providerId: "atproto",
             accountId: did,
           });
-        } else if (handle && user.name !== handle) {
-          user = await internalAdapter.updateUser(user.id, {
-            name: handle,
-            handle,
-          });
+        } else {
+          // Refresh the cached identity/profile on each login — handles change,
+          // avatars change, accounts migrate PDS. Only write changed fields
+          // (and never null out a good cached value with a failed lookup).
+          // The adapter's user type is the base better-auth shape; the atproto
+          // plugin's custom columns (handle/pds) aren't reflected on it, so read
+          // them through a narrowing cast (same pattern as the sign-out hook).
+          const cached = user as { name: string; handle?: string | null; image?: string | null; pds?: string | null };
+          const updates: { name?: string; handle?: string; image?: string; pds?: string } = {};
+          if (handle && cached.name !== handle) updates.name = handle;
+          if (handle && cached.handle !== handle) updates.handle = handle;
+          if (image && cached.image !== image) updates.image = image;
+          if (pds && cached.pds !== pds) updates.pds = pds;
+          if (Object.keys(updates).length > 0) {
+            user = await internalAdapter.updateUser(user.id, updates);
+          }
         }
 
         const session = await internalAdapter.createSession(user.id);
@@ -133,6 +181,9 @@ export const atprotoPlugin = () => {
         fields: {
           did: { type: "string", required: false, unique: true, input: false },
           handle: { type: "string", required: false, input: false },
+          // atproto PDS host (see migration 1785500000000_add_user_pds).
+          // Server-set from the DID doc; surfaces on `session.user.pds`.
+          pds: { type: "string", required: false, input: false },
         },
       },
       atprotoState: {
