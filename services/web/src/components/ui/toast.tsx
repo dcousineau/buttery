@@ -64,8 +64,10 @@ function Toast({
     description?: React.ReactNode;
     onClose?: () => void;
   }) {
+  // No role="status" here: the enclosing <ToastViewport> is the single
+  // aria-live region, so announcing on both would double-read in some SRs.
   return (
-    <div role="status" data-slot="toast" className={cn(toastVariants({ variant, size }), className)} {...props}>
+    <div data-slot="toast" className={cn(toastVariants({ variant, size }), className)} {...props}>
       {children}
       <div className="min-w-0 flex-1">
         {title ? <div className="leading-snug font-semibold">{title}</div> : null}
@@ -96,20 +98,59 @@ type ToastQueueItem = {
  * Minimal queue. No provider, no portal, no new dependency — mount one
  * <ToastViewport> in the layout that needs it and map the queue into it.
  * Pass `timeout = 0` to require an explicit dismiss.
+ *
+ * `pauseAll`/`resumeAll` let a caller freeze the auto-dismiss countdown while the
+ * viewport is hovered or focused (WCAG 2.2.1) — remaining time is preserved and
+ * resumed, so a toast never disappears out from under a pointer or keyboard user.
  */
 function useToasts(timeout = 4000) {
   const [toasts, setToasts] = React.useState<ToastQueueItem[]>([]);
-  const dismiss = React.useCallback((id: string) => setToasts((t) => t.filter((x) => x.id !== id)), []);
+  const timers = React.useRef(new Map<string, { handle: ReturnType<typeof setTimeout> | null; remaining: number; startedAt: number }>());
+
+  const dismiss = React.useCallback((id: string) => {
+    const rec = timers.current.get(id);
+    if (rec?.handle) clearTimeout(rec.handle);
+    timers.current.delete(id);
+    setToasts((t) => t.filter((x) => x.id !== id));
+  }, []);
+
   const push = React.useCallback(
     (toast: Omit<ToastQueueItem, "id">) => {
       const id = crypto.randomUUID();
       setToasts((t) => [...t, { ...toast, id }]);
-      if (timeout) setTimeout(() => dismiss(id), timeout);
+      if (timeout) {
+        timers.current.set(id, { handle: setTimeout(() => dismiss(id), timeout), remaining: timeout, startedAt: Date.now() });
+      }
       return id;
     },
     [dismiss, timeout],
   );
-  return { toasts, push, dismiss };
+
+  const pauseAll = React.useCallback(() => {
+    for (const [id, rec] of timers.current) {
+      if (rec.handle) {
+        clearTimeout(rec.handle);
+        timers.current.set(id, { handle: null, remaining: Math.max(0, rec.remaining - (Date.now() - rec.startedAt)), startedAt: rec.startedAt });
+      }
+    }
+  }, []);
+
+  const resumeAll = React.useCallback(() => {
+    for (const [id, rec] of timers.current) {
+      if (!rec.handle && rec.remaining > 0) {
+        timers.current.set(id, { handle: setTimeout(() => dismiss(id), rec.remaining), remaining: rec.remaining, startedAt: Date.now() });
+      }
+    }
+  }, [dismiss]);
+
+  React.useEffect(() => {
+    const map = timers.current;
+    return () => {
+      for (const rec of map.values()) if (rec.handle) clearTimeout(rec.handle);
+    };
+  }, []);
+
+  return { toasts, push, dismiss, pauseAll, resumeAll };
 }
 
 export { Toast, ToastViewport, useToasts, toastVariants };

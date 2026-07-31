@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { blobImageUrl } from "#/lib/atproto/images";
+import { deriveApp, prettify, profileUrl, shortDid } from "./recipe-provenance";
 
 // Read-side browse/detail queries over the rendered `recipe` layer (see the
 // recipe_rendered migration + the cron's render.ts). These power the home-page
@@ -48,59 +49,6 @@ export interface RecipeDetailData extends RecipeCardData {
     publisher: string | null;
     url: string | null;
   } | null;
-}
-
-/** did:plc:abcdef… → did:plc:abcdef (short, still recognizable). */
-function shortDid(did: string | null): string | null {
-  if (!did) return null;
-  return did.length > 24 ? `${did.slice(0, 21)}…` : did;
-}
-
-/**
- * Profile link for a publisher account. We route to the Bluesky appview, which
- * resolves any atproto account — including accounts whose handle lives on
- * another domain (e.g. *.blacksky.app). bsky.app's `/profile/` route needs the
- * HANDLE, not the DID, so a DID-only repo (handle unresolved) gets no link.
- * A handle's domain does NOT reliably indicate which appview its owner uses, so
- * bsky.app is the safe universal default; add alt-appview routing to
- * APPVIEW_OVERRIDES when a given handle-suffix → profile-URL scheme is known.
- */
-const APPVIEW_OVERRIDES: Array<{ suffix: string; url: (handle: string) => string }> = [
-  // e.g. { suffix: ".blacksky.app", url: (h) => `https://blacksky.app/profile/${h}` },
-];
-
-function profileUrl(handle: string | null): string | null {
-  if (!handle) return null;
-  const hit = APPVIEW_OVERRIDES.find((o) => handle.endsWith(o.suffix));
-  if (hit) return hit.url(handle);
-  return `https://bsky.app/profile/${encodeURIComponent(handle)}`;
-}
-
-/** slug ("gluten_free") → label ("Gluten Free") for display. */
-function prettify(slug: string | null): string | null {
-  if (!slug) return null;
-  return slug
-    .split(/[_\s]+/)
-    .filter(Boolean)
-    .map((w) => w[0].toUpperCase() + w.slice(1))
-    .join(" ");
-}
-
-/**
- * Best-effort "which app published this" + a deep link to the recipe there.
- * atproto records carry NO provenance of the writing app — the
- * exchange.recipe.recipe lexicon has no client/via field — so this is a
- * heuristic, not a fact:
- *   - origin 'local' → Buttery wrote it (we know; we're the writer). No external
- *     link — the recipe already lives here.
- *   - origin 'sync'  → recipe.exchange is currently the only app publishing this
- *     NSID to the network. Its canonical URL is `/recipes/{rkey}`, and our
- *     recipe.id IS the rkey (a ULID), so the deep link is derivable. Revisit if
- *     a second producer ever appears.
- */
-function deriveApp(origin: string, id: string): { name: string; url: string | null } {
-  if (origin === "local") return { name: "Buttery", url: null };
-  return { name: "recipe.exchange", url: `https://recipe.exchange/recipes/${encodeURIComponent(id)}` };
 }
 
 interface CardRow {

@@ -129,6 +129,24 @@ export interface HouseholdMember {
   tombstoned: Generated<boolean>;
 }
 
+export interface HouseholdRecipe {
+  added_at: Generated<Timestamp>;
+  added_by_did: string;
+  favorite: Generated<boolean>;
+  favorited_at: Timestamp | null;
+  household_id: string;
+  recipe_id: string;
+}
+
+export interface HouseholdRecipeNote {
+  author_did: string;
+  body: string;
+  created_at: Generated<Timestamp>;
+  household_id: string;
+  recipe_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface Recipe {
   calories: number | null;
   carbohydrate_content: Numeric | null;
@@ -262,6 +280,8 @@ export interface DB {
   household: Household;
   household_invite: HouseholdInvite;
   household_member: HouseholdMember;
+  household_recipe: HouseholdRecipe;
+  household_recipe_note: HouseholdRecipeNote;
   recipe: Recipe;
   recipe_attribution: RecipeAttribution;
   recipe_image: RecipeImage;

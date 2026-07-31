@@ -23,7 +23,7 @@ type NavEntry = {
 
 const NAV_ENTRIES: Array<NavEntry> = [
   { label: "Home", icon: Home, to: "/pantry" },
-  { label: "Recipes", icon: BookOpenText, soon: true },
+  { label: "Recipes", icon: BookOpenText, to: "/household/recipes" },
   { label: "Collections", icon: FolderLock, soon: true },
   { label: "Shopping list", icon: ShoppingBasket, soon: true },
   { label: "Meal planner", icon: CalendarRange, soon: true },
@@ -47,7 +47,11 @@ export default function AppSidebar() {
                   <SidebarMenuItem key={entry.label}>
                     {entry.to ? (
                       <SidebarMenuButton
-                        isActive={pathname === entry.to}
+                        // Prefix match keeps a section active on its child routes
+                        // (e.g. /household/recipes stays active on
+                        // /household/recipes/{id}); the home route "/pantry" has
+                        // no children so exact and prefix agree.
+                        isActive={pathname === entry.to || pathname.startsWith(`${entry.to}/`)}
                         className="data-active:border-2 data-active:border-border data-active:shadow-pop-sm"
                         render={<Link to={entry.to} onClick={() => setOpenMobile(false)} />}
                       >
