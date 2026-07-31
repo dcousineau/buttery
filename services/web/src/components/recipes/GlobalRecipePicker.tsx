@@ -77,7 +77,19 @@ export function GlobalRecipePicker({ open, onOpenChange, onAdded }: { open: bool
             aria-label="Search public recipes"
             className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
           />
-          {loading && <Spinner className="size-4 text-muted-foreground" />}
+          {loading && <Spinner aria-hidden className="size-4 text-muted-foreground" />}
+        </div>
+
+        {/* Search feedback for non-sighted users: loading + result count are
+         * status messages, announced politely (the spinner is aria-hidden). */}
+        <div className="sr-only" role="status" aria-live="polite">
+          {loading
+            ? "Searching…"
+            : results.length === 0
+              ? q
+                ? "No public recipes match that."
+                : "No recipes to add."
+              : `${results.length} recipe${results.length === 1 ? "" : "s"} found.`}
         </div>
 
         <div className="-mx-1 min-h-0 flex-1 overflow-auto px-1">
@@ -109,7 +121,7 @@ export function GlobalRecipePicker({ open, onOpenChange, onAdded }: { open: bool
                         <span className="truncate">{r.source.label}</span>
                       </span>
                     </div>
-                    {adding === r.recipeId && <Spinner className="size-4 shrink-0 text-muted-foreground" />}
+                    {adding === r.recipeId && <Spinner aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
                   </button>
                 </li>
               ))}

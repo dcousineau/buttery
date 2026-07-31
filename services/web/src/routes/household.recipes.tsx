@@ -41,7 +41,7 @@ function RecipesLayout() {
   const [factor, setFactor] = useState(1);
   const [metric, setMetric] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { toasts, push, dismiss } = useToasts(2400);
+  const { toasts, push, dismiss, pauseAll, resumeAll } = useToasts(4000);
 
   function pushToast(message: string) {
     push({ variant: "success", title: message });
@@ -71,7 +71,7 @@ function RecipesLayout() {
 
       <GlobalRecipePicker open={pickerOpen} onOpenChange={setPickerOpen} onAdded={onAdded} />
 
-      <ToastViewport position="bottom-center">
+      <ToastViewport position="bottom-center" onMouseEnter={pauseAll} onMouseLeave={resumeAll} onFocusCapture={pauseAll} onBlurCapture={resumeAll}>
         {toasts.map((t) => (
           <Toast key={t.id} variant={t.variant} title={t.title} onClose={() => dismiss(t.id)}>
             <Check className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

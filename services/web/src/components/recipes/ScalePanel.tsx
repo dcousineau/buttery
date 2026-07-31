@@ -6,12 +6,14 @@ import { Select } from "#/components/ui/select";
  * 1× / US.
  */
 export function ScalePanel({
+  id,
   factor,
   metric,
   onFactor,
   onMetric,
   onReset,
 }: {
+  id?: string;
   factor: number;
   metric: boolean;
   onFactor: (n: number) => void;
@@ -19,7 +21,7 @@ export function ScalePanel({
   onReset: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border-2 border-border bg-card p-2">
+    <div id={id} className="flex flex-wrap items-center gap-2 rounded-lg border-2 border-border bg-card p-2">
       <label className="flex items-center gap-1.5 text-[0.6875rem] font-semibold text-muted-foreground">
         Scale
         <Select size="xs" value={String(factor)} onChange={(e) => onFactor(Number(e.target.value))} aria-label="Scale factor" className="w-auto">

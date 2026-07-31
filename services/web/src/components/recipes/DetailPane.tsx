@@ -25,6 +25,15 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
   const router = useRouter();
   const { factor, setFactor, metric, setMetric, pushToast } = useRecipesView();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+
+  // Move focus to the recipe title when the pane mounts. The pane is keyed by
+  // recipeId at the render site, so this fires on every selection — restoring
+  // focus that would otherwise be lost to <body> (the tapped ledger row is
+  // hidden on mobile). `preventScroll` keeps the pane pinned to the top.
+  useEffect(() => {
+    titleRef.current?.focus({ preventScroll: true });
+  }, []);
 
   const [favorite, setFavorite] = useState(recipe.favorite);
   const [favPending, setFavPending] = useState(false);
@@ -83,7 +92,9 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
 
         {/* Title block */}
         <div className="flex flex-col gap-1.5">
-          <h1 className="display-title m-0 text-[1.625rem] leading-[1.1] text-balance text-foreground">{recipe.title}</h1>
+          <h1 ref={titleRef} tabIndex={-1} className="display-title m-0 text-[1.625rem] leading-[1.1] text-balance text-foreground outline-none">
+            {recipe.title}
+          </h1>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.75rem] font-semibold text-muted-foreground">
             <span className="inline-flex items-center gap-1 whitespace-nowrap">
               <SourceIcon kind={recipe.source.kind} className="size-3.5" />
@@ -160,6 +171,7 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
               <button
                 type="button"
                 aria-expanded={scaleOpen}
+                aria-controls="recipe-scale-panel"
                 onClick={() => setScaleOpen((v) => !v)}
                 className={cn(
                   "inline-flex h-[22px] items-center gap-1 rounded-md px-1.5 text-[0.6875rem] font-bold transition-colors hover:bg-accent",
@@ -173,6 +185,7 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
 
             {scaleOpen && (
               <ScalePanel
+                id="recipe-scale-panel"
                 factor={factor}
                 metric={metric}
                 onFactor={setFactor}
@@ -284,19 +297,25 @@ function NoteEditor({ recipeId, initialBody }: { recipeId: string; initialBody: 
     [],
   );
 
+  const headingId = `note-heading-${recipeId}`;
   return (
     <div className="mt-1.5 flex flex-col gap-2 border-t-2 border-border/45 pt-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="display-title m-0 text-base text-foreground">Notes</h2>
+        <h2 id={headingId} className="display-title m-0 text-base text-foreground">
+          Notes
+        </h2>
         <span className="inline-flex items-center gap-1 text-[0.6875rem] font-semibold text-muted-foreground">
           <EyeOff className="size-3" aria-hidden="true" />
           Never leaves this household
-          {status === "saving" && <span className="ml-1 opacity-70">· Saving…</span>}
-          {status === "saved" && <span className="ml-1 opacity-70">· Saved</span>}
+          {/* Autosave status is a status message: announced politely, not focus-stealing. */}
+          <span role="status" aria-live="polite" className="ml-1 opacity-70">
+            {status === "saving" ? "· Saving…" : status === "saved" ? "· Saved" : ""}
+          </span>
         </span>
       </div>
       <Textarea
         rows={4}
+        aria-labelledby={headingId}
         value={body}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}

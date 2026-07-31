@@ -135,6 +135,12 @@ export function RecipeLedger({
         )}
       </div>
 
+      {/* Filter results are a status message — announce the count as the search /
+       * tag narrows the list, so non-sighted users hear it change. */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {boxEmpty ? "" : visible.length === 0 ? "No recipes match your filters." : `${visible.length} recipe${visible.length === 1 ? "" : "s"}.`}
+      </div>
+
       {/* List */}
       <div className="min-h-0 flex-1 overflow-auto">
         {boxEmpty ? (
