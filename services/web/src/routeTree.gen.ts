@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AcknowledgementsRouteImport } from './routes/acknowledgements'
 import { Route as AiUsageRouteImport } from './routes/ai-usage'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OauthClientMetadataDotjsonRouteImport } from './routes/oauth-client-metadata[.]json'
@@ -29,6 +30,11 @@ import { Route as HouseholdRecipesIdRouteImport } from './routes/household.recip
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AcknowledgementsRoute = AcknowledgementsRouteImport.update({
+  id: '/acknowledgements',
+  path: '/acknowledgements',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AiUsageRoute = AiUsageRouteImport.update({
@@ -110,6 +116,7 @@ const HouseholdRecipesIdRoute = HouseholdRecipesIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/acknowledgements': typeof AcknowledgementsRoute
   '/ai-usage': typeof AiUsageRoute
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
@@ -128,6 +135,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/acknowledgements': typeof AcknowledgementsRoute
   '/ai-usage': typeof AiUsageRoute
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
@@ -146,6 +154,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/acknowledgements': typeof AcknowledgementsRoute
   '/ai-usage': typeof AiUsageRoute
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
@@ -166,6 +175,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/acknowledgements'
     | '/ai-usage'
     | '/login'
     | '/oauth-client-metadata.json'
@@ -184,6 +194,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/acknowledgements'
     | '/ai-usage'
     | '/login'
     | '/oauth-client-metadata.json'
@@ -201,6 +212,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/acknowledgements'
     | '/ai-usage'
     | '/login'
     | '/oauth-client-metadata.json'
@@ -220,6 +232,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AcknowledgementsRoute: typeof AcknowledgementsRoute
   AiUsageRoute: typeof AiUsageRoute
   LoginRoute: typeof LoginRoute
   OauthClientMetadataDotjsonRoute: typeof OauthClientMetadataDotjsonRoute
@@ -242,6 +255,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/acknowledgements': {
+      id: '/acknowledgements'
+      path: '/acknowledgements'
+      fullPath: '/acknowledgements'
+      preLoaderRoute: typeof AcknowledgementsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ai-usage': {
@@ -367,6 +387,7 @@ const HouseholdRecipesRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AcknowledgementsRoute: AcknowledgementsRoute,
   AiUsageRoute: AiUsageRoute,
   LoginRoute: LoginRoute,
   OauthClientMetadataDotjsonRoute: OauthClientMetadataDotjsonRoute,

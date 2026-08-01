@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatUS, parseServes, scaleIngredient, scaleIngredients } from "./recipe-scale";
+import { formatUS, parseServes, scaleIngredient, scaleIngredients, splitIngredient } from "./recipe-scale";
 
 /**
  * Ingredient scale & convert (plan §10). Covers each accepted quantity form,
@@ -129,6 +129,23 @@ describe("scaleIngredient — metric → US", () => {
 describe("scaleIngredients", () => {
   it("maps over a list", () => {
     expect(scaleIngredients(["2 eggs", "Salt, to taste"], 2, false)).toEqual(["4 eggs", "Salt, to taste"]);
+  });
+});
+
+describe("splitIngredient", () => {
+  it("lifts a leading quantity + measurement unit into the amount", () => {
+    expect(splitIngredient("6 tbsp Unsalted butter, plus 1 tbsp for the skillet")).toEqual({
+      amount: "6 tbsp",
+      name: "Unsalted butter, plus 1 tbsp for the skillet",
+    });
+    expect(splitIngredient("1½ cups Medium-grind cornmeal")).toEqual({ amount: "1½ cups", name: "Medium-grind cornmeal" });
+    expect(splitIngredient("355 ml Buttermilk, shaken")).toEqual({ amount: "355 ml", name: "Buttermilk, shaken" });
+  });
+  it("keeps a bare count as the amount and the following word in the name", () => {
+    expect(splitIngredient("2 Eggs, at room temperature")).toEqual({ amount: "2", name: "Eggs, at room temperature" });
+  });
+  it("passes a line with no leading quantity through as the name", () => {
+    expect(splitIngredient("Salt, to taste")).toEqual({ amount: "", name: "Salt, to taste" });
   });
 });
 

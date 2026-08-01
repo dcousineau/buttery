@@ -281,6 +281,74 @@
   }
 }
 
+/* ---- Cook mode + global timers (plan 05) ----
+ * All decorative; every consumer applies them via Tailwind's `motion-safe:`
+ * variant so the reduced-motion block below neutralises them. The header shake in
+ * particular MUST degrade to a steady alarm colour/ring — never motion alone. */
+
+/* Header timer indicator: continuous shake while a timer is alarming-unacked. */
+@keyframes timer-shake {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  20% {
+    transform: translateX(-2px) rotate(-4deg);
+  }
+  40% {
+    transform: translateX(2px) rotate(4deg);
+  }
+  60% {
+    transform: translateX(-2px) rotate(-3deg);
+  }
+  80% {
+    transform: translateX(2px) rotate(3deg);
+  }
+}
+.animate-timer-shake {
+  animation: timer-shake 0.55s ease-in-out infinite;
+}
+
+/* Cook mode: alarm banner flash. */
+@keyframes cook-alarm-flash {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.animate-cook-alarm-flash {
+  animation: cook-alarm-flash 1s ease-in-out infinite;
+}
+
+/* Cook mode: ambient blurred gradient blobs drift slowly. */
+@keyframes cook-blob-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(6%, -4%) scale(1.08);
+  }
+}
+@keyframes cook-blob-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1.05);
+  }
+  50% {
+    transform: translate(-5%, 5%) scale(0.96);
+  }
+}
+.animate-cook-blob-a {
+  animation: cook-blob-a 22s ease-in-out infinite;
+}
+.animate-cook-blob-b {
+  animation: cook-blob-b 28s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
