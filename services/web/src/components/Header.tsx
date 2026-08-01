@@ -3,6 +3,7 @@ import { authClient } from "../lib/auth-client";
 import ButterStick from "./ButterStick";
 import HouseholdSwitcher from "./HouseholdSwitcher";
 import UserMenu from "./UserMenu";
+import { HeaderTimerIndicator } from "./timers/HeaderTimerIndicator";
 import type { ReactNode, Ref } from "react";
 
 /** The wordmark's destination depends on auth: a signed-in user goes to their
@@ -40,6 +41,7 @@ export default function Header({ ref, leftSlot, hidden = false }: { ref?: Ref<HT
         <Wordmark />
 
         <div className="ml-auto flex items-center gap-2">
+          <HeaderTimerIndicator />
           <HouseholdSwitcher />
           <UserMenu />
         </div>

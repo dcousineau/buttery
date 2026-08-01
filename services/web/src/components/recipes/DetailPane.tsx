@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
-import { ArrowLeft, CalendarRange, Clock, CookingPot, EyeOff, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, CalendarRange, Clock, EyeOff, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
 import type { HouseholdRecipeDetail } from "#/server/household-recipes";
 import { removeRecipeFromHousehold, toggleHouseholdRecipeFavorite, upsertHouseholdRecipeNote } from "#/server/household-recipes";
 import { Button } from "#/components/ui/button";
@@ -13,6 +13,9 @@ import { SourceIcon } from "./SourceIcon";
 import { ScalePanel } from "./ScalePanel";
 import { NutritionStrip } from "./NutritionStrip";
 import { UnavailableBanner } from "./UnavailableBanner";
+import { StepText } from "./StepText";
+import { CookModeLauncher } from "./CookModeLauncher";
+import { RecipeTimerStrip } from "#/components/timers/RecipeTimerStrip";
 
 /**
  * The recipe detail pane (right column; full screen on mobile). Reads the shared
@@ -126,10 +129,7 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
 
         {/* Action row */}
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="lg" onClick={() => pushToast("Cook mode coming soon")}>
-            <CookingPot data-icon="inline-start" aria-hidden="true" />
-            Apron on
-          </Button>
+          <CookModeLauncher recipe={recipe} />
           <Button
             variant="outline"
             aria-pressed={favorite}
@@ -153,6 +153,9 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
             Remove
           </Button>
         </div>
+
+        {/* Timers running for this recipe (global store, filtered) — plan §6.5 */}
+        <RecipeTimerStrip recipeId={recipe.recipeId} className="empty:hidden" />
 
         {/* Body */}
         <div className="flex flex-wrap items-start gap-5">
@@ -224,7 +227,9 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
                       <span className="grid size-5 shrink-0 place-content-center rounded-full border-2 border-border bg-primary text-[0.6875rem] font-bold text-primary-foreground">
                         {i + 1}
                       </span>
-                      <span>{step}</span>
+                      <span>
+                        <StepText text={step} recipeId={recipe.recipeId} recipeTitle={recipe.title} variant="detail" />
+                      </span>
                     </li>
                   ))}
                 </ol>

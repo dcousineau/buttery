@@ -19,6 +19,9 @@ export default function Footer() {
             <Link to="/ai-usage" className="hover:text-foreground">
               AI Usage
             </Link>
+            <Link to="/acknowledgements" className="hover:text-foreground">
+              Acknowledgements
+            </Link>
           </nav>
         </div>
       </div>

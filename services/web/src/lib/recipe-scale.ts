@@ -94,6 +94,82 @@ export function scaleIngredients(lines: string[], factor: number, metric: boolea
   return lines.map((line) => scaleIngredient(line, factor, metric));
 }
 
+/** Measurement units we lift into the quantity "amount" (everything else after a
+ * bare count — "2 Eggs" — stays in the name). Lowercase, singular + plural. */
+const MEASURE_UNITS = new Set([
+  "cup",
+  "cups",
+  "tbsp",
+  "tbsps",
+  "tablespoon",
+  "tablespoons",
+  "tsp",
+  "tsps",
+  "teaspoon",
+  "teaspoons",
+  "ml",
+  "l",
+  "liter",
+  "liters",
+  "litre",
+  "litres",
+  "g",
+  "gram",
+  "grams",
+  "kg",
+  "oz",
+  "ounce",
+  "ounces",
+  "lb",
+  "lbs",
+  "pound",
+  "pounds",
+  "pinch",
+  "pinches",
+  "dash",
+  "dashes",
+  "clove",
+  "cloves",
+  "can",
+  "cans",
+  "stick",
+  "sticks",
+  "slice",
+  "slices",
+  "sprig",
+  "sprigs",
+  "quart",
+  "quarts",
+  "pint",
+  "pints",
+  "gallon",
+  "gallons",
+]);
+
+/** Leading quantity token (same grammar as {@link LINE_RE}) + the remainder. */
+const QTY_RE = /^(\d+\s*[¼½¾⅓⅔⅛]|\d+\/\d+|[¼½¾⅓⅔⅛]|\d+(?:\.\d+)?)\s*(.*)$/;
+/** A leading word (candidate unit) + the rest. */
+const UNIT_RE = /^([a-zA-Z]+)\b\s*(.*)$/;
+
+/**
+ * Split a (typically already-scaled) ingredient line into a right-aligned
+ * `amount` chip and the `name`, for the cook-mode / mise checklists. The leading
+ * quantity always joins the amount; a following word joins it only when it is a
+ * known {@link MEASURE_UNITS measurement unit} ("6 tbsp Butter" → `6 tbsp` /
+ * `Butter`, but "2 Eggs" → `2` / `Eggs"). Lines with no leading quantity return
+ * an empty amount and pass the whole line through as the name.
+ */
+export function splitIngredient(line: string): { amount: string; name: string } {
+  const m = line.match(QTY_RE);
+  if (!m) return { amount: "", name: line.trim() };
+  const [, qty, rest] = m;
+  const unitMatch = rest.match(UNIT_RE);
+  if (unitMatch && MEASURE_UNITS.has(unitMatch[1].toLowerCase())) {
+    return { amount: `${qty} ${unitMatch[1]}`, name: unitMatch[2].trim() };
+  }
+  return { amount: qty, name: rest.trim() };
+}
+
 /**
  * Parse the leading integer of a free-text `recipe_yield` ("8 servings" → 8).
  * Returns null when no leading integer is present (caller shows the raw yield and

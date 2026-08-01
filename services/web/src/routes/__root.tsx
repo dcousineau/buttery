@@ -34,7 +34,7 @@ export const Route = createRootRoute({
 });
 
 /** Pages that stay reachable during the soft-launch gate (legal / transparency). */
-const UNGATED_ROUTES = new Set(["/terms", "/privacy", "/ai-usage"]);
+const UNGATED_ROUTES = new Set(["/terms", "/privacy", "/ai-usage", "/acknowledgements"]);
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   const comingSoon = Route.useLoaderData();
