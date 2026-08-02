@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { createFileRoute, redirect, useNavigate, useRouter } from "@tanstack/react-router";
+import { usePostHog } from "@posthog/react";
 import { Mail, MailQuestion, Plus } from "lucide-react";
 import { resolveOnboarding, acceptBoundInviteById, declineBoundInviteById } from "#/server/household/onboarding";
 import { createHousehold } from "#/server/household/households";
@@ -231,6 +232,7 @@ function PasteInviteCard() {
  * (that lives on the management surface, acceptance item 11). */
 function CreateHouseholdCard() {
   const navigate = useNavigate();
+  const posthog = usePostHog();
   const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -245,6 +247,7 @@ function CreateHouseholdCard() {
     setPending(true);
     try {
       await createHousehold({ data: { name: name.trim() } });
+      posthog.capture("household_created", { creation_surface: "onboarding" });
       await navigate({ to: "/households" });
     } catch (err) {
       setError(errorMessage(err));

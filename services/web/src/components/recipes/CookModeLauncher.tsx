@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 import { ClientOnly } from "@tanstack/react-router";
+import { usePostHog } from "@posthog/react";
 import { CookingPot } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Spinner } from "#/components/ui/spinner";
@@ -27,11 +28,17 @@ function CookModeFallback() {
 }
 
 export function CookModeLauncher({ recipe }: { recipe: HouseholdRecipeDetail }) {
+  const posthog = usePostHog();
   const [open, setOpen] = useState(false);
+
+  function openCookMode() {
+    posthog.capture("cook_mode_opened", { recipe_id: recipe.recipeId });
+    setOpen(true);
+  }
 
   return (
     <>
-      <Button size="lg" onClick={() => setOpen(true)}>
+      <Button size="lg" onClick={openCookMode}>
         <CookingPot data-icon="inline-start" aria-hidden="true" />
         Apron on
       </Button>

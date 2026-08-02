@@ -13,6 +13,7 @@ export const authClient = createAuthClient({
  * session can never strand the user on an authed screen.
  */
 export async function signOutAndGoHome(): Promise<void> {
+  window.dispatchEvent(new Event("posthog:reset"));
   try {
     await authClient.signOut();
   } finally {

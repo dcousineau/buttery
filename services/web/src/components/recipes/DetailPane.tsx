@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
+import { usePostHog } from "@posthog/react";
 import { ArrowLeft, CalendarRange, Clock, EyeOff, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
 import type { HouseholdRecipeDetail } from "#/server/household-recipes";
 import { removeRecipeFromHousehold, toggleHouseholdRecipeFavorite, upsertHouseholdRecipeNote } from "#/server/household-recipes";
@@ -26,6 +27,7 @@ import { RecipeTimerStrip } from "#/components/timers/RecipeTimerStrip";
  */
 export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
   const router = useRouter();
+  const posthog = usePostHog();
   const { factor, setFactor, metric, setMetric, pushToast } = useRecipesView();
   const scrollRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -62,6 +64,7 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
     try {
       const { favorite } = await toggleHouseholdRecipeFavorite({ data: { recipeId: recipe.recipeId } });
       setFavorite(favorite);
+      posthog.capture("recipe_favorite_toggled", { recipe_id: recipe.recipeId, favorited: favorite });
       await router.invalidate();
     } catch {
       setFavorite(recipe.favorite); // revert on failure
@@ -74,6 +77,7 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
     setRemoving(true);
     try {
       await removeRecipeFromHousehold({ data: { recipeId: recipe.recipeId } });
+      posthog.capture("recipe_removed_from_household", { recipe_id: recipe.recipeId });
       await router.navigate({ to: "/household/recipes" });
       await router.invalidate();
     } finally {
