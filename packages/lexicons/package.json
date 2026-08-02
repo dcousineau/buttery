@@ -13,7 +13,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@atproto/lex": "^0.3.0"
+    "@atproto/lex": "^0.3.2"
   },
   "devDependencies": {
     "@typescript/native": "npm:typescript@^7.0.2"
