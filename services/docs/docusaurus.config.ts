@@ -14,9 +14,9 @@ const config: Config = {
     v4: true, // Improve compatibility with the upcoming Docusaurus v4
   },
 
-  // Production URL and base path for GitHub Pages (project site).
-  url: "https://dcousineau.github.io",
-  baseUrl: "/buttery/",
+  // Production URL and base path. Served from the custom domain root.
+  url: "https://docs.buttery.recipes",
+  baseUrl: "/",
 
   // GitHub pages deployment config.
   organizationName: "dcousineau", // GitHub org/user name.
