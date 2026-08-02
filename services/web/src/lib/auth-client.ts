@@ -13,6 +13,10 @@ export const authClient = createAuthClient({
  * session can never strand the user on an authed screen.
  */
 export async function signOutAndGoHome(): Promise<void> {
+  // Clear the PostHog identity before the session goes away so the post-reload
+  // anonymous visitor isn't linked to the signed-out user. A window event keeps
+  // this module free of a PostHog dependency (listener lives in __root.tsx).
+  window.dispatchEvent(new Event("posthog:reset"));
   try {
     await authClient.signOut();
   } finally {

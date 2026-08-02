@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
+import { usePostHog } from "@posthog/react";
 import { Check, Copy, Crown, Link2, LogOut, Mail, Pencil, Plus, Shield, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
 import { requireActiveHousehold, listHouseholdMembers } from "#/server/household/onboarding";
 import { listMyHouseholds, renameHousehold, deleteHousehold, createHousehold } from "#/server/household/households";
@@ -79,6 +80,7 @@ function HouseholdPage() {
 
 function HouseholdHeader({ householdId, name, isOwner }: { householdId: string; name: string; isOwner: boolean }) {
   const router = useRouter();
+  const posthog = usePostHog();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(name);
   const [pending, setPending] = useState(false);
@@ -95,6 +97,7 @@ function HouseholdHeader({ householdId, name, isOwner }: { householdId: string; 
     setPending(true);
     try {
       await renameHousehold({ data: { householdId, name: value.trim() } });
+      posthog.capture("household_renamed", { household_id: householdId });
       setEditing(false);
       await router.invalidate();
     } catch (err) {
@@ -181,6 +184,7 @@ function MembersSection({ householdId, members, isOwner }: { householdId: string
 
 function MemberRow({ householdId, member, isOwner }: { householdId: string; member: HouseholdMemberView; isOwner: boolean }) {
   const router = useRouter();
+  const posthog = usePostHog();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [removeOpen, setRemoveOpen] = useState(false);
@@ -202,7 +206,10 @@ function MemberRow({ householdId, member, isOwner }: { householdId: string; memb
   async function onRemove() {
     // On success the member row unmounts after invalidate; on error `run`
     // surfaces it inline below, so close the dialog either way.
-    await run(() => removeMember({ data: { householdId, did: member.did } }));
+    await run(async () => {
+      await removeMember({ data: { householdId, did: member.did } });
+      posthog.capture("household_member_removed", { household_id: householdId });
+    });
     setRemoveOpen(false);
   }
   // Owner controls apply to OTHER members only; self-management is "Leave" in the
@@ -300,6 +307,7 @@ function InvitesSection({ householdId, invites }: { householdId: string; invites
 
 function CreateInviteForm({ householdId, invites }: { householdId: string; invites: InviteSummary[] }) {
   const router = useRouter();
+  const posthog = usePostHog();
   const [mode, setMode] = useState<"bound" | "open">("bound");
   const [role, setRole] = useState<Role>("member");
   const [handle, setHandle] = useState("");
@@ -334,6 +342,7 @@ function CreateInviteForm({ householdId, invites }: { householdId: string; invit
         data: mode === "bound" ? { householdId, role, boundHandle: handle.trim(), expiresAt } : { householdId, role, maxUses, expiresAt },
       });
       setCreated({ id: result.id, link: result.link });
+      posthog.capture("household_invite_created", { household_id: householdId, invite_type: mode, invite_role: role });
       if (mode === "bound") setHandle("");
       await router.invalidate();
     } catch (err) {
@@ -457,6 +466,7 @@ function CreateInviteForm({ householdId, invites }: { householdId: string; invit
 
 function InviteRow({ invite }: { invite: InviteSummary }) {
   const router = useRouter();
+  const posthog = usePostHog();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revokeOpen, setRevokeOpen] = useState(false);
@@ -466,6 +476,7 @@ function InviteRow({ invite }: { invite: InviteSummary }) {
     setPending(true);
     try {
       await revokeInvite({ data: { inviteId: invite.id } });
+      posthog.capture("household_invite_revoked", { invite_type: invite.boundToDid ? "bound" : "open", invite_role: invite.role });
       await router.invalidate();
     } catch (err) {
       setError(errorMessage(err));
@@ -615,6 +626,7 @@ function CreateAnotherSection({ currentName }: { currentName: string }) {
 
 function DangerZone({ householdId, isOwner, memberCount }: { householdId: string; isOwner: boolean; memberCount: number }) {
   const navigate = useNavigate();
+  const posthog = usePostHog();
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -625,6 +637,7 @@ function DangerZone({ householdId, isOwner, memberCount }: { householdId: string
     setPending(true);
     try {
       await leaveHousehold({ data: { householdId } });
+      posthog.capture("household_left", { household_id: householdId });
       setLeaveOpen(false);
       await navigate({ to: "/onboarding" });
     } catch (err) {
@@ -639,6 +652,7 @@ function DangerZone({ householdId, isOwner, memberCount }: { householdId: string
     setPending(true);
     try {
       await deleteHousehold({ data: { householdId } });
+      posthog.capture("household_deleted", { household_id: householdId, member_count: memberCount });
       setDeleteOpen(false);
       await navigate({ to: "/onboarding" });
     } catch (err) {

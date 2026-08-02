@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AArrowDown, AArrowUp, Maximize, Minimize, X } from "lucide-react";
+import { usePostHog } from "@posthog/react";
 import { Dialog, DialogContent, DialogTitle } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
 import { scaleIngredients } from "#/lib/recipe-scale";
@@ -37,6 +38,7 @@ interface FsDocument extends Document {
  * subtree (this file + everything it imports) out of the recipe route bundle.
  */
 export default function CookMode({ recipe, onClose }: { recipe: HouseholdRecipeDetail; onClose: () => void }) {
+  const posthog = usePostHog();
   const { factor, setFactor, metric, setMetric } = useRecipesView();
   const { arm } = useTimers();
   const { scale, increase, decrease, canIncrease, canDecrease } = useCookTextScale();
@@ -149,12 +151,14 @@ export default function CookMode({ recipe, onClose }: { recipe: HouseholdRecipeD
 
   function onStart() {
     arm(); // unlock audio + request notification permission from this gesture
+    posthog.capture("cook_session_started", { recipe_id: recipe.recipeId });
     setPhase("cook");
     setFocus((f) => (phase === "mise" ? 0 : f));
   }
 
   function onFinish() {
     clearCookState(recipe.recipeId);
+    posthog.capture("cook_session_completed", { recipe_id: recipe.recipeId });
     void handleExit();
   }
 

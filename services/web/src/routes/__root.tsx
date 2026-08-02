@@ -1,6 +1,9 @@
 import { HeadContent, Scripts, createRootRoute, useRouterState } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
+import { PostHogProvider, usePostHog } from "@posthog/react";
+import { useEffect, useRef } from "react";
+import { authClient } from "../lib/auth-client";
 import AppShell from "../components/AppShell";
 import ComingSoon from "../components/ComingSoon";
 import { getComingSoon } from "../lib/config";
@@ -36,13 +39,49 @@ export const Route = createRootRoute({
 /** Pages that stay reachable during the soft-launch gate (legal / transparency). */
 const UNGATED_ROUTES = new Set(["/terms", "/privacy", "/ai-usage", "/acknowledgements"]);
 
+function PostHogIdentity() {
+  const posthog = usePostHog();
+  const { data: session } = authClient.useSession();
+  const did = session?.user.did;
+  const identifiedDid = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!did) return;
+    if (identifiedDid.current && identifiedDid.current !== did) posthog.reset();
+    posthog.identify(did, {
+      handle: session.user.handle ?? session.user.name,
+    });
+    identifiedDid.current = did;
+  }, [did, posthog, session?.user.handle, session?.user.name]);
+
+  useEffect(() => {
+    const reset = () => {
+      posthog.reset();
+      identifiedDid.current = undefined;
+    };
+    window.addEventListener("posthog:reset", reset);
+    return () => window.removeEventListener("posthog:reset", reset);
+  }, [posthog]);
+
+  return null;
+}
+
 function RootDocument({ children }: { children: React.ReactNode }) {
+  // Inlined into the client bundle at build time (see .railway/railway.ts).
+  // Missing in dev means events are silently dropped, so surface it once.
+  const posthogToken = import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN;
+  const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST;
+  if (import.meta.env.DEV && (!posthogToken || !posthogHost)) {
+    console.error(`[posthog] ${!posthogToken ? "VITE_PUBLIC_POSTHOG_PROJECT_TOKEN" : "VITE_PUBLIC_POSTHOG_HOST"} is unset — analytics is disabled until it's configured.`);
+  }
   const comingSoon = Route.useLoaderData();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const gated = comingSoon && !UNGATED_ROUTES.has(pathname);
   // Canonical / og:url are per-page; derive both from the current path so every
   // route gets them without per-route wiring. Query/hash are intentionally dropped.
   const canonical = absolute(pathname);
+  // PostHog wraps the app only when configured; otherwise render the same tree bare.
+  const app = gated ? <ComingSoon /> : <AppShell>{children}</AppShell>;
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -52,7 +91,25 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <meta property="og:url" content={canonical} />
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(255,216,77,0.55)]">
-        {gated ? <ComingSoon /> : <AppShell>{children}</AppShell>}
+        {posthogToken && posthogHost ? (
+          <PostHogProvider
+            apiKey={posthogToken}
+            options={{
+              api_host: posthogHost,
+              capture_exceptions: true,
+              // Inject the session id into requests to our own origin (API is
+              // same-origin server functions) so backend instrumentation can
+              // link server traces to the session. Client-only: `window` is
+              // undefined during SSR.
+              tracing_headers: typeof window !== "undefined" ? [window.location.hostname] : [],
+            }}
+          >
+            <PostHogIdentity />
+            {app}
+          </PostHogProvider>
+        ) : (
+          app
+        )}
         <TanStackDevtools
           config={{
             position: "bottom-right",
