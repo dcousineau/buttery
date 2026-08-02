@@ -2,7 +2,7 @@
   "name": "buttery",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.17.0",
+  "packageManager": "pnpm@11.18.0",
   "scripts": {
     "dev": "pnpm --filter @buttery/web dev",
     "build": "pnpm -r build",
@@ -19,14 +19,14 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^22.10.2",
-    "eslint": "^10.7.0",
+    "@types/node": "^26.1.2",
+    "eslint": "^10.8.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.1.1",
     "husky": "^9.1.7",
-    "lint-staged": "^17.2.0",
+    "lint-staged": "^17.3.0",
     "prettier": "^3.9.6",
-    "railway": "^3.6.0",
+    "railway": "^3.7.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.65.0"
   }

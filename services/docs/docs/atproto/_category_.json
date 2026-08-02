@@ -1,0 +1,11 @@
+{
+  "label": "ATProto",
+  "position": 2,
+  "collapsible": true,
+  "collapsed": false,
+  "link": {
+    "type": "generated-index",
+    "title": "ATProto",
+    "description": "How Buttery uses the AT Protocol — lexicons, records, and the gaps between what the schema says and what the network actually returns."
+  }
+}

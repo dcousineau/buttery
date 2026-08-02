@@ -1,0 +1,203 @@
+/**
+ * Buttery brand theme for Docusaurus (Infima).
+ * Maps the design-system palette onto Infima variables. Colors + type + a light
+ * neo-brutalist vibe (ink borders, hard un-blurred offset shadows). See the
+ * Buttery design system for the full rules.
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Rubik:wght@400;500;600;700&display=swap");
+
+/* ---- brand palette (light / default) ---- */
+:root {
+  --butter: #ffd84d;
+  --butter-pale: #ffe9a0;
+  --crock-red: #e2231a;
+  --ink: #2a1e12;
+  --cream: #fff6e3;
+  --paper: #fffdf4;
+  /* Structural border + hard-shadow ink. Both relax in dark mode — matching the
+   * app: --border eases from ink to #4d3a22, --shadow-hard flips to true black.
+   * (--ink stays a *text* color and inverts; don't use it for borders.) */
+  --border: #2a1e12;
+  --shadow-hard: #2a1e12;
+  /* Gingham trim: two overlapping check gradients (see the band rules below). */
+  --gingham-base: #fffdf4;
+  --gingham-check: rgba(226, 35, 26, 0.55);
+
+  /* Infima primary = Crocker red */
+  --ifm-color-primary: #e2231a;
+  --ifm-color-primary-dark: #cc1f17;
+  --ifm-color-primary-darker: #c01d16;
+  --ifm-color-primary-darkest: #9e1812;
+  --ifm-color-primary-light: #ef3a31;
+  --ifm-color-primary-lighter: #f04841;
+  --ifm-color-primary-lightest: #f47b76;
+
+  /* Surfaces: warm cream/paper, never pure white in light mode */
+  --ifm-background-color: #fff6e3;
+  --ifm-background-surface-color: #fffdf4;
+  --ifm-font-color-base: #2a1e12;
+  --ifm-heading-color: #2a1e12;
+  --ifm-navbar-background-color: #fffdf4;
+  /* Footer: paper-white in light mode, ink text (dark footer is set below). */
+  --ifm-footer-background-color: #fffdf4;
+  --ifm-footer-color: #2a1e12;
+  --ifm-footer-link-color: #2a1e12;
+  --ifm-footer-title-color: #2a1e12;
+
+  /* Type: Rubik body, Alfa Slab One display */
+  --ifm-font-family-base: "Rubik", system-ui, -apple-system, sans-serif;
+  --ifm-heading-font-family: "Alfa Slab One", Georgia, serif;
+  --ifm-heading-font-weight: 400;
+  --ifm-h1-font-size: 2.5rem;
+
+  /* Neo-brutalist knobs: relaxed borders, hard shadow, radius */
+  --ifm-global-radius: 0.75rem;
+  --bt-border: 2px solid var(--border);
+  --bt-shadow: 4px 4px 0 var(--shadow-hard);
+  /* Butter is a theme constant, so anything on butter always uses dark ink —
+   * even in dark mode where --ink flips to a light value. */
+  --bt-on-butter: #2a1e12;
+
+  --ifm-code-font-size: 90%;
+  --docusaurus-highlighted-code-line-bg: rgba(226, 35, 26, 0.1);
+}
+
+/* ---- dark mode ("toasted") ---- */
+[data-theme="dark"] {
+  --butter-pale: #3d2b10;
+  --crock-red: #ff6242;
+  --ink: #fff4da;
+  --cream: #1c1106;
+  --paper: #2a1b0c;
+  /* Relaxed border + true-black shadow, per the app's "toasted" dark mode. */
+  --border: #4d3a22;
+  --shadow-hard: #000000;
+  --gingham-base: #241507;
+  --gingham-check: rgba(255, 98, 66, 0.4);
+
+  /* Lifted red glowing on brown-black */
+  --ifm-color-primary: #ff6242;
+  --ifm-color-primary-dark: #ff4826;
+  --ifm-color-primary-darker: #ff3b16;
+  --ifm-color-primary-darkest: #e42200;
+  --ifm-color-primary-light: #ff7c60;
+  --ifm-color-primary-lighter: #ff896f;
+  --ifm-color-primary-lightest: #ffb0a0;
+
+  --ifm-background-color: #1c1106;
+  --ifm-background-surface-color: #2a1b0c;
+  --ifm-font-color-base: #fff4da;
+  --ifm-heading-color: #fff4da;
+  --ifm-navbar-background-color: #2a1b0c;
+  /* Footer stays dark "toasted" brown in dark mode. */
+  --ifm-footer-background-color: #241507;
+  --ifm-footer-color: #fff4da;
+  --ifm-footer-link-color: #fff4da;
+  --ifm-footer-title-color: #ffd84d;
+
+  --docusaurus-highlighted-code-line-bg: rgba(255, 98, 66, 0.15);
+}
+
+/* ---- gingham trim: a 14px band at the navbar's bottom edge and the footer's
+ * top edge — trim, not wallpaper, matching the app. Two overlapping repeating
+ * check gradients, 7px cells. Built in CSS, never an image. ---- */
+.navbar,
+.footer {
+  position: relative;
+}
+
+.navbar::after,
+.footer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 14px;
+  z-index: 1;
+  pointer-events: none;
+  background-color: var(--gingham-base);
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0 7px, var(--gingham-check) 7px 14px), repeating-linear-gradient(90deg, transparent 0 7px, var(--gingham-check) 7px 14px);
+}
+
+/* Band sits at the navbar's bottom edge (its trim), not overlapping content. */
+.navbar::after {
+  bottom: 0;
+}
+
+/* Band sits at the footer's top edge. */
+.footer::before {
+  top: 0;
+}
+
+.navbar {
+  border-bottom: var(--bt-border);
+  box-shadow: none;
+}
+
+/* Footer background + text colors come from the per-theme --ifm-footer-* vars
+ * above (paper-white in light, toasted brown in dark). Just the ink border here. */
+.footer {
+  border-top: var(--bt-border);
+}
+
+/* Sidebar: keep active/hover pills off the right edge (they were flush against
+ * the rail border). */
+.theme-doc-sidebar-menu {
+  padding-right: 0.75rem;
+}
+
+/* Buttons behave like physical stickers: lift on hover, sink on press */
+.button {
+  border: var(--bt-border);
+  box-shadow: var(--bt-shadow);
+  transition:
+    transform 100ms ease,
+    box-shadow 100ms ease;
+}
+
+.button:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--shadow-hard);
+}
+
+.button:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--shadow-hard);
+}
+
+.card {
+  border: var(--bt-border);
+  box-shadow: var(--bt-shadow);
+}
+
+/* Active sidebar item: the most emphatic state — butter fill + dark ink border.
+ * Dark ink even in "toasted" mode, because butter never changes. */
+.menu__link--active:not(.menu__link--sublist) {
+  background-color: var(--butter);
+  color: var(--bt-on-butter);
+  border: 2px solid var(--bt-on-butter);
+  box-shadow: 2px 2px 0 var(--bt-on-butter);
+  font-weight: 600;
+}
+
+/* Inline code: warm surface + relaxed border, tight xs corners. */
+code {
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+}
+
+/* Code blocks: ink border + hard offset shadow + rounded corners (neo-brutalist).
+ * The inner <code> drops its own border/radius so only the block frames itself. */
+.theme-code-block {
+  border: var(--bt-border);
+  border-radius: var(--ifm-global-radius);
+  box-shadow: var(--bt-shadow);
+  overflow: hidden;
+}
+
+.theme-code-block code {
+  border: 0;
+  border-radius: 0;
+}

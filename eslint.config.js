@@ -7,6 +7,8 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      "**/build/**",
+      "**/.docusaurus/**",
       "**/.tanstack/**",
       "**/.nitro/**",
       "**/.output/**",

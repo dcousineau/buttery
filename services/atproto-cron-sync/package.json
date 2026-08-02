@@ -12,13 +12,13 @@
     "typecheck": "tsc6 --noEmit"
   },
   "dependencies": {
-    "dayjs": "^1.11.13",
+    "dayjs": "^1.11.21",
     "es-toolkit": "^1.50.0",
     "pg": "^8.22.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
-    "@types/pg": "^8.20.0",
+    "@types/node": "^26.1.2",
+    "@types/pg": "^8.20.3",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   }
 }
