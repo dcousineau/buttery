@@ -49,6 +49,10 @@ export default defineRailway((ctx) => {
       // services/web/src/lib/config.ts). The token's value is managed in the
       // Railway dashboard under the project's shared variables.
       RAILWAY_TOKEN: ctx.shared.RAILWAY_TOKEN,
+      // PostHog client config — inlined into the client bundle at BUILD time
+      // (see services/web/src/routes/__root.tsx).
+      VITE_PUBLIC_POSTHOG_PROJECT_TOKEN: "phc_BgDad6JiFk5D5dz9JsXXJQBncauEG38YVF2JCZKWwGgj",
+      VITE_PUBLIC_POSTHOG_HOST: "https://us.i.posthog.com",
     },
   });
   // CDN caching is enabled for this service but is not expressible in the IaC
