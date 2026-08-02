@@ -98,7 +98,7 @@ importers:
         specifier: ^9.5.0
         version: 9.5.0(react@19.2.8)
       '@posthog/react':
-        specifier: ^1.8.2
+        specifier: ^1.10.3
         version: 1.10.3(@types/react@19.2.17)(posthog-js@1.409.5)(react@19.2.8)
       '@tailwindcss/vite':
         specifier: ^4.3.3
@@ -149,7 +149,7 @@ importers:
         specifier: ^8.22.0
         version: 8.22.0
       posthog-js:
-        specifier: ^1.407.2
+        specifier: ^1.409.5
         version: 1.409.5
       railway:
         specifier: ^3.6.0

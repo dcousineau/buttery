@@ -67,12 +67,12 @@ function PostHogIdentity() {
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  // Inlined into the client bundle at build time (see .railway/railway.ts).
+  // Missing in dev means events are silently dropped, so surface it once.
   const posthogToken = import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN;
   const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST;
   if (import.meta.env.DEV && (!posthogToken || !posthogHost)) {
-    console.error(
-      `${!posthogToken ? "VITE_PUBLIC_POSTHOG_PROJECT_TOKEN" : "VITE_PUBLIC_POSTHOG_HOST"} variable required by PostHog is missing or un-configured, this causes events to be silently missed. This error stops appearing once the variable is configured`,
-    );
+    console.error(`[posthog] ${!posthogToken ? "VITE_PUBLIC_POSTHOG_PROJECT_TOKEN" : "VITE_PUBLIC_POSTHOG_HOST"} is unset — analytics is disabled until it's configured.`);
   }
   const comingSoon = Route.useLoaderData();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -80,6 +80,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   // Canonical / og:url are per-page; derive both from the current path so every
   // route gets them without per-route wiring. Query/hash are intentionally dropped.
   const canonical = absolute(pathname);
+  // PostHog wraps the app only when configured; otherwise render the same tree bare.
+  const app = gated ? <ComingSoon /> : <AppShell>{children}</AppShell>;
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -95,15 +97,18 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             options={{
               api_host: posthogHost,
               capture_exceptions: true,
-              tracing_headers:
-                typeof window !== "undefined" ? [window.location.hostname] : [],
+              // Inject the session id into requests to our own origin (API is
+              // same-origin server functions) so backend instrumentation can
+              // link server traces to the session. Client-only: `window` is
+              // undefined during SSR.
+              tracing_headers: typeof window !== "undefined" ? [window.location.hostname] : [],
             }}
           >
             <PostHogIdentity />
-            {gated ? <ComingSoon /> : <AppShell>{children}</AppShell>}
+            {app}
           </PostHogProvider>
         ) : (
-          <>{gated ? <ComingSoon /> : <AppShell>{children}</AppShell>}</>
+          app
         )}
         <TanStackDevtools
           config={{

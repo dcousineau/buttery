@@ -204,17 +204,12 @@ function MemberRow({ householdId, member, isOwner }: { householdId: string; memb
   const label = member.handle ? `@${member.handle}` : member.did;
 
   async function onRemove() {
-    // On success the member row unmounts after invalidate; on error surfaces it inline below.
-    setError(null);
-    setPending(true);
-    try {
+    // On success the member row unmounts after invalidate; on error `run`
+    // surfaces it inline below, so close the dialog either way.
+    await run(async () => {
       await removeMember({ data: { householdId, did: member.did } });
       posthog.capture("household_member_removed", { household_id: householdId });
-      await router.invalidate();
-    } catch (err) {
-      setError(errorMessage(err));
-      setPending(false);
-    }
+    });
     setRemoveOpen(false);
   }
   // Owner controls apply to OTHER members only; self-management is "Leave" in the
