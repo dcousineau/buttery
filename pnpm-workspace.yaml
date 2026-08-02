@@ -10,3 +10,7 @@ allowBuilds:
 
 minimumReleaseAgeExclude:
   - "@types/pg@8.20.3"
+
+enableGlobalVirtualStore: true
+
+minimumReleaseAge: 1440 # At least a day
