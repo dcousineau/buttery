@@ -170,8 +170,9 @@ export function CookPhase({
         </div>
 
         {/* Footer: mobile-only compact dock (ingredient + timer sheets), then the
-            step nav. The dock keeps timers collapsed by default. */}
-        <div className="flex flex-col gap-3 border-t-2 border-border bg-background/95 px-6 pt-3 pb-4">
+            step nav. The dock keeps timers collapsed by default. Bottom padding
+            clears the iOS home-indicator inset. */}
+        <div className="flex flex-col gap-3 border-t-2 border-border bg-background/95 px-6 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
           <MobileCookDock recipeId={recipeId} ingredients={ingredients} />
           <div className="flex items-center justify-between gap-3">
             <span aria-live="polite" className="text-sm font-semibold text-muted-foreground md:hidden">

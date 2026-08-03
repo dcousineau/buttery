@@ -84,7 +84,7 @@ export function MobileCookDock({ recipeId, ingredients }: { recipeId: string; in
             role="dialog"
             aria-modal="true"
             aria-label={open === "ingredients" ? "Ingredients" : "Timers"}
-            className="relative max-h-[75vh] overflow-y-auto rounded-t-2xl border-t-2 border-border bg-card p-4 shadow-pop-md"
+            className="relative max-h-[75vh] overflow-y-auto rounded-t-2xl border-t-2 border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] shadow-pop-md"
           >
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="display-title m-0 text-base text-foreground">{open === "ingredients" ? "Ingredients" : "Timers"}</h2>
