@@ -37,75 +37,88 @@ export function MisePhase({
   const doneCount = ingredients.reduce((n, _line, i) => n + (preppedSet.has(i) ? 1 : 0), 0);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <p className="text-sm font-bold tracking-wide text-muted-foreground uppercase">Mise en place</p>
-        <h1 className="display-title m-0 text-[clamp(1.75rem,4vw,3rem)] leading-[1.08] text-balance text-foreground">{title}</h1>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-          {serves != null && <span className="font-semibold">Serves {serves}</span>}
-          <span aria-live="polite" className="font-semibold text-foreground">
-            {doneCount} of {ingredients.length} prepped
-          </span>
-        </div>
+    <div className="relative flex h-full flex-col">
+      {/* Scrolling content. Extra bottom padding lets the last rows scroll clear
+          of the overlaid footer. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pb-28">
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-bold tracking-wide text-muted-foreground uppercase">Mise en place</p>
+            <h1 className="display-title m-0 text-[clamp(1.75rem,4vw,3rem)] leading-[1.08] text-balance text-foreground">{title}</h1>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+              {serves != null && <span className="font-semibold">Serves {serves}</span>}
+              <span aria-live="polite" className="font-semibold text-foreground">
+                {doneCount} of {ingredients.length} prepped
+              </span>
+            </div>
 
-        {/* De-emphasized scale/unit controls — write back through the shared context. */}
-        <div className="mt-1 flex flex-wrap items-center gap-3 text-sm">
-          <div className="inline-flex items-center gap-2 rounded-lg border-2 border-border bg-card/60 px-2 py-1">
-            <button
-              type="button"
-              onClick={() => onFactor(Math.max(0.5, Math.round((factor - 0.5) * 2) / 2))}
-              aria-label="Decrease scale"
-              disabled={factor <= 0.5}
-              className="grid size-6 place-content-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"
-            >
-              <Minus className="size-3.5" aria-hidden="true" />
-            </button>
-            <span className="min-w-10 text-center font-semibold text-foreground tabular-nums">{factor}×</span>
-            <button
-              type="button"
-              onClick={() => onFactor(Math.min(8, Math.round((factor + 0.5) * 2) / 2))}
-              aria-label="Increase scale"
-              disabled={factor >= 8}
-              className="grid size-6 place-content-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"
-            >
-              <Plus className="size-3.5" aria-hidden="true" />
-            </button>
+            {/* De-emphasized scale/unit controls — write back through the shared context. */}
+            <div className="mt-1 flex flex-wrap items-center gap-3 text-sm">
+              <div className="inline-flex items-center gap-2 rounded-lg border-2 border-border bg-card/60 px-2 py-1">
+                <button
+                  type="button"
+                  onClick={() => onFactor(Math.max(0.5, Math.round((factor - 0.5) * 2) / 2))}
+                  aria-label="Decrease scale"
+                  disabled={factor <= 0.5}
+                  className="grid size-6 place-content-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"
+                >
+                  <Minus className="size-3.5" aria-hidden="true" />
+                </button>
+                <span className="min-w-10 text-center font-semibold text-foreground tabular-nums">{factor}×</span>
+                <button
+                  type="button"
+                  onClick={() => onFactor(Math.min(8, Math.round((factor + 0.5) * 2) / 2))}
+                  aria-label="Increase scale"
+                  disabled={factor >= 8}
+                  className="grid size-6 place-content-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-40"
+                >
+                  <Plus className="size-3.5" aria-hidden="true" />
+                </button>
+              </div>
+              <label className="inline-flex items-center gap-2 text-muted-foreground">
+                <Switch checked={metric} onChange={(e) => onMetric(e.target.checked)} />
+                Metric units
+              </label>
+            </div>
           </div>
-          <label className="inline-flex items-center gap-2 text-muted-foreground">
-            <Switch checked={metric} onChange={(e) => onMetric(e.target.checked)} />
-            Metric units
-          </label>
+
+          <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
+            {ingredients.length === 0 ? (
+              <li className="text-base text-muted-foreground">No ingredients listed.</li>
+            ) : (
+              ingredients.map((line, i) => {
+                const checked = preppedSet.has(i);
+                return (
+                  <li key={i}>
+                    <label
+                      data-checked={checked}
+                      className={cn(
+                        "flex w-full cursor-pointer items-center gap-5 rounded-xl border-2 border-border bg-card px-5 py-4 text-2xl shadow-pop-md transition-all hover:bg-accent active:translate-x-px active:translate-y-px active:shadow-none",
+                        checked && "border-secondary bg-muted/40 opacity-70 shadow-none",
+                      )}
+                    >
+                      <Checkbox size="xl" checked={checked} onChange={() => onTogglePrep(i)} />
+                      <span className="min-w-0 flex-1 leading-snug text-foreground">{line}</span>
+                    </label>
+                  </li>
+                );
+              })
+            )}
+          </ul>
         </div>
       </div>
 
-      <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
-        {ingredients.length === 0 ? (
-          <li className="text-base text-muted-foreground">No ingredients listed.</li>
-        ) : (
-          ingredients.map((line, i) => {
-            const checked = preppedSet.has(i);
-            return (
-              <li key={i}>
-                <label
-                  data-checked={checked}
-                  className={cn(
-                    "flex w-full cursor-pointer items-center gap-5 rounded-xl border-2 border-border bg-card px-5 py-4 text-2xl shadow-pop-md transition-all hover:bg-accent active:translate-x-px active:translate-y-px active:shadow-none",
-                    checked && "border-secondary bg-muted/40 opacity-70 shadow-none",
-                  )}
-                >
-                  <Checkbox size="xl" checked={checked} onChange={() => onTogglePrep(i)} />
-                  <span className="min-w-0 flex-1 leading-snug text-foreground">{line}</span>
-                </label>
-              </li>
-            );
-          })
-        )}
-      </ul>
-
-      <div className="sticky bottom-0 -mx-2 flex justify-center bg-gradient-to-t from-background via-background/90 to-transparent px-2 pt-6 pb-2">
-        <Button size="2xl" onClick={onStart} className="w-full max-w-md justify-center">
-          Start cooking
-        </Button>
+      {/* Pinned full-width footer overlaid on the scroll area, so the checklist
+          fades out under the translucent gradient (no hard clip). Spans edge to
+          edge, sits flush at the viewport bottom, and pads the iOS
+          home-indicator inset. `pointer-events-none` lets taps pass through the
+          fade to the list; the button re-enables them. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-background from-45% via-background/80 to-transparent px-6 pt-7 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
+        <div className="pointer-events-auto mx-auto flex w-full max-w-3xl justify-center">
+          <Button size="2xl" onClick={onStart} className="w-full max-w-md justify-center">
+            Start cooking
+          </Button>
+        </div>
       </div>
     </div>
   );

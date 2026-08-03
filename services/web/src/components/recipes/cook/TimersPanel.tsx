@@ -9,7 +9,7 @@ import { TimerRow } from "#/components/timers/TimerRow";
  * foot of the cook-phase sidebar: a heading with a live status summary, then the
  * per-recipe timer rows (or a hint to start one).
  */
-export function TimersPanel({ recipeId }: { recipeId: string }) {
+export function TimersPanel({ recipeId, hideHeading = false }: { recipeId: string; hideHeading?: boolean }) {
   const timers = useRecipeTimers(recipeId);
   const { muted, setMuted } = useTimers();
   const ordered = [...timers].sort((a, b) => Number(b.status === "alarming") - Number(a.status === "alarming"));
@@ -22,7 +22,9 @@ export function TimersPanel({ recipeId }: { recipeId: string }) {
     <section aria-label="Timers" className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-baseline gap-2">
-          <h2 className="display-title m-0 text-base text-foreground">Timers</h2>
+          {/* In the mobile drawer the drawer's own header already reads "Timers",
+              so we drop this heading and keep just the summary. */}
+          {!hideHeading && <h2 className="display-title m-0 text-base text-foreground">Timers</h2>}
           <span className="truncate text-xs font-semibold text-muted-foreground">{summary}</span>
         </div>
         <button
