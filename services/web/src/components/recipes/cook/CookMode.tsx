@@ -254,20 +254,21 @@ export default function CookMode({ recipe, onClose }: { recipe: HouseholdRecipeD
           {/* Body */}
           <div className="min-h-0 flex-1 overflow-hidden">
             {phase === "mise" ? (
-              <div className="h-full overflow-y-auto px-6 py-4">
-                <MisePhase
-                  title={recipe.title}
-                  ingredients={scaledIngredients}
-                  serves={serves}
-                  prepped={prepped}
-                  onTogglePrep={togglePrep}
-                  factor={factor}
-                  metric={metric}
-                  onFactor={setFactor}
-                  onMetric={setMetric}
-                  onStart={onStart}
-                />
-              </div>
+              // MisePhase owns its full-height layout (scroll area + pinned
+              // full-width footer), so the "Start cooking" bar can reach the
+              // viewport edges + bottom.
+              <MisePhase
+                title={recipe.title}
+                ingredients={scaledIngredients}
+                serves={serves}
+                prepped={prepped}
+                onTogglePrep={togglePrep}
+                factor={factor}
+                metric={metric}
+                onFactor={setFactor}
+                onMetric={setMetric}
+                onStart={onStart}
+              />
             ) : (
               <CookPhase
                 steps={recipe.instructions}
