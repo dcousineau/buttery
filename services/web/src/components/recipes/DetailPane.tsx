@@ -165,11 +165,16 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
         <div className="flex flex-wrap items-start gap-5">
           {/* Left column */}
           <div className="flex min-w-0 flex-[1_1_240px] flex-col gap-3.5">
-            <div className="grid aspect-[4/3] w-full place-content-center overflow-hidden rounded-lg border-2 border-border bg-muted">
+            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border-2 border-border bg-muted">
               {primaryImage ? (
-                <img src={primaryImage.url} alt={primaryImage.alt ?? ""} className="size-full object-cover" />
+                // Absolutely filled so the image *covers* the 4/3 box (cropping to
+                // fit) instead of shrinking to its intrinsic size — a centering
+                // grid track collapses `size-full` to the image's natural width.
+                <img src={primaryImage.url} alt={primaryImage.alt ?? ""} className="absolute inset-0 size-full object-cover" />
               ) : (
-                <UtensilsCrossed className="size-10 text-muted-foreground" aria-hidden="true" />
+                <div className="grid size-full place-content-center">
+                  <UtensilsCrossed className="size-10 text-muted-foreground" aria-hidden="true" />
+                </div>
               )}
             </div>
 
