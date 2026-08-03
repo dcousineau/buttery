@@ -114,7 +114,7 @@ export function MobileCookDock({ recipeId, ingredients }: { recipeId: string; in
                   </ul>
                 )
               ) : (
-                <TimersPanel recipeId={recipeId} />
+                <TimersPanel recipeId={recipeId} hideHeading />
               )}
             </div>
           </div>
