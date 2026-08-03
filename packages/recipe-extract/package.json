@@ -1,0 +1,26 @@
+{
+  "name": "@buttery/recipe-extract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./sites": "./src/sites/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc6 --noEmit"
+  },
+  "dependencies": {
+    "node-html-parser": "^7.0.1"
+  },
+  "devDependencies": {
+    "@buttery/lexicons": "workspace:*",
+    "@types/node": "^26.1.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.10"
+  }
+}

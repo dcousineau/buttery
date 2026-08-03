@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { usePostHog } from "@posthog/react";
 import { ArrowLeft, BookOpenText, Check, CircleAlert, Clock, Compass, CookingPot, Eye, Link2, ShoppingBasket, UtensilsCrossed, X } from "lucide-react";
@@ -12,10 +12,11 @@ import { Separator } from "#/components/ui/separator";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "#/components/ui/accordion";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Spinner } from "#/components/ui/spinner";
-import { RECIPE_VOCAB, tokenForSlug } from "#/lib/recipe-vocab";
+import { RECIPE_VOCAB, slugForLabel, slugForToken, tokenForSlug } from "#/lib/recipe-vocab";
 import { type AttributionState, EMPTY_ATTRIBUTION, attributionComplete, buildAttribution } from "#/lib/recipe-attribution";
 import { deriveSource } from "#/server/recipe-provenance";
 import { saveRecipe, type RecipeRecordInput, type FieldIssue } from "#/server/recipes-write";
+import { getImportPrefill } from "#/server/recipe-scrape";
 import { useRecipesView } from "../context";
 import type { RecipeViewData } from "../RecipeView";
 import { type EditorMode } from "./LineEditor";
@@ -39,6 +40,18 @@ function minutesToIso(min: string): string | undefined {
   const m = n % 60;
   return `PT${h ? `${h}H` : ""}${m ? `${m}M` : ""}`;
 }
+/** ISO-8601 duration → whole-minute string for the number field (import prefill). */
+function isoToMinutes(iso: string | undefined): string {
+  if (!iso) return "";
+  const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:\d+S)?)?$/i.exec(iso.trim());
+  if (!m) return "";
+  const mins = Number(m[1] ?? 0) * 24 * 60 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0);
+  return mins > 0 ? String(mins) : "";
+}
+
+/** The form's photo: either uploaded bytes, or an imported hero we only have a
+ * URL for (fetched + uploaded to the PDS on publish). */
+type FormImage = { kind: "bytes"; dataBase64: string; mime: string; previewUrl: string; alt: string } | { kind: "url"; url: string; alt: string };
 
 /**
  * The full-page recipe create/import form (plan §A5). Plain controlled state
@@ -46,7 +59,7 @@ function minutesToIso(min: string): string | undefined {
  * the `saveRecipe` server fn, which re-validates via the lexicon. Save is gated on
  * attribution being complete. Import mode locks Website attribution to the URL.
  */
-export function RecipeForm({ householdName, sourceUrl: initialSourceUrl }: { householdName: string; sourceUrl: string | null }) {
+export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importId }: { householdName: string; sourceUrl: string | null; importId?: string | null }) {
   const navigate = useNavigate();
   const router = useRouter();
   const posthog = usePostHog();
@@ -76,7 +89,8 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl }: { hou
   const [fat, setFat] = useState("");
   const [carbs, setCarbs] = useState("");
   const [attr, setAttr] = useState<AttributionState>({ ...EMPTY_ATTRIBUTION });
-  const [image, setImage] = useState<{ dataBase64: string; mime: string; previewUrl: string; alt: string } | null>(null);
+  const [image, setImage] = useState<FormImage | null>(null);
+  const imageSrc = image ? (image.kind === "bytes" ? image.previewUrl : image.url) : null;
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState(false);
@@ -88,6 +102,52 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl }: { hou
   const attrDone = imported || attributionComplete(attr);
   const saveDisabled = !attrDone || pending != null;
   const importHost = imported && sourceUrl ? hostOf(sourceUrl) : null;
+
+  // Import prefill (plan §B/§C): the recipe is cached server-side and fetched by
+  // opaque id (`?import=<id>`) — never carried in the URL. Both Phase B (server
+  // scrape) and Phase C (bookmarklet POST) converge here. Fetch once on mount,
+  // fill the form, lock attribution to the source. Runs client-side only.
+  useEffect(() => {
+    if (!importId) return;
+    let cancelled = false;
+    (async () => {
+      const payload = await getImportPrefill({ data: { id: importId } }).catch(() => null);
+      if (cancelled || !payload) return;
+      const r = payload.recipe;
+      setSourceUrl(payload.sourceUrl);
+      if (r.name) setName(r.name);
+      if (r.text) setText(r.text);
+      if (r.ingredients?.length) {
+        setIngredients(r.ingredients);
+        setIngMode("rows");
+      }
+      if (r.instructions?.length) {
+        setInstructions(r.instructions);
+        setInsMode("rows");
+      }
+      if (r.keywords?.length) setKeywords(r.keywords);
+      setPrep(isoToMinutes(r.prepTime));
+      setCook(isoToMinutes(r.cookTime));
+      if (r.recipeYield) setRecipeYield(r.recipeYield);
+      const cSlug = slugForLabel("cuisine", r.vocab?.cuisine);
+      if (cSlug) setCuisine(cSlug);
+      const catSlug = slugForLabel("category", r.vocab?.category);
+      if (catSlug) setCategory(catSlug);
+      const mSlug = slugForLabel("cooking_method", r.vocab?.method);
+      if (mSlug) setMethod(mSlug);
+      const dSlug = r.suitableForDiet?.length ? slugForToken("diet", r.suitableForDiet[0]) : null;
+      if (dSlug) setDiet(dSlug);
+      if (r.nutrition?.calories != null) setCalories(String(r.nutrition.calories));
+      if (r.nutrition?.fatContent) setFat(String(r.nutrition.fatContent));
+      if (r.nutrition?.proteinContent) setProtein(String(r.nutrition.proteinContent));
+      if (r.nutrition?.carbohydrateContent) setCarbs(String(r.nutrition.carbohydrateContent));
+      if (r.imageUrl) setImage({ kind: "url", url: r.imageUrl, alt: r.name ?? "" });
+    })();
+    return () => {
+      cancelled = true;
+    };
+     
+  }, [importId]);
 
   function buildRecord(): RecipeRecordInput {
     const nutrition =
@@ -129,7 +189,8 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl }: { hou
           visibility: "draft",
           publish,
           sourceUrl,
-          image: image ? { dataBase64: image.dataBase64, mime: image.mime, alt: image.alt } : null,
+          image: image?.kind === "bytes" ? { dataBase64: image.dataBase64, mime: image.mime, alt: image.alt } : null,
+          imageSourceUrl: image?.kind === "url" ? image.url : null,
         },
       });
       if (result.status === "invalid") {
@@ -166,7 +227,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl }: { hou
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = String(reader.result);
-      setImage({ dataBase64: dataUrl, mime: file.type, previewUrl: URL.createObjectURL(file), alt: name.trim() });
+      setImage({ kind: "bytes", dataBase64: dataUrl, mime: file.type, previewUrl: URL.createObjectURL(file), alt: name.trim() });
     };
     reader.readAsDataURL(file);
   }
@@ -186,7 +247,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl }: { hou
     return {
       title: name,
       description: text.trim() || null,
-      images: image ? [{ url: image.previewUrl, alt: image.alt }] : [],
+      images: image && imageSrc ? [{ url: imageSrc, alt: image.alt }] : [],
       ingredients,
       instructions,
       keywords,
@@ -201,8 +262,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl }: { hou
       },
       serves: null,
     };
-     
-  }, [name, text, image, ingredients, instructions, keywords, category, calories, protein, fat, carbs, attr, imported, sourceUrl]);
+  }, [name, text, image, imageSrc, ingredients, instructions, keywords, category, calories, protein, fat, carbs, attr, imported, sourceUrl]);
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
@@ -229,7 +289,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl }: { hou
           <h1 className="display-title m-0 text-[2.25rem] leading-[1.1]">{imported ? "Check the import" : "A new recipe"}</h1>
           {imported && (
             <p className="mt-3 max-w-[38rem] text-base text-muted-foreground text-pretty">
-              Buttery couldn't read the page automatically — fill it in below. The credit in the rail stays locked to the source URL.
+              Review the details below and fix anything that didn't come through. The credit in the rail stays locked to the source URL.
             </p>
           )}
         </header>
@@ -293,7 +353,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl }: { hou
                     {image ? (
                       <div className="flex flex-col gap-2">
                         <div className="aspect-[4/3] w-full overflow-hidden rounded-lg border-2 border-border">
-                          <img src={image.previewUrl} alt="" className="size-full object-cover" />
+                          <img src={imageSrc ?? ""} alt="" className="size-full object-cover" />
                         </div>
                         <div className="flex gap-2">
                           <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>

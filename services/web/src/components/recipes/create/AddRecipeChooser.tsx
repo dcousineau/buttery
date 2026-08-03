@@ -1,10 +1,15 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { usePostHog } from "@posthog/react";
 import { BookOpenText, Link2, PencilLine, Puzzle } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
+import { Spinner } from "#/components/ui/spinner";
 import { cn } from "#/lib/utils";
+import { scrapeRecipe } from "#/server/recipe-scrape";
+import { useRecipesView } from "../context";
+import { FetchingDialog, type FetchPhase } from "./FetchingDialog";
 
 type Choice = "import" | "manual" | "bookmarklet";
 
@@ -18,19 +23,63 @@ type Choice = "import" | "manual" | "bookmarklet";
  */
 export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: boolean; onOpenChange: (o: boolean) => void; onAddExisting: () => void }) {
   const navigate = useNavigate();
+  const posthog = usePostHog();
+  const { pushToast } = useRecipesView();
   const [choice, setChoice] = useState<Choice>("manual");
   const [url, setUrl] = useState("");
+  const [urlError, setUrlError] = useState<string | null>(null);
+
+  // Import fetch phase (spinner / rate-limited / failed) + the URL that failed
+  // (for the manual fallback → attribution stays locked to it).
+  const [phase, setPhase] = useState<FetchPhase | null>(null);
+  const [failUrl, setFailUrl] = useState("");
+  const fetching = phase === "fetching";
 
   function goManual() {
     onOpenChange(false);
     navigate({ to: "/household/recipes/new" });
   }
 
-  function goImport() {
+  async function goImport() {
     const trimmed = url.trim();
-    if (!trimmed) return;
+    if (!trimmed || fetching) return;
+    setUrlError(null);
+    setFailUrl(trimmed);
+    setPhase("fetching");
+    try {
+      const res = await scrapeRecipe({ data: { url: trimmed } });
+      // Reached the page (full or partial) → open the form prefilled by import id.
+      if (res.status === "ok" || res.status === "partial") {
+        setPhase(null);
+        onOpenChange(false);
+        navigate({ to: "/household/recipes/new", search: { import: res.importId } });
+        return;
+      }
+      if (res.status === "rate_limited") return setPhase("rate_limited");
+      if (res.status === "invalid_url") {
+        setPhase(null);
+        setUrlError("That doesn't look like a recipe link.");
+        return;
+      }
+      // blocked / fetch_failed → the "wouldn't open up" fallback frame.
+      setPhase("failed");
+    } catch {
+      setPhase("failed");
+    }
+  }
+
+  // Failure fallback: go to the manual form with the URL, so Website attribution
+  // stays locked to the source even though we couldn't read the page.
+  function goManualFromFailure() {
+    setPhase(null);
     onOpenChange(false);
-    navigate({ to: "/household/recipes/new", search: { source: trimmed } });
+    navigate({ to: "/household/recipes/new", search: { source: failUrl } });
+  }
+
+  function reportFailure() {
+    posthog.capture("recipe_import_failed_report", { url: failUrl });
+    setPhase(null);
+    pushToast("Thanks — we'll take a look at that site.");
   }
 
   return (
@@ -48,17 +97,22 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
             description="Paste a recipe link and Buttery reads the page."
           >
             {choice === "import" && (
-              <div className="mt-2 flex gap-2">
-                <Input
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && goImport()}
-                  placeholder="https://smittenkitchen.com/…"
-                  aria-label="Recipe URL"
-                />
-                <Button onClick={goImport} disabled={!url.trim()}>
-                  Fetch
-                </Button>
+              <div className="mt-2 flex flex-col gap-1.5">
+                <div className="flex gap-2">
+                  <Input
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && goImport()}
+                    placeholder="https://smittenkitchen.com/…"
+                    aria-label="Recipe URL"
+                    disabled={fetching}
+                  />
+                  <Button onClick={goImport} disabled={!url.trim() || fetching}>
+                    {fetching ? <Spinner data-icon="inline-start" /> : null}
+                    Fetch
+                  </Button>
+                </div>
+                {urlError && <p className="m-0 text-xs font-semibold text-destructive">{urlError}</p>}
               </div>
             )}
           </Option>
@@ -103,6 +157,8 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
           <DialogClose render={<Button variant="ghost" />}>Cancel</DialogClose>
         </DialogFooter>
       </DialogContent>
+
+      <FetchingDialog phase={phase} url={failUrl} onManual={goManualFromFailure} onReport={reportFailure} onClose={() => setPhase(null)} />
     </Dialog>
   );
 }

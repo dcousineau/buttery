@@ -1,7 +1,12 @@
-import { bucket, defineRailway, github, postgres, project, ref, service } from "railway/iac";
+import { bucket, defineRailway, github, postgres, project, redis, ref, service } from "railway/iac";
 
 export default defineRailway((ctx) => {
   const db = postgres("postgres");
+
+  // Redis — backs the scrape rate limiter (SET NX PX per-account key) and a
+  // general-purpose cache. Railway exposes REDIS_URL (private-network host);
+  // the web service consumes it as REDIS_URL (see services/web/src/lib/redis.ts).
+  const cache = redis("redis");
 
   // S3-compatible object storage for Buttery-owned uploads (pre-publish recipe
   // draft images). Buckets are per-environment with isolated credentials.
@@ -42,6 +47,8 @@ export default defineRailway((ctx) => {
     start: "pnpm --filter @buttery/web start",
     env: {
       DATABASE_URL: db.env.DATABASE_URL,
+      // Redis — scrape rate limiter + general cache (private networking).
+      REDIS_URL: cache.env.REDIS_URL,
       // Public origin — used as better-auth baseURL and to derive the atproto
       // OAuth client_id / redirect URI.
       BETTER_AUTH_URL: publicOrigin,
@@ -119,6 +126,6 @@ export default defineRailway((ctx) => {
   });
 
   return project("buttery", {
-    resources: [db, uploads, web, sync],
+    resources: [db, cache, uploads, web, sync],
   });
 });

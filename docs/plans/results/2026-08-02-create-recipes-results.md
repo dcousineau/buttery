@@ -198,3 +198,136 @@ recipeId }` result; any draft is still saved.
    to see this fix (and the new bucket creds) live.
 
 All typecheck clean (`pnpm typecheck`).
+
+---
+
+# Create Recipes — build log (Phase B: server-side URL scrape)
+
+Implementer: Claude (Opus 4.8), session 2026-08-03 (continued). Scope: **Phase B**
+(server scrape, extraction, rate limit, SSRF, dedupe-adjacent import flow).
+Verified end-to-end in the running app.
+
+## Architecture (per user direction, looking ahead to a worker + per-site adapters)
+
+The scraper is split so the extraction is a **pure, swappable module** and the
+server fn is thin orchestration a future job-worker can replace without touching
+the parser:
+
+- **`packages/recipe-extract/`** — NEW pure package (`@buttery/recipe-extract`),
+  no network / no DB / no framework. `extractRecipe({ html, url })` →
+  lexicon-shaped `ExtractedRecipe` + hero image URL + soft warnings + which path
+  produced it. Pipeline (highest confidence first): **per-host adapter →
+  JSON-LD → microdata → coarse heuristics**, merged field-by-field.
+  - `src/sites/index.ts` — **per-host extractor registry** (empty today; the
+    `recipe_import_attempt` failure log tells us which hosts earn an adapter).
+    Documented "how to add a site adapter".
+  - `src/parse/{jsonld,microdata,heuristics}.ts`, `src/normalize/{text,duration,
+diet}.ts`. Uses `node-html-parser` (isomorphic → Phase C browser bundle).
+  - Vocab (cuisine/category/method) is emitted as RAW strings (`vocab`) for the
+    web app to map via `recipe-vocab` — the package stays free of vocab drift.
+    Diet is the exception (schema.org RestrictedDiet is a fixed URL set → mapped
+    to tokens in-package). 4 unit tests (`extract.test.ts`) pass.
+- **`services/web/src/lib/net/safe-fetch.ts`** — NEW SSRF-hardened fetch. http(s)
+  only; DNS-resolves every hop and rejects private/loopback/link-local/CGNAT/
+  multicast/reserved (v4 + v6, incl. v4-mapped) — blocks `169.254.169.254` &
+  internal hosts; MANUAL redirect following (re-validates each hop); timeout +
+  streamed size cap. `safeFetch` (text) + `safeFetchBytes` (binary, for the hero
+  image). **Known residual:** DNS-rebinding TOCTOU window (documented; pinned
+  connect is the hardening follow-up). `handle-resolve.ts` should adopt this.
+- **`services/web/src/lib/net/recipe-page.ts`** — NEW DB-backed raw-HTML cache
+  wrapping `safeFetch` (user request). `fetchRecipePage(url)`: normalize →
+  `recipe_fetch_cache` lookup (24h TTL) → hit reuse / miss fetch+store. Lets an
+  improved extractor / new site adapter RE-PARSE cached pages without recrawling.
+- **`services/web/src/server/recipe-scrape.ts`** — NEW. `scrapeRecipe({url})`:
+  Redis rate-limit → cached SSRF fetch → extract → **log the attempt (with the
+  parsed prefill)** → return an opaque **import id**. `getImportPrefill({id})`
+  returns the cached prefill (caller-scoped). No payload in the URL.
+
+## Key decisions & deviations
+
+1. **Prefill handoff = server-cached, fetched by id (NOT a URL fragment).** Per
+   user direction mid-build: the parsed prefill is cached on the
+   `recipe_import_attempt` row (`parsed` jsonb) and the client gets the row `id`
+   as `?import=<id>`; the form calls `getImportPrefill` to load it. The earlier
+   `#import=` base64-in-fragment approach was **removed entirely**. Phase C
+   (bookmarklet) will use the SAME mechanism: extract on the hostile page → POST
+   the result to the server → get an id → open `?import=<id>` (that POST endpoint
+   is the one net-new piece Phase C still needs; not built yet).
+2. **Attempt tracking (user request).** NEW `recipe_import_attempt` table logs
+   EVERY attempt (success/rate_limited/blocked/fetch_failed/parse_empty/error)
+   with host, extractor, http_status, duration_ms, error, and the cached parse.
+   Powers failure analysis + per-site-adapter prioritization + the import-id
+   handoff. Append-only, no FK (an attempt may never become a recipe).
+3. **Raw-HTML cache (user request).** NEW `recipe_fetch_cache` (url PK, host,
+   body, byte_size, fetched_at). Separate from the attempt log (that's the audit
+   trail; this holds the heavy body only for successful fetches).
+4. **Partial extraction → still opens the form.** If we reach the page but can't
+   pull a body, the form still prefills whatever we got (title/image) with
+   attribution locked. The "That page wouldn't open up" failure dialog is
+   reserved for actual fetch failures (SSRF-blocked / network / 4xx-5xx).
+5. **Imported hero image.** The form shows the hero by URL (not-yet-fetched) and
+   `saveRecipe` stores it as a `recipe_pending_image.source_url` pointer.
+   Publish-time fetch+upload (`safeFetchBytes` → `uploadBlob`) is implemented but
+   **UNVERIFIED** — same gate as Phase A: the atproto-publish kill switch is off
+   in dev, so no real publish ran.
+6. **Redis.** NEW `services/web/src/lib/redis.ts` (lazy ioredis singleton). Redis
+   provisioned on Railway (prod env) + a public TCP proxy for local dev; `.railway/
+railway.ts` declares the service + `REDIS_URL` ref; local `.env` points at the
+   proxy. Rate limit: `SET scrape:{did} NX PX 60000`. **Fails OPEN** if Redis is
+   down (abuse mitigation, not a correctness gate). On hit: GENERIC message only —
+   the window/retry-after is NEVER revealed to the client.
+
+## Files
+
+**New:** `packages/recipe-extract/**` (package + parsers + normalizers + sites
+registry + tests), `services/web/src/lib/net/safe-fetch.ts`,
+`services/web/src/lib/net/recipe-page.ts`, `services/web/src/lib/redis.ts`,
+`services/web/src/lib/import-payload.ts` (shared `ImportPrefill` type),
+`services/web/src/server/recipe-scrape.ts`,
+`services/web/src/components/recipes/create/FetchingDialog.tsx`, migrations
+`1785800000000_create_recipe_import_attempt`, `1785900000000_create_recipe_fetch_cache`,
+`1786000000000_add_import_attempt_parsed`.
+
+**Modified:** `.railway/railway.ts` (redis service + `REDIS_URL`),
+`services/web/package.json` (+ioredis, +@buttery/recipe-extract),
+`services/web/.env` (REDIS_URL via proxy), `lib/recipe-vocab.ts` (+`slugForLabel`),
+`server/recipes-write.ts` (`imageSourceUrl` → pending `source_url`; publish-time
+fetch), `components/recipes/create/RecipeForm.tsx` (fetch-by-id prefill, ISO→min,
+token/label→slug mapping, URL-hero image), `components/recipes/create/AddRecipeChooser.tsx`
+(scrape flow + Fetching/failure dialogs), `routes/household.recipes.new.tsx`
+(`?import=<id>`).
+
+## Verification (E2E, in the real app, signed in as The Frushineaus)
+
+Sample URLs (user-provided): midwexican Instant Pot Spanish Rice,
+indianhealthyrecipes chana dal.
+
+- ✅ **Extractor** validated against both real pages (unit + live): full name,
+  ingredients (27 / 9), steps (15 / 9), ISO times, yield, hero image, keywords,
+  cuisine, nutrition — all via `jsonld`.
+- ✅ **Import → prefill:** chooser → Import from a URL → Fetch → navigates to
+  `?import=<id>` → form fully prefilled ("Check the import", Rows mode, hero image
+  shown by URL, **attribution Locked** to the source). Console clean.
+- ✅ **Attempt log:** `recipe_import_attempt` rows for both successes (jsonld, 200,
+  parse cached) — the `id` matches the URL's import id.
+- ✅ **Raw cache:** `recipe_fetch_cache` stored the 1.1 MB HTML body.
+- ✅ **Import → Save privately:** draft written `origin=local, visibility=draft,
+uri null`, 27 ingredients + 15 steps + **website attribution locked to the URL**
+  - `recipe_pending_image.source_url` set. Detail view rendered; imported step
+    times were even picked up by the cook-mode timer extractor.
+- ✅ **Rate limit:** a 2nd import within 60s → "One at a time / You're going a
+  little fast…" dialog with **NO window/countdown revealed**; logged as
+  `rate_limited` (no parse, 16ms).
+- ✅ **SSRF (unit):** `169.254.169.254`, `localhost`, `10/172.16/192.168`, `::1`,
+  `fe80::` all rejected; public IPs allowed. (Not re-tested via UI — redundant.)
+
+**Not run (blocked by design, same as Phase A):** real atproto **publish** →
+so the publish-time **hero-image fetch+upload** (source_url → `uploadBlob`) and
+the **import dedupe** against a public record remain UNVERIFIED (dedupe needs a
+published record to collide with). Kill switch off in dev.
+
+**Deferred to Phase C:** bookmarklet loader/install + the server POST endpoint
+that accepts client-side extraction and returns an import id (reuses this exact
+prefill-by-id mechanism).
+
+All typecheck clean (`pnpm typecheck`); `recipe-extract` tests pass.

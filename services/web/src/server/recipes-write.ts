@@ -35,6 +35,13 @@ export interface SaveRecipeInput {
   /** Set for imported recipes; locks Website attribution + drives dedupe. */
   sourceUrl?: string | null;
   image?: RecipeImageInput | null;
+  /**
+   * An imported hero image we haven't fetched yet (cross-origin — the client
+   * can't turn it into bytes). Stored as a `recipe_pending_image.source_url`
+   * pointer; the bytes are fetched (SSRF-guarded) and uploaded to the PDS on
+   * publish. Ignored when `image` (uploaded bytes) is present.
+   */
+  imageSourceUrl?: string | null;
 }
 
 export interface FieldIssue {
@@ -214,6 +221,11 @@ async function runSave(db: Kysely<DB>, ctx: Ctx, input: SaveRecipeInput): Promis
   //    upload the blob directly instead (below), so skip the pending row there.
   if (input.image && !input.publish) {
     await storePendingImage(db, recipeId, input.image);
+  } else if (!input.image && input.imageSourceUrl) {
+    // Imported hero we haven't fetched (cross-origin). Remember the URL as a
+    // pending pointer; publishLocalRecipe fetches + uploads it below (publish
+    // path) or it waits here as a draft until a later publish.
+    await storePendingImageSourceUrl(db, recipeId, input.imageSourceUrl, input.record.name);
   }
 
   if (!input.publish) {
@@ -390,6 +402,29 @@ async function writeChildren(trx: Kysely<DB>, id: string, record: RecipeRecord, 
     .execute();
 }
 
+// Store an imported hero as a URL-only pending pointer (no bytes yet). Fetched
+// and uploaded to the PDS on publish (publishLocalRecipe).
+async function storePendingImageSourceUrl(db: Kysely<DB>, recipeId: string, sourceUrl: string, alt: string | null): Promise<void> {
+  await db
+    .insertInto("recipe_pending_image")
+    .values({ recipe_id: recipeId, object_key: null, mime: null, alt: alt ?? null, source_url: sourceUrl })
+    .onConflict((oc) => oc.column("recipe_id").doUpdateSet({ object_key: null, mime: null, alt: alt ?? null, source_url: sourceUrl }))
+    .execute();
+}
+
+// Fetch an imported hero image (SSRF-guarded, ≤1MB per the lexicon blob cap).
+async function fetchImageFromUrl(url: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  const { safeFetchBytes } = await import("#/lib/net/safe-fetch");
+  try {
+    const res = await safeFetchBytes(url, { maxBytes: 1_000_000 });
+    const mime = res.contentType?.split(";")[0]?.trim() || "image/jpeg";
+    if (!mime.startsWith("image/")) return null;
+    return { bytes: res.bytes, mime };
+  } catch {
+    return null; // a missing hero shouldn't fail the whole publish.
+  }
+}
+
 // Store a draft image in the bucket + a pointer row (draft path).
 async function storePendingImage(db: Kysely<DB>, recipeId: string, image: RecipeImageInput): Promise<void> {
   const { putBlob } = await import("#/lib/blob-storage");
@@ -410,8 +445,10 @@ async function publishLocalRecipe(db: Kysely<DB>, ctx: Ctx, recipeId: string, re
   const { createRecipe, uploadRecipeImage } = await import("#/lib/atproto/recipe-writes");
   const { getBlob, deleteBlob } = await import("#/lib/blob-storage");
 
-  // Resolve image bytes: either the just-uploaded create-time image, or a pending
-  // draft object already in the bucket (publish-later path).
+  // Resolve image bytes: (a) the just-uploaded create-time image, (b) a pending
+  // draft object already in the bucket, or (c) an imported hero we only have a
+  // URL for — fetched now, SSRF-guarded (untested end-to-end: the publish path is
+  // gated off by the kill switch in dev — see results doc).
   let imageBytes: Uint8Array | null = null;
   let imageMime: string | null = null;
   let imageAlt: string | null = null;
@@ -427,6 +464,13 @@ async function publishLocalRecipe(db: Kysely<DB>, ctx: Ctx, recipeId: string, re
       imageMime = pending.mime;
       imageAlt = pending.alt;
       pendingKey = pending.object_key;
+    } else if (pending?.source_url) {
+      const fetched = await fetchImageFromUrl(pending.source_url);
+      if (fetched) {
+        imageBytes = fetched.bytes;
+        imageMime = fetched.mime;
+        imageAlt = pending.alt;
+      }
     }
   }
 

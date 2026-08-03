@@ -105,3 +105,21 @@ export function labelForSlug(dim: VocabDimension, slug: string | null | undefine
   if (!slug) return null;
   return BY_SLUG[dim].get(slug)?.label ?? null;
 }
+
+/**
+ * Best-effort match of a free-text value (an imported recipe's `recipeCuisine`
+ * "Italian", `recipeCategory` "Main Course") to a known slug, or null. Loose:
+ * normalizes case/punctuation and matches on slug or label. Deliberately
+ * conservative — an unmatched value is simply dropped (the field is optional),
+ * never guessed wrong.
+ */
+export function slugForLabel(dim: VocabDimension, value: string | null | undefined): string | null {
+  if (!value) return null;
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const target = norm(value);
+  if (!target) return null;
+  for (const opt of RECIPE_VOCAB[dim]) {
+    if (norm(opt.slug) === target || norm(opt.label) === target) return opt.slug;
+  }
+  return null;
+}

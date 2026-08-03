@@ -12,8 +12,11 @@ import { seo } from "#/lib/seo";
  * landing target).
  */
 export const Route = createFileRoute("/household/recipes/new")({
-  validateSearch: (search: Record<string, unknown>): { source?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { source?: string; import?: string } => ({
     source: typeof search.source === "string" ? search.source : undefined,
+    // Opaque import id (Phase B scrape). The form fetches the cached prefill by
+    // id rather than carrying it in the URL.
+    import: typeof search.import === "string" ? search.import : undefined,
   }),
   loader: async () => requireActiveHousehold(),
   head: () => ({ meta: seo({ title: "New recipe · Buttery", description: "Add a recipe to your household's box." }) }),
@@ -22,6 +25,6 @@ export const Route = createFileRoute("/household/recipes/new")({
 
 function NewRecipePage() {
   const { name } = Route.useLoaderData();
-  const { source } = Route.useSearch();
-  return <RecipeForm householdName={name} sourceUrl={source ?? null} />;
+  const { source, import: importId } = Route.useSearch();
+  return <RecipeForm householdName={name} sourceUrl={source ?? null} importId={importId ?? null} />;
 }
