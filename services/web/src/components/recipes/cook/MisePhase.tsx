@@ -37,10 +37,11 @@ export function MisePhase({
   const doneCount = ingredients.reduce((n, _line, i) => n + (preppedSet.has(i) ? 1 : 0), 0);
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Scrolling content. */}
+    <div className="relative flex h-full flex-col">
+      {/* Scrolling content. Extra bottom padding lets the last rows scroll clear
+          of the overlaid footer. */}
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pb-6">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pb-28">
           <div className="flex flex-col gap-2">
             <p className="text-sm font-bold tracking-wide text-muted-foreground uppercase">Mise en place</p>
             <h1 className="display-title m-0 text-[clamp(1.75rem,4vw,3rem)] leading-[1.08] text-balance text-foreground">{title}</h1>
@@ -107,11 +108,13 @@ export function MisePhase({
         </div>
       </div>
 
-      {/* Pinned full-width footer — spans edge to edge, sits at the viewport
-          bottom, and pads the iOS home-indicator inset. The gradient fades the
-          scrolling checklist out beneath the button. */}
-      <div className="shrink-0 bg-gradient-to-t from-background via-background/95 to-transparent px-6 pt-8 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
-        <div className="mx-auto flex w-full max-w-3xl justify-center">
+      {/* Pinned full-width footer overlaid on the scroll area, so the checklist
+          fades out under the translucent gradient (no hard clip). Spans edge to
+          edge, sits flush at the viewport bottom, and pads the iOS
+          home-indicator inset. `pointer-events-none` lets taps pass through the
+          fade to the list; the button re-enables them. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-background from-45% via-background/80 to-transparent px-6 pt-7 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
+        <div className="pointer-events-auto mx-auto flex w-full max-w-3xl justify-center">
           <Button size="2xl" onClick={onStart} className="w-full max-w-md justify-center">
             Start cooking
           </Button>
