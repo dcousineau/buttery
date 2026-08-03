@@ -12,7 +12,9 @@ export interface RecipesView {
   setFactor: (n: number) => void;
   metric: boolean;
   setMetric: (b: boolean) => void;
-  /** Open the global recipe picker (the "Add" affordance). */
+  /** Open the "Add a recipe" chooser modal (the primary "Add" affordance). */
+  openAddChooser: () => void;
+  /** Open the global recipe picker directly (the chooser's "existing" branch). */
   openPicker: () => void;
   /** Push a transient confirmation toast (stub actions + success chips). */
   pushToast: (message: string) => void;

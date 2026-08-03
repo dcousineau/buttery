@@ -14,7 +14,7 @@ export const Route = createFileRoute("/household/recipes/")({
 });
 
 function DetailEmptyState() {
-  const { openPicker } = useRecipesView();
+  const { openAddChooser } = useRecipesView();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
       <UtensilsCrossed className="size-10 text-muted-foreground" aria-hidden="true" />
@@ -22,7 +22,7 @@ function DetailEmptyState() {
         <h2 className="display-title m-0 text-lg text-foreground">Pick a recipe from the shelf</h2>
         <p className="mt-1 mb-0 text-sm text-muted-foreground">Select a recipe on the left to read it here.</p>
       </div>
-      <Button size="sm" onClick={openPicker}>
+      <Button size="sm" onClick={openAddChooser}>
         + Add
       </Button>
     </div>

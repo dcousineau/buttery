@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
-import { createFileRoute, Outlet, useParams, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useParams, useRouter, useRouterState } from "@tanstack/react-router";
 import { requireActiveHousehold } from "#/server/household/onboarding";
 import { listHouseholdRecipes } from "#/server/household-recipes";
 import { Toast, ToastViewport, useToasts } from "#/components/ui/toast";
 import { RecipeLedger, type LedgerFilters } from "#/components/recipes/RecipeLedger";
 import { GlobalRecipePicker } from "#/components/recipes/GlobalRecipePicker";
+import { AddRecipeChooser } from "#/components/recipes/create/AddRecipeChooser";
 import { RecipesViewContext } from "#/components/recipes/context";
 import { cn } from "#/lib/utils";
 import { seo } from "#/lib/seo";
@@ -37,10 +38,16 @@ function RecipesLayout() {
   const selectedId = (params as { id?: string }).id ?? null;
   const hasSelection = selectedId != null;
 
-  const [filters, setFilters] = useState<LedgerFilters>({ q: "", tag: "All", sort: "recent" });
+  // The full-page create form (`/household/recipes/new`) renders full width — the
+  // ledger + picker are suppressed for it (plan §A5: the form is a full page).
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const onNewForm = pathname.endsWith("/recipes/new");
+
+  const [filters, setFilters] = useState<LedgerFilters>({ q: "", sort: "recent", mine: false });
   const [factor, setFactor] = useState(1);
   const [metric, setMetric] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [chooserOpen, setChooserOpen] = useState(false);
   const { toasts, push, dismiss, pauseAll, resumeAll } = useToasts(4000);
 
   function pushToast(message: string) {
@@ -54,21 +61,24 @@ function RecipesLayout() {
   }
 
   return (
-    <RecipesViewContext.Provider value={{ factor, setFactor, metric, setMetric, openPicker: () => setPickerOpen(true), pushToast }}>
+    <RecipesViewContext.Provider value={{ factor, setFactor, metric, setMetric, openAddChooser: () => setChooserOpen(true), openPicker: () => setPickerOpen(true), pushToast }}>
       <div className="flex h-[calc(100svh-var(--header-height,4rem))] min-h-0 w-full">
-        <RecipeLedger
-          recipes={recipes}
-          selectedId={selectedId}
-          filters={filters}
-          onFiltersChange={setFilters}
-          onOpenPicker={() => setPickerOpen(true)}
-          className={cn("w-full", hasSelection ? "hidden lg:flex" : "flex")}
-        />
-        <section className={cn("min-h-0 min-w-0 flex-1 flex-col bg-background", hasSelection ? "flex" : "hidden lg:flex")}>
+        {!onNewForm && (
+          <RecipeLedger
+            recipes={recipes}
+            selectedId={selectedId}
+            filters={filters}
+            onFiltersChange={setFilters}
+            onAdd={() => setChooserOpen(true)}
+            className={cn("w-full", hasSelection ? "hidden lg:flex" : "flex")}
+          />
+        )}
+        <section className={cn("min-h-0 min-w-0 flex-1 flex-col bg-background", onNewForm || hasSelection ? "flex" : "hidden lg:flex")}>
           <Outlet />
         </section>
       </div>
 
+      <AddRecipeChooser open={chooserOpen} onOpenChange={setChooserOpen} onAddExisting={() => setPickerOpen(true)} />
       <GlobalRecipePicker open={pickerOpen} onOpenChange={setPickerOpen} onAdded={onAdded} />
 
       <ToastViewport position="bottom-center" onMouseEnter={pauseAll} onMouseLeave={resumeAll} onFocusCapture={pauseAll} onBlurCapture={resumeAll}>

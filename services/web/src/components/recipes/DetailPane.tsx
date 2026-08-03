@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
 import { usePostHog } from "@posthog/react";
-import { ArrowLeft, CalendarRange, Clock, EyeOff, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, CalendarRange, Clock, EyeOff, Lock, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
 import type { HouseholdRecipeDetail } from "#/server/household-recipes";
 import { removeRecipeFromHousehold, toggleHouseholdRecipeFavorite, upsertHouseholdRecipeNote } from "#/server/household-recipes";
+import { publishRecipe } from "#/server/recipes-write";
 import { Button } from "#/components/ui/button";
 import { Textarea } from "#/components/ui/textarea";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
@@ -45,6 +46,8 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
   const [scaleOpen, setScaleOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [confirmPublish, setConfirmPublish] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   // Detail-pane state (favorite, scroll position, note) is keyed by recipeId at
   // the render site (`<DetailPane key={recipe.recipeId} …/>`), so switching
@@ -70,6 +73,22 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
       setFavorite(recipe.favorite); // revert on failure
     } finally {
       setFavPending(false);
+    }
+  }
+
+  async function onPublish() {
+    setPublishing(true);
+    try {
+      const res = await publishRecipe({ data: { recipeId: recipe.recipeId } });
+      if (res.status === "publish_disabled") {
+        pushToast("Publishing is turned off right now.");
+        return;
+      }
+      posthog.capture("recipe_published", { recipe_id: recipe.recipeId, from: "detail_lock" });
+      await router.invalidate();
+    } finally {
+      setPublishing(false);
+      setConfirmPublish(false);
     }
   }
 
@@ -103,6 +122,19 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
             {recipe.title}
           </h1>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.75rem] font-semibold text-muted-foreground">
+            {recipe.unpublished && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setConfirmPublish(true)}
+                  className="inline-flex items-center gap-1 rounded-4xl border-2 border-border bg-secondary px-2 py-0.5 text-secondary-foreground transition-colors hover:bg-accent"
+                >
+                  <Lock className="size-3" aria-hidden="true" />
+                  Private · Publish
+                </button>
+                <span aria-hidden>·</span>
+              </>
+            )}
             <span className="inline-flex items-center gap-1 whitespace-nowrap">
               <SourceIcon kind={recipe.source.kind} className="size-3.5" />
               {recipe.source.label}
@@ -251,6 +283,16 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmPublish}
+        onOpenChange={setConfirmPublish}
+        title="Publish this recipe?"
+        description="This makes the recipe public on atproto — a portable record in your repo that other apps can read. It's hard to undo."
+        confirmLabel="Publish"
+        pending={publishing}
+        onConfirm={onPublish}
+      />
 
       <ConfirmDialog
         open={confirmRemove}

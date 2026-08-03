@@ -17,6 +17,16 @@ import type { PostHog } from "posthog-node";
 /** The PostHog flag that gates the post-login experience. */
 export const INVITED_FLAG = "invited";
 
+/**
+ * The PostHog flag that gates atproto publishing (writing recipe records to a
+ * user's PDS). This is a KILL SWITCH: publishing is allowed ONLY when the flag
+ * explicitly serves `true`. Everything else — flag false/undefined, PostHog
+ * unreachable, or no PostHog configured (local dev) — BLOCKS the PDS write. This
+ * fail-closed direction is deliberate: a missing/erroring flag must never let a
+ * public, hard-to-reverse atproto write through by accident.
+ */
+export const ATPROTO_PUBLISH_FLAG = "atproto-publishing-enabled";
+
 /** Memoized one-shot init of the posthog-node client for this server process.
  * Resolves to `null` when no project token is configured (local dev), which the
  * callers treat as "PostHog absent" rather than an error. */
@@ -65,6 +75,31 @@ export async function isInvited(did: string, personProperties?: Record<string, s
     return value === true; // `undefined` (unreachable / missing) fails closed
   } catch (err) {
     console.warn("[posthog] invited flag eval failed; gating", err);
+    return false;
+  }
+}
+
+/**
+ * Whether the person behind `did` may publish recipes to their atproto PDS.
+ *
+ * Fail-closed kill switch (see {@link ATPROTO_PUBLISH_FLAG}): returns `true` ONLY
+ * when the flag explicitly serves `true`. A local/server env override
+ * (`ATPROTO_PUBLISH_ENABLED=true|false`) wins over PostHog — the escape hatch for
+ * dev + emergencies. With no override and no PostHog client (local dev), or on any
+ * flag error, publishing is BLOCKED.
+ */
+export async function isAtprotoPublishEnabled(did: string, personProperties?: Record<string, string>): Promise<boolean> {
+  const override = process.env.ATPROTO_PUBLISH_ENABLED;
+  if (override === "true") return true;
+  if (override === "false") return false;
+
+  const client = await getClient();
+  if (!client) return false; // no PostHog → fail closed (no publishing)
+  try {
+    const value = await client.isFeatureEnabled(ATPROTO_PUBLISH_FLAG, did, { personProperties });
+    return value === true; // `undefined` (unreachable / missing) blocks publishing
+  } catch (err) {
+    console.warn("[posthog] atproto publish flag eval failed; blocking publish", err);
     return false;
   }
 }

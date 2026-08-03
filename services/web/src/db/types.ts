@@ -190,6 +190,17 @@ export interface RecipeAttribution {
   url: string | null;
 }
 
+export interface RecipeFetchCache {
+  body: string;
+  byte_size: number | null;
+  content_type: string | null;
+  fetched_at: Generated<Timestamp>;
+  final_url: string | null;
+  host: string | null;
+  http_status: number | null;
+  url: string;
+}
+
 export interface RecipeImage {
   alt: string | null;
   aspect_h: number | null;
@@ -199,6 +210,22 @@ export interface RecipeImage {
   blob_size: number | null;
   ordinal: number;
   recipe_id: string;
+}
+
+export interface RecipeImportAttempt {
+  created_at: Generated<Timestamp>;
+  did: string;
+  duration_ms: number | null;
+  error: string | null;
+  extractor: string | null;
+  host: string | null;
+  household_id: string | null;
+  http_status: number | null;
+  id: string;
+  parsed: Json | null;
+  source: Generated<string>;
+  status: string;
+  url: string;
 }
 
 export interface RecipeIngredient {
@@ -216,6 +243,15 @@ export interface RecipeInstruction {
 export interface RecipeKeyword {
   keyword: string;
   recipe_id: string;
+}
+
+export interface RecipePendingImage {
+  alt: string | null;
+  created_at: Generated<Timestamp>;
+  mime: string | null;
+  object_key: string | null;
+  recipe_id: string;
+  source_url: string | null;
 }
 
 export interface RecipeSearch {
@@ -284,10 +320,13 @@ export interface DB {
   household_recipe_note: HouseholdRecipeNote;
   recipe: Recipe;
   recipe_attribution: RecipeAttribution;
+  recipe_fetch_cache: RecipeFetchCache;
   recipe_image: RecipeImage;
+  recipe_import_attempt: RecipeImportAttempt;
   recipe_ingredient: RecipeIngredient;
   recipe_instruction: RecipeInstruction;
   recipe_keyword: RecipeKeyword;
+  recipe_pending_image: RecipePendingImage;
   recipe_search: RecipeSearch;
   recipe_vocab: RecipeVocab;
   recipe_vocab_alias: RecipeVocabAlias;

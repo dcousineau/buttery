@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Isomorphic package (Node scrape today, browser bundle for Phase C). Only
+    // WHATWG globals present in both runtimes are used — `URL`, `JSON`, `console`.
+    // @types/node supplies `URL`; DOM lib supplies the browser side.
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}

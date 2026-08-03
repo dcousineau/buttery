@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AcknowledgementsRouteImport } from './routes/acknowledgements'
 import { Route as AiUsageRouteImport } from './routes/ai-usage'
+import { Route as BookmarkletDotjsRouteImport } from './routes/bookmarklet[.]js'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OauthClientMetadataDotjsonRouteImport } from './routes/oauth-client-metadata[.]json'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
@@ -26,6 +27,8 @@ import { Route as RecipesIdRouteImport } from './routes/recipes.$id'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as HouseholdRecipesIndexRouteImport } from './routes/household.recipes.index'
 import { Route as HouseholdRecipesIdRouteImport } from './routes/household.recipes.$id'
+import { Route as HouseholdRecipesNewRouteImport } from './routes/household.recipes.new'
+import { Route as HouseholdRecipesImportBridgeRouteImport } from './routes/household.recipes_.import-bridge'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,6 +43,11 @@ const AcknowledgementsRoute = AcknowledgementsRouteImport.update({
 const AiUsageRoute = AiUsageRouteImport.update({
   id: '/ai-usage',
   path: '/ai-usage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BookmarkletDotjsRoute = BookmarkletDotjsRouteImport.update({
+  id: '/bookmarklet.js',
+  path: '/bookmarklet.js',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -113,11 +121,23 @@ const HouseholdRecipesIdRoute = HouseholdRecipesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => HouseholdRecipesRoute,
 } as any)
+const HouseholdRecipesNewRoute = HouseholdRecipesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => HouseholdRecipesRoute,
+} as any)
+const HouseholdRecipesImportBridgeRoute =
+  HouseholdRecipesImportBridgeRouteImport.update({
+    id: '/household/recipes_/import-bridge',
+    path: '/household/recipes/import-bridge',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/acknowledgements': typeof AcknowledgementsRoute
   '/ai-usage': typeof AiUsageRoute
+  '/bookmarklet.js': typeof BookmarkletDotjsRoute
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
   '/onboarding': typeof OnboardingRoute
@@ -131,12 +151,15 @@ export interface FileRoutesByFullPath {
   '/households/': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
+  '/household/recipes/new': typeof HouseholdRecipesNewRoute
+  '/household/recipes/import-bridge': typeof HouseholdRecipesImportBridgeRoute
   '/household/recipes/': typeof HouseholdRecipesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/acknowledgements': typeof AcknowledgementsRoute
   '/ai-usage': typeof AiUsageRoute
+  '/bookmarklet.js': typeof BookmarkletDotjsRoute
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
   '/onboarding': typeof OnboardingRoute
@@ -149,6 +172,8 @@ export interface FileRoutesByTo {
   '/households': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
+  '/household/recipes/new': typeof HouseholdRecipesNewRoute
+  '/household/recipes/import-bridge': typeof HouseholdRecipesImportBridgeRoute
   '/household/recipes': typeof HouseholdRecipesIndexRoute
 }
 export interface FileRoutesById {
@@ -156,6 +181,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/acknowledgements': typeof AcknowledgementsRoute
   '/ai-usage': typeof AiUsageRoute
+  '/bookmarklet.js': typeof BookmarkletDotjsRoute
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
   '/onboarding': typeof OnboardingRoute
@@ -169,6 +195,8 @@ export interface FileRoutesById {
   '/households/': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
+  '/household/recipes/new': typeof HouseholdRecipesNewRoute
+  '/household/recipes_/import-bridge': typeof HouseholdRecipesImportBridgeRoute
   '/household/recipes/': typeof HouseholdRecipesIndexRoute
 }
 export interface FileRouteTypes {
@@ -177,6 +205,7 @@ export interface FileRouteTypes {
     | '/'
     | '/acknowledgements'
     | '/ai-usage'
+    | '/bookmarklet.js'
     | '/login'
     | '/oauth-client-metadata.json'
     | '/onboarding'
@@ -190,12 +219,15 @@ export interface FileRouteTypes {
     | '/households/'
     | '/api/auth/$'
     | '/household/recipes/$id'
+    | '/household/recipes/new'
+    | '/household/recipes/import-bridge'
     | '/household/recipes/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/acknowledgements'
     | '/ai-usage'
+    | '/bookmarklet.js'
     | '/login'
     | '/oauth-client-metadata.json'
     | '/onboarding'
@@ -208,12 +240,15 @@ export interface FileRouteTypes {
     | '/households'
     | '/api/auth/$'
     | '/household/recipes/$id'
+    | '/household/recipes/new'
+    | '/household/recipes/import-bridge'
     | '/household/recipes'
   id:
     | '__root__'
     | '/'
     | '/acknowledgements'
     | '/ai-usage'
+    | '/bookmarklet.js'
     | '/login'
     | '/oauth-client-metadata.json'
     | '/onboarding'
@@ -227,6 +262,8 @@ export interface FileRouteTypes {
     | '/households/'
     | '/api/auth/$'
     | '/household/recipes/$id'
+    | '/household/recipes/new'
+    | '/household/recipes_/import-bridge'
     | '/household/recipes/'
   fileRoutesById: FileRoutesById
 }
@@ -234,6 +271,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AcknowledgementsRoute: typeof AcknowledgementsRoute
   AiUsageRoute: typeof AiUsageRoute
+  BookmarkletDotjsRoute: typeof BookmarkletDotjsRoute
   LoginRoute: typeof LoginRoute
   OauthClientMetadataDotjsonRoute: typeof OauthClientMetadataDotjsonRoute
   OnboardingRoute: typeof OnboardingRoute
@@ -246,6 +284,7 @@ export interface RootRouteChildren {
   RecipesIdRoute: typeof RecipesIdRoute
   HouseholdsIndexRoute: typeof HouseholdsIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  HouseholdRecipesImportBridgeRoute: typeof HouseholdRecipesImportBridgeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -269,6 +308,13 @@ declare module '@tanstack/react-router' {
       path: '/ai-usage'
       fullPath: '/ai-usage'
       preLoaderRoute: typeof AiUsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bookmarklet.js': {
+      id: '/bookmarklet.js'
+      path: '/bookmarklet.js'
+      fullPath: '/bookmarklet.js'
+      preLoaderRoute: typeof BookmarkletDotjsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -369,16 +415,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HouseholdRecipesIdRouteImport
       parentRoute: typeof HouseholdRecipesRoute
     }
+    '/household/recipes/new': {
+      id: '/household/recipes/new'
+      path: '/new'
+      fullPath: '/household/recipes/new'
+      preLoaderRoute: typeof HouseholdRecipesNewRouteImport
+      parentRoute: typeof HouseholdRecipesRoute
+    }
+    '/household/recipes_/import-bridge': {
+      id: '/household/recipes_/import-bridge'
+      path: '/household/recipes/import-bridge'
+      fullPath: '/household/recipes/import-bridge'
+      preLoaderRoute: typeof HouseholdRecipesImportBridgeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface HouseholdRecipesRouteChildren {
   HouseholdRecipesIdRoute: typeof HouseholdRecipesIdRoute
+  HouseholdRecipesNewRoute: typeof HouseholdRecipesNewRoute
   HouseholdRecipesIndexRoute: typeof HouseholdRecipesIndexRoute
 }
 
 const HouseholdRecipesRouteChildren: HouseholdRecipesRouteChildren = {
   HouseholdRecipesIdRoute: HouseholdRecipesIdRoute,
+  HouseholdRecipesNewRoute: HouseholdRecipesNewRoute,
   HouseholdRecipesIndexRoute: HouseholdRecipesIndexRoute,
 }
 
@@ -389,6 +451,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcknowledgementsRoute: AcknowledgementsRoute,
   AiUsageRoute: AiUsageRoute,
+  BookmarkletDotjsRoute: BookmarkletDotjsRoute,
   LoginRoute: LoginRoute,
   OauthClientMetadataDotjsonRoute: OauthClientMetadataDotjsonRoute,
   OnboardingRoute: OnboardingRoute,
@@ -401,6 +464,7 @@ const rootRouteChildren: RootRouteChildren = {
   RecipesIdRoute: RecipesIdRoute,
   HouseholdsIndexRoute: HouseholdsIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  HouseholdRecipesImportBridgeRoute: HouseholdRecipesImportBridgeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
