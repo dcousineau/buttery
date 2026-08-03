@@ -218,6 +218,15 @@ export interface RecipeKeyword {
   recipe_id: string;
 }
 
+export interface RecipePendingImage {
+  alt: string | null;
+  created_at: Generated<Timestamp>;
+  mime: string | null;
+  object_key: string | null;
+  recipe_id: string;
+  source_url: string | null;
+}
+
 export interface RecipeSearch {
   recipe_id: string;
   search_tsv: string;
@@ -288,6 +297,7 @@ export interface DB {
   recipe_ingredient: RecipeIngredient;
   recipe_instruction: RecipeInstruction;
   recipe_keyword: RecipeKeyword;
+  recipe_pending_image: RecipePendingImage;
   recipe_search: RecipeSearch;
   recipe_vocab: RecipeVocab;
   recipe_vocab_alias: RecipeVocabAlias;

@@ -32,6 +32,8 @@ export interface HouseholdRecipeRow {
   thumbUrl: string | null;
   /** Source went unavailable on the network; still renders from cache. */
   unavailable: boolean;
+  /** A local draft/private recipe with no atproto record yet (shows a lock). */
+  unpublished: boolean;
 }
 
 /** Per-serving nutrition; individual cells are null when the value is absent. */
@@ -73,6 +75,8 @@ export interface HouseholdRecipeDetail {
   unavailable: boolean;
   /** ISO timestamp the source went unavailable, when known. */
   unavailableSince: string | null;
+  /** A local draft/private recipe with no atproto record yet (publishable). */
+  unpublished: boolean;
 }
 
 /** One picker result (global public search, excludes already-boxed). */
@@ -152,6 +156,8 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
       "r.name as name",
       "r.origin as origin",
       "r.did as did",
+      "r.visibility as visibility",
+      "r.uri as uri",
       "r.total_time_seconds as total_time_seconds",
       "hr.favorite as favorite",
       "hr.added_at as added_at",
@@ -206,6 +212,7 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
       keywords: keywordsByRecipe.get(row.id) ?? [],
       thumbUrl: row.did && row.blob_cid ? blobImageUrl(row.did, row.blob_cid, row.blob_mime, "feed_thumbnail") : null,
       unavailable,
+      unpublished: row.visibility !== "public" || row.uri == null,
     };
   });
 });
@@ -246,6 +253,8 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
         "r.description as description",
         "r.origin as origin",
         "r.did as did",
+        "r.visibility as visibility",
+        "r.uri as uri",
         "r.recipe_yield as recipe_yield",
         "r.total_time_seconds as total_time_seconds",
         "r.recipe_cuisine as recipe_cuisine",
@@ -315,6 +324,7 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
       addedByHandle: adder?.handle ? `@${adder.handle}` : null,
       unavailable,
       unavailableSince: row.acr_deleted_at ? new Date(row.acr_deleted_at).toISOString() : null,
+      unpublished: row.visibility !== "public" || row.uri == null,
     };
   });
 

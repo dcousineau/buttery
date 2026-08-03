@@ -25,6 +25,7 @@
     "@atproto/oauth-client": "^0.8.1",
     "@atproto/oauth-client-node": "^0.5.1",
     "@atproto/oauth-types": "^0.7.5",
+    "@aws-sdk/client-s3": "^3.1101.0",
     "@base-ui/react": "^1.6.0",
     "@buttery/lexicons": "workspace:*",
     "@mantine/hooks": "^9.5.0",

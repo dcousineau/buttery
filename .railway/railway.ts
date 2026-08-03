@@ -1,7 +1,15 @@
-import { defineRailway, github, postgres, project, service } from "railway/iac";
+import { bucket, defineRailway, github, postgres, project, ref, service } from "railway/iac";
 
 export default defineRailway((ctx) => {
   const db = postgres("postgres");
+
+  // S3-compatible object storage for Buttery-owned uploads (pre-publish recipe
+  // draft images). Buckets are per-environment with isolated credentials.
+  // Railway provides BUCKET/ACCESS_KEY_ID/SECRET_ACCESS_KEY/REGION/ENDPOINT as
+  // referenceable outputs; the web service consumes them as BLOB_S3_* (see
+  // services/web/src/lib/blob-storage.ts). Draft bytes live here until publish,
+  // when they're read back and uploaded to the user's PDS as an atproto blob.
+  const uploads = bucket("buttery-uploads", { region: "iad" });
 
   // Public origin for this environment. Single source of truth: feeds both
   // better-auth (`BETTER_AUTH_URL`) and the client bundle (`VITE_APP_URL`, which
@@ -58,6 +66,12 @@ export default defineRailway((ctx) => {
       // PostHog's ingestion host directly, not the client reverse-proxy.
       POSTHOG_PROJECT_TOKEN: ctx.shared.POSTHOG_PROJECT_TOKEN,
       POSTHOG_HOST: "https://us.i.posthog.com",
+      // Object storage (buttery-uploads bucket) — S3-compatible, virtual-hosted.
+      BLOB_S3_ENDPOINT: ref(uploads, "ENDPOINT"),
+      BLOB_S3_REGION: ref(uploads, "REGION"),
+      BLOB_S3_BUCKET: ref(uploads, "BUCKET"),
+      BLOB_S3_ACCESS_KEY_ID: ref(uploads, "ACCESS_KEY_ID"),
+      BLOB_S3_SECRET_ACCESS_KEY: ref(uploads, "SECRET_ACCESS_KEY"),
     },
   });
   // CDN caching is enabled for this service but is not expressible in the IaC
@@ -105,6 +119,6 @@ export default defineRailway((ctx) => {
   });
 
   return project("buttery", {
-    resources: [db, web, sync],
+    resources: [db, uploads, web, sync],
   });
 });

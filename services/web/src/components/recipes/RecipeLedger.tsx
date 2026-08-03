@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
-import { BookOpenText, EyeOff, Star, UtensilsCrossed } from "lucide-react";
+import { BookOpenText, EyeOff, Lock, Plus, Star, UtensilsCrossed } from "lucide-react";
 import type { HouseholdRecipeRow } from "#/server/household-recipes";
 import { Button } from "#/components/ui/button";
 import { Select } from "#/components/ui/select";
@@ -11,16 +11,17 @@ export type SortKey = "recent" | "time" | "title";
 
 export interface LedgerFilters {
   q: string;
-  tag: string;
   sort: SortKey;
+  /** Show only the household's private/unpublished recipes ("My recipes"). */
+  mine: boolean;
 }
 
 /** Filter/sort/search the box client-side (plan §5.2). Original array order is
  * `added_at desc`, so "Recent" is the identity sort. */
-function filterAndSort(recipes: HouseholdRecipeRow[], { q, tag, sort }: LedgerFilters): HouseholdRecipeRow[] {
+function filterAndSort(recipes: HouseholdRecipeRow[], { q, sort, mine }: LedgerFilters): HouseholdRecipeRow[] {
   const needle = q.trim().toLowerCase();
   let list = recipes.filter((r) => {
-    if (tag !== "All" && !r.keywords.includes(tag)) return false;
+    if (mine && !r.unpublished) return false;
     if (!needle) return true;
     const hay = [r.title, r.sourceLabel, ...r.keywords].join(" ").toLowerCase();
     return hay.includes(needle);
@@ -37,47 +38,22 @@ function filterAndSort(recipes: HouseholdRecipeRow[], { q, tag, sort }: LedgerFi
   return list;
 }
 
-/**
- * The tag chips. The handoff assumes a small curated keyword vocabulary; real
- * synced recipes carry long, noisy keyword lists (one recipe alone can have 25+),
- * so we surface the most SHARED facets: distinct keywords ranked by how many
- * recipes carry them (tie-broken by first-seen order), capped so the filter bar
- * stays compact. A single-recipe keyword is a poor filter anyway.
- */
-const MAX_TAGS = 18;
-function topTags(recipes: HouseholdRecipeRow[]): string[] {
-  const count = new Map<string, number>();
-  const firstSeen = new Map<string, number>();
-  let ord = 0;
-  for (const r of recipes) {
-    for (const k of new Set(r.keywords)) {
-      count.set(k, (count.get(k) ?? 0) + 1);
-      if (!firstSeen.has(k)) firstSeen.set(k, ord++);
-    }
-  }
-  return [...count.keys()].sort((a, b) => count.get(b)! - count.get(a)! || firstSeen.get(a)! - firstSeen.get(b)!).slice(0, MAX_TAGS);
-}
-
 export function RecipeLedger({
   recipes,
   selectedId,
   filters,
   onFiltersChange,
-  onOpenPicker,
+  onAdd,
   className,
 }: {
   recipes: HouseholdRecipeRow[];
   selectedId: string | null;
   filters: LedgerFilters;
   onFiltersChange: (f: LedgerFilters) => void;
-  onOpenPicker: () => void;
+  onAdd: () => void;
   className?: string;
 }) {
-  const tags = useMemo(() => {
-    const top = topTags(recipes);
-    // Keep an active non-"All" tag visible even if it falls outside the top set.
-    return filters.tag !== "All" && !top.includes(filters.tag) ? [filters.tag, ...top] : top;
-  }, [recipes, filters.tag]);
+  const mineCount = useMemo(() => recipes.filter((r) => r.unpublished).length, [recipes]);
   const visible = useMemo(() => filterAndSort(recipes, filters), [recipes, filters]);
   const boxEmpty = recipes.length === 0;
 
@@ -108,29 +84,26 @@ export function RecipeLedger({
             <option value="time">Quickest</option>
             <option value="title">A–Z</option>
           </Select>
-          <Button size="sm" className="h-[30px]" onClick={onOpenPicker}>
+          <Button size="sm" className="h-[30px]" onClick={onAdd}>
+            <Plus data-icon="inline-start" aria-hidden="true" />
             Add
           </Button>
         </div>
-        {tags.length > 0 && (
+        {!boxEmpty && (
           <div className="flex flex-wrap gap-1">
-            {["All", ...tags].map((t) => {
-              const active = filters.tag === t;
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => onFiltersChange({ ...filters, tag: active && t !== "All" ? "All" : t })}
-                  className={cn(
-                    "h-[22px] cursor-(--cursor-interactive) rounded-4xl border-2 border-border px-2.5 text-[0.6875rem] font-semibold transition-colors",
-                    active ? "bg-primary text-primary-foreground" : "bg-background text-foreground hover:bg-accent",
-                  )}
-                >
-                  {t}
-                </button>
-              );
-            })}
+            <button
+              type="button"
+              aria-pressed={filters.mine}
+              onClick={() => onFiltersChange({ ...filters, mine: !filters.mine })}
+              className={cn(
+                "inline-flex h-[22px] items-center gap-1 cursor-(--cursor-interactive) rounded-4xl border-2 border-border px-2.5 text-[0.6875rem] font-semibold transition-colors",
+                filters.mine ? "bg-primary text-primary-foreground" : "bg-background text-foreground hover:bg-accent",
+              )}
+            >
+              <Lock className="size-[11px]" aria-hidden="true" />
+              My recipes
+              {mineCount > 0 && <span className="opacity-70">· {mineCount}</span>}
+            </button>
           </div>
         )}
       </div>
@@ -144,7 +117,7 @@ export function RecipeLedger({
       {/* List */}
       <div className="min-h-0 flex-1 overflow-auto">
         {boxEmpty ? (
-          <EmptyBox onOpenPicker={onOpenPicker} />
+          <EmptyBox onAdd={onAdd} />
         ) : visible.length === 0 ? (
           <EmptyFilter />
         ) : (
@@ -158,6 +131,8 @@ export function RecipeLedger({
     </div>
   );
 }
+
+/** The two `Add` affordances (filter bar + empty box) open the chooser modal. */
 
 function LedgerRow({ row, selected }: { row: HouseholdRecipeRow; selected: boolean }) {
   return (
@@ -181,6 +156,7 @@ function LedgerRow({ row, selected }: { row: HouseholdRecipeRow; selected: boole
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex items-center gap-1 truncate text-[0.8125rem] font-bold leading-tight text-foreground">
             <span className="truncate">{row.title}</span>
+            {row.unpublished && <Lock className="size-3 shrink-0 text-muted-foreground" aria-label="Private — not published" />}
             {row.favorite && <Star className="size-3 shrink-0 fill-primary text-primary" aria-label="Favorited" />}
             {row.unavailable && <EyeOff className="size-3 shrink-0 text-muted-foreground" aria-label="Source no longer available" />}
           </div>
@@ -196,15 +172,15 @@ function LedgerRow({ row, selected }: { row: HouseholdRecipeRow; selected: boole
   );
 }
 
-function EmptyBox({ onOpenPicker }: { onOpenPicker: () => void }) {
+function EmptyBox({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="flex flex-col items-center gap-3 px-6 py-14 text-center">
       <UtensilsCrossed className="size-8 text-muted-foreground" aria-hidden="true" />
       <div>
         <p className="m-0 text-[0.8125rem] font-bold text-foreground">Your shelf is empty</p>
-        <p className="mt-1 mb-0 text-xs text-muted-foreground">Add a recipe from the public collection to start your household's box.</p>
+        <p className="mt-1 mb-0 text-xs text-muted-foreground">Write one out or bring one in from the web to start your household's box.</p>
       </div>
-      <Button size="sm" onClick={onOpenPicker}>
+      <Button size="sm" onClick={onAdd}>
         Add a recipe
       </Button>
     </div>
@@ -216,7 +192,7 @@ function EmptyFilter() {
     <div className="flex flex-col items-center gap-1 px-6 py-14 text-center">
       <UtensilsCrossed className="size-8 text-muted-foreground" aria-hidden="true" />
       <p className="m-0 text-[0.8125rem] font-bold text-foreground">Nothing matches that.</p>
-      <p className="m-0 text-xs text-muted-foreground">Clear the tag filter to see the whole household's shelf again.</p>
+      <p className="m-0 text-xs text-muted-foreground">Clear the search or the "My recipes" filter to see the whole shelf again.</p>
     </div>
   );
 }
