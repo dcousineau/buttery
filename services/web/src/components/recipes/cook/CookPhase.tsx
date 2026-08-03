@@ -100,11 +100,20 @@ export function CookPhase({
     });
   }
 
-  // Keyboard navigation while the cook phase is mounted.
+  // Keyboard navigation while the cook phase is mounted. Registered in the
+  // *capture* phase on `document` so it fires before any nested control (the
+  // Dialog focus scope, timer buttons, the checkbox) can swallow the event —
+  // bubble-phase `window` listeners were reached only when focus happened to
+  // sit somewhere that let the key bubble, which is why arrows worked only
+  // sometimes. Arrows are ignored while a text field is focused so typing keeps
+  // working. Right/Left mirror Down/Up (§4.3).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
-      const onButton = target?.tagName === "BUTTON";
+      const tag = target?.tagName;
+      const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable === true;
+      if (typing) return;
       if (e.key === "ArrowDown" || e.key === "ArrowRight") {
         e.preventDefault();
         go(1);
@@ -112,13 +121,13 @@ export function CookPhase({
         e.preventDefault();
         go(-1);
       } else if (e.key === " " || e.code === "Space") {
-        if (onButton) return; // let the focused control take the Space
+        if (tag === "BUTTON") return; // let the focused control take the Space
         e.preventDefault();
         go(1);
       }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
   }, [go]);
 
   return (
