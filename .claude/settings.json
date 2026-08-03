@@ -1,0 +1,14 @@
+{
+  "enabledPlugins": {
+    "atproto-skills@atproto-skills-marketplace": true,
+    "posthog@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "atproto-skills-marketplace":   {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/zentered/atproto-skills.git"
+      }
+    }
+  }
+}

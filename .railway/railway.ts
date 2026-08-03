@@ -52,7 +52,7 @@ export default defineRailway((ctx) => {
       // PostHog client config — inlined into the client bundle at BUILD time
       // (see services/web/src/routes/__root.tsx).
       VITE_PUBLIC_POSTHOG_PROJECT_TOKEN: "phc_BgDad6JiFk5D5dz9JsXXJQBncauEG38YVF2JCZKWwGgj",
-      VITE_PUBLIC_POSTHOG_HOST: "https://us.i.posthog.com",
+      VITE_PUBLIC_POSTHOG_HOST: "https://event.buttery.recipes",
     },
   });
   // CDN caching is enabled for this service but is not expressible in the IaC

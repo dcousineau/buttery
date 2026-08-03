@@ -39,6 +39,51 @@ export const Route = createRootRoute({
 /** Pages that stay reachable during the soft-launch gate (legal / transparency). */
 const UNGATED_ROUTES = new Set(["/terms", "/privacy", "/ai-usage", "/acknowledgements"]);
 
+/** Route prefixes for the signed-in app surfaces. The PostHog support widget
+ * (Conversations) is shown only here — never on marketing, legal, or public
+ * share pages (`/`, `/login`, `/recipes/*`, `/invite/*`, …). */
+const LOGGED_IN_ROUTE_PREFIXES = ["/household", "/households", "/pantry", "/onboarding"];
+
+function isLoggedInRoute(pathname: string): boolean {
+  return LOGGED_IN_ROUTE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/** Shows PostHog's Conversations "support widget" on signed-in app routes only.
+ * The widget auto-loads from remote config; we `show()` it on app routes and
+ * `hide()` it everywhere else. Calls are client-only (guarded by `useEffect`)
+ * and no-op until conversations finish loading, so we poll briefly to still hide
+ * an auto-shown widget once it lands on a marketing/legal page. */
+function PostHogSupportWidget() {
+  const posthog = usePostHog();
+  const loggedIn = useRouterState({ select: (s) => isLoggedInRoute(s.location.pathname) });
+
+  useEffect(() => {
+    const conversations = posthog.conversations;
+    if (!conversations) return;
+    const apply = () => {
+      if (loggedIn) {
+        // show() also kicks off the async load when conversations aren't ready.
+        conversations.show();
+        return true;
+      }
+      if (!conversations.isAvailable()) return false; // nothing rendered to hide yet
+      conversations.hide();
+      return true;
+    };
+    if (apply()) return;
+    const timer = setInterval(() => {
+      if (apply()) clearInterval(timer);
+    }, 500);
+    const stop = setTimeout(() => clearInterval(timer), 10_000);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(stop);
+    };
+  }, [posthog, loggedIn]);
+
+  return null;
+}
+
 function PostHogIdentity() {
   const posthog = usePostHog();
   const { data: session } = authClient.useSession();
@@ -105,6 +150,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             }}
           >
             <PostHogIdentity />
+            <PostHogSupportWidget />
             {app}
           </PostHogProvider>
         ) : (
