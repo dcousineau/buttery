@@ -45,15 +45,21 @@ async function getClient(): Promise<PostHog | null> {
  *
  * Fail direction is deliberately closed: when PostHog is configured but the flag
  * is unreachable or undefined, the gate stays up (returns `false`). The single
- * exception is local dev with no `POSTHOG_PROJECT_TOKEN` — there we return `true`
- * so the app isn't gated locally, mirroring the old coming-soon behavior.
+ * exception is DEV/TEST with no `POSTHOG_PROJECT_TOKEN` — there we return `true`
+ * so the app isn't gated locally. Any other environment (production, or an unset
+ * `NODE_ENV`) with no token fails CLOSED, so a missing prod token can't silently
+ * open the gate to everyone.
  *
  * `personProperties` (e.g. `{ handle }`) are passed for flag targeting only; they
  * are not persisted here — {@link identify} does the durable person write.
  */
 export async function isInvited(did: string, personProperties?: Record<string, string>): Promise<boolean> {
   const client = await getClient();
-  if (!client) return true; // no PostHog locally → never gate dev
+  if (!client) {
+    // Bypass only when explicitly running dev/test; unknown/unset → fail closed.
+    const env = process.env.NODE_ENV;
+    return env === "development" || env === "test";
+  }
   try {
     const value = await client.isFeatureEnabled(INVITED_FLAG, did, { personProperties });
     return value === true; // `undefined` (unreachable / missing) fails closed
