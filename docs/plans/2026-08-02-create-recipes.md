@@ -51,8 +51,14 @@ is a deliberate, separate action available both at create time and later.
   navigate to the full-page form; "Add an existing recipe" opens today's
   `GlobalRecipePicker` as one branch (the picker is demoted from primary surface
   to a branch of the chooser).
-- **Bookmarklet transport:** open authenticated Buttery tab with payload (URL
-  fragment + `postMessage`). No CORS, no cross-origin POST, no bookmarklet token.
+- **Bookmarklet transport (updated post-Phase-B, see §C):** the bookmarklet does
+  **no parsing** — it finds JSON-LD and sends that, else sends the page's raw HTML,
+  and the **server runs the same `recipe-extract` subsystem**. Payload reaches the
+  server through an **authenticated Buttery tab via `postMessage`** (the hostile
+  page can't POST with the session cookie); the tab calls `submitImport` and lands
+  on the form via the **Phase B import id** (`?import=<id>`). No CORS, no
+  cross-origin POST, no bookmarklet token, no `#import=` fragment, no browser
+  extractor bundle.
 - **Images:** single image in v1 (imported hero or one manual upload); uploaded
   to atproto as a blob **on publish**. Multi-image deferred.
 - **Delivery:** phased — A (manual form + save/publish core), B (server scrape),
@@ -392,8 +398,9 @@ Contract:
 
 ### B3. Extraction parser — net-new, shared
 
-- New `packages/recipe-extract/` (or `services/web/src/lib/recipe-extract/`,
-  but a package lets Phase C build a browser bundle from the same source):
+- New `packages/recipe-extract/` (a standalone package so the same extractor is
+  reusable — Phase C's bookmarklet ingest runs it server-side too, no browser
+  bundle):
   - Parse `<script type="application/ld+json">` schema.org/Recipe (handle
     `@graph`, arrays, `HowToStep`/`HowToSection`, ISO-8601 durations).
     Reuse the diet-slug↔schema.org map from `recipes.$id.tsx:49-62` (both
@@ -419,17 +426,45 @@ Contract:
 
 ## Phase C — Bookmarklet fallback
 
-### C1. Loader + extraction script (served from our domain)
+**Design update (post-Phase-B):** the bookmarklet does **no parsing of its own** —
+it stays a tiny loader. On a recipe page it does the simplest possible thing:
+
+> **Look for JSON-LD; if you find it, send that. Otherwise send the page's raw
+> HTML.** Either way the **server runs the exact same `recipe-extract` subsystem**
+> (§B3) on it — one extractor, one code path, no browser bundle to keep in sync.
+
+Because the recipe page is a hostile third-party origin, the payload can't be
+POSTed straight to `buttery.recipes` (the session cookie is `SameSite`, so a
+cross-site POST would be unauthenticated). Transport therefore stays the
+**Phase A decision**: open an **authenticated Buttery tab** and hand it the
+payload via `postMessage`. The Buttery tab (same-origin, signed in) calls the
+server, which extracts + caches the parse and returns an **import id**; the tab
+then lands on the create form at `?import=<id>` — the **same import-id prefill
+mechanism Phase B already ships** (no URL payload, no `#import=` fragment).
+
+### C1. Loader script (served from our domain)
 
 - Serve a standalone JS via a server route handler (bracket-escape pattern from
-  `routes/oauth-client-metadata[.]json.ts`), e.g.
-  `routes/bookmarklet[.]js.ts`, returning `Content-Type: application/javascript`.
-  This lets the script embed the app origin.
-- The bookmarklet itself is a tiny `javascript:` snippet that injects a
-  `<script src="https://buttery.recipes/bookmarklet.js">`. The loaded script
-  runs the **same `packages/recipe-extract` parser** (built to a browser bundle),
-  then `window.open`s `https://buttery.recipes/household/recipes/new#import=<b64>`
-  and also `postMessage`s the payload to the new tab.
+  `routes/oauth-client-metadata[.]json.ts`), e.g. `routes/bookmarklet[.]js.ts`,
+  returning `Content-Type: application/javascript`. This lets the script embed the
+  app origin.
+- The `javascript:` snippet injects `<script src="https://buttery.recipes/bookmarklet.js">`.
+  The loaded script:
+  1. Collect the payload from the current page:
+     - Read every `<script type="application/ld+json">` block. If any parses to
+       (or contains, via `@graph`) a schema.org `Recipe`, the payload is
+       `{ kind: "jsonld", data: <the ld+json text/objects>, url: location.href }`.
+     - **Otherwise** the payload is `{ kind: "html", html: document.documentElement.outerHTML, url: location.href }`
+       (size-capped; if it somehow exceeds the cap, still send — the server
+       re-caps).
+  2. `window.open("https://buttery.recipes/household/recipes/import-bridge")` (an
+     authenticated same-origin bridge route, C3a). Handshake: the bridge posts a
+     `ready` message to its opener; the bookmarklet replies with the payload via
+     `postMessage` (targetOrigin pinned to `https://buttery.recipes`). The bridge
+     validates `event.origin` is the recipe page it opened and ignores anything
+     else.
+- **No `packages/recipe-extract` browser bundle** — the browser only detects +
+  ships raw JSON-LD or HTML; all mapping happens server-side.
 
 ### C2. Install dialog (mockup frame "Get the bookmarklet")
 
@@ -441,13 +476,26 @@ Contract:
   — don't just click it", "On a recipe page, click Save to Buttery — you stay
   signed in"), and a **Done** button.
 
-### C3. Landing/prefill (the form page absorbs the payload)
+### C3. Server ingest + bridge + prefill (reuses Phase B's import id)
 
-- `routes/household.recipes.new.tsx` (the same full-page form from A5): on mount,
-  if a `#import=` fragment is present (reliable, same-origin; `postMessage`
-  fallback), decode it, prefill the form, set `sourceUrl` → **attribution locked
-  to the source URL** (same rule as server scrape → title "Check the import").
-  The fragment path also lets the form be deep-linked generally.
+- **`submitImport` server fn** (net-new, alongside `scrapeRecipe` in
+  `server/recipe-scrape.ts`): `activeContext()` for auth, accepts
+  `{ url, jsonld? , html? }`. Normalize to HTML for the shared extractor —
+  wrap JSON-LD as `<script type="application/ld+json">…</script>` when `kind:jsonld`,
+  else use the posted `html` — then run the **same `extractRecipe({ html, url })`**
+  as Phase B, write a `recipe_import_attempt` row (source e.g. `bookmarklet`) with
+  the cached parse, and return an **import id** (or a typed failure). Note: this
+  path has **no server-side fetch**, so `safe-fetch` / the rate limiter / the
+  `recipe_fetch_cache` don't apply — the bytes come from the user's own browser.
+  (Optionally reuse the per-account Redis limit keyed `import:{did}` to bound abuse.)
+- **`routes/household.recipes.import-bridge.tsx`** (net-new, authenticated): a
+  minimal same-origin landing that performs the `postMessage` handshake (C1),
+  calls `submitImport`, then `navigate`s to `/household/recipes/new?import=<id>`
+  (or shows the failure UX on a typed failure). This is the tab the bookmarklet
+  opens.
+- **Prefill:** unchanged from Phase B — the create form loads the cached prefill
+  by `?import=<id>` (`getImportPrefill`), locks Website attribution to the source
+  URL, title "Check the import". No new form code.
 
 ---
 
@@ -457,7 +505,10 @@ Contract:
 
 - `services/web/src/server/recipes-write.ts` — `saveRecipe`, `publishRecipe`.
 - `services/web/src/routes/household.recipes.new.tsx` — the **full-page** create
-  form (A5); also the bookmarklet/import `#import=` landing (C3).
+  form (A5); loads imported prefill by `?import=<id>` (Phase B + C).
+- `services/web/src/routes/household.recipes.import-bridge.tsx` — authenticated
+  `postMessage` bridge the bookmarklet opens (C3); calls `submitImport` → lands on
+  the form at `?import=<id>`.
 - `services/web/src/components/recipes/create/` — `AddRecipeChooser.tsx` (entry
   chooser modal), `RecipeForm.tsx`, `IngredientsEditor.tsx` /
   `InstructionsEditor.tsx` (dual-mode paste↔rows + soft parse warnings),
@@ -465,8 +516,13 @@ Contract:
   `DuplicateDialog.tsx`, `FetchingDialog.tsx`.
 - `services/web/src/lib/redis.ts`, `services/web/src/lib/net/safe-fetch.ts`,
   `services/web/src/lib/blob-storage.ts`.
-- `packages/recipe-extract/` — shared JSON-LD/microdata parser (+ browser build).
-- `services/web/src/routes/bookmarklet[.]js.ts`.
+- `packages/recipe-extract/` — shared JSON-LD/microdata parser (server-side only;
+  **no browser build** — the bookmarklet ships raw JSON-LD/HTML for the server to
+  parse). _(Shipped in Phase B.)_
+- `services/web/src/routes/bookmarklet[.]js.ts` — tiny loader (find JSON-LD → send,
+  else send page HTML; `postMessage` to the bridge tab).
+- `services/web/src/server/recipe-scrape.ts` — add `submitImport({ url, jsonld?, html? })`
+  (bookmarklet ingest; same `extractRecipe` + import-id cache as `scrapeRecipe`).
 - Shared row parsers (if not already present): amount+unit (ingredients) and
   timer/duration (instructions) extractors — reused by editors + downstream.
 - New migration under `services/web/src/db/migrations/`.
@@ -534,10 +590,14 @@ commands / local dev DB). Drive the real app via the `run` skill.
   "That page wouldn't open up" dialog (bookmarklet / manual / "Tell Buttery about
   it") shows; the manual fallback keeps attribution locked to the URL.
 - **Phase C:** Chooser → "Use the bookmarklet" → install dialog; drag "Save to
-  Buttery" to the bookmarks bar. Run it on a recipe page → new Buttery tab opens
-  the full-page form prefilled (via `#import=`), attribution locked. Verify
-  save/publish as Phase A. Confirm the loader script serves with a JS
-  content-type from our origin.
+  Buttery" to the bookmarks bar. Run it on a JSON-LD recipe page → new Buttery tab
+  (the bridge) receives the JSON-LD via `postMessage`, `submitImport` extracts it,
+  and the form opens prefilled via `?import=<id>`, attribution locked. Run it on a
+  page with **no** JSON-LD → the bookmarklet sends the raw HTML instead and the
+  server's `recipe-extract` produces the same prefill (or a partial one). Verify
+  save/publish as Phase A. Confirm the loader script serves with a JS content-type
+  from our origin, and the bridge ignores `postMessage`s whose origin isn't the
+  page it opened.
 
 **Acceptance:** log implementation results to
 `docs/plans/results/2026-08-02-create-recipes-results.md` (build log, decisions,
