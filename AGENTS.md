@@ -148,7 +148,7 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 ## Database (Kysely + migrations)
 
 - All SQL goes through shared, typed Kysely instance from `src/lib/db.ts` (`getDb()`). better-auth shares same instance (`database: { db: getDb(), type: "postgres" }` in `src/lib/auth.ts`). Prefer Kysely query-builder primitives over raw `sql`.
-- Read-side data loaders: `createServerFn({ method: "GET" })` + dynamically `import` `getDb` from `#/lib/db` INSIDE the handler (mirror `src/lib/config.ts`'s dynamic `railway` import) — keeps `pg` out of the client bundle when the module is also imported client-side (e.g. `src/server/recipes.ts`).
+- Read-side data loaders: `createServerFn({ method: "GET" })` + dynamically `import` `getDb` from `#/lib/db` INSIDE the handler (mirror `src/lib/gate.ts`'s dynamic `posthog-server` import) — keeps `pg` out of the client bundle when the module is also imported client-side (e.g. `src/server/recipes.ts`).
 - Schema owned by **kysely-ctl migrations** in `src/db/migrations/` (config: `services/web/kysely.config.ts`, reuses shared pool + loads `services/web/.env`). Initial migration ports whole better-auth + atproto schema. `scripts/better-auth.sql` is historical source, now superseded.
 - **ALWAYS run `pnpm db:codegen` right after `pnpm db:migrate:up` when work locally** — regen `src/db/types.ts` (the `DB` interface) from live DB so types match schema. `types.ts` generated; never hand-edit.
 - Prod migrations run auto on deploy via Railway pre-deploy (`preDeploy: "pnpm db:migrate:up"` in `.railway/railway.ts`). This why `kysely-ctl` lives in `dependencies` (Railpack prunes devDeps from runtime image); `kysely-codegen` is true devDependency and never runs in prod.

@@ -46,6 +46,7 @@
     "lucide-react": "^1.28.0",
     "pg": "^8.22.0",
     "posthog-js": "^1.409.5",
+    "posthog-node": "^5.47.3",
     "railway": "^3.7.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

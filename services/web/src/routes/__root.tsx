@@ -5,8 +5,8 @@ import { PostHogProvider, usePostHog } from "@posthog/react";
 import { useEffect, useRef } from "react";
 import { authClient } from "../lib/auth-client";
 import AppShell from "../components/AppShell";
-import ComingSoon from "../components/ComingSoon";
-import { getComingSoon } from "../lib/config";
+import Waitlist from "../components/Waitlist";
+import { getGateState } from "../lib/gate";
 import { absolute, seo } from "../lib/seo";
 
 import appCss from "../styles.css?url";
@@ -14,7 +14,7 @@ import appCss from "../styles.css?url";
 const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getItem('theme');var mode=(stored==='light'||stored==='dark'||stored==='auto')?stored:'auto';var prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;var resolved=mode==='auto'?(prefersDark?'dark':'light'):mode;var root=document.documentElement;root.classList.remove('light','dark');root.classList.add(resolved);if(mode==='auto'){root.removeAttribute('data-theme')}else{root.setAttribute('data-theme',mode)}root.style.colorScheme=resolved;}catch(e){}})();`;
 
 export const Route = createRootRoute({
-  loader: () => getComingSoon(),
+  loader: () => getGateState(),
   head: () => ({
     meta: [
       {
@@ -36,7 +36,8 @@ export const Route = createRootRoute({
   shellComponent: RootDocument,
 });
 
-/** Pages that stay reachable during the soft-launch gate (legal / transparency). */
+/** Pages that stay reachable for a signed-in-but-not-invited user (legal /
+ * transparency), so the waitlist takeover never traps them away from these. */
 const UNGATED_ROUTES = new Set(["/terms", "/privacy", "/ai-usage", "/acknowledgements"]);
 
 /** Route prefixes for the signed-in app surfaces. The PostHog support widget
@@ -93,8 +94,13 @@ function PostHogIdentity() {
   useEffect(() => {
     if (!did) return;
     if (identifiedDid.current && identifiedDid.current !== did) posthog.reset();
+    // DID is the primary lookup id (distinct_id); handle rides along as a person
+    // property so PostHog is filterable by handle, not just the opaque DID. Keep
+    // `handle` the real atproto handle (server does the same in src/lib/gate.ts);
+    // `name` is the separate display fallback.
     posthog.identify(did, {
-      handle: session.user.handle ?? session.user.name,
+      ...(session.user.handle ? { handle: session.user.handle } : {}),
+      name: session.user.name,
     });
     identifiedDid.current = did;
   }, [did, posthog, session?.user.handle, session?.user.name]);
@@ -119,14 +125,16 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   if (import.meta.env.DEV && (!posthogToken || !posthogHost)) {
     console.error(`[posthog] ${!posthogToken ? "VITE_PUBLIC_POSTHOG_PROJECT_TOKEN" : "VITE_PUBLIC_POSTHOG_HOST"} is unset — analytics is disabled until it's configured.`);
   }
-  const comingSoon = Route.useLoaderData();
+  const gate = Route.useLoaderData();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const gated = comingSoon && !UNGATED_ROUTES.has(pathname);
+  // A signed-in user without the `invited` flag gets the waitlist takeover,
+  // except on the ungated legal pages so they can still read them / sign out.
+  const gated = gate.authed && !gate.invited && !UNGATED_ROUTES.has(pathname);
   // Canonical / og:url are per-page; derive both from the current path so every
   // route gets them without per-route wiring. Query/hash are intentionally dropped.
   const canonical = absolute(pathname);
   // PostHog wraps the app only when configured; otherwise render the same tree bare.
-  const app = gated ? <ComingSoon /> : <AppShell>{children}</AppShell>;
+  const app = gated ? <Waitlist /> : <AppShell>{children}</AppShell>;
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -142,6 +150,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             options={{
               api_host: posthogHost,
               capture_exceptions: true,
+              // Don't mint a person profile for anonymous visitors — events are
+              // still captured (lightly tracked), but a profile is only created
+              // once `identify()` runs on login. Keeps anon users out of Persons.
+              person_profiles: "identified_only",
               // Inject the session id into requests to our own origin (API is
               // same-origin server functions) so backend instrumentation can
               // link server traces to the session. Client-only: `window` is
