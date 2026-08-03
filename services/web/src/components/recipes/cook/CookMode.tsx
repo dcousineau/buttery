@@ -60,6 +60,28 @@ export default function CookMode({ recipe, onClose }: { recipe: HouseholdRecipeD
 
   useWakeLock(phase === "cook" && resume !== "pending");
 
+  // Hide the PostHog Conversations support widget while cook mode is open — its
+  // floating bubble would overlap the immersive surface. Poll briefly to also
+  // catch a late-loading widget, then restore it on exit. `__root` re-shows it
+  // on signed-in routes, so a plain show() on cleanup is enough.
+  useEffect(() => {
+    const conversations = posthog.conversations;
+    if (!conversations) return;
+    conversations.hide();
+    const timer = setInterval(() => {
+      if (conversations.isAvailable()) {
+        conversations.hide();
+        clearInterval(timer);
+      }
+    }, 500);
+    const stop = setTimeout(() => clearInterval(timer), 10_000);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(stop);
+      conversations.show();
+    };
+  }, [posthog]);
+
   // Persist cook-view state (debounced), but only once the Resume choice is made.
   useEffect(() => {
     if (resume === "pending") return;
@@ -180,8 +202,8 @@ export default function CookMode({ recipe, onClose }: { recipe: HouseholdRecipeD
             <div className="absolute -right-10 -bottom-1/4 size-[40vmax] rounded-full bg-secondary/15 blur-3xl motion-safe:animate-cook-blob-b" />
           </div>
 
-          {/* Top bar */}
-          <div className="flex items-center justify-between gap-3 border-b-2 border-border/60 px-6 py-3">
+          {/* Top bar (pad the notch/status-bar inset on iOS standalone/fullscreen). */}
+          <div className="flex items-center justify-between gap-3 border-b-2 border-border/60 px-6 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-3">
             <div className="min-w-0">
               <DialogTitle size="default" className="display-title truncate text-lg text-secondary">
                 {recipe.title}
@@ -232,20 +254,21 @@ export default function CookMode({ recipe, onClose }: { recipe: HouseholdRecipeD
           {/* Body */}
           <div className="min-h-0 flex-1 overflow-hidden">
             {phase === "mise" ? (
-              <div className="h-full overflow-y-auto px-6 py-4">
-                <MisePhase
-                  title={recipe.title}
-                  ingredients={scaledIngredients}
-                  serves={serves}
-                  prepped={prepped}
-                  onTogglePrep={togglePrep}
-                  factor={factor}
-                  metric={metric}
-                  onFactor={setFactor}
-                  onMetric={setMetric}
-                  onStart={onStart}
-                />
-              </div>
+              // MisePhase owns its full-height layout (scroll area + pinned
+              // full-width footer), so the "Start cooking" bar can reach the
+              // viewport edges + bottom.
+              <MisePhase
+                title={recipe.title}
+                ingredients={scaledIngredients}
+                serves={serves}
+                prepped={prepped}
+                onTogglePrep={togglePrep}
+                factor={factor}
+                metric={metric}
+                onFactor={setFactor}
+                onMetric={setMetric}
+                onStart={onStart}
+              />
             ) : (
               <CookPhase
                 steps={recipe.instructions}

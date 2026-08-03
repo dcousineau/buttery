@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
 import { splitIngredient } from "#/lib/recipe-scale";
 import { cn } from "#/lib/utils";
-import { IngredientRail } from "./IngredientRail";
+import { MobileCookDock } from "./MobileCookDock";
 import { StepView } from "./StepView";
 import { TimersPanel } from "./TimersPanel";
 
@@ -18,8 +18,8 @@ const SCROLL_LOCK_MS = 700;
  * step column where the centred step is sharp and neighbours dim + blur by
  * distance. 38vh spacers top/bottom let the first/last step reach centre. Click
  * centres a step; scrolling picks the nearest-to-centre; keyboard ↓/→/Space
- * advance, ↑/← go back. On narrow screens the rail collapses into a footer
- * (ingredient disclosure + timers) above the nav.
+ * advance, ↑/← go back. On narrow screens the rail collapses into a compact
+ * footer dock (`MobileCookDock`) whose ingredient + timer sheets open on demand.
  */
 export function CookPhase({
   steps,
@@ -48,7 +48,6 @@ export function CookPhase({
   const stepRefs = useRef<(HTMLLIElement | null)[]>([]);
   const lockUntil = useRef(0);
   const rafId = useRef<number | null>(null);
-  const [mobileIngredientsOpen, setMobileIngredientsOpen] = useState(false);
   const last = steps.length - 1;
 
   const centerStep = useCallback((index: number, behavior: ScrollBehavior) => {
@@ -100,11 +99,20 @@ export function CookPhase({
     });
   }
 
-  // Keyboard navigation while the cook phase is mounted.
+  // Keyboard navigation while the cook phase is mounted. Registered in the
+  // *capture* phase on `document` so it fires before any nested control (the
+  // Dialog focus scope, timer buttons, the checkbox) can swallow the event —
+  // bubble-phase `window` listeners were reached only when focus happened to
+  // sit somewhere that let the key bubble, which is why arrows worked only
+  // sometimes. Arrows are ignored while a text field is focused so typing keeps
+  // working. Right/Left mirror Down/Up (§4.3).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
-      const onButton = target?.tagName === "BUTTON";
+      const tag = target?.tagName;
+      const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable === true;
+      if (typing) return;
       if (e.key === "ArrowDown" || e.key === "ArrowRight") {
         e.preventDefault();
         go(1);
@@ -112,13 +120,13 @@ export function CookPhase({
         e.preventDefault();
         go(-1);
       } else if (e.key === " " || e.code === "Space") {
-        if (onButton) return; // let the focused control take the Space
+        if (tag === "BUTTON") return; // let the focused control take the Space
         e.preventDefault();
         go(1);
       }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
   }, [go]);
 
   return (
@@ -170,12 +178,11 @@ export function CookPhase({
           <div aria-hidden="true" style={{ height: "38vh" }} />
         </div>
 
-        {/* Footer: mobile-only reference (rail + timers), then the step nav. */}
-        <div className="flex flex-col gap-3 border-t-2 border-border bg-background/95 px-6 pt-3 pb-4">
-          <div className="flex flex-col gap-3 md:hidden">
-            <IngredientRail ingredients={ingredients} open={mobileIngredientsOpen} onToggle={() => setMobileIngredientsOpen((v) => !v)} />
-            <TimersPanel recipeId={recipeId} />
-          </div>
+        {/* Footer: mobile-only compact dock (ingredient + timer sheets), then the
+            step nav. The dock keeps timers collapsed by default. Bottom padding
+            clears the iOS home-indicator inset. */}
+        <div className="flex flex-col gap-3 border-t-2 border-border bg-background/95 px-6 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+          <MobileCookDock recipeId={recipeId} ingredients={ingredients} />
           <div className="flex items-center justify-between gap-3">
             <span aria-live="polite" className="text-sm font-semibold text-muted-foreground md:hidden">
               Step {focus + 1} of {steps.length}
