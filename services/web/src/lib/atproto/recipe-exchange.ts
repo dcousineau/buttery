@@ -1,5 +1,4 @@
 import { createServerFn } from "@tanstack/react-start";
-import { isComingSoon } from "../config";
 import { RECIPE_COLLECTION } from "./recipes";
 
 /** ULID — the rkey format recipe.exchange uses for recipe records */
@@ -23,7 +22,6 @@ export const resolveRecipeExchangeId = createServerFn({ method: "GET" })
     return id.trim().toUpperCase();
   })
   .handler(async ({ data: id }) => {
-    if (await isComingSoon()) throw new Error("Recipe lookup is not available yet");
     const res = await fetch(`https://recipe.exchange/recipes/${id}`);
     if (!res.ok) {
       throw new Error(`recipe.exchange returned HTTP ${res.status} for ${id}`);

@@ -22,5 +22,5 @@ really toggles `.dark` on `<html>`, so both palettes are inspectable.
   `utensils-crossed` glyph. Drop real photos in and the slots take them as-is.
 - The `/terms`, `/privacy`, `/ai-usage` legal pages are a shared `LegalPage`
   prose shell and are not recreated — footer links are inert.
-- The `COMING_SOON` holding page (`src/components/ComingSoon.tsx`) is the same
+- The post-login waitlist holding page (`src/components/Waitlist.tsx`) is the same
   header + hero + footer composition as the landing hero; not duplicated here.

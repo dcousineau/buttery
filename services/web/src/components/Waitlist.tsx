@@ -2,13 +2,17 @@ import { Link } from "@tanstack/react-router";
 import ButterStick from "./ButterStick";
 import ThemeToggle from "./ThemeToggle";
 import { Badge } from "#/components/ui/badge";
+import { Button } from "#/components/ui/button";
+import { signOutAndGoHome } from "#/lib/auth-client";
 
 /**
- * Production soft-launch holding page. Shown in place of the whole app shell
- * while `COMING_SOON=true` (see `src/lib/config.ts`) — no sidebar, no header
- * auth, no login or recipe UI. Hidden in local dev, where the real app renders.
+ * Post-login holding page for a signed-in user who isn't invited yet (the
+ * PostHog `invited` flag serves `false` — see `src/lib/gate.ts`). Rendered in
+ * place of the app shell on gated routes: they're authenticated, so this is a
+ * "sit tight" screen with a way back out (sign out), not the public marketing
+ * coming-soon page.
  */
-export default function ComingSoon() {
+export default function Waitlist() {
   return (
     <div className="flex min-h-svh flex-col">
       <header className="border-b-2 border-border bg-background">
@@ -27,15 +31,20 @@ export default function ComingSoon() {
           <ButterStick label="A pop-art stick of butter" className="w-52 sm:w-64" />
           <div>
             <Badge variant="secondary" className="mb-5">
-              A social recipe box on the open web
+              You&rsquo;re on the list
             </Badge>
             <h1 className="display-title m-0 max-w-2xl text-4xl leading-[1.08] text-foreground sm:text-6xl">
-              Coming soon<span className="text-primary">.</span>
+              Hang tight<span className="text-primary">.</span>
             </h1>
             <p className="mx-auto mt-5 max-w-xl text-base text-muted-foreground sm:text-lg">
-              <strong className="text-foreground">but·ter·y</strong> <em>(noun)</em> — a pantry; a room where the good stuff is kept. We&rsquo;re getting the shelves stocked. Check
-              back soon.
+              You&rsquo;re signed in and saved a spot in the pantry &mdash; we&rsquo;re just letting folks in a few at a time while the shelves get stocked. Sit tight; we&rsquo;ll
+              wave you through the moment your seat at the table is ready.
             </p>
+            <div className="mt-8 flex items-center justify-center">
+              <Button variant="outline" onClick={() => void signOutAndGoHome()}>
+                Sign out
+              </Button>
+            </div>
           </div>
         </section>
       </main>

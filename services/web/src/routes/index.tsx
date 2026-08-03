@@ -1,21 +1,13 @@
-import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { BookOpenText, CalendarRange, CookingPot, Dices, FolderLock, ShoppingBasket, UtensilsCrossed } from "lucide-react";
+import { AtSign, CalendarRange, Check, CookingPot, Dices, FolderLock, ShoppingBasket, UtensilsCrossed } from "lucide-react";
 import { resolveHomeRedirect } from "../server/household/onboarding";
-import { normalizeRecipeRef } from "../lib/atproto/recipe-exchange";
-import { fetchRecipe } from "../lib/atproto/recipes";
 import { listRecentRecipes } from "../server/recipes";
-import { formatDuration, formatPublished } from "../lib/format";
+import { formatPublished } from "../lib/format";
 import ButterStick from "../components/ButterStick";
+import AtprotoProviderCycle from "../components/AtprotoProviderCycle";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
-import { Field, FieldGroup, FieldLabel } from "#/components/ui/field";
-import { Input } from "#/components/ui/input";
-import { Separator } from "#/components/ui/separator";
-import { Spinner } from "#/components/ui/spinner";
-import type { FormEvent } from "react";
-import type { RecipeResult } from "../lib/atproto/recipes";
 import type { RecipeCardData } from "../server/recipes";
 
 export const Route = createFileRoute("/")({
@@ -49,6 +41,7 @@ function App() {
           <div className="mt-6 flex flex-wrap gap-3">
             <Button size="lg" render={<Link to="/login" />} nativeButton={false}>
               Sign in with atproto
+              <AtprotoProviderCycle className="ml-1.5" />
             </Button>
             <Button size="lg" variant="outline" render={<a href="#features" />} nativeButton={false}>
               What's cooking
@@ -58,26 +51,30 @@ function App() {
         <ButterStick label="A pop-art stick of butter" className="w-52 shrink-0 self-center sm:w-64" />
       </section>
 
-      <div className="mt-12 grid gap-6 lg:grid-cols-2">
-        <RecipeLookupCard />
-      </div>
-
       <RecentRecipes recipes={recipes} />
 
       <section id="features" className="mt-16">
-        <h2 className="display-title m-0 text-2xl text-foreground sm:text-3xl">What's in the pantry</h2>
+        <h2 className="display-title m-0 text-2xl text-foreground sm:text-3xl">Stocking the pantry</h2>
+        <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
+          Buttery is still under development — these are the features we&rsquo;re planning. Some are further along than others; here&rsquo;s where we&rsquo;re headed.
+        </p>
         <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <FeatureCard
+            icon={<AtSign />}
+            title="Built on atproto"
+            status="ready"
+            blurb="Recipes live as atproto records in the atmosphere — yours to keep, yours to take anywhere."
+          />
           <FeatureCard
             icon={<CookingPot />}
             title="Cook mode"
-            highlight
+            status="development"
             blurb="The whole point. Recipes rendered huge and glare-proof for the counter — no sleep, no scrolling with buttery thumbs."
           />
           <FeatureCard icon={<FolderLock />} title="Private collections" blurb="Sort recipes into shelves only you (or your chosen few) can open." />
           <FeatureCard icon={<ShoppingBasket />} title="Shopping lists" blurb="Pick recipes, get one consolidated list for the store." />
           <FeatureCard icon={<CalendarRange />} title="Meal planner" blurb="Lay the week out on the table before it starts." />
           <FeatureCard icon={<Dices />} title="Randomizer" blurb="Can't decide? Roll the dice, dinner picks itself." />
-          <FeatureCard icon={<BookOpenText />} title="Yours, portably" blurb="Recipes live in your PDS as atproto records. Leave anytime and take the whole pantry." />
         </div>
       </section>
     </div>
@@ -142,132 +139,24 @@ function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
   );
 }
 
-function FeatureCard({ icon, title, blurb, highlight }: { icon: React.ReactNode; title: string; blurb: string; highlight?: boolean }) {
+function FeatureCard({ icon, title, blurb, status = "planned" }: { icon: React.ReactNode; title: string; blurb: string; status?: "ready" | "development" | "planned" }) {
+  const ready = status === "ready";
+  const label = status === "ready" ? "ready" : status === "development" ? "in development" : "planned";
   return (
-    <Card className={highlight ? "bg-secondary text-secondary-foreground" : undefined}>
+    <Card>
       <CardHeader>
         <CardTitle role="heading" aria-level={3} className="flex items-center gap-2.5 font-bold [&_svg]:size-5 [&_svg]:shrink-0">
           {icon}
           {title}
-          {highlight ? (
-            <Badge variant="outline" className="ml-auto text-[0.6rem] tracking-wide uppercase">
-              priority
-            </Badge>
-          ) : null}
+          <Badge variant="outline" className="ml-auto gap-1 text-[0.6rem] tracking-wide uppercase [&_svg]:size-3">
+            {ready ? <Check aria-hidden /> : null}
+            {label}
+          </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <p className={`m-0 text-sm ${highlight ? "text-secondary-foreground" : "text-muted-foreground"}`}>{blurb}</p>
+        <p className="m-0 text-sm text-muted-foreground">{blurb}</p>
       </CardContent>
     </Card>
-  );
-}
-
-function RecipeLookupCard() {
-  const [ref, setRef] = useState("");
-  const [recipe, setRecipe] = useState<RecipeResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!ref.trim()) return;
-    setError(null);
-    setPending(true);
-    try {
-      setRecipe(await fetchRecipe(await normalizeRecipeRef(ref)));
-    } catch (err) {
-      setRecipe(null);
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle role="heading" aria-level={2} className="display-title text-xl">
-          Fetch a recipe
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={onSubmit}>
-          <FieldGroup>
-            <Field data-invalid={error ? true : undefined}>
-              <FieldLabel htmlFor="recipe-ref">Recipe id, recipe.exchange URL, or AT-URI</FieldLabel>
-              <Input
-                id="recipe-ref"
-                type="text"
-                size="lg"
-                value={ref}
-                onChange={(e) => setRef(e.target.value)}
-                placeholder="01JMTK16MTE4AVXYSSTGB5B1TR"
-                aria-invalid={error ? true : undefined}
-                aria-describedby={error ? "recipe-ref-error" : undefined}
-              />
-            </Field>
-          </FieldGroup>
-          <Button type="submit" variant="secondary" disabled={pending} className="mt-4">
-            {pending ? <Spinner data-icon="inline-start" /> : null}
-            {pending ? "Fetching…" : "Fetch"}
-          </Button>
-          {error && (
-            <p id="recipe-ref-error" role="alert" className="mt-3 mb-0 text-sm font-semibold text-destructive">
-              {error}
-            </p>
-          )}
-        </form>
-
-        {recipe && <RecipeView recipe={recipe} />}
-      </CardContent>
-    </Card>
-  );
-}
-
-function RecipeView({ recipe }: { recipe: RecipeResult }) {
-  const r = recipe.value;
-  const meta = [
-    r.recipeCategory && `Category: ${r.recipeCategory}`,
-    r.recipeCuisine && `Cuisine: ${r.recipeCuisine}`,
-    r.recipeYield && `Yield: ${r.recipeYield}`,
-    r.prepTime && `Prep: ${formatDuration(r.prepTime)}`,
-    r.cookTime && `Cook: ${formatDuration(r.cookTime)}`,
-    r.totalTime && `Total: ${formatDuration(r.totalTime)}`,
-  ].filter(Boolean) as Array<string>;
-
-  return (
-    <article className="mt-6">
-      <Separator className="mb-5" />
-      <h3 className="mb-2 text-xl font-bold">{r.name}</h3>
-      <p className="mb-1 text-xs text-muted-foreground">
-        <code className="break-all">{recipe.uri}</code>
-      </p>
-      <p className="mb-4 text-sm text-muted-foreground">{r.text}</p>
-
-      {meta.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {meta.map((m) => (
-            <Badge key={m} variant="outline">
-              {m}
-            </Badge>
-          ))}
-        </div>
-      )}
-
-      <h4 className="mb-2 text-sm font-bold">Ingredients</h4>
-      <ul className="mb-4 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-        {r.ingredients.map((ing, i) => (
-          <li key={i}>{ing}</li>
-        ))}
-      </ul>
-
-      <h4 className="mb-2 text-sm font-bold">Instructions</h4>
-      <ol className="m-0 list-decimal space-y-2 pl-5 text-sm text-muted-foreground">
-        {r.instructions.map((step, i) => (
-          <li key={i}>{step}</li>
-        ))}
-      </ol>
-    </article>
   );
 }
