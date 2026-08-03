@@ -21,12 +21,14 @@ export function FetchingDialog({
   onManual,
   onReport,
   onClose,
+  onBookmarklet,
 }: {
   phase: FetchPhase | null;
   url: string;
   onManual: () => void;
   onReport: () => void;
   onClose: () => void;
+  onBookmarklet: () => void;
 }) {
   const open = phase != null;
   return (
@@ -64,13 +66,15 @@ export function FetchingDialog({
             </div>
 
             <div className="mt-4 flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3 rounded-lg border-2 border-border bg-card p-3 opacity-60">
-                <span className="flex items-center gap-2 text-sm font-bold">
-                  <Puzzle className="size-4" aria-hidden="true" />
-                  Try the bookmarklet
-                </span>
-                <span className="rounded-4xl border-2 border-border px-1.5 text-[0.6rem] font-semibold tracking-wide uppercase text-muted-foreground">soon</span>
-              </div>
+              <button
+                type="button"
+                onClick={onBookmarklet}
+                className="flex items-center gap-2 rounded-lg border-2 border-border bg-card p-3 text-left text-sm font-bold transition-colors hover:bg-accent"
+              >
+                <Puzzle className="size-4" aria-hidden="true" />
+                Try the bookmarklet
+                <span className="ml-auto text-xs font-normal text-muted-foreground">For sites that block Buttery</span>
+              </button>
               <button
                 type="button"
                 onClick={onManual}

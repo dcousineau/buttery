@@ -38,6 +38,22 @@ export interface ScrapeRecipeInput {
   url: string;
 }
 
+/**
+ * The Phase C bookmarklet ingest result. Same import-id handoff as `scrapeRecipe`
+ * — the form loads the cached prefill by id — but the bytes come from the user's
+ * own browser (no server fetch, no SSRF guard, no rate limit needed on the fetch).
+ */
+export type SubmitImportResult = { status: "ok"; importId: string } | { status: "partial"; importId: string } | { status: "invalid_url" } | { status: "empty" };
+
+export interface SubmitImportInput {
+  /** The recipe page's own URL (locks Website attribution to the source). */
+  url: string;
+  /** Raw JSON-LD text the bookmarklet found on the page, if any. */
+  jsonld?: string;
+  /** The page's serialized HTML, when no JSON-LD was found. */
+  html?: string;
+}
+
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 scrape per 60s per account.
 
 export const scrapeRecipe = createServerFn({ method: "POST" })
@@ -46,6 +62,31 @@ export const scrapeRecipe = createServerFn({ method: "POST" })
     const { activeContext } = await import("./recipe-context");
     const { did, householdId } = await activeContext();
     return runScrape(did, householdId, data.url);
+  });
+
+/**
+ * Phase C bookmarklet ingest (docs/plans/2026-08-02-create-recipes.md §C3).
+ *
+ * The bookmarklet runs on a page Buttery can't fetch server-side, so it ships us
+ * what it found: JSON-LD text if present, else the page's raw HTML. We normalize
+ * either into HTML and run the SAME `extractRecipe` as the server scrape — one
+ * parser, one code path — then cache the parse and hand back an import id. There
+ * is deliberately NO server fetch here (the bytes are the user's own browser's),
+ * so `safe-fetch` / the fetch cache / the scrape rate limit don't apply.
+ *
+ * Auth is required: the bookmarklet POSTs from an authenticated same-origin
+ * bridge tab (the hostile page can't carry the session cookie).
+ */
+export const submitImport = createServerFn({ method: "POST" })
+  .validator((data: SubmitImportInput) => ({
+    url: String(data?.url ?? "").trim(),
+    jsonld: typeof data?.jsonld === "string" ? data.jsonld : undefined,
+    html: typeof data?.html === "string" ? data.html : undefined,
+  }))
+  .handler(async ({ data }): Promise<SubmitImportResult> => {
+    const { activeContext } = await import("./recipe-context");
+    const { did, householdId } = await activeContext();
+    return runSubmitImport(did, householdId, data);
   });
 
 /**
@@ -87,6 +128,7 @@ async function runScrape(did: string, householdId: string, url: string): Promise
           error: extra.error ?? null,
           duration_ms: Date.now() - started,
           parsed: extra.parsed ? JSON.stringify(extra.parsed) : null,
+          source: "scrape",
         })
         .execute();
     } catch {
@@ -146,6 +188,78 @@ async function runScrape(did: string, householdId: string, url: string): Promise
     }
     await log("error", { error: err instanceof Error ? err.message : String(err) });
     return { status: "fetch_failed", message: "Something went wrong reading that page." };
+  }
+}
+
+/** Escape a string for safe interpolation into an HTML text node / script body. */
+function escapeForScript(s: string): string {
+  // Only `</` can prematurely close the wrapping <script>; neutralize it.
+  return s.replace(/<\//g, "<\\/");
+}
+
+async function runSubmitImport(did: string, householdId: string, input: SubmitImportInput): Promise<SubmitImportResult> {
+  const started = Date.now();
+  const url = input.url;
+  const host = hostOf(url);
+  const { ulid } = await import("./household/ids");
+  const attemptId = ulid();
+
+  const log = async (status: string, extra: { extractor?: string | null; error?: string | null; parsed?: ImportPrefill | null } = {}) => {
+    try {
+      const { getDb } = await import("#/lib/db");
+      await getDb()
+        .insertInto("recipe_import_attempt")
+        .values({
+          id: attemptId,
+          did,
+          household_id: householdId,
+          url,
+          host,
+          status,
+          extractor: extra.extractor ?? null,
+          http_status: null, // no server fetch — the browser supplied the bytes.
+          error: extra.error ?? null,
+          duration_ms: Date.now() - started,
+          parsed: extra.parsed ? JSON.stringify(extra.parsed) : null,
+          source: "bookmarklet",
+        })
+        .execute();
+    } catch {
+      // Audit logging must never break the user-facing flow.
+    }
+  };
+
+  if (!/^https?:\/\//i.test(url)) {
+    await log("invalid_url");
+    return { status: "invalid_url" };
+  }
+
+  // Normalize whatever the bookmarklet shipped into HTML for the shared parser:
+  // wrap JSON-LD in a <script> tag, else use the posted page HTML directly.
+  const html = input.jsonld
+    ? `<!doctype html><html><head><script type="application/ld+json">${escapeForScript(input.jsonld)}</script></head><body></body></html>`
+    : (input.html ?? "");
+
+  if (!html.trim()) {
+    await log("empty");
+    return { status: "empty" };
+  }
+
+  try {
+    const { extractRecipe } = await import("@buttery/recipe-extract");
+    const result = extractRecipe({ url, html });
+    const prefill: ImportPrefill = { sourceUrl: url, recipe: result.recipe };
+    if (result.ok) {
+      await log("success", { extractor: result.extractor, parsed: prefill });
+      return { status: "ok", importId: attemptId };
+    }
+    // Reached the content but couldn't pull a full body — still prefill whatever
+    // we got (title/image), attribution stays locked to the URL.
+    await log("parse_empty", { extractor: result.extractor, parsed: prefill });
+    return { status: "partial", importId: attemptId };
+  } catch (err) {
+    await log("error", { error: err instanceof Error ? err.message : String(err) });
+    return { status: "empty" };
   }
 }
 

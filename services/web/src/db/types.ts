@@ -223,6 +223,7 @@ export interface RecipeImportAttempt {
   http_status: number | null;
   id: string;
   parsed: Json | null;
+  source: Generated<string>;
   status: string;
   url: string;
 }

@@ -10,6 +10,7 @@ import { cn } from "#/lib/utils";
 import { scrapeRecipe } from "#/server/recipe-scrape";
 import { useRecipesView } from "../context";
 import { FetchingDialog, type FetchPhase } from "./FetchingDialog";
+import { BookmarkletInstallDialog } from "./BookmarkletInstallDialog";
 
 type Choice = "import" | "manual" | "bookmarklet";
 
@@ -33,6 +34,7 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
   // (for the manual fallback → attribution stays locked to it).
   const [phase, setPhase] = useState<FetchPhase | null>(null);
   const [failUrl, setFailUrl] = useState("");
+  const [installOpen, setInstallOpen] = useState(false);
   const fetching = phase === "fetching";
 
   function goManual() {
@@ -140,8 +142,16 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
             icon={<Puzzle className="size-4" aria-hidden="true" />}
             title="Use the bookmarklet"
             description="For sites that won't let Buttery read them."
-            soon
-          />
+          >
+            {choice === "bookmarklet" && (
+              <div className="mt-2">
+                <Button onClick={() => setInstallOpen(true)}>
+                  <Puzzle data-icon="inline-start" aria-hidden="true" />
+                  Get the bookmarklet
+                </Button>
+              </div>
+            )}
+          </Option>
         </div>
 
         <DialogFooter className="mt-2 sm:justify-between">
@@ -158,7 +168,18 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
         </DialogFooter>
       </DialogContent>
 
-      <FetchingDialog phase={phase} url={failUrl} onManual={goManualFromFailure} onReport={reportFailure} onClose={() => setPhase(null)} />
+      <FetchingDialog
+        phase={phase}
+        url={failUrl}
+        onManual={goManualFromFailure}
+        onReport={reportFailure}
+        onClose={() => setPhase(null)}
+        onBookmarklet={() => {
+          setPhase(null);
+          setInstallOpen(true);
+        }}
+      />
+      <BookmarkletInstallDialog open={installOpen} onOpenChange={setInstallOpen} />
     </Dialog>
   );
 }
