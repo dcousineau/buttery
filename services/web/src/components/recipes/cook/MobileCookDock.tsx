@@ -84,9 +84,10 @@ export function MobileCookDock({ recipeId, ingredients }: { recipeId: string; in
             role="dialog"
             aria-modal="true"
             aria-label={open === "ingredients" ? "Ingredients" : "Timers"}
-            className="relative max-h-[75vh] overflow-y-auto rounded-t-2xl border-t-2 border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] shadow-pop-md"
+            className="relative flex max-h-[75vh] flex-col overflow-hidden rounded-t-2xl border-t-2 border-border bg-card shadow-pop-md"
           >
-            <div className="mb-3 flex items-center justify-between gap-2">
+            {/* Pinned title row — stays put while the body scrolls under it. */}
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b-2 border-border/60 bg-card px-4 py-3">
               <h2 className="display-title m-0 text-base text-foreground">{open === "ingredients" ? "Ingredients" : "Timers"}</h2>
               <button
                 type="button"
@@ -97,22 +98,25 @@ export function MobileCookDock({ recipeId, ingredients }: { recipeId: string; in
                 <X className="size-4" aria-hidden="true" />
               </button>
             </div>
-            {open === "ingredients" ? (
-              ingredients.length === 0 ? (
-                <p className="m-0 text-sm text-muted-foreground">No ingredients listed.</p>
+            {/* Scrolling body carries the iOS home-indicator inset at its foot. */}
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+              {open === "ingredients" ? (
+                ingredients.length === 0 ? (
+                  <p className="m-0 text-sm text-muted-foreground">No ingredients listed.</p>
+                ) : (
+                  <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+                    {ingredients.map((line, i) => (
+                      <li key={i} className="flex gap-2 text-base leading-snug text-foreground">
+                        <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )
               ) : (
-                <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-                  {ingredients.map((line, i) => (
-                    <li key={i} className="flex gap-2 text-base leading-snug text-foreground">
-                      <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-                      <span>{line}</span>
-                    </li>
-                  ))}
-                </ul>
-              )
-            ) : (
-              <TimersPanel recipeId={recipeId} />
-            )}
+                <TimersPanel recipeId={recipeId} />
+              )}
+            </div>
           </div>
         </div>
       )}
