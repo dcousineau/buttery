@@ -5,7 +5,11 @@ import { sql } from "kysely";
 import { getDb } from "../db";
 import type { OAuthClientMetadataInput } from "@atproto/oauth-client";
 
-const HANDLE_RESOLVER = "https://bsky.social";
+// Prod resolves handles via bsky.social. In local dev, point this (and
+// ATPROTO_PLC_URL below) at a local @atproto/dev-env network so the whole
+// login → DID resolve → PDS write chain stays off the real atmosphere. See
+// services/atproto-dev-env. Unset → prod behavior, unchanged.
+const HANDLE_RESOLVER = process.env.ATPROTO_HANDLE_RESOLVER ?? "https://bsky.social";
 
 // Server-only module: the OAuth dance (PAR, DPoP, token exchange) runs here;
 // the browser only ever sees the better-auth session cookie.
@@ -100,6 +104,10 @@ export function getAtprotoOAuthClient(): NodeOAuthClient {
     client = new NodeOAuthClient({
       clientMetadata,
       handleResolver: HANDLE_RESOLVER,
+      // Local dev: resolve did:plc via a local PLC (services/atproto-dev-env) so
+      // DID resolution never hits plc.directory. Unset → the default
+      // https://plc.directory (prod, unchanged).
+      ...(process.env.ATPROTO_PLC_URL ? { plcDirectoryUrl: process.env.ATPROTO_PLC_URL } : {}),
       allowHttp: isLoopback,
       requestLock: requestLocalLock,
       stateStore: createStateStore(),

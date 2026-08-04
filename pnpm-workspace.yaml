@@ -7,8 +7,20 @@ allowBuilds:
   core-js: false
   esbuild: true
   lightningcss: true
+  # @buttery/atproto-dev-env (local-only) pulls @atproto/dev-env, whose PDS uses
+  # a native sqlite + image lib. Dev tooling only; never deployed.
+  better-sqlite3: true
+  sharp: true
+  protobufjs: true
 
 minimumReleaseAgeExclude:
   - "@types/pg@8.20.3"
+  # @buttery/atproto-dev-env (local-only dev tool) tracks @atproto/dev-env, whose
+  # transitive @atproto/* deps use caret ranges and re-release frequently as a
+  # batch — the release-age gate can't be satisfied by pinning. Exempt the atproto
+  # scopes; this tool is never deployed. The web app's atproto deps stay pinned by
+  # the lockfile regardless.
+  - "@atproto/*"
+  - "@atproto-labs/*"
 
 minimumReleaseAge: 1440 # At least a day

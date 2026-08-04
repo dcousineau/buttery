@@ -1,0 +1,23 @@
+{
+  "name": "@buttery/atproto-dev-env",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "records": "node src/records.ts",
+    "seed": "node src/publish.ts",
+    "typecheck": "tsc6 --noEmit"
+  },
+  "dependencies": {
+    "@atproto/api": "^0.17.0",
+    "@atproto/dev-env": "^0.5.42"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
+  }
+}
