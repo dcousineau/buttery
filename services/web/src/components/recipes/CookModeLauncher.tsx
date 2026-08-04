@@ -4,7 +4,7 @@ import { usePostHog } from "@posthog/react";
 import { CookingPot } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Spinner } from "#/components/ui/spinner";
-import type { HouseholdRecipeDetail } from "#/server/household-recipes";
+import type { CookRecipe } from "./cook/CookMode";
 
 /**
  * "Apron on" — the launch surface for cook mode (plan §4.1, §5). This is the ONLY
@@ -27,7 +27,7 @@ function CookModeFallback() {
   );
 }
 
-export function CookModeLauncher({ recipe }: { recipe: HouseholdRecipeDetail }) {
+export function CookModeLauncher({ recipe }: { recipe: CookRecipe }) {
   const posthog = usePostHog();
   const [open, setOpen] = useState(false);
 

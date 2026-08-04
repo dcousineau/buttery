@@ -274,8 +274,13 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
       .executeTakeFirst();
     if (!row) return null; // RESTRICT FK means this should never happen for a boxed recipe.
 
-    const [images, ingredients, instructions, keywords, note, adder] = await Promise.all([
+    const [images, pendingImage, ingredients, instructions, keywords, note, adder] = await Promise.all([
       db.selectFrom("recipe_image").select(["blob_cid", "blob_mime", "alt"]).where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
+      // Draft/private hero fallback: a not-yet-published import keeps its photo as
+      // a pending pointer (recipe_pending_image). No published recipe_image row
+      // exists yet, so fall back to the source URL (rendered cross-origin, same as
+      // the create form preview).
+      db.selectFrom("recipe_pending_image").select(["source_url", "alt"]).where("recipe_id", "=", data.recipeId).executeTakeFirst(),
       db.selectFrom("recipe_ingredient").select("text").where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
       db.selectFrom("recipe_instruction").select("text").where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
       db.selectFrom("recipe_keyword").select("keyword").where("recipe_id", "=", data.recipeId).execute(),
@@ -301,9 +306,14 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
       title: row.name,
       description: row.description,
       source,
-      images: images
-        .filter((img) => row.did && img.blob_cid)
-        .map((img) => ({ url: blobImageUrl(row.did as string, img.blob_cid as string, img.blob_mime, "feed_fullsize"), alt: img.alt })),
+      images: (() => {
+        const published = images
+          .filter((img) => row.did && img.blob_cid)
+          .map((img) => ({ url: blobImageUrl(row.did as string, img.blob_cid as string, img.blob_mime, "feed_fullsize"), alt: img.alt }));
+        if (published.length) return published;
+        // No published blob yet → show the draft's imported hero from its source URL.
+        return pendingImage?.source_url ? [{ url: pendingImage.source_url, alt: pendingImage.alt }] : [];
+      })(),
       ingredients: ingredients.map((i) => i.text),
       instructions: instructions.map((i) => i.text),
       keywords: keywords.map((k) => k.keyword),

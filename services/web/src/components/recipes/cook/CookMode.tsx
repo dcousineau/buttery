@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogTitle } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
 import { scaleIngredients } from "#/lib/recipe-scale";
 import { useTimers } from "#/lib/timers/store";
-import type { HouseholdRecipeDetail } from "#/server/household-recipes";
 import { useRecipesView } from "../context";
 import { MisePhase } from "./MisePhase";
 import { CookPhase } from "./CookPhase";
@@ -14,6 +13,20 @@ import { useCookTextScale } from "./useCookTextScale";
 import { clearCookState, loadCookState, saveCookState, type CookState } from "./useCookPersistence";
 
 type Phase = "mise" | "cook";
+
+/**
+ * The minimal recipe shape cook mode reads. Both the private household detail
+ * (`HouseholdRecipeDetail`) and the public detail (`RecipeDetailData`, adapted)
+ * satisfy it structurally, so cook mode works on either page.
+ */
+export interface CookRecipe {
+  recipeId: string;
+  title: string;
+  ingredients: string[];
+  instructions: string[];
+  serves: number | null;
+  totalTimeDisplay: string | null;
+}
 
 /** Minimal typing for the vendor-prefixed Fullscreen API (iPadOS / older Safari). */
 interface FsElement extends HTMLDivElement {
@@ -37,7 +50,7 @@ interface FsDocument extends Document {
  * Default export so `CookModeLauncher`'s `React.lazy` can code-split the whole
  * subtree (this file + everything it imports) out of the recipe route bundle.
  */
-export default function CookMode({ recipe, onClose }: { recipe: HouseholdRecipeDetail; onClose: () => void }) {
+export default function CookMode({ recipe, onClose }: { recipe: CookRecipe; onClose: () => void }) {
   const posthog = usePostHog();
   const { factor, setFactor, metric, setMetric } = useRecipesView();
   const { arm } = useTimers();

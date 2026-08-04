@@ -222,10 +222,11 @@ async function runSave(db: Kysely<DB>, ctx: Ctx, input: SaveRecipeInput): Promis
   if (input.image && !input.publish) {
     await storePendingImage(db, recipeId, input.image);
   } else if (!input.image && input.imageSourceUrl) {
-    // Imported hero we haven't fetched (cross-origin). Remember the URL as a
-    // pending pointer; publishLocalRecipe fetches + uploads it below (publish
-    // path) or it waits here as a draft until a later publish.
-    await storePendingImageSourceUrl(db, recipeId, input.imageSourceUrl, input.record.name);
+    // Imported hero we only have a cross-origin URL for. Fetch it now
+    // (SSRF-guarded, ≤1MB) and store it in the bucket like an uploaded image so a
+    // privately-saved import keeps its photo. Falls back to a URL-only pointer
+    // (fetched at publish) if the fetch fails.
+    await storePendingImageFromUrl(db, recipeId, input.imageSourceUrl, input.record.name);
   }
 
   if (!input.publish) {
@@ -399,6 +400,26 @@ async function writeChildren(trx: Kysely<DB>, id: string, record: RecipeRecord, 
       search_tsv: sql`setweight(to_tsvector('english', ${record.name}), 'A') || setweight(to_tsvector('english', ${facets}), 'B') || setweight(to_tsvector('english', ${ingredients.join(" ")}), 'C') || setweight(to_tsvector('english', ${dText}), 'D')`,
     })
     .onConflict((oc) => oc.column("recipe_id").doUpdateSet({ search_tsv: sql`excluded.search_tsv` }))
+    .execute();
+}
+
+// Fetch an imported hero now and store it in the bucket (draft path), so a
+// privately-saved import keeps its photo instead of waiting for publish. Keeps
+// `source_url` alongside `object_key` for provenance; publish prefers the bucket
+// bytes. Falls back to a URL-only pointer if the fetch fails (retried at publish).
+async function storePendingImageFromUrl(db: Kysely<DB>, recipeId: string, sourceUrl: string, alt: string | null): Promise<void> {
+  const fetched = await fetchImageFromUrl(sourceUrl);
+  if (!fetched) {
+    await storePendingImageSourceUrl(db, recipeId, sourceUrl, alt);
+    return;
+  }
+  const { putBlob } = await import("#/lib/blob-storage");
+  const objectKey = `pending/${recipeId}`;
+  await putBlob(objectKey, fetched.bytes, fetched.mime);
+  await db
+    .insertInto("recipe_pending_image")
+    .values({ recipe_id: recipeId, object_key: objectKey, mime: fetched.mime, alt: alt ?? null, source_url: sourceUrl })
+    .onConflict((oc) => oc.column("recipe_id").doUpdateSet({ object_key: objectKey, mime: fetched.mime, alt: alt ?? null, source_url: sourceUrl }))
     .execute();
 }
 
