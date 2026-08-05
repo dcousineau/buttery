@@ -101,6 +101,15 @@ importers:
       '@atproto/dev-env':
         specifier: ^0.5.42
         version: 0.5.42(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@did-plc/lib':
+        specifier: ^0.0.4
+        version: 0.0.4(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@did-plc/server':
+        specifier: 0.0.1
+        version: 0.0.1(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      multiformats:
+        specifier: ^14.0.5
+        version: 14.0.5
     devDependencies:
       '@types/node':
         specifier: ^26.1.2
@@ -516,10 +525,6 @@ packages:
 
   '@atproto/common@0.1.1':
     resolution: {integrity: sha512-GYwot5wF/z8iYGSPjrLHuratLc0CVgovmwfJss7+BUOB6y2/Vw8+1Vw0n9DDI0gb5vmx3UI8z0uJgC8aa8yuJg==}
-
-  '@atproto/common@0.7.3':
-    resolution: {integrity: sha512-pmu+B6n83exJDJSCXazVVOpk+RuXsMK8VxKUnkiSXHP03+nRDDeNXaWEp1COBBU2dfAzYZZB6k4M8G3gq3zkcQ==}
-    engines: {node: '>=22'}
 
   '@atproto/common@0.7.4':
     resolution: {integrity: sha512-oSTTcV+hubmHjClvQGMXQjOTm1Vx1z4OSc1UjDWjYLmNWS51SL+vYlaWD0jiBSv6Jvv9aDfRFoY4UtyJx3Hrxg==}
@@ -7482,6 +7487,9 @@ packages:
   multiformats@13.4.2:
     resolution: {integrity: sha512-eh6eHCrRi1+POZ3dA+Dq1C6jhP1GNtr9CRINMb67OKzqW9I5DUuZM/3jLPlzhgpGeiNUlEGEbkCYChXMCc/8DQ==}
 
+  multiformats@14.0.5:
+    resolution: {integrity: sha512-vbIm83F2yZ1pWJGS0yl0ysracIvv56LtbrIyiIQHoLdYDJOMoLfVFsXhh9DUH4SFdkdkFhucyWniihsNzVEjkQ==}
+
   multiformats@9.9.0:
     resolution: {integrity: sha512-HoMUjhH9T8DDBNT+6xzkrd9ga/XiBI4xLr58LJACwK6G3HTOPeMz4nB4KJs33L2BelrIJa7P0VuNaVF3hMYfjg==}
 
@@ -10317,14 +10325,6 @@ snapshots:
       pino: 8.21.0
       zod: 3.25.76
 
-  '@atproto/common@0.7.3':
-    dependencies:
-      '@atproto/common-web': 0.5.7
-      '@atproto/lex-cbor': 0.1.5
-      '@atproto/lex-data': 0.1.6
-      multiformats: 13.4.2
-      pino: 10.3.1
-
   '@atproto/common@0.7.4':
     dependencies:
       '@atproto/common-web': 0.5.8
@@ -10772,7 +10772,7 @@ snapshots:
 
   '@atproto/repo@0.10.7':
     dependencies:
-      '@atproto/common': 0.7.3
+      '@atproto/common': 0.7.4
       '@atproto/common-web': 0.5.7
       '@atproto/crypto': 0.5.4
       '@atproto/lex-cbor': 0.1.5
@@ -12318,7 +12318,7 @@ snapshots:
     dependencies:
       '@atproto/common': 0.1.0
       '@atproto/crypto': 0.1.0
-      '@did-plc/lib': 0.0.1(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@did-plc/lib': 0.0.4(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       axios: 1.19.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       cors: 2.8.6
       express: 4.22.2(supports-color@10.2.2)
@@ -19090,6 +19090,8 @@ snapshots:
       thunky: 1.1.0
 
   multiformats@13.4.2: {}
+
+  multiformats@14.0.5: {}
 
   multiformats@9.9.0: {}
 

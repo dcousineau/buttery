@@ -9,6 +9,9 @@ import { createServerFn } from "@tanstack/react-start";
  * marketing / login / public share pages render normally. Only a signed-in but
  * not-invited caller is `{ authed: true, invited: false }`.
  *
+ * In dev/test the flag is not consulted at all and every signed-in caller is
+ * invited — see {@link import("./posthog-server").isInvited}.
+ *
  * The `posthog-node` SDK and the server-session helper are imported dynamically
  * inside the handler so this module stays browser-safe: `getGateState` is pulled
  * into the client bundle, but neither the SDK nor `auth.api` ever runs there.

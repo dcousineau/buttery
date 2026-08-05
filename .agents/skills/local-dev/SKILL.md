@@ -26,11 +26,17 @@ pnpm dev                               # foreground TUI; blocks
 process-compose up --detached          # background; use this from an agent
 ```
 
-Wait for ready before hitting app:
+Wait for ready before hitting app. **Do NOT use `process-compose project is-ready --wait`** — it hangs indefinitely and eats your whole tool timeout. Poll the port instead:
 
 ```bash
-process-compose project is-ready --wait
+for i in $(seq 1 60); do
+  c=$(curl -s -m 3 -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/)
+  [ "$c" = "200" ] && break
+  command sleep 1
+done; echo "http=$c"
 ```
+
+`command sleep` because foreground `sleep` is blocked in the agent shell.
 
 ## Web server: logs
 
@@ -64,15 +70,28 @@ Restart `web` alone. Never restart whole stack to fix web server.
 ```bash
 process-compose process get web -o wide      # note pid
 process-compose process restart web
-process-compose project is-ready --wait
+# …poll the port (see "Is it up?") — never is-ready --wait…
 process-compose process get web -o wide      # pid changed = fresh process
 ```
 
 One restart enough. Repeat restarts to "be sure" only churn pid and lose log context.
 
+**`process restart` does NOT reload `process-compose.yaml`.** Commands are captured when the project starts, so editing a process's `command:` and restarting that process silently re-runs the OLD command — and `pid changed` still says success, so it looks fine. Confirm what actually runs:
+
+```bash
+ps -eo command | grep -a "dev:web" | grep -av grep
+```
+
+Config change → full project restart, which does reload:
+
+```bash
+process-compose down            # containers keep running
+process-compose up --detached
+```
+
 Two restarts have side effects:
 
-- **`atproto-dev-env`** in-memory PDS — restart mint new `did:plc`, so browser session must sign in again.
+- **`atproto-dev-env`** persist state in `.dev-data/atproto/` — restart keep same `did:plc`, browser session survive. Deleting that dir mint new DID and orphan buttery rows pointing at old one.
 - **`migrate`** one-shot; restart after adding migration instead of running `db:migrate:up` by hand.
 
 ## A second web server on another port
@@ -91,6 +110,35 @@ Notes:
 - Bypass `pnpm dev:web`, which hardcode `--port 3000`. Also skip lexicon build; run `pnpm --filter @buttery/lexicons build` first if `src/generated` stale.
 - Both servers share one database. Not isolated.
 - Kill when done (Ctrl-C, or `pkill -f "vite dev --port 3100"`). Not supervised, so nothing else will.
+
+## Signing in with a local fake account
+
+`atproto-dev-env` PDS is a full OAuth authorization server (`/oauth/par`, `/oauth/authorize`, `/oauth/token`), so the app's real sign-in flow works against it. Seed account: handle **`chef.test`**, password **`devpw-chef-000`** (overridable via `ATPROTO_DEV_HANDLE` / `ATPROTO_DEV_PASSWORD`). Sign in at http://127.0.0.1:3000/login.
+
+Needs `services/web/.env` to carry:
+
+```
+ATPROTO_HANDLE_RESOLVER=http://localhost:2583
+ATPROTO_PLC_URL=http://localhost:2582
+ATPROTO_PUBLISH_ENABLED=true
+```
+
+Check the handshake without a browser — a `{"url":"http://localhost:2583/oauth/authorize?…"}` response means it works:
+
+```bash
+curl -s -X POST http://127.0.0.1:3000/api/auth/atproto/sign-in \
+  -H 'Content-Type: application/json' -d '{"handle":"chef.test"}'
+```
+
+`Failed to resolve OAuth server metadata for resource: http://localhost:2583/` means the app did not decide it is loopback, so `allowHttp` is off. Cause is almost always a non-loopback `BETTER_AUTH_URL` — `railway run` injects the production `https://buttery.recipes` and Railway's values beat `.env`, which is why `process-compose.yaml` re-overrides it on the `web` child command. Real cause is in `.dev-logs/web.log` under `[cause]`, not in the HTTP response.
+
+Seed account DID is **stable** across restarts (state in `.dev-data/atproto/`), so one sign-in survive dev-env reboots. Resolve current DID at runtime, never hardcode:
+
+```bash
+pnpm -s --filter @buttery/atproto-dev-env records   # prints `DID did:plc:…`
+```
+
+Deleting `.dev-data/atproto/` mint new DID — buttery rows keyed to old one stop resolving.
 
 ## Clearing logs
 

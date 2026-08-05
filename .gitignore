@@ -13,6 +13,9 @@ __unconfig*
 todos.json
 # Per-process plain-text logs written by process-compose (see process-compose.yaml)
 .dev-logs
+# Persistent local-dev state (atproto PDS sqlite, blobstore, PLC snapshot).
+# Deleting it resets the dev-env and mints a new did:plc for the seed account.
+.dev-data
 .mcp.json
 .pnpm-store
 

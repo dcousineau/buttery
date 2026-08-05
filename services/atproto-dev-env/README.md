@@ -37,8 +37,18 @@ Then run buttery (`railway run --service buttery -- pnpm dev`), sign in with the
 seed handle (default `chef.test`) + printed password, and publish a recipe — it
 lands in the local PDS.
 
-> **Ephemeral:** state is in-memory. Every restart mints a **new** did:plc, so
-> re-login in buttery and re-publish after restarting.
+> **Persistent:** state lives in `.dev-data/atproto/` (gitignored) — the PDS
+> sqlite + blobstore, and a snapshot of the local PLC. The seed account keeps
+> **one stable did:plc** across restarts, so buttery's Postgres rows stay
+> resolvable and a browser session survives a dev-env restart.
+>
+> Delete `.dev-data/atproto/` to start over; the next boot mints a new did:plc,
+> which orphans any buttery row pointing at the old one.
+>
+> Override the location with `ATPROTO_DEV_DATA_DIR`. Stability also depends on
+> the pinned rotation key and JWT secret in `src/config.ts` — the DID is derived
+> from the genesis operation that key signs, so a random key would change the
+> DID even with a persistent PLC. Both are dev-only throwaways.
 
 ## Helpers (talk to the running dev-env over HTTP)
 

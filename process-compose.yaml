@@ -128,7 +128,14 @@ processes:
 
   web:
     description: "TanStack Start dev server (http://127.0.0.1:3000)"
-    command: "railway run --service buttery -- pnpm dev:web"
+    # `railway run` injects the PRODUCTION BETTER_AUTH_URL/VITE_APP_URL
+    # (https://buttery.recipes) and Railway's values beat services/web/.env, so
+    # they have to be re-overridden on the child command. Without this the app
+    # is not loopback: allowHttp goes false and the local atproto dev-env PDS is
+    # rejected with "Unsecure resource metadata URL (http:)", better-auth logs
+    # "Invalid origin: http://127.0.0.1:3000", and the OAuth client_id points at
+    # the production metadata document.
+    command: "railway run --service buttery -- env BETTER_AUTH_URL=http://127.0.0.1:3000 VITE_APP_URL=http://127.0.0.1:3000 pnpm dev:web"
     depends_on:
       migrate:
         condition: process_completed_successfully
