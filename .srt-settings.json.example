@@ -9,6 +9,7 @@
 
       "registry.npmjs.org",
       "github.com",
+      "api.github.com",
       "*.githubusercontent.com",
 
       "localhost",
@@ -30,17 +31,11 @@
       "mcp.better-auth.com"
     ],
     "deniedDomains": ["*:22"],
+    "allowUnixSockets": ["/private/tmp/claude-mcp-browser-bridge-dcousineau"],
     "allowLocalBinding": true
   },
   "filesystem": {
-    "allowWrite": [
-      ".",
-      "~/.claude",
-      "~/.claude.json",
-      "~/.npm",
-      "~/Library/pnpm/store",
-      "/tmp"
-    ],
+    "allowWrite": [".", "~/.claude", "~/.claude.json", "~/.npm", "~/Library/pnpm/store", "/tmp", "/private/tmp"],
     "denyWrite": [
       ".srt-settings.json",
 

@@ -66,12 +66,50 @@ Narrow by default. Each entry earns its place:
 | Path                   | Why                                                                                                 |
 | ---------------------- | --------------------------------------------------------------------------------------------------- |
 | `.`                    | The repo. Relative to cwd — swap for an absolute path if you launch from elsewhere.                 |
-| `/tmp`                 | Claude Code runtime files.                                                                          |
+| `/tmp`                 | Claude Code runtime files — on macOS this entry alone does nothing; see below.                      |
+| `/private/tmp`         | What `/tmp` actually resolves to on macOS. **This** is the entry that works.                        |
 | `~/.npm`               | `npx` cache — MCP servers (chrome-devtools-mcp and friends) are fetched this way.                   |
 | `~/Library/pnpm/store` | pnpm's content-addressed store (`pnpm store path`). Needed only if the agent installs dependencies. |
 | `~/.claude`            | Session history, todos, shell snapshots. Claude Code does not run without it.                       |
 
 `~/.npm` and the pnpm store exist only so a session can run `pnpm install`. Run installs yourself before handing off and both can be dropped.
+
+### `/tmp` does not grant `/tmp` on macOS
+
+`/tmp` is a symlink to `/private/tmp`. Seatbelt matches on the path the kernel resolves at syscall time, not the literal you wrote, so a rule written as `/tmp` never matches anything. The failure is not subtle in effect but is very confusing in appearance: **the Bash tool cannot start at all**, because its own scratch directory bootstrap is denied before any user command runs.
+
+```txt
+EPERM: operation not permitted, mkdir '/private/tmp/claude-501/<cwd-slug>/<session-id>'
+```
+
+Read, Write, and Edit keep working the whole time — they never need that directory — so the session looks healthy right up until every single Bash call fails identically, including `pwd`, including `dangerouslyDisableSandbox: true`, and including calls from freshly spawned subagents (they share the sandbox). A session that hits this cannot fix itself: the policy is applied at process launch, so editing the settings file mid-run changes nothing.
+
+Verified by swapping one entry at a time, everything else held constant:
+
+```txt
+allowWrite entry     mkdir /tmp/probe
+"/tmp"               DENIED
+"/tmp/**"            DENIED
+"/private/tmp"       OK
+"/private/tmp/**"    OK
+```
+
+Both are kept: `/private/tmp` is the one doing the work on macOS, and `/tmp` is a real directory on Linux, where `/private/tmp` does not exist.
+
+## Unix sockets, and Claude in Chrome
+
+Unix sockets are **blocked by default** on every platform. On macOS `network.allowUnixSockets` is an allowlist of paths.
+
+This is what makes the browser tools disappear. Claude Code talks to the Chrome extension over a unix socket at `/private/tmp/claude-mcp-browser-bridge-<user>/<pid>.sock` (the extension side is a native messaging host registered at `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.anthropic.claude_code_browser_extension.json`). With the socket blocked, the bridge never connects and no `mcp__claude-in-chrome__*` tool is registered — a `ToolSearch` for browser tooling returns nothing, which reads like a missing extension rather than a sandbox denial.
+
+Two properties of the allowlist matter, both verified:
+
+- **No glob support.** Only literal paths, unlike `filesystem`. `/private/tmp/claude-mcp-browser-bridge-*/*.sock` and `/private/tmp/claude-mcp-browser-bridge-*` are both denied.
+- **A directory entry covers its sockets.** Which is the way out, because the filename is a pid and changes every session.
+
+So the entry names the bridge directory, not the socket. It contains a username, so **edit it after copying the example** — a wrong username fails silently, with the browser tools simply absent again. And `/tmp/claude-mcp-browser-bridge-...` does not work here either, for the resolution reason above.
+
+The narrower alternative — pinning the exact `<pid>.sock` — works but has to be rewritten every session. The broader one — allowing `/private/tmp` wholesale — also works and hands the session every other IPC socket on the machine.
 
 Deliberately absent: `~/.local/share/mise` and `~/.cache`. Those are written by `mise install`, which installs a toolchain that `mise.toml` already pins. An agent session has no reason to touch them.
 
@@ -92,7 +130,20 @@ The example denies `~/.ssh`, `~/.aws`, `~/.gnupg`, and `~/Library/Keychains`. It
 - `~/.railway` — `railway run` reads `~/.railway/config.json` to authenticate, and that file holds a plaintext access and refresh token. Denying it means passing `RAILWAY_TOKEN` through the environment instead.
 - `~/.config/gh` — `gh` needs it. Denying it means no GitHub CLI in-session.
 
-**Consequence of denying `~/.ssh`:** this repo's `origin` is an SSH remote (`git@github.com:dcousineau/buttery.git`), so `git push` does not work inside the sandbox. `deniedDomains` also blocks port 22 outright, reinforcing that. Push from outside the sandbox, or use `gh` over HTTPS. Treating push as a human step is a reasonable default for unattended sessions anyway.
+**Consequence of denying `~/.ssh`:** this repo's `origin` is an SSH remote (`git@github.com:dcousineau/buttery.git`), so nothing that talks to `origin` works inside the sandbox — not just `git push` but `git fetch` too. `deniedDomains` also blocks port 22 outright, reinforcing that. Treating push as a human step is a reasonable default for unattended sessions anyway, but a session that needs to _read_ another branch is not stuck: git over HTTPS works, verified in-sandbox.
+
+```bash
+git ls-remote https://github.com/dcousineau/buttery.git <branch>
+git fetch https://github.com/dcousineau/buttery.git <branch>:<local-branch>
+```
+
+**`gh` does not work, and no allowlist entry fixes it.** `gh` is a Go binary, and Go verifies TLS on macOS through `com.apple.trustd.agent`, a mach service Seatbelt blocks. Reaching the host is not the problem — `curl https://api.github.com/` returns 200 from the same sandbox — so this fails _after_ the domain allowlist has already said yes:
+
+```txt
+Post "https://api.github.com/graphql": tls: failed to verify certificate: x509: OSStatus -26276
+```
+
+`SSL_CERT_FILE` does not help; Go on darwin goes to the Security framework regardless. The only switch that fixes it is `enableWeakerNetworkIsolation: true`, which re-opens `trustd` and which upstream explicitly flags as an exfiltration vector. It is deliberately **not** set here — use the HTTPS git commands above, or `curl` the API, both of which work unchanged. The same limitation applies to any other Go CLI (`gcloud`, `terraform`, `kubectl`).
 
 ## Authenticating without opening the Keychain
 
@@ -122,7 +173,7 @@ An `ANTHROPIC_API_KEY` works the same way and keeps the Keychain denied, but bil
 `allowedDomains` is empty by default, meaning no network at all. The example opens:
 
 - **Anthropic** — `api.anthropic.com`, `claude.ai`, `platform.claude.com`. The last two are needed for OAuth sign-in and token refresh; API-key sessions can drop them.
-- **Toolchain** — `registry.npmjs.org`, `github.com`, `*.githubusercontent.com`.
+- **Toolchain** — `registry.npmjs.org`, `github.com`, `api.github.com`, `*.githubusercontent.com`. `github.com` does **not** cover `api.github.com`; only `*.github.com` would, and that is broader than needed.
 - **Local services** — `localhost`, `127.0.0.1`, `*.railway.localhost` for `railway dev`'s Postgres, Redis, and Caddy proxy.
 - **Railway** — `backboard.railway.com` for the CLI, `*.railway.app` for blob storage.
 - **atproto** — `plc.directory`, `*.bsky.network` (the relay), `*.bsky.app`.
