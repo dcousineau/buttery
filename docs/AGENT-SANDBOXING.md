@@ -112,6 +112,22 @@ The example denies `~/.ssh`, `~/.aws`, `~/.gnupg`, and `~/Library/Keychains`. It
 
 `allowLocalBinding` defaults to `false` and the example turns it on. Without it the Vite dev server and the atproto dev-env cannot bind their ports.
 
+### Reaching the local dev stack from inside the sandbox
+
+An `allowedDomains` entry with no `:port` suffix matches **every** port on that host, so the bare `localhost` / `127.0.0.1` entries already cover the whole stack. Nothing needs adding per service, and adding `localhost:2583` next to `localhost` would imply a narrowing that is not real. Verified reachable under `srt --settings ./.srt-settings.json`, all `200`:
+
+| Service                | URL                                   |
+| ---------------------- | ------------------------------------- |
+| Web (TanStack Start)   | `http://127.0.0.1:3000/`              |
+| atproto PDS / OAuth AS | `http://localhost:2583/xrpc/_health`  |
+| atproto PLC (DID docs) | `http://localhost:2582/_health`       |
+| process-compose API    | `http://localhost:8099/live`          |
+| Postgres / Redis       | via `*.railway.localhost` (see above) |
+
+IPv6 loopback (`http://[::1]:2583`) and Node's `fetch` both work too — `localhost` matching is not IPv4-only, so nothing needs an explicit `::1` entry.
+
+Two things this does **not** buy you: `curl` from the _agent's own_ Bash tool is a separate sandbox with its own rules, and a `000` from there is not evidence about `srt`; and the ports only answer when the stack is actually up (`process-compose project state`).
+
 ## After an unattended run
 
 Review what stayed writable — the repo diff, and on Linux anything the session created after launch. The Linux backend builds its deny list once at startup: it covers the project root reliably and makes a best-effort shallow scan for nested repos, but does not cover directories created mid-session by `git init`, `git clone`, or scaffolding. macOS checks denies at write time, so nested paths are covered there.
