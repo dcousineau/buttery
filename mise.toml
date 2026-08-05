@@ -4,6 +4,17 @@ node = "26"
 # infer it — jdx/mise#3549). CI reads the exact version from packageManager.
 pnpm = "11.17.0"
 railway = "latest"
+process-compose = "latest"
+# Provides the `srt` binary used to sandbox unattended agent sessions.
+# See docs/AGENT-SANDBOXING.md.
+"npm:@anthropic-ai/sandbox-runtime" = "latest"
+
+[env]
+# Dedicated port for the process-compose REST API so the dev supervisor never
+# fights whatever else is squatting on its 8080 default. Setting it here means
+# `process-compose up`, `attach`, and the `process …` client commands all agree
+# on it inside this repo without anyone passing `-p`.
+PC_PORT_NUM = "8099"
 
 [tasks.railway-skills]
 description = "Install Railway skills into this project"

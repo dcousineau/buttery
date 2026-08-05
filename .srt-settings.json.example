@@ -29,6 +29,7 @@
 
       "mcp.better-auth.com"
     ],
+    "deniedDomains": ["*:22"],
     "allowLocalBinding": true
   },
   "filesystem": {
@@ -41,6 +42,8 @@
       "/tmp"
     ],
     "denyWrite": [
+      ".srt-settings.json",
+
       "~/.claude/settings.json",
       "~/.claude/hooks",
       "~/.claude/agents",
@@ -50,8 +53,11 @@
 
       "~/.ssh",
       "~/.aws",
+      "~/.gnupg",
       "~/.config/gh",
       "~/.railway"
-    ]
+    ],
+    "allowRead": [],
+    "denyRead": ["~/.ssh", "~/.aws", "~/.gnupg", "~/Library/Keychains"]
   }
 }

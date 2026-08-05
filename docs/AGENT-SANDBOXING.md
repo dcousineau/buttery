@@ -2,6 +2,8 @@
 
 Rationale behind `.srt-settings.json.example`. For the commands, see the [README](../README.md#running-claude-code-sandboxed).
 
+The `srt` binary comes from `mise install` — `mise.toml` lists `npm:@anthropic-ai/sandbox-runtime` alongside the rest of the toolchain, so it is on `PATH` in the repo without an `npx` round-trip per invocation.
+
 ## Why the sandbox runtime, and not a dev container
 
 Claude Code's built-in `/sandbox` restricts Bash commands only — built-in file tools, MCP servers, and hooks still run unconstrained on the host. That is not enough for a session running unattended.
@@ -12,15 +14,50 @@ A dev container is the stronger boundary and the better answer for a team. The c
 
 For genuinely untrusted code, neither is right — use a VM or [Claude Code on the web](https://code.claude.com/docs/en/claude-code-on-the-web).
 
-## Why the settings file is not committed
+## Why the settings file is untracked, and why it can still live in the repo
 
-Upstream does not support project-local settings, deliberately: _"Embedders should source security options only from trusted user-level configuration, never from checked-out project files."_
+Upstream's warning is about _checked-out_ policy: _"Embedders should source security options only from trusted user-level configuration, never from checked-out project files."_ The concrete risk is that the runtime's mandatory deny list covers `.claude/`, `.mcp.json`, `.git/hooks`, and shell rc files — but not an arbitrary `.srt-settings.json`. A session that can write its own policy file widens its own sandbox on the next run.
 
-The reason is concrete. The runtime's mandatory deny list covers `.claude/`, `.mcp.json`, `.git/hooks`, and shell rc files — but not an arbitrary `.srt-settings.json` sitting in the repo. A sandboxed session that could write its own policy file would widen its own sandbox on the next run. So `.srt-settings.json` is gitignored and only the `.example` is tracked, matching how this repo already handles `.mcp.json`.
+Keeping the file in the repo is fine as long as that write is closed, which is why `.srt-settings.json` appears in its own `denyWrite` list. It is also gitignored, so it never arrives with a clone — only `.srt-settings.json.example` is tracked, matching how this repo handles `.mcp.json`. Copy the example, edit locally, and leave the `denyWrite` entry in place.
 
 ## Why `--settings` rather than the default path
 
-The runtime starts anyway when the default `~/.srt-settings.json` is missing or malformed, silently falling back to no-network and a handful of built-in write paths. A clean launch is therefore not evidence that your config loaded. Passing `--settings <file>` explicitly makes it refuse to start on a load failure.
+The runtime starts anyway when the default `~/.srt-settings.json` is missing or malformed, silently falling back to no-network and a handful of built-in write paths. A clean launch is therefore not evidence that your config loaded. Passing `--settings <file>` explicitly makes it refuse to start on a load failure — you get a validation error naming the bad keys instead of a session that silently can't reach the network.
+
+## Required keys
+
+`network.deniedDomains` and `filesystem.denyRead` are **required**, not optional, even when empty. Omitting them fails validation:
+
+```txt
+Invalid configuration in ./.srt-settings.json:
+  - network.deniedDomains: Required
+  - filesystem.denyRead: Required
+```
+
+To check a config without starting a session, wrap a no-op: `srt --settings ./.srt-settings.json /usr/bin/true`. Exit 0 means it validates.
+
+## Print mode only — the TUI cannot run sandboxed
+
+Seatbelt denies terminal `ioctl`s to the sandboxed process, so anything that wants raw mode fails:
+
+```txt
+$ srt --settings ./.srt-settings.json -c 'stty raw'
+stty: TIOCGETD: Operation not permitted
+```
+
+Claude Code's TUI is built on Ink, which calls `setRawMode` on stdin. Denied, it falls back to line-buffered input: keystrokes queue until Enter, vim-mode bindings do nothing, and redraw escape sequences interleave with the cooked-mode echo. The symptom reads as a character-encoding bug, but the environment is clean — `LANG`, `TERM`, `TERMINFO_DIRS`, and `COLORTERM` all pass through the sandbox unchanged.
+
+No settings key reaches it. Seatbelt treats `file-ioctl` as an operation distinct from `file-write*`, so adding `/dev/tty`, `/dev/ttys*`, or `/dev/ptmx` to `allowWrite` changes nothing.
+
+Upstream has a `--tty` passthrough PR, but it is not in any published release — `srt --help` on the installed build lists only `-V`, `-d`, `-s`, `-c`, and `--control-fd`.
+
+So run sandboxed sessions in print mode, which needs no raw mode:
+
+```bash
+srt --settings ./.srt-settings.json claude -p "<task>" --dangerously-skip-permissions
+```
+
+That is the intended shape anyway — the sandbox exists for unattended runs. For interactive work, either drop to Claude Code's built-in `/sandbox` (Bash-only, so file tools, MCP servers, and hooks stay unconstrained) or use a container or VM. Track the `--tty` release if you want the interactive TUI inside `srt` unchanged.
 
 ## Write grants
 
@@ -46,6 +83,17 @@ So the example denies `settings.json`, `hooks/`, `agents/`, `commands/`, `skills
 
 One gap remains. `~/.claude.json` stays writable because Claude Code needs it for project trust and account state, and it also holds user-scoped MCP server definitions. Deny it if that matters to you, and accept re-approving trust every run.
 
+## Read grants
+
+`denyRead` is required but empty by default, which means **full read access to the entire filesystem**. Write grants alone do not stop a session from reading credentials; combined with any allowed egress domain, that is an exfiltration path.
+
+The example denies `~/.ssh`, `~/.aws`, `~/.gnupg`, and `~/Library/Keychains`. It deliberately leaves two credential stores readable, because the workflow needs them:
+
+- `~/.railway` — `railway run` reads `~/.railway/config.json` to authenticate, and that file holds a plaintext access and refresh token. Denying it means passing `RAILWAY_TOKEN` through the environment instead.
+- `~/.config/gh` — `gh` needs it. Denying it means no GitHub CLI in-session.
+
+**Consequence of denying `~/.ssh`:** this repo's `origin` is an SSH remote (`git@github.com:dcousineau/buttery.git`), so `git push` does not work inside the sandbox. `deniedDomains` also blocks port 22 outright, reinforcing that. Push from outside the sandbox, or use `gh` over HTTPS. Treating push as a human step is a reasonable default for unattended sessions anyway.
+
 ## Network grants
 
 `allowedDomains` is empty by default, meaning no network at all. The example opens:
@@ -59,6 +107,8 @@ One gap remains. `~/.claude.json` stays writable because Claude Code needs it fo
 - **MCP** — `mcp.better-auth.com`, the one remote server in `.mcp.json.example`.
 
 `statsig.anthropic.com` and `sentry.io` are telemetry, not function. Drop them and set `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` if you prefer; the cost is that server-side feature flags stop evaluating.
+
+`deniedDomains` is `["*:22"]` — checked before `allowedDomains`, so it blocks SSH egress even though `github.com` is allowed on all ports. See the read-grants section for what that costs.
 
 `allowLocalBinding` defaults to `false` and the example turns it on. Without it the Vite dev server and the atproto dev-env cannot bind their ports.
 

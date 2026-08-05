@@ -9,42 +9,59 @@ The monorepo has two services:
 
 ## Local development
 
-Requires [Docker](https://www.docker.com/) (for the local Postgres) and [mise](https://mise.jdx.dev/), which manages the Node, pnpm, and Railway CLI versions this repo pins in `mise.toml`.
+Requires [Docker](https://www.docker.com/) (for the local Postgres) and [mise](https://mise.jdx.dev/), which manages the Node, pnpm, Railway CLI, and process-compose versions this repo pins in `mise.toml`.
 
 ```bash
 # Install mise (macOS/Linux). See https://mise.jdx.dev/installing-mise.html for other options.
 curl https://mise.run | sh
 
-# Install the pinned toolchain (Node, pnpm, Railway CLI) and run repo setup hooks
+# Install the pinned toolchain (Node, pnpm, Railway CLI, process-compose) and run repo setup hooks
 mise install
 
 pnpm install
 
-# Start the external services — Postgres and Redis only, never the app itself.
-# Prints a config overview (host ports, connection info); re-run any time to see it again.
-railway dev            # `railway dev down` to stop, `railway dev clean` to wipe data
-
-# Run migrations against the dev DB
-railway run --service buttery -- pnpm --filter=@buttery/web db:migrate:up
-
-# Start the app on http://127.0.0.1:3000
-railway run --service buttery -- pnpm dev
+# Boot the whole stack on http://127.0.0.1:3000
+pnpm dev
 ```
 
-`railway run --service <svc> --` injects the local service variables (`DATABASE_URL`, `REDIS_URL`, atproto credentials, etc.) into the wrapped command. Since `railway dev` never starts the app, dev servers are always launched separately like this.
+`pnpm dev` supervises the whole stack — Railway dev containers, migrations, the atproto dev-env, and the web server — as one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project. In its TUI: arrow keys select a process, `F5` restarts it, `F10` quits.
+
+Drive the same running stack from another terminal (or an agent):
+
+```bash
+pnpm dev:attach                    # attach the TUI to the running stack
+pnpm dev:down                      # stop the stack and the containers
+
+process-compose process list       # status + health of every process
+process-compose process logs web   # or grep .dev-logs/<process>.log
+process-compose process restart web
+```
+
+Run a one-off command against the dev services:
+
+```bash
+railway run --service buttery -- pnpm --filter=@buttery/web db:migrate:up
+```
+
+See [docs/LOCAL-DEV.md](./docs/LOCAL-DEV.md) for what each process is and how the pieces fit together.
 
 ### Running Claude Code sandboxed
 
-Run unattended agent sessions inside [`@anthropic-ai/sandbox-runtime`](https://github.com/anthropic-experimental/sandbox-runtime):
+Run unattended agent sessions inside [`@anthropic-ai/sandbox-runtime`](https://github.com/anthropic-experimental/sandbox-runtime). `mise install` provides the `srt` binary.
 
 ```bash
-# One-time: copy the repo's starting config to your home directory, then edit
-cp .srt-settings.json.example ~/.srt-settings.json
+# One-time: create your local config (gitignored) from the example, then edit
+cp .srt-settings.json.example .srt-settings.json
 
-npx @anthropic-ai/sandbox-runtime --settings ~/.srt-settings.json claude
+# Check the config without starting a session — exit 0 means it validates
+srt --settings ./.srt-settings.json /usr/bin/true
+
+srt --settings ./.srt-settings.json claude -p "<task>" --dangerously-skip-permissions
 ```
 
-The settings file must live outside the repo, and `--settings` must be passed explicitly. See [docs/AGENT-SANDBOXING.md](./docs/AGENT-SANDBOXING.md) for why, for what the example grants, and for when a container or VM is the better boundary.
+Use print mode (`-p`). The interactive TUI does not work under `srt` — it cannot enter raw mode, so keystrokes buffer and the display corrupts. `--settings` must be passed explicitly, or the runtime silently falls back to a default config.
+
+See [docs/AGENT-SANDBOXING.md](./docs/AGENT-SANDBOXING.md) for what the example grants, why the config stays untracked, and when a container or VM is the better boundary.
 
 ## Backfill / sync
 

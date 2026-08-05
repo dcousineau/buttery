@@ -28,8 +28,8 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
 
 ## Toolchain (mise)
 
-- System tooling (node, pnpm, Railway CLI) run by [mise](https://mise.jdx.dev) via `mise.toml`. Install mise first (`brew install mise` + shell activation), then `mise install` from repo root.
-- `mise install` give node 26 / pnpm 11 / railway. Then `postinstall` hook run `mise run railway-skills` (`railway skills install`) so Railway agent skills ready. Note: Railway CLI install skills global only (`~/.agents/skills`, `~/.claude/skills`, etc.) — no project-scoped mode; use `--agent claude-code` to narrow targets.
+- System tooling (node, pnpm, Railway CLI, process-compose) run by [mise](https://mise.jdx.dev) via `mise.toml`. Install mise first (`brew install mise` + shell activation), then `mise install` from repo root.
+- `mise install` give node 26 / pnpm 11 / railway / process-compose. Then `postinstall` hook run `mise run railway-skills` (`railway skills install`) so Railway agent skills ready. Note: Railway CLI install skills global only (`~/.agents/skills`, `~/.claude/skills`, etc.) — no project-scoped mode; use `--agent claude-code` to narrow targets.
 - Fresh clones must `mise trust` before hooks/tasks run (`mise install` prompts).
 - First-time setup: Railway MCP server not set (check `railway mcp install --help` or tool MCP list) → suggest install — `railway mcp install` add to Claude Code/Cursor/OpenCode/Codex, or `railway setup agent -y` do skills + MCP + login one step.
 - New major CLIs/tools go in `[tools]` in `mise.toml`, not homebrew or npm globals.
@@ -49,7 +49,9 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
 
 ## Scripts
 
-- `pnpm dev` — dev server, port 3000
+- `pnpm dev` — boot the whole local stack via process-compose (containers, migrations, atproto dev-env, web on port 3000). See "Local development" below and `docs/LOCAL-DEV.md`
+- `pnpm dev:attach` / `pnpm dev:down` — attach the TUI to the running stack / stop it and the containers
+- `pnpm dev:web` — web dev server alone (no supervisor, no containers)
 - `pnpm build` — prod build (client + SSR server to `dist/`)
 - `pnpm start` — prod server via srvx (`dist/server/server.js` + static `dist/client`; respects `PORT`)
 - `pnpm preview` — preview prod build
@@ -117,7 +119,7 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 - Restructure `@import`/`@layer` in `styles.css` can silently break Vite CSS HMR — hard-reload browser before debug "stale" styles.
 - Browser-automation a11y checks: assert DOM programmatically via chrome MCP `javascript_tool` (focus order, `activeElement`, aria attrs, heading tree) — faster/surer than screenshots.
 - Drive React controlled input from automation: `computer type` miss if focus drift; instead set value via `HTMLInputElement.prototype` native setter + dispatch `input` event + `form.requestSubmit()`.
-- `pnpm dev` auto-bump 3000→3001+ if port busy — check startup log for real URL.
+- Vite auto-bumps 3000→3001+ if the port is busy — check `.dev-logs/web.log` for the real URL. Usual cause is a second dev server; `process-compose process list` shows whether the stack already owns 3000.
 
 ## Environment variables
 
@@ -135,20 +137,31 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 - Free plan limits: $1 usage credit/mo, 1 replica, 0.5 GB RAM, 1 vCPU, 0.5 GB volume per service. Keep to this one service + postgres; no extra environments/replicas.
 - Do NOT use nitro vite plugin for hosting — nitro-nightly prod output self-fetches (`fetch(req, { viteEnv: "ssr" })`), breaks. srvx = working Node hosting path for this Start version.
 
-## Local development with postgres
+## Local development
 
-**`railway dev` runs external services ONLY — postgres, redis, and the Caddy proxy. It never starts the app.** That means **agents launch dev servers themselves** (`pnpm dev`, `pnpm --filter … dev`) instead of asking the user to.
+**One supervised, singleton process-compose stack (`process-compose.yaml`) runs everything: the `railway dev` containers, migrations, the atproto dev-env, and the web server.** Boot it with `pnpm dev`. Load the `local-dev` skill for the day-to-day commands; read `docs/LOCAL-DEV.md` before changing the stack itself.
+
+- **Agents drive the stack, never ask the user to.** If it's already up (the human may be watching the TUI), use the CLI against the running instance — it talks to the REST API on port 8099 (`PC_PORT_NUM` in `mise.toml`):
+  - `process-compose process list -o wide` — status + health of every process
+  - `process-compose process logs web --tail 50` — or grep `.dev-logs/<process>.log`
+  - `process-compose process restart web` — restart ONE process; don't tear down the stack
+  - `process-compose project state` — cheap "is it running?" probe (non-zero exit when not)
+- **Never start a second copy of a dev server.** `pnpm dev` attaches when the stack is already up; a bare `pnpm dev:web` alongside it will fight for port 3000.
+- Restarting `atproto-dev-env` mints a new `did:plc` (in-memory PDS) — any browser session needs re-sign-in after.
+- `pnpm dev:down` stops the stack AND the containers. `process-compose down` alone leaves the containers up (they're detached; process-compose only tails their logs).
+
+**`railway dev` runs external services ONLY — postgres, redis, and the Caddy proxy. It never starts the app.**
 
 - This is a convention, not a committed setting. Which code services `railway dev` runs lives in machine-local CLI state at `~/.railway/develop/<project-id>/local-dev.json` (project id maps to this repo via `~/.railway/config.json`) — not in the repo, not tracked, not inherited by a fresh clone. Empty (`"services": {}`) is both the default and what we want. **Do not run `railway dev configure`** to add the app; keep app processes under your own control so they can be restarted and log-inspected independently of the containers.
 - `railway dev` bootstraps the images and prints a config overview (host ports, connection info). Already running → it re-prints that overview instead of doing anything destructive, so it's safe to run just to read the current setup. `railway dev down` stops; `railway dev clean` wipes data.
 - **Never hardcode the postgres host port** — it is regenerated and has changed across setups (17754 → 33628). Read it from the `railway dev` overview, or let `railway run` inject it.
 - `railway run --service <svc> -- <cmd>` injects the local service vars (`DATABASE_URL`, `REDIS_URL`, …) into the wrapped command. This is the normal way to run anything that needs the DB:
   - migrations: `railway run --service buttery -- pnpm --filter=@buttery/web db:migrate:up`
-  - dev server against local services: `railway run --service buttery -- pnpm dev`
-- Bare `pnpm dev` also works when `services/web/.env` holds the vars, but that file goes stale when ports are regenerated. Prefer `railway run` for anything DB-touching.
+  - web dev server alone: `railway run --service buttery -- pnpm dev:web` (this is exactly what the `web` process in `process-compose.yaml` runs)
+- Bare `pnpm dev:web` also works when `services/web/.env` holds the vars, but that file goes stale when ports are regenerated. Prefer `railway run` for anything DB-touching.
 - `railway dev`/`railway run` inject vars that WIN over local shell exports (`COMING_SOON=false railway run …` stays `true`; `--no-local` no help). To override locally, prefix child command: `railway run env COMING_SOON=false pnpm dev`. `.env` can't override this — Vite only loads `VITE_`-prefixed vars into `process.env`.
 - atproto OAuth: `oauth-node.ts` collapses any local hostname (incl. `*.localhost`) to `http://127.0.0.1:3000` — atproto forbids `.localhost` TLDs in web client_ids, so local dev always uses the loopback client. Browse http://127.0.0.1:3000.
-- railway-dev postgres volume starts empty, persists across restarts. Run migrations once after first start, and again after `railway dev clean`.
+- railway-dev postgres volume starts empty, persists across restarts. `pnpm dev`'s `migrate` process covers this on every boot (including after `railway dev clean`); only run migrations by hand outside the stack.
 - `railway dev up --dry-run --no-tui` regen `~/.railway/develop/<project-id>/docker-compose.yml` (ports/creds source of truth) but delete it when dry-run exits — read while `railway dev` actually running, or right after regen.
 - Alternative: own postgres + `DATABASE_URL` in `.env` (see `.env.example`), or `railway run pnpm dev` against _production_ database vars (careful).
 
