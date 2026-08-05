@@ -4,7 +4,9 @@ To confirm an `exchange.recipe.recipe` publish worked **locally** (dev only,
 isolated from the real network), use this service — do **not** query the real
 network, and note buttery's own app never reads from this dev PDS.
 
-Prereq: the dev-env must be running (`pnpm --filter @buttery/atproto-dev-env start`).
+Prereq: the dev-env must be running — root `pnpm dev` (and therefore
+`railway dev up`) starts it alongside the web app; standalone is
+`pnpm --filter @buttery/atproto-dev-env start`.
 State is in-memory, so the did:plc changes every restart — always resolve the
 handle → did at runtime; never hardcode a did.
 

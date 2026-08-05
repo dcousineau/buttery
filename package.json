@@ -4,7 +4,8 @@
   "type": "module",
   "packageManager": "pnpm@11.18.0",
   "scripts": {
-    "dev": "pnpm --filter @buttery/web dev",
+    "dev": "concurrently -n atproto,web -c magenta,cyan --kill-others-on-fail \"pnpm atproto:dev-env\" \"pnpm dev:web\"",
+    "dev:web": "pnpm --filter @buttery/web dev",
     "atproto:dev-env": "pnpm --filter @buttery/atproto-dev-env start",
     "build": "pnpm -r build",
     "start": "pnpm --filter @buttery/web start",
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.1.2",
+    "concurrently": "^10.0.4",
     "eslint": "^10.8.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.1.1",

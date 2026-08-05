@@ -10,6 +10,16 @@ visible to `plc.directory`, `bsky.social`, or the relay.
 
 ## Run it
 
+Root `pnpm dev` starts it alongside the web app (so `railway dev up`, which runs
+`pnpm dev` for the buttery code service, brings it up too):
+
+```sh
+pnpm dev          # atproto dev-env + web
+pnpm dev:web      # web only
+```
+
+Standalone:
+
 ```sh
 pnpm --filter @buttery/atproto-dev-env start
 ```
