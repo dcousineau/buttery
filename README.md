@@ -20,17 +20,31 @@ mise install
 
 pnpm install
 
-# Start local Postgres + inject DATABASE_URL (Railway local emulation)
+# Start the external services — Postgres and Redis only, never the app itself.
+# Prints a config overview (host ports, connection info); re-run any time to see it again.
 railway dev            # `railway dev down` to stop, `railway dev clean` to wipe data
 
 # Run migrations against the dev DB
 railway run --service buttery -- pnpm --filter=@buttery/web db:migrate:up
 
-# Start the app on http://localhost:3000
-pnpm dev
+# Start the app on http://127.0.0.1:3000
+railway run --service buttery -- pnpm dev
 ```
 
-`railway run --service <svc> --` injects the Railway dev environment (`DATABASE_URL`, atproto credentials, etc.) into the wrapped command.
+`railway run --service <svc> --` injects the local service variables (`DATABASE_URL`, `REDIS_URL`, atproto credentials, etc.) into the wrapped command. Since `railway dev` never starts the app, dev servers are always launched separately like this.
+
+### Running Claude Code sandboxed
+
+Run unattended agent sessions inside [`@anthropic-ai/sandbox-runtime`](https://github.com/anthropic-experimental/sandbox-runtime):
+
+```bash
+# One-time: copy the repo's starting config to your home directory, then edit
+cp .srt-settings.json.example ~/.srt-settings.json
+
+npx @anthropic-ai/sandbox-runtime --settings ~/.srt-settings.json claude
+```
+
+The settings file must live outside the repo, and `--settings` must be passed explicitly. See [docs/AGENT-SANDBOXING.md](./docs/AGENT-SANDBOXING.md) for why, for what the example grants, and for when a container or VM is the better boundary.
 
 ## Backfill / sync
 

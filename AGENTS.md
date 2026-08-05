@@ -121,7 +121,7 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 
 ## Environment variables
 
-- `DATABASE_URL` (server-only) — postgres connection string, read via `getPool()` in `src/lib/db.ts`. On Railway: referenced from postgres service. Locally: injected by `railway dev` or set in `.env` (see `.env.example`).
+- `DATABASE_URL` (server-only) — postgres connection string, read via `getPool()` in `src/lib/db.ts`. On Railway: referenced from postgres service. Locally: injected by `railway run --service buttery --` (pointing at the `railway dev` postgres) or set in `.env` (see `.env.example`).
 - `BETTER_AUTH_SECRET` (server-only) — better-auth session signing secret, 32+ chars.
 - `BETTER_AUTH_URL` — public origin; drives better-auth baseURL and atproto OAuth client_id/redirect URI.
 - Client-exposed vars need `VITE_` prefix. Server-only secrets stay unprefixed, read via `process.env` in server code only.
@@ -137,11 +137,18 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 
 ## Local development with postgres
 
-- Preferred: `railway dev` (Railway local emulation, experimental). Gen docker-compose from Railway environment, run postgres locally with same `postgres-ssl:18` image, inject `DATABASE_URL` into code services. Needs Docker. `railway dev down` stops; `railway dev clean` wipes data; `railway dev configure` set how app service run locally (e.g. `pnpm dev`, port 3000).
-- Verified local flow (2026-07-23): terminal A `railway dev` (postgres on host port **17754**, same creds as prod), terminal B `pnpm dev` with `.env` holding `DATABASE_URL=postgresql://postgres:<pw>@localhost:17754/railway`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL=http://127.0.0.1:3000`. Vite dev loads `.env` into `process.env` — confirmed working end-to-end.
-- `railway dev`/`railway run` inject remote env vars that WIN over local shell exports (`COMING_SOON=false railway run …` stays `true`; `--no-local` no help). To override locally, prefix child command: `railway run env COMING_SOON=false pnpm dev`. `.env` can't override this — Vite only loads `VITE_`-prefixed vars into `process.env`.
-- Run app _inside_ `railway dev` also works: injects/rewrites `BETTER_AUTH_URL` to `https://buttery.buttery.railway.localhost`, but `oauth-node.ts` collapses any local hostname (incl. `*.localhost`) to `http://127.0.0.1:3000` — atproto forbids `.localhost` TLDs in web client_ids, so local dev always uses loopback client. Either way, browse http://127.0.0.1:3000.
-- railway-dev postgres volume starts empty, persists across restarts. Run migrations once after first start (again after `railway dev clean`) to build schema: `pnpm --filter @buttery/web db:migrate:up` from repo root (`kysely.config.ts` loads `services/web/.env`, which is the filtered cwd). Or inject railway-dev vars directly: `railway run --service buttery -- pnpm --filter=@buttery/web db:migrate:up`.
+**`railway dev` runs external services ONLY — postgres, redis, and the Caddy proxy. It never starts the app.** That means **agents launch dev servers themselves** (`pnpm dev`, `pnpm --filter … dev`) instead of asking the user to.
+
+- This is a convention, not a committed setting. Which code services `railway dev` runs lives in machine-local CLI state at `~/.railway/develop/<project-id>/local-dev.json` (project id maps to this repo via `~/.railway/config.json`) — not in the repo, not tracked, not inherited by a fresh clone. Empty (`"services": {}`) is both the default and what we want. **Do not run `railway dev configure`** to add the app; keep app processes under your own control so they can be restarted and log-inspected independently of the containers.
+- `railway dev` bootstraps the images and prints a config overview (host ports, connection info). Already running → it re-prints that overview instead of doing anything destructive, so it's safe to run just to read the current setup. `railway dev down` stops; `railway dev clean` wipes data.
+- **Never hardcode the postgres host port** — it is regenerated and has changed across setups (17754 → 33628). Read it from the `railway dev` overview, or let `railway run` inject it.
+- `railway run --service <svc> -- <cmd>` injects the local service vars (`DATABASE_URL`, `REDIS_URL`, …) into the wrapped command. This is the normal way to run anything that needs the DB:
+  - migrations: `railway run --service buttery -- pnpm --filter=@buttery/web db:migrate:up`
+  - dev server against local services: `railway run --service buttery -- pnpm dev`
+- Bare `pnpm dev` also works when `services/web/.env` holds the vars, but that file goes stale when ports are regenerated. Prefer `railway run` for anything DB-touching.
+- `railway dev`/`railway run` inject vars that WIN over local shell exports (`COMING_SOON=false railway run …` stays `true`; `--no-local` no help). To override locally, prefix child command: `railway run env COMING_SOON=false pnpm dev`. `.env` can't override this — Vite only loads `VITE_`-prefixed vars into `process.env`.
+- atproto OAuth: `oauth-node.ts` collapses any local hostname (incl. `*.localhost`) to `http://127.0.0.1:3000` — atproto forbids `.localhost` TLDs in web client_ids, so local dev always uses the loopback client. Browse http://127.0.0.1:3000.
+- railway-dev postgres volume starts empty, persists across restarts. Run migrations once after first start, and again after `railway dev clean`.
 - `railway dev up --dry-run --no-tui` regen `~/.railway/develop/<project-id>/docker-compose.yml` (ports/creds source of truth) but delete it when dry-run exits — read while `railway dev` actually running, or right after regen.
 - Alternative: own postgres + `DATABASE_URL` in `.env` (see `.env.example`), or `railway run pnpm dev` against _production_ database vars (careful).
 

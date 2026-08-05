@@ -14,6 +14,11 @@ todos.json
 .mcp.json
 .pnpm-store
 
+# sandbox-runtime settings are user-level and must never be sourced from the
+# repo — a checked-in copy is a file a sandboxed agent could edit to widen its
+# own sandbox. Copy .srt-settings.json.example to ~/.srt-settings.json instead.
+.srt-settings.json
+
 # @atproto/lex generated TypeScript — regenerated from lexicons/ via the
 # @buttery/lexicons `build` script. The source of truth (lexicons/*.json +
 # lexicons.json manifest) IS committed.

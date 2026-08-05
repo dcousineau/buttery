@@ -1,0 +1,57 @@
+{
+  "network": {
+    "allowedDomains": [
+      "api.anthropic.com",
+      "claude.ai",
+      "platform.claude.com",
+      "statsig.anthropic.com",
+      "sentry.io",
+
+      "registry.npmjs.org",
+      "github.com",
+      "*.githubusercontent.com",
+
+      "localhost",
+      "127.0.0.1",
+      "*.railway.localhost",
+
+      "backboard.railway.com",
+      "*.railway.com",
+      "*.railway.app",
+
+      "plc.directory",
+      "*.bsky.network",
+      "*.bsky.app",
+
+      "us.i.posthog.com",
+      "us.posthog.com",
+      "event.buttery.recipes",
+
+      "mcp.better-auth.com"
+    ],
+    "allowLocalBinding": true
+  },
+  "filesystem": {
+    "allowWrite": [
+      ".",
+      "~/.claude",
+      "~/.claude.json",
+      "~/.npm",
+      "~/Library/pnpm/store",
+      "/tmp"
+    ],
+    "denyWrite": [
+      "~/.claude/settings.json",
+      "~/.claude/hooks",
+      "~/.claude/agents",
+      "~/.claude/commands",
+      "~/.claude/skills",
+      "~/.claude/plugins",
+
+      "~/.ssh",
+      "~/.aws",
+      "~/.config/gh",
+      "~/.railway"
+    ]
+  }
+}
