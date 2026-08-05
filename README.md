@@ -53,6 +53,12 @@ Run unattended agent sessions inside [`@anthropic-ai/sandbox-runtime`](https://g
 # One-time: create your local config (gitignored) from the example, then edit
 cp .srt-settings.json.example .srt-settings.json
 
+# One-time: mint a long-lived token so sandboxed sessions skip the login prompt.
+# Run this OUTSIDE the sandbox — it opens a browser. Then export it (shell profile,
+# not this repo).
+claude setup-token
+export CLAUDE_CODE_OAUTH_TOKEN=<token>
+
 # Check the config without starting a session — exit 0 means it validates
 srt --settings ./.srt-settings.json /usr/bin/true
 
@@ -60,6 +66,8 @@ srt --settings ./.srt-settings.json claude -p "<task>" --dangerously-skip-permis
 ```
 
 Use print mode (`-p`). The interactive TUI does not work under `srt` — it cannot enter raw mode, so keystrokes buffer and the display corrupts. `--settings` must be passed explicitly, or the runtime silently falls back to a default config.
+
+Without `CLAUDE_CODE_OAUTH_TOKEN` a sandboxed session asks you to log in every time: your credentials live in the macOS Keychain, which the example denies read on. See [docs/AGENT-SANDBOXING.md](./docs/AGENT-SANDBOXING.md#authenticating-without-opening-the-keychain).
 
 See [docs/AGENT-SANDBOXING.md](./docs/AGENT-SANDBOXING.md) for what the example grants, why the config stays untracked, and when a container or VM is the better boundary.
 

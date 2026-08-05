@@ -94,6 +94,29 @@ The example denies `~/.ssh`, `~/.aws`, `~/.gnupg`, and `~/Library/Keychains`. It
 
 **Consequence of denying `~/.ssh`:** this repo's `origin` is an SSH remote (`git@github.com:dcousineau/buttery.git`), so `git push` does not work inside the sandbox. `deniedDomains` also blocks port 22 outright, reinforcing that. Push from outside the sandbox, or use `gh` over HTTPS. Treating push as a human step is a reasonable default for unattended sessions anyway.
 
+## Authenticating without opening the Keychain
+
+On macOS, Claude Code keeps its OAuth credentials in a login-keychain item named `Claude Code-credentials` (there is no `~/.claude/.credentials.json` — that path is the Linux store). `~/Library/Keychains` is denied, so a sandboxed session cannot read it and prompts you to log in on every launch. The deny is doing its job; the fix is to hand the session a credential rather than to lift it.
+
+Mint a long-lived token once, outside the sandbox — it opens a browser, so it cannot run sandboxed anyway:
+
+```bash
+claude setup-token
+```
+
+Export the result as `CLAUDE_CODE_OAUTH_TOKEN` from your shell profile. `srt` passes the environment through to the sandboxed process unchanged (verified with a sentinel variable), so nothing in `.srt-settings.json` needs to change. Keep it out of the repo — it is a credential, and this file is tracked.
+
+**Do not remove `~/Library/Keychains` from `denyRead` instead.** It reads like a one-line fix and it does work, but the login keychain is a single database file, so there is no way to expose only the Claude item. With that deny lifted, `security find-generic-password -s <anything> -w` returns secrets in the clear — Wi-Fi, browser-saved passwords, every app token — to a session that also has allowed egress domains. Verified in both directions:
+
+```txt
+denyRead as shipped            → security find-generic-password … → DENIED
+denyRead minus ~/Library/…     → security find-generic-password … → OK, secret printed
+```
+
+The token narrows that blast radius to one revocable credential. It does not eliminate it: the token is in the sandboxed process's environment by construction, so a compromised session can still exfiltrate that token. Revoke it from your account settings if a run goes wrong.
+
+An `ANTHROPIC_API_KEY` works the same way and keeps the Keychain denied, but bills to API credits rather than the subscription.
+
 ## Network grants
 
 `allowedDomains` is empty by default, meaning no network at all. The example opens:
