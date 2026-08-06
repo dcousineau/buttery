@@ -28,6 +28,7 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as HouseholdRecipesIndexRouteImport } from './routes/household.recipes.index'
 import { Route as HouseholdRecipesIdRouteImport } from './routes/household.recipes.$id'
 import { Route as HouseholdRecipesNewRouteImport } from './routes/household.recipes.new'
+import { Route as HouseholdRecipesRandomizerRouteImport } from './routes/household.recipes.randomizer'
 import { Route as HouseholdRecipesImportBridgeRouteImport } from './routes/household.recipes_.import-bridge'
 
 const IndexRoute = IndexRouteImport.update({
@@ -126,6 +127,12 @@ const HouseholdRecipesNewRoute = HouseholdRecipesNewRouteImport.update({
   path: '/new',
   getParentRoute: () => HouseholdRecipesRoute,
 } as any)
+const HouseholdRecipesRandomizerRoute =
+  HouseholdRecipesRandomizerRouteImport.update({
+    id: '/randomizer',
+    path: '/randomizer',
+    getParentRoute: () => HouseholdRecipesRoute,
+  } as any)
 const HouseholdRecipesImportBridgeRoute =
   HouseholdRecipesImportBridgeRouteImport.update({
     id: '/household/recipes_/import-bridge',
@@ -152,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
   '/household/recipes/new': typeof HouseholdRecipesNewRoute
+  '/household/recipes/randomizer': typeof HouseholdRecipesRandomizerRoute
   '/household/recipes/import-bridge': typeof HouseholdRecipesImportBridgeRoute
   '/household/recipes/': typeof HouseholdRecipesIndexRoute
 }
@@ -173,6 +181,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
   '/household/recipes/new': typeof HouseholdRecipesNewRoute
+  '/household/recipes/randomizer': typeof HouseholdRecipesRandomizerRoute
   '/household/recipes/import-bridge': typeof HouseholdRecipesImportBridgeRoute
   '/household/recipes': typeof HouseholdRecipesIndexRoute
 }
@@ -196,6 +205,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
   '/household/recipes/new': typeof HouseholdRecipesNewRoute
+  '/household/recipes/randomizer': typeof HouseholdRecipesRandomizerRoute
   '/household/recipes_/import-bridge': typeof HouseholdRecipesImportBridgeRoute
   '/household/recipes/': typeof HouseholdRecipesIndexRoute
 }
@@ -220,6 +230,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/household/recipes/$id'
     | '/household/recipes/new'
+    | '/household/recipes/randomizer'
     | '/household/recipes/import-bridge'
     | '/household/recipes/'
   fileRoutesByTo: FileRoutesByTo
@@ -241,6 +252,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/household/recipes/$id'
     | '/household/recipes/new'
+    | '/household/recipes/randomizer'
     | '/household/recipes/import-bridge'
     | '/household/recipes'
   id:
@@ -263,6 +275,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/household/recipes/$id'
     | '/household/recipes/new'
+    | '/household/recipes/randomizer'
     | '/household/recipes_/import-bridge'
     | '/household/recipes/'
   fileRoutesById: FileRoutesById
@@ -422,6 +435,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HouseholdRecipesNewRouteImport
       parentRoute: typeof HouseholdRecipesRoute
     }
+    '/household/recipes/randomizer': {
+      id: '/household/recipes/randomizer'
+      path: '/randomizer'
+      fullPath: '/household/recipes/randomizer'
+      preLoaderRoute: typeof HouseholdRecipesRandomizerRouteImport
+      parentRoute: typeof HouseholdRecipesRoute
+    }
     '/household/recipes_/import-bridge': {
       id: '/household/recipes_/import-bridge'
       path: '/household/recipes/import-bridge'
@@ -435,12 +455,14 @@ declare module '@tanstack/react-router' {
 interface HouseholdRecipesRouteChildren {
   HouseholdRecipesIdRoute: typeof HouseholdRecipesIdRoute
   HouseholdRecipesNewRoute: typeof HouseholdRecipesNewRoute
+  HouseholdRecipesRandomizerRoute: typeof HouseholdRecipesRandomizerRoute
   HouseholdRecipesIndexRoute: typeof HouseholdRecipesIndexRoute
 }
 
 const HouseholdRecipesRouteChildren: HouseholdRecipesRouteChildren = {
   HouseholdRecipesIdRoute: HouseholdRecipesIdRoute,
   HouseholdRecipesNewRoute: HouseholdRecipesNewRoute,
+  HouseholdRecipesRandomizerRoute: HouseholdRecipesRandomizerRoute,
   HouseholdRecipesIndexRoute: HouseholdRecipesIndexRoute,
 }
 
