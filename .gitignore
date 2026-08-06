@@ -19,12 +19,6 @@ todos.json
 .mcp.json
 .pnpm-store
 
-# sandbox-runtime settings must never arrive with a clone — a checked-in copy
-# is a file a sandboxed agent could edit to widen its own sandbox. Copy
-# .srt-settings.json.example here and keep the `.srt-settings.json` denyWrite
-# entry in place. See docs/AGENT-SANDBOXING.md.
-.srt-settings.json
-
 # @atproto/lex generated TypeScript — regenerated from lexicons/ via the
 # @buttery/lexicons `build` script. The source of truth (lexicons/*.json +
 # lexicons.json manifest) IS committed.

@@ -5,9 +5,6 @@ node = "26"
 pnpm = "11.17.0"
 railway = "latest"
 process-compose = "latest"
-# Provides the `srt` binary used to sandbox unattended agent sessions.
-# See docs/AGENT-SANDBOXING.md.
-"npm:@anthropic-ai/sandbox-runtime" = "latest"
 
 [env]
 # Dedicated port for the process-compose REST API so the dev supervisor never
