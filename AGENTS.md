@@ -55,7 +55,8 @@ Blank TanStack Start app (React). No extra integration, no feature scaffold.
 - `pnpm build` — prod build (client + SSR server to `dist/`)
 - `pnpm start` — prod server via srvx (`dist/server/server.js` + static `dist/client`; respects `PORT`)
 - `pnpm preview` — preview prod build
-- `pnpm test` — vitest run
+- `pnpm test` — vitest run (unit project only in practice; `*.db.test.ts` files skip themselves with no DB)
+- `pnpm test:db` — `railway run --service buttery -- vitest run --project db`: the `*.db.test.ts` integration suites against the running dev Postgres. Needs the stack up (`pnpm dev`); railway supplies `DATABASE_URL`. Projects defined in `services/web/vitest.config.ts`
 - `pnpm typecheck` — native TS 7 `tsc` (noEmit); `tsc6` binary also there (TS 6 API)
 - `pnpm lint` — eslint (flat config, TS + react-hooks)
 - `pnpm format` — prettier whole repo (rarely needed; see Gotchas)
@@ -201,7 +202,7 @@ Write new UI code, lean on `accessibility-compliance` skill (`/accessibility-com
 - Dev OAuth: browse http://127.0.0.1:3000, never localhost — atproto loopback redirect and session cookie bound to 127.0.0.1 (vite already binds that host).
 - Railway iac secrets: `{ generator: "secret(44)", preserveExisting: true }` gen per-environment on first apply, never overwrite existing values.
 - Recipe ids ARE atproto rkeys — permit `-`, `.`, `_`, `:`, `~`, up to 512 chars, NOT just ULID/TID shape. Don't validate id format (shape regex WILL reject real ids); DB existence is only source of truth. Missing id → return null → NotFound. `getRecipe` validator caps length only.
-- `pnpm test` exits 1 — no test files yet.
+- DB-backed tests live in `*.db.test.ts` and SKIP (never fail) without a reachable migrated database, so `pnpm test` stays green on a machine with nothing running. If you changed schema or server-fn behaviour, run `pnpm test:db` too — plain `pnpm test` will not tell you it broke.
 - `tsr generate` rewrites `createFileRoute()` path literals (e.g. normalizes `[.]` escapes) — don't fight it.
 - Prettier enabled but make NO special effort to run — husky pre-commit hook runs
   `lint-staged` (prettier --write + eslint --fix on staged files) auto.

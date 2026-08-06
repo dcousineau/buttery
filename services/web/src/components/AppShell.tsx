@@ -16,10 +16,11 @@ function isNavless(pathname: string): boolean {
 }
 
 /** Fixed-height, non-scrolling application views (the `/household/*` surfaces,
- * e.g. the recipes master–detail). They keep the sidebar but drop the marketing
- * footer and pin `main` to the viewport so only the inner panes scroll. */
+ * e.g. the recipes master–detail, and the meal planner). They keep the sidebar
+ * but drop the marketing footer and pin `main` to the viewport so only the inner
+ * panes scroll. */
 function isAppView(pathname: string): boolean {
-  return pathname.startsWith("/household/");
+  return pathname.startsWith("/household/") || pathname === "/plan";
 }
 
 function SkipLink() {

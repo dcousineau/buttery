@@ -327,7 +327,7 @@ where id = $1 and origin = 'local' and (rev is null or rev < $3)
 
 // Save-guard (recipes plan §9.1): never delete a rendered row that a household
 // has boxed — it is that household's durable cache. The `household_recipe`
-// RESTRICT FK would otherwise throw 23503 and break the sweep; the guard leaves
+// RESTRICT FK would otherwise throw 23001 and break the sweep; the guard leaves
 // the saved row in place (availability is recomputed at read time from the raw
 // layer) while deleting unsaved invalid/unseen rows exactly as before. The
 // `household_recipe (recipe_id)` index keeps the NOT EXISTS cheap.
@@ -336,7 +336,11 @@ where id = $1 and origin = 'local' and (rev is null or rev < $3)
 // second ON DELETE RESTRICT reference to the same rendered row. A recipe can be
 // planned but no longer boxed, so the `household_recipe` guard alone does not
 // cover it. Deliberately NOT filtered on `mpe.deleted_at` — a soft-deleted entry
-// still holds the FK, so the sweep would still get a 23503.
+// still holds the FK, so the sweep would still get a 23001.
+//
+// (Both codes verified in `services/web/src/server/meal-plan.db.test.ts`: an
+// `ON DELETE RESTRICT` violation is 23001 `restrict_violation`, not the 23503
+// `foreign_key_violation` that `NO ACTION` raises.)
 const PLANNED_GUARD = `not exists (select 1 from meal_plan_entry mpe where mpe.recipe_id = recipe.id)`;
 
 const DELETE_RENDERED_SQL = `delete from recipe where id = $1 and origin = 'sync' and not exists (select 1 from household_recipe hr where hr.recipe_id = recipe.id) and ${PLANNED_GUARD}`;

@@ -3,6 +3,10 @@ import { AArrowDown, AArrowUp, Maximize, Minimize, X } from "lucide-react";
 import { usePostHog } from "@posthog/react";
 import { Dialog, DialogContent, DialogTitle } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
+import { CheckboxRow } from "#/components/ui/checkbox";
+import { getCookedCandidates, setMealPlanEntryCooked } from "#/server/meal-plan";
+import { SLOT_LABELS } from "#/lib/plan/labels";
+import type { MealSlot } from "#/lib/plan/week";
 import { scaleIngredients } from "#/lib/recipe-scale";
 import { useTimers } from "#/lib/timers/store";
 import { useRecipesView } from "../context";
@@ -66,6 +70,12 @@ export default function CookMode({ recipe, onClose }: { recipe: CookRecipe; onCl
 
   const rootRef = useRef<FsElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // §7.1: today's still-uncooked plan entries for this recipe, asked for once,
+  // at the moment the cook says they are done. Null ⇒ no prompt.
+  const [cookPrompt, setCookPrompt] = useState<Array<{ entryId: string; slot: MealSlot }> | null>(null);
+  const [cookPromptPicked, setCookPromptPicked] = useState<string[]>([]);
+  const focusCookPrompt = useCallback((node: HTMLDivElement | null) => node?.focus(), []);
 
   const scaledIngredients = useMemo(() => scaleIngredients(recipe.ingredients, factor, metric), [recipe.ingredients, factor, metric]);
   const serves = recipe.serves != null ? Math.max(1, Math.round(recipe.serves * factor)) : null;
@@ -162,6 +172,12 @@ export default function CookMode({ recipe, onClose }: { recipe: CookRecipe; onCl
   // Esc / close from mise exits.
   function onOpenChange(open: boolean) {
     if (open) return;
+    // Esc while the cooked prompt is up answers it with "not this time" and
+    // leaves — the session is already over at that point.
+    if (cookPrompt) {
+      dismissCookPrompt();
+      return;
+    }
     if (phase === "cook") {
       setPhase("mise");
       return;
@@ -191,10 +207,54 @@ export default function CookMode({ recipe, onClose }: { recipe: CookRecipe; onCl
     setFocus((f) => (phase === "mise" ? 0 : f));
   }
 
-  function onFinish() {
+  /**
+   * Finishing a cook (§7.1). The session is over either way; the only question
+   * is whether the planner learns about it.
+   *
+   * The lookup is fast (indexed on household + recipe + date) and its failure is
+   * swallowed on purpose: cook mode works for someone who has never opened the
+   * planner, and a planner outage must not trap a cook in a dialog they finished
+   * with. No candidates ⇒ nothing changes at all.
+   */
+  async function finishCooking() {
     clearCookState(recipe.recipeId);
     posthog.capture("cook_session_completed", { recipe_id: recipe.recipeId });
+    try {
+      const candidates = await getCookedCandidates({ data: { recipeId: recipe.recipeId } });
+      if (candidates.length > 0) {
+        posthog.capture("meal_plan_cook_prompt_shown", { recipe_id: recipe.recipeId, candidates: candidates.length });
+        setCookPrompt(candidates.map(({ entryId, slot }) => ({ entryId, slot })));
+        // Everything pre-picked: one candidate is a plain confirm, and with
+        // several the common answer is "all of them".
+        setCookPromptPicked(candidates.map((candidate) => candidate.entryId));
+        return;
+      }
+    } catch {
+      /* the planner never blocks the exit */
+    }
+    await handleExit();
+  }
+
+  function onFinish() {
+    void finishCooking();
+  }
+
+  function dismissCookPrompt() {
+    posthog.capture("meal_plan_cook_prompt_dismissed", { recipe_id: recipe.recipeId, candidates: cookPrompt?.length ?? 0 });
+    setCookPrompt(null);
     void handleExit();
+  }
+
+  function confirmCookPrompt() {
+    const picked = cookPromptPicked;
+    posthog.capture("meal_plan_cook_prompt_confirmed", { recipe_id: recipe.recipeId, candidates: cookPrompt?.length ?? 0, marked: picked.length });
+    setCookPrompt(null);
+    void (async () => {
+      // `allSettled`: one entry that vanished from the plan mid-cook must not
+      // cost the others their mark, and there is no surface left to report on.
+      await Promise.allSettled(picked.map((entryId) => setMealPlanEntryCooked({ data: { entryId, cooked: true } })));
+      await handleExit();
+    })();
   }
 
   function togglePrep(i: number) {
@@ -297,6 +357,53 @@ export default function CookMode({ recipe, onClose }: { recipe: CookRecipe; onCl
               />
             )}
           </div>
+
+          {/* Cooked prompt (meal planner §7.1) — same overlay grammar as Resume. */}
+          {cookPrompt && (
+            <div className="absolute inset-0 z-20 grid place-content-center bg-background/85 p-6 backdrop-blur-sm">
+              {/* Focus moves to the card itself, not to a button: the cook's
+                  focus is still on "Finish" behind the overlay otherwise, and
+                  the heading is what has to be read first. A `useCallback` ref
+                  rather than `autoFocus` (a11y lint) or an effect — it fires
+                  once, on mount, and not on every checkbox toggle. */}
+              <div
+                ref={focusCookPrompt}
+                tabIndex={-1}
+                role="group"
+                aria-label="Mark as cooked"
+                className="flex w-full max-w-sm flex-col gap-3 rounded-xl border-2 border-border bg-card p-5 shadow-pop-md outline-none"
+              >
+                <h2 className="display-title m-0 text-xl text-foreground">
+                  {cookPrompt.length === 1 ? `Mark ${SLOT_LABELS[cookPrompt[0].slot].toLowerCase()} as cooked?` : "Mark these as cooked?"}
+                </h2>
+                <p className="m-0 text-sm text-muted-foreground">
+                  {cookPrompt.length === 1 ? "This recipe is on today's plan." : "This recipe is on today's plan more than once. Pick the ones you just cooked."}
+                </p>
+                {cookPrompt.length > 1 && (
+                  <div className="flex flex-col gap-1.5">
+                    {cookPrompt.map((candidate) => (
+                      <CheckboxRow
+                        key={candidate.entryId}
+                        size="sm"
+                        checked={cookPromptPicked.includes(candidate.entryId)}
+                        onCheckedChange={(checked) => setCookPromptPicked((picked) => (checked ? [...picked, candidate.entryId] : picked.filter((id) => id !== candidate.entryId)))}
+                      >
+                        {SLOT_LABELS[candidate.slot]}
+                      </CheckboxRow>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-1 flex justify-end gap-2">
+                  <Button variant="outline" onClick={dismissCookPrompt}>
+                    Not this time
+                  </Button>
+                  <Button disabled={cookPromptPicked.length === 0} onClick={confirmCookPrompt}>
+                    Mark cooked
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Resume prompt (plan §9.2) */}
           {resume === "pending" && saved && (

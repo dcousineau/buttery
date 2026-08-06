@@ -13,6 +13,7 @@
     "start": "pnpm --filter @buttery/web start",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:db": "pnpm --filter @buttery/web test:db",
     "lint": "eslint .",
     "format": "prettier --write .",
     "prepare": "husky"

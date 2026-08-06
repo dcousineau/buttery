@@ -108,6 +108,34 @@ export async function readHouseholdPreferences(householdId: string): Promise<Hou
   };
 }
 
+/**
+ * Upsert the row behind `updateHouseholdPreferences`, WITHOUT the session round
+ * trip. Same contract as `readHouseholdPreferences`: authorization belongs to
+ * the caller, which is why the household id is explicit and this is not exposed
+ * to the client.
+ *
+ * This is where §3.1's lazy materialisation actually happens: no row exists
+ * until someone saves a preference, and then exactly one does.
+ */
+export async function writeHouseholdPreferences(householdId: string, prefs: HouseholdPreferences): Promise<HouseholdPreferences> {
+  const { getDb } = await import("#/lib/db");
+  const { sql } = await import("kysely");
+
+  await getDb()
+    .insertInto("household_preference")
+    .values({ household_id: householdId, week_start_day: prefs.weekStartDay, timezone: prefs.timezone })
+    .onConflict((oc) =>
+      oc.column("household_id").doUpdateSet({
+        week_start_day: prefs.weekStartDay,
+        timezone: prefs.timezone,
+        updated_at: sql`now()`,
+      }),
+    )
+    .execute();
+
+  return { weekStartDay: prefs.weekStartDay, timezone: prefs.timezone };
+}
+
 // --- §6.11 server functions ---------------------------------------------
 
 /**
@@ -132,23 +160,8 @@ export const getHouseholdPreferences = createServerFn({ method: "GET" }).handler
 export const updateHouseholdPreferences = createServerFn({ method: "POST" })
   .validator((data: unknown) => updateInput.parse(data))
   .handler(async ({ data }): Promise<HouseholdPreferences> => {
-    const { getDb } = await import("#/lib/db");
-    const { sql } = await import("kysely");
     const { assertMember } = await import("../authz");
     const { did, householdId } = await activeContext();
     await assertMember(did, householdId);
-
-    await getDb()
-      .insertInto("household_preference")
-      .values({ household_id: householdId, week_start_day: data.weekStartDay, timezone: data.timezone })
-      .onConflict((oc) =>
-        oc.column("household_id").doUpdateSet({
-          week_start_day: data.weekStartDay,
-          timezone: data.timezone,
-          updated_at: sql`now()`,
-        }),
-      )
-      .execute();
-
-    return { weekStartDay: data.weekStartDay, timezone: data.timezone };
+    return writeHouseholdPreferences(householdId, data);
   });

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { ClientOnly } from "@tanstack/react-router";
 import { usePostHog } from "@posthog/react";
 import { CookingPot } from "lucide-react";
@@ -27,13 +27,31 @@ function CookModeFallback() {
   );
 }
 
-export function CookModeLauncher({ recipe }: { recipe: CookRecipe }) {
+/**
+ * `autoOpen` is the `?cook=1` deep link (meal planner §7.5): the planner's
+ * "Start cook mode" sends someone straight from a plan card into the apron, with
+ * no stop on the recipe page. It is the mount-time value only — the route drops
+ * the param when cook mode closes (`onAutoOpenConsumed`), so closing does not
+ * immediately re-open, and a reload after that lands on the plain recipe.
+ */
+export function CookModeLauncher({ recipe, autoOpen = false, onAutoOpenConsumed }: { recipe: CookRecipe; autoOpen?: boolean; onAutoOpenConsumed?: () => void }) {
   const posthog = usePostHog();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
+
+  // The button path captures on the gesture; a deep link has no gesture to hang
+  // it on, so it is captured on mount with the source recorded.
+  useEffect(() => {
+    if (autoOpen) posthog.capture("cook_mode_opened", { recipe_id: recipe.recipeId, source: "deep_link" });
+  }, [autoOpen, posthog, recipe.recipeId]);
 
   function openCookMode() {
-    posthog.capture("cook_mode_opened", { recipe_id: recipe.recipeId });
+    posthog.capture("cook_mode_opened", { recipe_id: recipe.recipeId, source: "button" });
     setOpen(true);
+  }
+
+  function closeCookMode() {
+    setOpen(false);
+    onAutoOpenConsumed?.();
   }
 
   return (
@@ -45,7 +63,7 @@ export function CookModeLauncher({ recipe }: { recipe: CookRecipe }) {
       {open && (
         <ClientOnly fallback={<CookModeFallback />}>
           <Suspense fallback={<CookModeFallback />}>
-            <CookMode recipe={recipe} onClose={() => setOpen(false)} />
+            <CookMode recipe={recipe} onClose={closeCookMode} />
           </Suspense>
         </ClientOnly>
       )}

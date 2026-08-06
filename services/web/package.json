@@ -13,6 +13,7 @@
     "start": "srvx --prod --entry dist/server/server.js --static ../client",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:db": "railway run --service buttery -- vitest run --project db",
     "db:migrate:up": "kysely migrate latest",
     "db:migrate:down": "kysely migrate down",
     "db:migrate:new": "kysely migrate make",
