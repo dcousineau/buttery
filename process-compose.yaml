@@ -6,14 +6,31 @@
 # `railway run --service atproto-cron-sync -- pnpm --filter=@buttery/atproto-cron-sync sync:once`.
 #
 # Humans: `pnpm dev` for the TUI (arrow keys to switch process, F5 restart,
-# F10 quit). Agents: talk to the running instance over its REST API with
-# `process-compose process list`, `… process restart web`, `… process logs web`,
-# or just read the plain-text logs under `.dev-logs/`.
+# F10 quit). Agents: drive the running instance through the `pc_*` MCP tools
+# (see `mcp_server` below); the `process-compose …` CLI and the plain-text logs
+# under `.dev-logs/` remain available for anything the tools don't cover.
 version: "0.5"
 
 # Fail loudly on unknown/misspelled config keys instead of ignoring them.
 is_strict: true
 log_level: info
+
+# MCP server for agents, wired into `.mcp.json` as the `process-compose` server.
+# `expose_control_tools` is what turns on the built-in `pc_*` tools (list, get,
+# logs, logs_search, ports, start/stop/restart, dependency graph, is-ready,
+# project state) — without it the server only serves per-process `mcp:` blocks,
+# of which this project has none.
+#
+# It runs INSIDE the project, so the tools exist only while the stack is up:
+# booting and tearing down the stack itself stay CLI-only (`pnpm dev`,
+# `pnpm dev:down`). Port 8098 sits next to the REST API's 8099 and well clear of
+# the web server's 3000. Transport must be `sse`; the `stdio` alternative would
+# have the MCP client spawn its own process-compose, which breaks the singleton.
+mcp_server:
+  host: localhost
+  port: 8098
+  transport: sse
+  expose_control_tools: true
 
 # Fallback file for any process that doesn't declare its own `log_location`.
 log_location: ./.dev-logs/process-compose.log
@@ -52,12 +69,21 @@ processes:
   # The containers outlive process-compose (they are detached), so each one is
   # surfaced here as its own log stream. Stopping process-compose stops the
   # tails, not the databases — use `railway dev down` for that.
+  #
+  # All three carry `restart: always`, and it has to be `always`: a log tail
+  # that loses its container exits 0, so `on_failure` would read that as a clean
+  # completion and leave the process dead. For `postgres` and `redis` that also
+  # kills the readiness probe `web` depends on, so `web` could never come back.
+  # See the header of scripts/dev/railway-containers.mjs.
   postgres:
     description: "Postgres container logs (railway dev)"
     command: "node scripts/dev/railway-containers.mjs logs postgres"
     depends_on:
       railway-dev:
         condition: process_completed_successfully
+    availability: &container_tail_availability
+      restart: always
+      backoff_seconds: 2
     readiness_probe:
       exec:
         command: "node scripts/dev/railway-containers.mjs ready postgres"
@@ -73,6 +99,7 @@ processes:
     depends_on:
       railway-dev:
         condition: process_completed_successfully
+    availability: *container_tail_availability
     readiness_probe:
       exec:
         command: "node scripts/dev/railway-containers.mjs ready redis"
@@ -88,6 +115,7 @@ processes:
     depends_on:
       railway-dev:
         condition: process_completed_successfully
+    availability: *container_tail_availability
     log_location: ./.dev-logs/railway-proxy.log
     log_configuration: *log_config
 
@@ -109,11 +137,19 @@ processes:
     log_location: ./.dev-logs/migrate.log
     log_configuration: *log_config
 
-  # Isolated PDS + local PLC. In-memory: every restart mints a new did:plc, so
-  # restarting this process means re-signing-in to the app.
+  # Isolated PDS + local PLC. State persists under `.dev-data/atproto/`, so a
+  # restart keeps the same did:plc and the browser session survives. Deleting
+  # that directory mints a new DID and orphans buttery rows keyed to the old one.
   atproto-dev-env:
     description: "Isolated atproto PDS + PLC (localhost:2583 / :2582)"
     command: "pnpm atproto:dev-env"
+    # `web` gates on this being healthy, so a crash that stays down blocks the
+    # app from ever restarting. `max_restarts` bounds it: transient crashes heal,
+    # a genuinely broken config gives up instead of looping forever.
+    availability: &app_availability
+      restart: on_failure
+      backoff_seconds: 3
+      max_restarts: 5
     readiness_probe:
       http_get:
         host: 127.0.0.1
@@ -143,6 +179,7 @@ processes:
         condition: process_healthy
       atproto-dev-env:
         condition: process_healthy
+    availability: *app_availability
     readiness_probe:
       http_get:
         host: 127.0.0.1

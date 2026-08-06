@@ -26,7 +26,7 @@ pnpm dev
 
 `pnpm dev` supervises the whole stack — Railway dev containers, migrations, the atproto dev-env, and the web server — as one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project. In its TUI: arrow keys select a process, `F5` restarts it, `F10` quits.
 
-Drive the same running stack from another terminal (or an agent):
+Drive the same running stack from another terminal:
 
 ```bash
 pnpm dev:attach                    # attach the TUI to the running stack
@@ -36,6 +36,8 @@ process-compose process list       # status + health of every process
 process-compose process logs web   # or grep .dev-logs/<process>.log
 process-compose process restart web
 ```
+
+Agents should use the `pc_*` MCP tools instead — the running stack serves them from `localhost:8098`, registered as the `process-compose` server in `.mcp.json` (copy `.mcp.json.example` if you don't have one).
 
 Run a one-off command against the dev services:
 

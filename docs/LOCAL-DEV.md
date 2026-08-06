@@ -6,9 +6,23 @@
 
 Local dev needs several long-lived things running at once — Docker containers, an isolated atproto network, a Vite dev server — and both a human and an agent may want to look at them at the same time. `concurrently` (what this replaced) merged everything into one stdout stream with one lifecycle: no per-process restart, no per-process logs, no readiness ordering.
 
-process-compose gives all three, plus a REST API. That last part is the important one: the stack is a **singleton**, and its state is queryable from outside. A human runs `pnpm dev` and watches the TUI; an agent in a different session runs `process-compose process list` / `… logs web` / `… restart web` against that same instance without stealing the terminal or racing to start a second copy of the app. Running `pnpm dev` twice attaches to the existing project instead of failing on the bound port ([`scripts/dev/up.sh`](../scripts/dev/up.sh)).
+process-compose gives all three, plus a REST API. That last part is the important one: the stack is a **singleton**, and its state is queryable from outside. A human runs `pnpm dev` and watches the TUI; an agent in a different session inspects and restarts individual processes against that same instance without stealing the terminal or racing to start a second copy of the app. Running `pnpm dev` twice attaches to the existing project instead of failing on the bound port ([`scripts/dev/up.sh`](../scripts/dev/up.sh)).
 
 The API port is pinned to `8099` via `PC_PORT_NUM` in `mise.toml` — repo-scoped, so no one has to pass `-p`, and it doesn't collide with the very common 8080 default.
+
+## The MCP server (how agents should drive it)
+
+The `mcp_server:` block in `process-compose.yaml` turns the same singleton into an MCP server on `localhost:8098`, registered as `process-compose` in `.mcp.json`. **Agents should prefer its `pc_*` tools to the CLI**: same REST API underneath, but the results come back as structured JSON instead of a formatted table an agent has to re-parse (and mis-parse) out of a shell.
+
+`expose_control_tools: true` is what enables the built-in tools — `pc_project_state`, `pc_project_is_ready`, `pc_project_dependency_graph`, `pc_process_list`, `pc_process_get`, `pc_process_logs`, `pc_process_logs_search`, `pc_process_logs_truncate`, `pc_process_ports`, `pc_process_start`, `pc_process_stop`, `pc_process_restart`, `pc_process_scale`. Without it the server only serves per-process `mcp:` blocks, and this project defines none.
+
+Three constraints worth knowing:
+
+- **The server is part of the project**, so the tools exist only while the stack is up. Booting and tearing down the stack itself are therefore CLI-only, and an agent that finds the tools unreachable should read that as "the stack is down" and start it.
+- **Transport is `sse`, not `stdio`.** The stdio alternative has the MCP client spawn its own `process-compose`, which is exactly the second copy the singleton design exists to prevent.
+- **Port 8098** sits next to the REST API's 8099 and clear of the web server's 3000 — process-compose's own default for this is 3000, which would collide.
+
+Editing the `mcp_server:` block needs a full project restart (`process-compose down` + `up`) _and_ an MCP client reconnect; a per-process restart reloads nothing.
 
 ## The processes
 
@@ -32,14 +46,32 @@ railway run --service atproto-cron-sync -- pnpm --filter=@buttery/atproto-cron-s
 
 `railway dev up` isn't a supervisable process: it starts a detached docker-compose stack and exits 0. It's also idempotent, so re-running it against a live stack just re-prints the overview. That makes it a natural one-shot gate — every other process depends on it _completing successfully_ rather than staying up.
 
-The containers themselves are then surfaced as three separate process-compose services, each running `docker logs -f` against one container via [`scripts/dev/railway-containers.mjs`](../scripts/dev/railway-containers.mjs). That script also implements the readiness probes. It resolves the docker-compose project name (which is the Railway project id) at runtime from `~/.railway/config.json`, keyed by checkout path — that id is machine-local state and differs per clone, so it must never be hardcoded.
+The containers themselves are then surfaced as three separate process-compose services, each tailing one container via [`scripts/dev/railway-containers.mjs`](../scripts/dev/railway-containers.mjs). That script also implements the readiness probes.
 
-Two consequences worth remembering:
+Everything it does goes through `docker compose -f <generated file>` rather than `docker logs`/`docker exec` against a container name, and that detail is load-bearing — see "Why the tails go through `docker compose`" below.
+
+The generated compose file is the source of truth for ports, credentials, and container naming. It lives at `~/.railway/develop/<project-id>/docker-compose.yml`, where the project id comes from `~/.railway/config.json` keyed by checkout path. That id is machine-local and differs per clone, so it is resolved at runtime and never hardcoded. Two things follow:
+
+- **The compose file must never be committed.** It carries live production credentials — including `DATABASE_PUBLIC_URL` pointing at the real Railway TCP proxy — and it is written `chmod 600`.
+- **It cannot be relocated.** `railway dev up -o <path>` will happily write it elsewhere (and the output is deterministic — regenerating produces a byte-identical file), but `railway-proxy` mounts `./Caddyfile` and `./certs` relative to the compose file, and those siblings are only generated in the canonical directory.
+
+Three consequences worth remembering:
 
 - **Stopping process-compose does not stop the databases.** The containers are detached and outlive it; only the log tails die. `pnpm dev:down` does both (`process-compose down` then `railway dev down`).
 - **`railway dev clean` wipes the Postgres volume.** The next `pnpm dev` re-runs migrations automatically, which is why `migrate` is a boot step rather than a documented manual command.
+- **`railway dev up` can't be supervised in the foreground.** `--no-tui`'s "stream logs to stdout" only applies to _code_ services registered with `railway dev configure`; with none registered it prints the overview and exits after a couple of seconds. That's why it's a one-shot gate and the containers are tailed separately.
 
-Restarting `atproto-dev-env` mints a **new** `did:plc` (the dev-env is in-memory), so any session in the browser needs a fresh sign-in afterwards.
+## Why the tails go through `docker compose`
+
+`docker logs -f` **dies the moment its container restarts, and exits 0**. The containers ship with `restart: on-failure`, so this happens on any crash. Exit 0 means process-compose files the tail as `Completed` rather than failed and leaves it dead — and since `postgres` and `redis` carry the readiness probes `web` gates on (`condition: process_healthy`), a dead tail means the web server can never come back. The container is fine the whole time; only its supervisor thinks otherwise.
+
+`docker compose logs -f <service>` follows the _service_ and reattaches across both container restarts and full recreates, so the tail (and therefore the probe) survives. The probes use `docker compose exec -T` for the same reason: it drops the `<project-id>-<service>-1` container-naming assumption. The extra overhead is ~40ms per probe, against a 2s period.
+
+Belt and braces on top of that, the three tails carry `availability: restart: always`. It has to be `always` — `on_failure` would ignore an exit 0.
+
+The app processes (`atproto-dev-env`, `web`) use `restart: on_failure` with `max_restarts: 5`, so a transient crash heals itself while a genuinely broken config still gives up instead of looping.
+
+Restarting `atproto-dev-env` keeps the **same** `did:plc`: the PDS sqlite, blobstore, and a snapshot of the local PLC log all persist under `.dev-data/atproto/` (gitignored), so browser sessions survive a restart. Deleting that directory mints a new DID and orphans any buttery rows keyed to the old one.
 
 ## Logs
 
@@ -47,9 +79,12 @@ Every process writes a plain-text log to `.dev-logs/<process>.log` (gitignored),
 
 `pnpm dev` wipes `.dev-logs/*.log` on every fresh boot (the start path only — attaching to a live stack leaves them alone), so a tail always shows the current run and nothing older.
 
-Both sources are equivalent; use whichever fits:
+All three sources are equivalent; use whichever fits:
 
-```bash
-process-compose process logs web --tail 50   # via the REST API, works from anywhere
-grep -i error .dev-logs/web.log              # plain file, greppable, survives shutdown
-```
+| Source                                             | Good for                                                                           |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `pc_process_logs` / `pc_process_logs_search` (MCP) | Agents — structured results, and BM25 search across every process's buffer at once |
+| `process-compose process logs web --tail 50`       | Humans at a shell, and agents when the stack's MCP server isn't reachable          |
+| `grep -i error .dev-logs/web.log`                  | Plain file — greppable, and the only source that survives shutdown                 |
+
+Note that the in-memory buffer and the file are separate stores: `pc_process_logs_truncate` (or `process-compose process logs truncate`) empties the buffer only, and the file keeps growing.
