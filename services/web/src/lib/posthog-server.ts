@@ -51,25 +51,39 @@ async function getClient(): Promise<PostHog | null> {
 }
 
 /**
+ * True only when explicitly running dev or test. Unknown/unset `NODE_ENV` is NOT
+ * dev — an allowlist, not `!== "production"`, so a misconfigured production
+ * server can never take a dev-only bypass.
+ */
+function isDevOrTest(): boolean {
+  const env = process.env.NODE_ENV;
+  return env === "development" || env === "test";
+}
+
+/**
  * Whether the person behind `did` is invited (the `invited` flag serves `true`).
  *
  * Fail direction is deliberately closed: when PostHog is configured but the flag
- * is unreachable or undefined, the gate stays up (returns `false`). The single
- * exception is DEV/TEST with no `POSTHOG_PROJECT_TOKEN` — there we return `true`
- * so the app isn't gated locally. Any other environment (production, or an unset
- * `NODE_ENV`) with no token fails CLOSED, so a missing prod token can't silently
- * open the gate to everyone.
+ * is unreachable or undefined, the gate stays up (returns `false`).
+ *
+ * DEV/TEST bypasses the gate entirely and never consults PostHog. Local dev signs
+ * in through the local atproto dev-env (see services/atproto-dev-env), which mints
+ * a brand-new throwaway `did:plc` on every restart — no such DID can be on the
+ * invite list, so honoring the flag would lock every local session behind the
+ * waitlist screen. Note `railway run` DOES inject `POSTHOG_PROJECT_TOKEN` locally,
+ * so a live client is not evidence of production.
+ *
+ * Any other environment (production, or an unset `NODE_ENV`) fails CLOSED, with or
+ * without a token, so a missing prod token can't silently open the gate.
  *
  * `personProperties` (e.g. `{ handle }`) are passed for flag targeting only; they
  * are not persisted here — {@link identify} does the durable person write.
  */
 export async function isInvited(did: string, personProperties?: Record<string, string>): Promise<boolean> {
+  if (isDevOrTest()) return true;
+
   const client = await getClient();
-  if (!client) {
-    // Bypass only when explicitly running dev/test; unknown/unset → fail closed.
-    const env = process.env.NODE_ENV;
-    return env === "development" || env === "test";
-  }
+  if (!client) return false; // configured for prod but no token → fail closed
   try {
     const value = await client.isFeatureEnabled(INVITED_FLAG, did, { personProperties });
     return value === true; // `undefined` (unreachable / missing) fails closed

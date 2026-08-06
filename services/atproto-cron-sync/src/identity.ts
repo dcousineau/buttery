@@ -4,6 +4,13 @@ import { getJson } from "#/http.ts";
 // services/web/src/lib/atproto/recipes.ts `resolvePds` — different package, no
 // shared lib yet (plan §1 step 2). did:plc via plc.directory; did:web via the
 // host's /.well-known/did.json.
+//
+// Local dev: set ATPROTO_PLC_URL (e.g. http://localhost:2582 from
+// services/atproto-dev-env) + SYNC_ONLY_DID to sweep the local dev network
+// instead of the real one. Unset → plc.directory (prod, unchanged).
+
+// Trailing-slash tolerant: plc.directory and dev-env's PLC both accept `/<did>`.
+const PLC_DIRECTORY_URL = (process.env.ATPROTO_PLC_URL ?? "https://plc.directory").replace(/\/+$/, "");
 
 interface DidDocument {
   alsoKnownAs?: string[];
@@ -27,7 +34,7 @@ function handleFromDoc(doc: DidDocument): string | null {
 export async function resolveIdentity(did: string): Promise<ResolvedIdentity> {
   let docUrl: string;
   if (did.startsWith("did:plc:")) {
-    docUrl = `https://plc.directory/${did}`;
+    docUrl = `${PLC_DIRECTORY_URL}/${did}`;
   } else if (did.startsWith("did:web:")) {
     const host = did.slice("did:web:".length).split(":").join("/");
     docUrl = `https://${decodeURIComponent(host)}/.well-known/did.json`;

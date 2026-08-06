@@ -23,6 +23,15 @@ export function getPool(): Pool {
       throw new Error("DATABASE_URL is not set");
     }
     pool = new Pool({ connectionString });
+    // A `pg` Pool with no `error` listener re-throws errors from IDLE clients as
+    // an unhandled 'error' event, which takes the whole process down — not just
+    // the one query. Any server-side connection drop triggers it: a Railway
+    // postgres redeploy in production, `docker restart` on the container in
+    // local dev. The pool discards the broken client on its own and the next
+    // checkout dials a fresh one, so logging is the correct response.
+    pool.on("error", (error) => {
+      console.error("[db] idle client error (pool will reconnect):", error);
+    });
   }
   return pool;
 }

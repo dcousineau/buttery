@@ -9,28 +9,43 @@ The monorepo has two services:
 
 ## Local development
 
-Requires [Docker](https://www.docker.com/) (for the local Postgres) and [mise](https://mise.jdx.dev/), which manages the Node, pnpm, and Railway CLI versions this repo pins in `mise.toml`.
+Requires [Docker](https://www.docker.com/) (for the local Postgres) and [mise](https://mise.jdx.dev/), which manages the Node, pnpm, Railway CLI, and process-compose versions this repo pins in `mise.toml`.
 
 ```bash
 # Install mise (macOS/Linux). See https://mise.jdx.dev/installing-mise.html for other options.
 curl https://mise.run | sh
 
-# Install the pinned toolchain (Node, pnpm, Railway CLI) and run repo setup hooks
+# Install the pinned toolchain (Node, pnpm, Railway CLI, process-compose) and run repo setup hooks
 mise install
 
 pnpm install
 
-# Start local Postgres + inject DATABASE_URL (Railway local emulation)
-railway dev            # `railway dev down` to stop, `railway dev clean` to wipe data
-
-# Run migrations against the dev DB
-railway run --service buttery -- pnpm --filter=@buttery/web db:migrate:up
-
-# Start the app on http://localhost:3000
+# Boot the whole stack on http://127.0.0.1:3000
 pnpm dev
 ```
 
-`railway run --service <svc> --` injects the Railway dev environment (`DATABASE_URL`, atproto credentials, etc.) into the wrapped command.
+`pnpm dev` supervises the whole stack — Railway dev containers, migrations, the atproto dev-env, and the web server — as one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project. In its TUI: arrow keys select a process, `F5` restarts it, `F10` quits.
+
+Drive the same running stack from another terminal:
+
+```bash
+pnpm dev:attach                    # attach the TUI to the running stack
+pnpm dev:down                      # stop the stack and the containers
+
+process-compose process list       # status + health of every process
+process-compose process logs web   # or grep .dev-logs/<process>.log
+process-compose process restart web
+```
+
+Agents should use the `pc_*` MCP tools instead — the running stack serves them from `localhost:8098`, registered as the `process-compose` server in `.mcp.json` (copy `.mcp.json.example` if you don't have one).
+
+Run a one-off command against the dev services:
+
+```bash
+railway run --service buttery -- pnpm --filter=@buttery/web db:migrate:up
+```
+
+See [docs/LOCAL-DEV.md](./docs/LOCAL-DEV.md) for what each process is and how the pieces fit together.
 
 ## Backfill / sync
 

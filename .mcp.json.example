@@ -2,17 +2,7 @@
   "mcpServers": {
     "postgres": {
       "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "--init",
-        "--add-host=host.docker.internal:host-gateway",
-        "-e",
-        "DATABASE_URI",
-        "crystaldba/postgres-mcp",
-        "--access-mode=unrestricted"
-      ],
+      "args": ["run", "-i", "--rm", "--init", "--add-host=host.docker.internal:host-gateway", "-e", "DATABASE_URI", "crystaldba/postgres-mcp", "--access-mode=unrestricted"],
       "env": {
         "DATABASE_URI": "SEE .env.example"
       }
@@ -28,10 +18,12 @@
       "url": "https://mcp.better-auth.com/mcp"
     },
     "railway": {
-      "args": [
-        "mcp"
-      ],
+      "args": ["mcp"],
       "command": "railway"
+    },
+    "process-compose": {
+      "type": "sse",
+      "url": "http://localhost:8098/sse"
     }
   }
 }
