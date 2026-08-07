@@ -112,7 +112,8 @@ Principles carried from the research doc:
 All timestamps `timestamptz`. IDs are **ULID** stored as `text`. `snake_case`
 tables. These enter the existing web Kysely migration pipeline (`services/web/src/db/migrations/`,
 epoch-ms-prefixed filename, `up`/`down`, `Kysely<any>`), as one new migration
-whose timestamp is greater than `1785300000000`. After the migration, regenerate
+scaffolded with `pnpm --filter @buttery/web db:migrate:new <name>` (§13 — never
+hand-name the file). After the migration, regenerate
 `services/web/src/db/types.ts` via `kysely-codegen` — do not hand-edit it.
 
 ### 3.1 `household`
@@ -507,9 +508,14 @@ foundation.
 
 ## 13. Migration & naming notes
 
-- One new migration file in `services/web/src/db/migrations/`, epoch-ms prefix
-  **greater than** `1785300000000`, `snake_case` descriptive suffix (e.g.
-  `<ts>_create_household_tables.ts`). `up`/`down`, `Kysely<any>`, schema builder;
+- One new migration file in `services/web/src/db/migrations/`, scaffolded with
+  **`pnpm --filter @buttery/web db:migrate:new create_household_tables`** — never
+  hand-name the file. kysely-ctl stamps the epoch-ms prefix from `Date.now()`; a
+  hand-picked number drifts ahead of the wall clock and makes the next
+  CLI-generated migration sort _before_ an already-applied one, which Kysely
+  rejects as corrupted. `migrate make` opens no connection, so it works with no
+  database running. Then fill in the generated
+  `up`/`down`, `Kysely<any>`, schema builder;
   raw `sql` only for defaults/partial indexes, matching
   `1785110816625_create_sync_index.ts` style.
 - The migration docstring must state: **these tables are Buttery-private, never

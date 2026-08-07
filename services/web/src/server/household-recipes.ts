@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { blobImageUrl } from "#/lib/atproto/images";
+import type { PlannedUsage } from "./meal-plan";
 import { type RecipeSource, deriveSource, prettify } from "./recipe-provenance";
 
 /**
@@ -77,6 +78,13 @@ export interface HouseholdRecipeDetail {
   unavailableSince: string | null;
   /** A local draft/private recipe with no atproto record yet (publishable). */
   unpublished: boolean;
+  /**
+   * Whether (and when next) this recipe is on the household's meal plan, so the
+   * remove-from-box flow can warn without a second round trip (plan §7.2 / D8).
+   * Nullable so a caller must guard: the field is absent-shaped for any payload
+   * built before the planner shipped.
+   */
+  plannedUsage: PlannedUsage | null;
 }
 
 /** One picker result (global public search, excludes already-boxed). */
@@ -274,7 +282,14 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
       .executeTakeFirst();
     if (!row) return null; // RESTRICT FK means this should never happen for a boxed recipe.
 
-    const [images, pendingImage, ingredients, instructions, keywords, note, adder] = await Promise.all([
+    // §7.2: the planner's "is this planned?" read rides along in the same batch
+    // as the rest of the detail payload, so the remove flow costs no extra
+    // round trip. `readPlannedUsage` is the planner's own query — never a
+    // second copy of it here — and it is safe to call after the box row above
+    // has already authorized this household + recipe pair.
+    const { readPlannedUsage } = await import("./meal-plan");
+
+    const [images, pendingImage, ingredients, instructions, keywords, note, adder, plannedUsage] = await Promise.all([
       db.selectFrom("recipe_image").select(["blob_cid", "blob_mime", "alt"]).where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
       // Draft/private hero fallback: a not-yet-published import keeps its photo as
       // a pending pointer (recipe_pending_image). No published recipe_image row
@@ -286,6 +301,7 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
       db.selectFrom("recipe_keyword").select("keyword").where("recipe_id", "=", data.recipeId).execute(),
       db.selectFrom("household_recipe_note").select(["body", "updated_at"]).where("household_id", "=", householdId).where("recipe_id", "=", data.recipeId).executeTakeFirst(),
       db.selectFrom("atproto_repo").select("handle").where("did", "=", boxed.added_by_did).executeTakeFirst(),
+      readPlannedUsage(db, householdId, data.recipeId),
     ]);
 
     const { minutes, display } = minutesDisplay(row.total_time_seconds);
@@ -335,6 +351,7 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
       unavailable,
       unavailableSince: row.acr_deleted_at ? new Date(row.acr_deleted_at).toISOString() : null,
       unpublished: row.visibility !== "public" || row.uri == null,
+      plannedUsage,
     };
   });
 
@@ -369,7 +386,14 @@ export const addRecipeToHousehold = createServerFn({ method: "POST" })
 
 // --- §6.4 removeRecipeFromHousehold -------------------------------------
 
-/** Remove a recipe from the box (cascades its shared note). Idempotent. */
+/**
+ * Remove a recipe from the box (cascades its shared note). Idempotent.
+ *
+ * Never blocked by the meal plan (D8/§7.2): `meal_plan_entry.recipe_id` is FK'd
+ * to `recipe`, not to `household_recipe`, so unlinking the box row cannot hit
+ * that `ON DELETE RESTRICT` — the plan entry keeps rendering, now with
+ * `inBox: false`. The warning is a UI courtesy (`DetailPane`), not a gate.
+ */
 export const removeRecipeFromHousehold = createServerFn({ method: "POST" })
   .validator((data: { recipeId: string }) => ({ recipeId: validateRecipeId(data?.recipeId) }))
   .handler(async ({ data }): Promise<{ ok: true }> => {

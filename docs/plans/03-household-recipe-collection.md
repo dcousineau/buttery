@@ -208,7 +208,13 @@ other reasons.
 
 ### 3.5 Migration
 
-One new file `services/web/src/db/migrations/<epoch-ms>_create_household_recipe_tables.ts`,
+One new file under `services/web/src/db/migrations/`, scaffolded with
+**`pnpm --filter @buttery/web db:migrate:new create_household_recipe_tables`** —
+never hand-name a migration file. kysely-ctl stamps the epoch-ms prefix from
+`Date.now()`; a hand-picked number drifts ahead of the wall clock and makes the
+next CLI-generated migration sort _before_ an already-applied one, which Kysely
+rejects as corrupted. `migrate make` opens no connection, so it works with no
+database running. Fill in the generated file
 following the existing conventions (frozen `Kysely<any>`, `snake_case`,
 `sql\`now()\``defaults, explicit`down` in reverse order). Web owns the DDL.
 
@@ -542,8 +548,8 @@ Unit tests cover each form + each conversion + the pass-through cases.
 
 ## 11. File plan
 
-- `services/web/src/db/migrations/<epoch>_create_household_recipe_tables.ts` —
-  the two tables (§3).
+- `services/web/src/db/migrations/<cli-stamped>_create_household_recipe_tables.ts` —
+  the two tables (§3). Created by `pnpm --filter @buttery/web db:migrate:new`, not by hand (§3.5).
 - `services/web/src/db/types.ts` — regenerate / add `HouseholdRecipe`,
   `HouseholdRecipeNote` to the `DB` interface (per the repo's Kysely codegen
   convention).

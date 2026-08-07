@@ -48,7 +48,13 @@ function PantryPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col items-start gap-4">
-            <p className="m-0 text-sm text-muted-foreground">Once recipes, collections, and the meal planner are live, this page will pull them together at a glance.</p>
+            <p className="m-0 text-sm text-muted-foreground">
+              Once recipes, collections, and the{" "}
+              <Link to="/plan" className="font-semibold text-foreground underline underline-offset-2">
+                meal planner
+              </Link>{" "}
+              are live, this page will pull them together at a glance.
+            </p>
             <Button variant="outline" render={<Link to="/households" />} nativeButton={false}>
               <Settings2 data-icon="inline-start" aria-hidden="true" />
               Manage household

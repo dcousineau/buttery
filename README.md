@@ -45,6 +45,15 @@ Run a one-off command against the dev services:
 railway run --service buttery -- pnpm --filter=@buttery/web db:migrate:up
 ```
 
+Run the tests:
+
+```bash
+pnpm test        # unit tests; needs nothing running
+pnpm test:db     # *.db.test.ts integration suites against the dev Postgres (stack must be up)
+```
+
+`pnpm test` skips the DB suites when there is no database rather than failing.
+
 See [docs/LOCAL-DEV.md](./docs/LOCAL-DEV.md) for what each process is and how the pieces fit together.
 
 ## Backfill / sync

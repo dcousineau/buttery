@@ -161,8 +161,24 @@
   --shadow-pop-md: 4px 4px 0 var(--shadow-hard);
   --shadow-pop-lg: 6px 6px 0 var(--shadow-hard);
 
-  /* Toast viewport sits above dialogs (z-50) so a confirmation is never buried. */
-  --z-toast: 60;
+  /*
+   * STACKING LAYERS — the app's whole z-index story, in one place.
+   *
+   * Nothing that overlays the page may hardcode a number: use `z-(--z-modal)`
+   * and friends, so "is this above that?" is answered by reading two names
+   * rather than by grepping for magic integers. Values are spaced by 10 to
+   * leave room for a layer nobody has needed yet.
+   *
+   * Intra-component stacking (a sidebar rail over its own content, a cook-mode
+   * step over its own backdrop) is NOT part of this scale — those are local
+   * `z-10`/`z-20` inside an isolated context and mean nothing globally.
+   */
+  --z-sticky: 50; /* the header — page furniture that outranks page content */
+  --z-modal: 50; /* dialogs, sheets, and their backdrops */
+  --z-toast: 60; /* above modals, so a confirmation is never buried by the thing that produced it */
+  --z-popover: 70; /* popovers, dropdown menus, tooltips — opened by a pointer and being aimed at RIGHT NOW, so an arriving toast must never land on one and eat the click */
+  --z-takeover: 80; /* cook mode — a whole-screen mode change, outranks everything by definition */
+  --z-skip-link: 90; /* the keyboard escape hatch; visible only on focus, and nothing may cover it */
 }
 
 @layer base {

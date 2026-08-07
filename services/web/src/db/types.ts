@@ -129,6 +129,14 @@ export interface HouseholdMember {
   tombstoned: Generated<boolean>;
 }
 
+export interface HouseholdPreference {
+  created_at: Generated<Timestamp>;
+  household_id: string;
+  timezone: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  week_start_day: Generated<number>;
+}
+
 export interface HouseholdRecipe {
   added_at: Generated<Timestamp>;
   added_by_did: string;
@@ -144,6 +152,23 @@ export interface HouseholdRecipeNote {
   created_at: Generated<Timestamp>;
   household_id: string;
   recipe_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface MealPlanEntry {
+  body: string | null;
+  cooked_at: Timestamp | null;
+  cooked_by_did: string | null;
+  created_at: Generated<Timestamp>;
+  created_by_did: string;
+  deleted_at: Timestamp | null;
+  household_id: string;
+  id: string;
+  kind: string;
+  plan_date: Timestamp;
+  position: number;
+  recipe_id: string | null;
+  slot: string;
   updated_at: Generated<Timestamp>;
 }
 
@@ -316,8 +341,10 @@ export interface DB {
   household: Household;
   household_invite: HouseholdInvite;
   household_member: HouseholdMember;
+  household_preference: HouseholdPreference;
   household_recipe: HouseholdRecipe;
   household_recipe_note: HouseholdRecipeNote;
+  meal_plan_entry: MealPlanEntry;
   recipe: Recipe;
   recipe_attribution: RecipeAttribution;
   recipe_fetch_cache: RecipeFetchCache;

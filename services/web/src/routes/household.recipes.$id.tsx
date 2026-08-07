@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, UtensilsCrossed } from "lucide-react";
+import * as z from "zod";
 import { getHouseholdRecipe } from "#/server/household-recipes";
 import { Button } from "#/components/ui/button";
 import { DetailPane } from "#/components/recipes/DetailPane";
@@ -9,18 +10,58 @@ import { DetailPane } from "#/components/recipes/DetailPane";
  * on desktop and full-screen on mobile. Authorization is box membership (not
  * `visibility='public'`), so it can render a recipe whose source has since gone
  * unavailable, from cache. Deep-linkable and readable (path-based, not a query).
+ *
+ * `?cook` opens cook mode immediately (meal planner §7.5). Nothing inside the
+ * app points here any more — the planner opens the apron over the week instead —
+ * but the URL is the app's only way to link straight into cook mode from
+ * outside, so it stays. It is `.catch()`-guarded like every other search param
+ * in the app: a mangled value renders the plain page rather than throwing a
+ * route error.
+ *
+ * Bare `?cook` is the form to hand out — a flag that is either present or not,
+ * with no value to get wrong. The union accepts the spelt-out variants too,
+ * because a link written by hand is as likely to say `=1` or `=true`, and each
+ * costs one member.
+ *
+ * Every member is a shape the router can actually hand us. Search values are
+ * decoded and then JSON-parsed, so bare `?cook` arrives as `""`, `?cook=1` as
+ * the number `1`, `?cook=true` as `true` — and a union that missed one would
+ * silently drop it (and, because the parsed search is what the URL is rebuilt
+ * from, quietly strip the param too). That rebuild is also why the address bar
+ * shows `?cook=true` for a moment on any of the spellings before the param is
+ * consumed: search is re-serialized from the parsed value, not echoed back.
  */
+const searchSchema = z.object({
+  cook: z
+    .union([z.boolean(), z.literal(""), z.literal(1), z.literal("1"), z.literal("true")])
+    .transform((value) => value !== false)
+    .optional()
+    .catch(undefined),
+});
+
 export const Route = createFileRoute("/household/recipes/$id")({
+  validateSearch: searchSchema,
   loader: ({ params }) => getHouseholdRecipe({ data: { recipeId: params.id } }),
   component: RecipeDetailRoute,
 });
 
 function RecipeDetailRoute() {
   const recipe = Route.useLoaderData();
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
   if (!recipe) return <NotInBox />;
   // Key by recipeId so switching recipes remounts the pane (resets favorite,
   // scroll, and the note editor without any setState-in-effect).
-  return <DetailPane key={recipe.recipeId} recipe={recipe} />;
+  return (
+    <DetailPane
+      key={recipe.recipeId}
+      recipe={recipe}
+      autoOpenCook={search.cook === true}
+      // Drop the param once cook mode has been closed, so the deep link is
+      // consumed exactly once and a reload does not re-enter the apron.
+      onCookModeClosed={() => void navigate({ search: (prev) => ({ ...prev, cook: undefined }), replace: true })}
+    />
+  );
 }
 
 function NotInBox() {

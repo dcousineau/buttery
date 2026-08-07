@@ -2,16 +2,14 @@ import { createContext, useContext } from "react";
 
 /**
  * View state shared across the recipes master–detail while the ledger stays
- * mounted (plan §5.3). `factor`/`metric` are ephemeral reading prefs shared
- * across recipes for the session (not per recipe, not persisted); `openPicker`
- * and `pushToast` are lifted so the detail pane's "Add" / stub buttons drive the
- * shell's global picker and toast queue.
+ * mounted (plan §5.3): `openPicker`, `openAddChooser` and `pushToast` are lifted
+ * so the detail pane's "Add" / stub buttons drive the shell's global picker and
+ * toast queue.
+ *
+ * Everything here needs the shell to exist. Reading prefs (scale factor, metric)
+ * do not, so they live in `RecipeScaleContext` instead — see `./scale`.
  */
 export interface RecipesView {
-  factor: number;
-  setFactor: (n: number) => void;
-  metric: boolean;
-  setMetric: (b: boolean) => void;
   /** Open the "Add a recipe" chooser modal (the primary "Add" affordance). */
   openAddChooser: () => void;
   /** Open the global recipe picker directly (the chooser's "existing" branch). */

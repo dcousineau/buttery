@@ -12,7 +12,8 @@ import { cn } from "#/lib/utils.ts";
  * the shopping list"). Form validation stays inline next to the field as a
  * role="alert" paragraph — do not move it into a toast.
  *
- * Sits at z-60, above dialogs (z-50), so a confirmation is never buried.
+ * Sits on the `--z-toast` layer: above dialogs, below popovers and menus. The
+ * whole scale, and the reasoning for that order, is in `styles.css`.
  */
 
 const toastVariants = cva("pointer-events-auto flex items-start gap-2.5 border-2 border-border shadow-pop-md motion-safe:animate-[rise-in_150ms_cubic-bezier(0.16,1,0.3,1)_both]", {
@@ -38,7 +39,7 @@ function ToastViewport({ className, position = "bottom-right", ...props }: React
       data-position={position}
       aria-live="polite"
       className={cn(
-        "pointer-events-none fixed z-[60] flex w-[min(24rem,100vw)] flex-col gap-2 p-4",
+        "pointer-events-none fixed z-(--z-toast) flex w-[min(24rem,100vw)] flex-col gap-2 p-4",
         position === "bottom-right" && "right-0 bottom-0",
         position === "bottom-center" && "bottom-0 left-1/2 -translate-x-1/2",
         position === "top-right" && "top-0 right-0",

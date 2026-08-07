@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import { authClient } from "../lib/auth-client";
-import ButterStick from "./ButterStick";
 import HouseholdSwitcher from "./HouseholdSwitcher";
 import UserMenu from "./UserMenu";
 import { HeaderTimerIndicator } from "./timers/HeaderTimerIndicator";
@@ -13,8 +12,9 @@ import type { ReactNode, Ref } from "react";
 function Wordmark() {
   const { data: session } = authClient.useSession();
   return (
-    <Link to={session ? "/pantry" : "/"} className="flex items-center gap-2 text-foreground no-underline">
-      <ButterStick className="h-6 w-auto" />
+    // `shrink-0` + `nowrap`: on a 390px phone the switcher and menus squeeze
+    // this down until the wordmark breaks mid-word ("Butter / y").
+    <Link to={session ? "/pantry" : "/"} className="flex shrink-0 items-center whitespace-nowrap text-foreground no-underline">
       <span className="display-title text-lg leading-none">Buttery</span>
     </Link>
   );
@@ -34,13 +34,13 @@ export default function Header({ ref, leftSlot, hidden = false }: { ref?: Ref<HT
     <header
       ref={ref}
       data-hidden={hidden || undefined}
-      className="fixed inset-x-0 top-0 z-50 border-b-2 border-border bg-background transition-transform duration-200 ease-linear data-[hidden]:-translate-y-full"
+      className="fixed inset-x-0 top-0 z-(--z-sticky) border-b-2 border-border bg-background transition-transform duration-200 ease-linear data-[hidden]:-translate-y-full"
     >
       <div className="flex items-center gap-2 px-3 py-2.5 sm:px-5">
         {leftSlot}
         <Wordmark />
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex min-w-0 items-center gap-2">
           <HeaderTimerIndicator />
           <HouseholdSwitcher />
           <UserMenu />

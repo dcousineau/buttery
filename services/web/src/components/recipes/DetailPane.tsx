@@ -8,9 +8,13 @@ import { publishRecipe } from "#/server/recipes-write";
 import { Button } from "#/components/ui/button";
 import { Textarea } from "#/components/ui/textarea";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
+import { AddToPlanDialog, type AddToPlanRequest } from "#/components/plan/AddToPlanDialog";
+import { SLOT_LABELS, formatPlanDate, shortDow } from "#/lib/plan/labels";
+import type { MealSlot, PlanDate } from "#/lib/plan/week";
 import { scaleIngredients } from "#/lib/recipe-scale";
 import { cn } from "#/lib/utils";
 import { useRecipesView } from "./context";
+import { useRecipeScale } from "./scale";
 import { SourceIcon } from "./SourceIcon";
 import { ScalePanel } from "./ScalePanel";
 import { NutritionStrip } from "./NutritionStrip";
@@ -26,10 +30,20 @@ import { RecipeTimerStrip } from "#/components/timers/RecipeTimerStrip";
  * settings are ephemeral reading prefs. Apron / shopping / planner are stubbed
  * (toast, no persistence) — seams for projects 04/05/06 (plan §7).
  */
-export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
+export function DetailPane({
+  recipe,
+  autoOpenCook = false,
+  onCookModeClosed,
+}: {
+  recipe: HouseholdRecipeDetail;
+  /** `?cook` — the external deep link straight into cook mode (meal planner §7.5). */
+  autoOpenCook?: boolean;
+  onCookModeClosed?: () => void;
+}) {
   const router = useRouter();
   const posthog = usePostHog();
-  const { factor, setFactor, metric, setMetric, pushToast } = useRecipesView();
+  const { pushToast } = useRecipesView();
+  const { factor, setFactor, metric, setMetric } = useRecipeScale();
   const scrollRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
 
@@ -48,6 +62,7 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
   const [removing, setRemoving] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [planRequest, setPlanRequest] = useState<AddToPlanRequest | null>(null);
 
   // Detail-pane state (favorite, scroll position, note) is keyed by recipeId at
   // the render site (`<DetailPane key={recipe.recipeId} …/>`), so switching
@@ -60,6 +75,14 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
 
   const scaleActive = factor !== 1 || metric;
   const scaleLabel = scaleActive ? `${factor}× · ${metric ? "metric" : "US"}` : "Scale & convert";
+
+  // §7.2 (D8): removing a planned recipe is allowed, never blocked — the plan
+  // entry points at the rendered `recipe` row, not at the box row, so it keeps
+  // rendering and linking out. Warn only when a meal is still ahead; a recipe
+  // that was only ever planned in the past needs no extra ceremony.
+  const planned = recipe.plannedUsage;
+  const plannedAhead = (planned?.upcoming ?? 0) > 0;
+  const nextPlannedLabel = planned?.nextDate ? `${shortDow(planned.nextDate)}, ${formatPlanDate(planned.nextDate)}` : null;
 
   async function onFavorite() {
     setFavorite((v) => !v);
@@ -92,11 +115,19 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
     }
   }
 
+  async function onPlanned(date: PlanDate, slot: MealSlot) {
+    posthog.capture("meal_plan_entry_added", { recipe_id: recipe.recipeId, slot, source: "recipe_detail" });
+    pushToast(`Added to ${SLOT_LABELS[slot].toLowerCase()} on ${formatPlanDate(date)}`);
+    // The pane's own "on your meal plan" line comes from the loader's
+    // `plannedUsage`, so it is stale the moment this lands.
+    await router.invalidate();
+  }
+
   async function onRemove() {
     setRemoving(true);
     try {
       await removeRecipeFromHousehold({ data: { recipeId: recipe.recipeId } });
-      posthog.capture("recipe_removed_from_household", { recipe_id: recipe.recipeId });
+      posthog.capture("recipe_removed_from_household", { recipe_id: recipe.recipeId, planned_upcoming: planned?.upcoming ?? 0 });
       await router.navigate({ to: "/household/recipes" });
       await router.invalidate();
     } finally {
@@ -165,7 +196,7 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
 
         {/* Action row */}
         <div className="flex flex-wrap items-center gap-2">
-          <CookModeLauncher recipe={recipe} />
+          <CookModeLauncher recipe={recipe} autoOpen={autoOpenCook} onAutoOpenConsumed={onCookModeClosed} />
           <Button
             variant="outline"
             aria-pressed={favorite}
@@ -180,7 +211,7 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
             <ShoppingBasket data-icon="inline-start" aria-hidden="true" />
             Add to shopping list
           </Button>
-          <Button variant="outline" onClick={() => pushToast("Added to this week's plan")}>
+          <Button variant="outline" onClick={() => setPlanRequest({ recipeId: recipe.recipeId, title: recipe.title })}>
             <CalendarRange data-icon="inline-start" aria-hidden="true" />
             Add to meal planner
           </Button>
@@ -298,12 +329,24 @@ export function DetailPane({ recipe }: { recipe: HouseholdRecipeDetail }) {
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
         title="Remove from the box?"
-        description="This removes the recipe from your household's shelf and deletes its shared note. The recipe stays in the public collection."
+        description={
+          plannedAhead ? (
+            <>
+              This removes the recipe from your household's shelf and deletes its shared note. The recipe stays in the public collection.{" "}
+              <strong className="font-semibold text-foreground">This recipe is on your meal plan{nextPlannedLabel ? ` (next: ${nextPlannedLabel})` : ""}.</strong> Your meal plan
+              will keep working — the recipe stays viewable and linked. Remove it from your box anyway?
+            </>
+          ) : (
+            "This removes the recipe from your household's shelf and deletes its shared note. The recipe stays in the public collection."
+          )
+        }
         confirmLabel="Remove"
         destructive
         pending={removing}
         onConfirm={onRemove}
       />
+
+      <AddToPlanDialog request={planRequest} onClose={() => setPlanRequest(null)} onAdded={onPlanned} />
     </div>
   );
 }

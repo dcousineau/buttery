@@ -123,8 +123,10 @@ present it re-derives `attributionWebsite` server-side.
 ### A1. Dependencies & DB
 
 - Add `@tanstack/react-form` to `services/web/package.json`.
-- New migration in `services/web/src/db/migrations/` (follow the existing
-  `1785…_*.ts` timestamped style, see memory: Kysely conventions):
+- New migration in `services/web/src/db/migrations/`, scaffolded with
+  `pnpm --filter @buttery/web db:migrate:new <snake_case_name>` — never hand-name
+  the file; the CLI stamps the epoch-ms prefix from `Date.now()`. Then fill in the
+  generated `up`/`down` following the existing style (see memory: Kysely conventions):
   - Allow local recipes into the box: add a server path (or relax the
     `visibility='public'` guard) so `household_recipe` accepts an `origin='local'`
     recipe. Keep the public-only rule on the _link-existing_ flow

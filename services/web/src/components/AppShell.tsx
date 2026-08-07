@@ -16,17 +16,18 @@ function isNavless(pathname: string): boolean {
 }
 
 /** Fixed-height, non-scrolling application views (the `/household/*` surfaces,
- * e.g. the recipes master–detail). They keep the sidebar but drop the marketing
- * footer and pin `main` to the viewport so only the inner panes scroll. */
+ * e.g. the recipes master–detail, and the meal planner). They keep the sidebar
+ * but drop the marketing footer and pin `main` to the viewport so only the inner
+ * panes scroll. */
 function isAppView(pathname: string): boolean {
-  return pathname.startsWith("/household/");
+  return pathname.startsWith("/household/") || pathname === "/plan";
 }
 
 function SkipLink() {
   return (
     <a
       href="#main-content"
-      className="sr-only rounded-lg border-2 border-border bg-card px-4 py-2 font-semibold text-foreground shadow-pop focus-visible:not-sr-only focus-visible:fixed focus-visible:top-3 focus-visible:left-3 focus-visible:z-[60]"
+      className="sr-only rounded-lg border-2 border-border bg-card px-4 py-2 font-semibold text-foreground shadow-pop focus-visible:not-sr-only focus-visible:fixed focus-visible:top-3 focus-visible:left-3 focus-visible:z-(--z-skip-link)"
     >
       Skip to main content
     </a>
