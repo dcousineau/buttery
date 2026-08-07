@@ -56,7 +56,7 @@ function App() {
       <section id="features" className="mt-16">
         <h2 className="display-title m-0 text-2xl text-foreground sm:text-3xl">Stocking the pantry</h2>
         <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
-          Buttery is still under development — these are the features we&rsquo;re planning. Some are further along than others; here&rsquo;s where we&rsquo;re headed.
+          Buttery is still under development. Some of this is already on the shelf and ready to use; the rest is where we&rsquo;re headed.
         </p>
         <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           <FeatureCard
@@ -68,13 +68,13 @@ function App() {
           <FeatureCard
             icon={<CookingPot />}
             title="Cook mode"
-            status="development"
+            status="ready"
             blurb="The whole point. Recipes rendered huge and glare-proof for the counter — no sleep, no scrolling with buttery thumbs."
           />
+          <FeatureCard icon={<CalendarRange />} title="Meal planner" status="ready" blurb="Lay the week out on the table before it starts." />
+          <FeatureCard icon={<Dices />} title="Randomizer" status="development" blurb="Can't decide? Roll the dice, dinner picks itself." />
           <FeatureCard icon={<FolderLock />} title="Private collections" blurb="Sort recipes into shelves only you (or your chosen few) can open." />
           <FeatureCard icon={<ShoppingBasket />} title="Shopping lists" blurb="Pick recipes, get one consolidated list for the store." />
-          <FeatureCard icon={<CalendarRange />} title="Meal planner" blurb="Lay the week out on the table before it starts." />
-          <FeatureCard icon={<Dices />} title="Randomizer" blurb="Can't decide? Roll the dice, dinner picks itself." />
         </div>
       </section>
     </div>
