@@ -1,6 +1,6 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { BookOpenText, CalendarRange, Check, ChevronLeft, ChevronRight, Copy, PanelLeft } from "lucide-react";
+import { BookOpenText, CalendarCheck, CalendarRange, Check, ChevronLeft, ChevronRight, Copy, PanelLeft } from "lucide-react";
 import * as z from "zod";
 import {
   addMealPlanNote,
@@ -15,7 +15,7 @@ import {
 } from "#/server/meal-plan";
 import { addRecipeToHousehold, type HouseholdRecipeRow } from "#/server/household-recipes";
 import { requireActiveHousehold } from "#/server/household/onboarding";
-import { type MealSlot, type PlanDate, isPlanDate, shiftWeeks } from "#/lib/plan/week";
+import { type MealSlot, type PlanDate, isPlanDate, shiftWeeks, weekStartFor } from "#/lib/plan/week";
 import { formatPlanDate, weekRangeLabel } from "#/lib/plan/labels";
 import { PlanWeekGrid } from "#/components/plan/PlanWeekGrid";
 import { PlanDaysAgenda } from "#/components/plan/PlanDaysAgenda";
@@ -102,6 +102,7 @@ function PlanPage() {
   const [addRequest, setAddRequest] = useState<AddEntryRequest | null>(null);
   const [moveRequest, setMoveRequest] = useState<MoveEntryRequest | null>(null);
   const [copyRequest, setCopyRequest] = useState<PlanDate | null>(null);
+  const [scrollNonce, setScrollNonce] = useState(0);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   const week = patched && patched.weekStart === loaded.weekStart ? patched : loaded;
@@ -282,6 +283,7 @@ function PlanPage() {
   const view = isMobile ? "days" : (search.view ?? "week");
   const panelOpen = search.panel === true;
   const isEmpty = week.emptySlotCount === 28;
+  const isNextWeek = week.weekStart === shiftWeeks(weekStartFor(week.today, week.weekStartDay), 1);
 
   function goToWeek(next: string | undefined) {
     void navigate({ search: (prev) => ({ ...prev, week: next }), replace: true });
@@ -303,8 +305,12 @@ function PlanPage() {
     <PlanActionsProvider value={actions}>
       <div className="flex h-[calc(100svh-var(--header-height,4rem))] min-h-0 w-full">
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex flex-none flex-wrap items-center gap-2.5 border-b-2 border-border bg-card px-4 py-2.5">
-            <h1 className="display-title m-0 text-[1.625rem] leading-[1.1]">Meal plan</h1>
+          {/* Below `md` every control has to fit one line on a 390px phone, so
+            the title steps down, the week label loses its 9rem reservation, and
+            the panel toggle is icon-only (see below). It still wraps rather than
+            overflows if a locale's week label runs long. */}
+          <div className="flex flex-none flex-wrap items-center gap-x-2 gap-y-2 border-b-2 border-border bg-card px-3 py-2.5 md:gap-x-2.5 md:px-4">
+            <h1 className="display-title m-0 text-base leading-[1.1] md:text-[1.625rem]">Meal plan</h1>
 
             <div role="group" aria-label="Layout" className="hidden overflow-hidden rounded-lg border-2 border-border shadow-pop-sm md:flex">
               <button
@@ -333,27 +339,55 @@ function PlanPage() {
               </button>
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <Button variant="outline" size="sm" aria-label="Previous week" onClick={() => goToWeek(shiftWeeks(week.weekStart, -1))}>
+            <div className="flex min-w-0 items-center gap-1 md:gap-1.5">
+              <Button variant="outline" size="icon-sm" aria-label="Previous week" onClick={() => goToWeek(shiftWeeks(week.weekStart, -1))}>
                 <ChevronLeft aria-hidden="true" />
               </Button>
-              <span className="min-w-[9rem] text-center text-sm font-bold">{weekRangeLabel(week.weekStart, week.weekEnd)}</span>
-              <Button variant="outline" size="sm" aria-label="Next week" onClick={() => goToWeek(shiftWeeks(week.weekStart, 1))}>
+              <span className="px-0.5 text-center text-xs font-bold whitespace-nowrap md:min-w-[9rem] md:text-sm">{weekRangeLabel(week.weekStart, week.weekEnd)}</span>
+              <Button variant="outline" size="icon-sm" aria-label="Next week" onClick={() => goToWeek(shiftWeeks(week.weekStart, 1))}>
                 <ChevronRight aria-hidden="true" />
               </Button>
               {/* Dropping `week` entirely rather than pinning today's date keeps the
                 URL clean and lets the server decide what "today" means in the
-                household's timezone. */}
-              <Button variant="ghost" size="sm" onClick={() => goToWeek(undefined)}>
+                household's timezone. The nonce is what makes "Today" do
+                something when the current week is already on screen: the URL
+                does not change, so only a bumped nonce re-runs the agenda's
+                scroll-to-today. */}
+              {/* Outline, not ghost: it sits between two outlined chevrons and a
+                flat label there reads as static text, not a control. The icon
+                is desktop-only and takes `md:pl-2` rather than
+                `data-icon="inline-start"` — that attribute tightens the left
+                padding through a `:has()` rule that outranks any `max-md:`
+                override, which would leave the mobile label off-centre. */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="max-md:h-7 max-md:px-1.5 max-md:text-xs md:pl-2"
+                onClick={() => {
+                  goToWeek(undefined);
+                  setScrollNonce((nonce) => nonce + 1);
+                }}
+              >
+                <CalendarCheck className="max-md:hidden" aria-hidden="true" />
                 Today
               </Button>
             </div>
 
             <div className="ml-auto flex items-center gap-2">
               {!panelOpen && (
-                <Button variant="outline" size="sm" aria-expanded={false} onClick={() => setPanel(true)}>
-                  <PanelLeft data-icon="inline-start" aria-hidden="true" />
-                  This week
+                // Icon-only below `md`: the label is what pushes this row onto a
+                // second line on a phone, and the `aria-label` (which the rail
+                // button already carries) keeps the name identical either way.
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label="Show this week panel"
+                  aria-expanded={false}
+                  onClick={() => setPanel(true)}
+                  className="max-md:size-7 max-md:px-0 md:pl-2"
+                >
+                  <PanelLeft aria-hidden="true" />
+                  <span className="max-md:hidden">This week</span>
                 </Button>
               )}
             </div>
@@ -368,7 +402,11 @@ function PlanPage() {
           </p>
 
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-4 pt-3.5 pb-6">
-            {isEmpty && (
+            {/* Scoped to next week, the one week where planning is the obvious
+              next move: a past week being empty is history, not a prompt, and
+              offering to fill a week three out invites planning further ahead
+              than anyone actually eats. */}
+            {isEmpty && isNextWeek && (
               <div className="flex flex-none flex-wrap items-center gap-2.5 rounded-lg border-2 border-border bg-secondary px-3 py-2.5 text-secondary-foreground shadow-pop-sm">
                 <CalendarRange className="size-[18px] shrink-0" aria-hidden="true" />
                 <p className="m-0 text-[0.8125rem] font-semibold">Nothing planned this week yet. Fill a slot below, or bring last week over and edit it.</p>
@@ -381,7 +419,7 @@ function PlanPage() {
               </div>
             )}
 
-            {view === "week" ? <PlanWeekGrid week={week} /> : <PlanDaysAgenda week={week} />}
+            {view === "week" ? <PlanWeekGrid week={week} /> : <PlanDaysAgenda week={week} scrollNonce={scrollNonce} />}
           </div>
         </section>
 

@@ -40,7 +40,7 @@ interface ThisWeekPanelProps {
 }
 
 /** Card chrome, repeated three times — identical to the comp's inline style. */
-const CARD = "flex flex-col gap-1.5 rounded-xl border-2 border-border bg-card p-2.5 shadow-pop-sm";
+const CARD = "flex flex-col gap-2 rounded-xl border-2 border-border bg-card p-2.5 shadow-pop-sm";
 const SECTION_LABEL = "m-0 text-[0.625rem] font-bold tracking-[0.05em] text-muted-foreground uppercase";
 const NOTE = "m-0 text-[0.6875rem] text-muted-foreground";
 
@@ -50,7 +50,15 @@ export function ThisWeekPanel({ week, open, onOpenChange, ...handlers }: ThisWee
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="right" showCloseButton={false} className="gap-0 overflow-auto p-3">
+        {/*
+          The sheet's own `gap-4`/`w-3/4` defaults are both wrong here: the gap
+          has to match the docked panel's `gap-2.5` so the cards read as one
+          stack in either rendering, and 3/4 of a 390px phone is 292px — enough
+          to make every card's two-line body wrap. The width override repeats
+          the `data-[side=right]:` modifier so it actually replaces the base
+          rule (an unmodified `w-…` loses to the attribute selector).
+        */}
+        <SheetContent side="right" showCloseButton={false} className="gap-2.5 overflow-auto p-3.5 data-[side=right]:w-[min(22rem,92vw)]">
           <SheetTitle className="sr-only">This week</SheetTitle>
           <PanelBody week={week} onClose={() => onOpenChange(false)} {...handlers} />
         </SheetContent>
@@ -65,7 +73,10 @@ export function ThisWeekPanel({ week, open, onOpenChange, ...handlers }: ThisWee
         aria-label="Show this week panel"
         aria-expanded={false}
         onClick={() => onOpenChange(true)}
-        className="hidden w-[34px] flex-none cursor-(--cursor-interactive) flex-col items-center gap-2 border-l-2 border-border bg-muted py-3 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none md:flex"
+        // `pr-0.5` cancels the 2px left border: the rail is `border-box`, so
+        // centring happens inside the border and both the icon and the rotated
+        // label otherwise sit a pixel right of the rail's visual centre.
+        className="hidden w-[34px] flex-none cursor-(--cursor-interactive) flex-col items-center gap-2 border-l-2 border-border bg-muted py-3 pr-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none md:flex"
       >
         <PanelLeft className="size-[15px] shrink-0" aria-hidden="true" />
         <span className="rotate-180 text-[0.6875rem] font-bold tracking-[0.04em] [writing-mode:vertical-rl]">This week · {week.recipeEntryCount}</span>
