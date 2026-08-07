@@ -113,9 +113,9 @@ function PanelBody({ week, onClose, onCopyWeek, onNotify, onPreferencesSaved, on
       </div>
 
       <div className={CARD}>
-        <Button size="sm" className="w-full justify-start" onClick={onCopyWeek}>
+        <Button size="sm" variant="outline" className="w-full justify-start" onClick={onCopyWeek}>
           <Copy data-icon="inline-start" aria-hidden="true" />
-          Copy this week…
+          Copy to next week…
         </Button>
 
         {/*
