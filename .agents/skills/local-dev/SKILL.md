@@ -6,7 +6,17 @@ user-invocable: true
 
 # Local dev stack
 
-Whole local app = **one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project** (`process-compose.yaml`): `railway dev` containers, migrations, atproto dev-env, web server. Config at repo root; background in `docs/LOCAL-DEV.md`.
+Whole local app = **one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project**: `railway dev` containers, migrations, atproto dev-env, web server.
+
+Files — no search for them:
+
+| Path                                  | What                                                     |
+| ------------------------------------- | -------------------------------------------------------- |
+| `process-compose.yaml` (repo root)    | the whole stack definition — every process, port, env    |
+| `.dev-logs/<process>.log` (repo root) | per-process log files, survive shutdown                  |
+| `mise.toml` (repo root)               | pinned tool versions, `PC_PORT_NUM`                      |
+
+`docs/LOCAL-DEV.md` = human background, very large. **Do not read it.** This skill carry everything agent need; read that file only when skill lack answer AND `process-compose.yaml` lack it too.
 
 Human maybe attached to TUI now. **No start competing dev server** — drive running instance.
 

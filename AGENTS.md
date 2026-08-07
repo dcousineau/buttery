@@ -12,7 +12,7 @@ Before edit files for big task:
 
 <!-- intent-skills:end -->
 
-> When updating this file, keep this overall structure. Always update in a caveman voice.
+> When updating this file, keep this overall structure. Always update in a caveman voice
 
 ## Working Style
 
@@ -55,6 +55,6 @@ Before edit files for big task:
 
 - Migrations: `pnpm --filter @buttery/web db:migrate:new <snake_case_name>`, then edit generated file. **Never hand-name one** — kysely-ctl stamp `Date.now()`; hand-picked prefix drift ahead of clock, next generated file sort before applied one, Kysely reject as corrupted. Plan docs saying "prefix greater than X" wrong; run CLI.
 - Right after `db:migrate:up`, run `db:codegen` so `src/db/types.ts` match schema.
-- Local stack one singleton process-compose project (`pnpm dev`). Agents drive it via `pc_*` MCP tools, never ask user. Boot/teardown stay CLI-only. Never start second dev server.
+- Local stack one singleton process-compose project — never start second dev server. Load `local-dev` skill before boot, tear down, restart, or inspect it; skill own the how (CLI vs `pc_*` MCP tools, config-reload traps, log reading).
 - Anything DB-touching run under `railway run --service buttery -- <cmd>`. Never hardcode postgres host port — it regenerate.
 - `*.db.test.ts` SKIP silent without database, so `pnpm test` stay green. Changed schema or server-fn behavior → also run `pnpm test:db`.
