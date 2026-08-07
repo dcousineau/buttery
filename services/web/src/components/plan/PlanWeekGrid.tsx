@@ -26,8 +26,15 @@ import { cn } from "#/lib/utils";
  * The container deliberately does NOT have `overflow-hidden` — the entry
  * popovers are portalled now, but an `overflow` ancestor would still clip the
  * focus rings and re-introduce the class of bug this grid caused. The four
- * corner cells round themselves instead (10px = the 12px outer radius minus the
- * 2px border), which is what `overflow-hidden` was there to fake.
+ * corner cells round themselves instead, which is what `overflow-hidden` was
+ * there to fake. They read `--cell-radius` off the container rather than
+ * hardcoding a pixel value: a cell sits in the padding box, so its corner has to
+ * match the border's *inner* curve (the `rounded-xl` radius minus the 2px
+ * border) or its square-ish corner paints over the border along the arc.
+ *
+ * The last column and the last row deliberately skip their trailing hairline —
+ * the container's 2px border already closes the table there, and a 1px rule
+ * flush against it just reads as a smudged edge.
  *
  * Every cell is a drop target (D14). The drag itself starts on the card; the
  * cell only decides whether to accept it and paints the accent wash while the
@@ -46,16 +53,16 @@ export function PlanWeekGrid({ week }: { week: PlanWeek }) {
       <div
         role="region"
         aria-label={`Meal plan, week of ${formatPlanDate(week.weekStart)}`}
-        className="grid w-full min-w-[46rem] shrink-0 grid-cols-[86px_repeat(7,minmax(0,1fr))] rounded-xl border-2 border-border bg-card shadow-pop-md"
+        className="grid w-full min-w-[46rem] shrink-0 grid-cols-[86px_repeat(7,minmax(0,1fr))] rounded-xl border-2 border-border bg-card shadow-pop-md [--cell-radius:calc(var(--radius-xl)-2px)]"
       >
         {/* Header row: the empty corner above the slot labels, then the days. */}
-        <div className="rounded-tl-[10px] border-r-2 border-r-border border-b-2 border-b-border bg-muted" />
+        <div className="rounded-tl-(--cell-radius) border-r-2 border-r-border border-b-2 border-b-border bg-muted" />
         {week.days.map((day, index) => (
           <div
             key={day.date}
             className={cn(
-              "border-r border-r-border/45 border-b-2 border-b-border px-[7px] py-[5px]",
-              index === week.days.length - 1 && "rounded-tr-[10px]",
+              "border-b-2 border-b-border px-[7px] py-[5px]",
+              index === week.days.length - 1 ? "rounded-tr-(--cell-radius)" : "border-r border-r-border/45",
               day.isToday ? "bg-secondary" : day.isPast ? "bg-muted/60" : "bg-card",
             )}
           >
@@ -73,7 +80,12 @@ export function PlanWeekGrid({ week }: { week: PlanWeek }) {
 
         {MEAL_SLOTS.map((slot, slotIndex) => (
           <div key={slot} className="contents">
-            <div className={cn("border-r-2 border-r-border border-b border-b-border/45 bg-muted px-1.5 py-[7px]", slotIndex === MEAL_SLOTS.length - 1 && "rounded-bl-[10px]")}>
+            <div
+              className={cn(
+                "border-r-2 border-r-border bg-muted px-1.5 py-[7px]",
+                slotIndex === MEAL_SLOTS.length - 1 ? "rounded-bl-(--cell-radius)" : "border-b border-b-border/45",
+              )}
+            >
               <div className="text-[0.625rem] font-bold tracking-wide break-words text-muted-foreground uppercase">{SLOT_LABELS[slot]}</div>
             </div>
             {week.days.map((day, index) => (
@@ -82,8 +94,10 @@ export function PlanWeekGrid({ week }: { week: PlanWeek }) {
                 data-plan-slot=""
                 {...slotDropHandlers(actions, day.date, slot)}
                 className={cn(
-                  "flex min-h-[62px] flex-col gap-1 border-r border-r-border/45 border-b border-b-border/45 p-[5px]",
-                  slotIndex === MEAL_SLOTS.length - 1 && index === week.days.length - 1 && "rounded-br-[10px]",
+                  "flex min-h-[62px] flex-col gap-1 p-[5px]",
+                  index !== week.days.length - 1 && "border-r border-r-border/45",
+                  slotIndex !== MEAL_SLOTS.length - 1 && "border-b border-b-border/45",
+                  slotIndex === MEAL_SLOTS.length - 1 && index === week.days.length - 1 && "rounded-br-(--cell-radius)",
                   actions.dragOverSlot === slotKey(day.date, slot) ? "bg-accent" : day.isToday ? "bg-secondary/40" : day.isPast ? "bg-muted/45" : "bg-card",
                 )}
               >
