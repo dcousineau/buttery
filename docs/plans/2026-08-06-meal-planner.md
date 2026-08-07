@@ -217,8 +217,13 @@ deterministically if a rewrite is ever interrupted.
 
 ### 3.7 Migrations
 
-Two files under `services/web/src/db/migrations/`, timestamp-prefixed after the current
-max (`1786100000000`), following the existing heavily-commented style:
+Two files under `services/web/src/db/migrations/`. **Scaffold each with
+`pnpm --filter @buttery/web db:migrate:new <snake_case_name>`, then fill in the
+generated `up`/`down` — never hand-name a migration file.** kysely-ctl stamps the
+prefix with `Date.now()`; a hand-picked number drifts ahead of the wall clock and
+makes the next CLI-generated migration sort _before_ an already-applied one, which
+Kysely rejects as corrupted. `migrate make` opens no connection, so it works with no
+database running. Follow the existing heavily-commented style:
 
 - `…_create_household_preference.ts`
 - `…_create_meal_plan_entry.ts`
