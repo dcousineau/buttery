@@ -1,5 +1,6 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePostHog } from "@posthog/react";
 import { BookOpenText, CalendarCheck, CalendarRange, Check, ChevronLeft, ChevronRight, Copy, PanelLeft } from "lucide-react";
 import * as z from "zod";
 import {
@@ -13,7 +14,7 @@ import {
   updateMealPlanNote,
   type PlanWeek,
 } from "#/server/meal-plan";
-import { addRecipeToHousehold, type HouseholdRecipeRow } from "#/server/household-recipes";
+import { addRecipeToHousehold, getHouseholdRecipe, type HouseholdRecipeDetail, type HouseholdRecipeRow } from "#/server/household-recipes";
 import { requireActiveHousehold } from "#/server/household/onboarding";
 import { type MealSlot, type PlanDate, isPlanDate, shiftWeeks, weekStartFor } from "#/lib/plan/week";
 import { formatPlanDate, weekRangeLabel } from "#/lib/plan/labels";
@@ -24,6 +25,7 @@ import { AddEntryDialog, type AddEntryRequest } from "#/components/plan/AddEntry
 import { MoveEntryDialog, type MoveEntryRequest } from "#/components/plan/MoveEntryDialog";
 import { CopyWeekDialog } from "#/components/plan/CopyWeekDialog";
 import { ThisWeekPanel } from "#/components/plan/ThisWeekPanel";
+import { CookModeFallback, CookModeOverlay } from "#/components/recipes/CookModeOverlay";
 import {
   findEntry,
   optimisticNoteEntry,
@@ -93,6 +95,7 @@ function PlanPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
   const { toasts, push, dismiss, pauseAll, resumeAll } = useToasts(4000);
+  const posthog = usePostHog();
 
   // The optimistic overlay (§8.2). Held only between a mutation firing and its
   // `router.invalidate()` landing; the week-start check discards a patch that
@@ -103,6 +106,17 @@ function PlanPage() {
   const [moveRequest, setMoveRequest] = useState<MoveEntryRequest | null>(null);
   const [copyRequest, setCopyRequest] = useState<PlanDate | null>(null);
   const [scrollNonce, setScrollNonce] = useState(0);
+  /**
+   * Cook mode over the planner (§7.5). Two states, because the recipe body is
+   * not in the week payload — the plan carries titles, not steps — so the apron
+   * cannot open until a fetch lands: `cookPending` holds the full-screen spinner
+   * up while it does, `cookRecipe` is the apron itself. `cookRequest` is the
+   * same id in a ref, so a response can be matched against the launch that is
+   * current *now* rather than the one that was current when it was sent.
+   */
+  const [cookPending, setCookPending] = useState<string | null>(null);
+  const [cookRecipe, setCookRecipe] = useState<HouseholdRecipeDetail | null>(null);
+  const cookRequest = useRef<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   const week = patched && patched.weekStart === loaded.weekStart ? patched : loaded;
@@ -219,7 +233,41 @@ function PlanPage() {
     });
   }
 
+  /**
+   * The apron opens over the week rather than at `/household/recipes/{id}?cook`
+   * (which is what the shortcut used to link to). Cook mode is a fullscreen
+   * modal, and a modal returns you to where you opened it — landing on a recipe
+   * page after exiting is a navigation nobody asked for.
+   */
+  function startCook(recipeId: string) {
+    posthog.capture("cook_mode_opened", { recipe_id: recipeId, source: "plan_card" });
+    // The guard is a ref, not the pending state: two quick taps on different
+    // cards would otherwise open whichever request happened to finish last,
+    // rather than the one asked for most recently.
+    cookRequest.current = recipeId;
+    setCookPending(recipeId);
+
+    function settle(handle: () => void) {
+      if (cookRequest.current !== recipeId) return;
+      cookRequest.current = null;
+      setCookPending(null);
+      handle();
+    }
+
+    getHouseholdRecipe({ data: { recipeId } })
+      .then((recipe) => {
+        settle(() => {
+          if (recipe) setCookRecipe(recipe);
+          else push({ variant: "destructive", title: "That recipe isn’t in your box anymore." });
+        });
+      })
+      .catch(() => {
+        settle(() => push({ variant: "destructive", title: "Couldn’t open cook mode. Try again." }));
+      });
+  }
+
   const actions: PlanActionsValue = {
+    startCook,
     openAdd(date, slot) {
       const day = week.days.find((candidate) => candidate.date === date);
       setAddRequest({ kind: "add", date, slot, existingCount: day?.slots[slot].length ?? 0, isToday: day?.isToday ?? false });
@@ -453,6 +501,13 @@ function PlanPage() {
         }}
       />
       <MoveEntryDialog request={moveRequest} dates={week.days.map((day) => day.date)} onClose={() => setMoveRequest(null)} onMove={actions.moveEntry} />
+
+      {/* The fallback stands in for the whole apron while the recipe body is in
+        flight, so the tap has a full-screen response immediately — the same
+        screen the lazy chunk shows, so the fetch and the chunk load read as one
+        wait rather than two. */}
+      {cookPending && <CookModeFallback />}
+      {cookRecipe && <CookModeOverlay recipe={cookRecipe} onClose={() => setCookRecipe(null)} />}
 
       <ToastViewport position="bottom-center" onMouseEnter={pauseAll} onMouseLeave={resumeAll} onFocusCapture={pauseAll} onBlurCapture={resumeAll}>
         {toasts.map((toast) => (

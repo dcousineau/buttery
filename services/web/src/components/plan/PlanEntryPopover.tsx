@@ -29,9 +29,9 @@ import { cn } from "#/lib/utils";
  *
  * Every item acts and then dismisses: the menu describes the entry it is
  * attached to, and after "Remove" or "Move to…" that entry is not there any
- * more. The two navigating items ("Open recipe", "Start cook mode") are real
- * `<Link>`s rather than buttons that navigate, so they can be opened in a new
- * tab and read as links to assistive tech.
+ * more. "Open recipe" is a real `<Link>` rather than a button that navigates, so
+ * it can be opened in a new tab and reads as a link to assistive tech; "Start
+ * cook mode" is a button, because it opens a modal in place and goes nowhere.
  */
 
 /**
@@ -150,13 +150,22 @@ export function PlanEntryPopover({ entry, date, slot, variant, onAction }: PlanE
             Open recipe
           </Link>
         )}
-        {/* §7.5: the recipe route opens straight into cook mode on `?cook=1`, so
-          "Cook now" from a plan card is one navigation, not two. */}
+        {/* §7.5: the apron opens over the week, so it is a button rather than a
+          link — there is nowhere to navigate to, and closing cook mode hands the
+          plan back instead of stranding someone on the recipe page. */}
         {entry.kind === "recipe" && (
-          <Link role="menuitem" to="/household/recipes/$id" params={{ id: entry.recipeId }} search={{ cook: true }} className={menuItemClass} onClick={() => onAction("default")}>
+          <button
+            type="button"
+            role="menuitem"
+            className={menuItemClass}
+            onClick={() => {
+              plan.startCook(entry.recipeId);
+              onAction("default");
+            }}
+          >
             <CookingPot aria-hidden="true" />
             Start cook mode
-          </Link>
+          </button>
         )}
         {actions.map((action) => (
           <button

@@ -37,6 +37,13 @@ export interface PlanActionsValue {
   setCooked(entryId: string, cooked: boolean): void;
   /** Re-link a recipe that left the box, so the plan card stops saying "not in box". */
   addBackToBox(entryId: string): void;
+  /**
+   * Put the apron on over the planner (§7.5). Cook mode is a fullscreen modal,
+   * so it opens on top of the week rather than navigating to the recipe — the
+   * plan is what someone is working from, and exiting the apron should hand it
+   * back, not strand them on a recipe page they never asked to visit.
+   */
+  startCook(recipeId: string): void;
 
   /**
    * Drag state. Native HTML5 DnD carries the entry id in `text/plain`, but

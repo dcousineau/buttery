@@ -9,7 +9,7 @@ import { SLOT_LABELS } from "#/lib/plan/labels";
 import type { MealSlot } from "#/lib/plan/week";
 import { scaleIngredients } from "#/lib/recipe-scale";
 import { useTimers } from "#/lib/timers/store";
-import { useRecipesView } from "../context";
+import { useRecipeScale } from "../scale";
 import { MisePhase } from "./MisePhase";
 import { CookPhase } from "./CookPhase";
 import { useWakeLock } from "./useWakeLock";
@@ -51,12 +51,13 @@ interface FsDocument extends Document {
  * lock during the cook phase, persists cook-view state per-recipe with a Resume
  * offer, and can escalate to the browser Fullscreen API where supported.
  *
- * Default export so `CookModeLauncher`'s `React.lazy` can code-split the whole
- * subtree (this file + everything it imports) out of the recipe route bundle.
+ * Default export so `CookModeOverlay`'s `React.lazy` can code-split the whole
+ * subtree (this file + everything it imports) out of the recipe and plan route
+ * bundles.
  */
 export default function CookMode({ recipe, onClose }: { recipe: CookRecipe; onClose: () => void }) {
   const posthog = usePostHog();
-  const { factor, setFactor, metric, setMetric } = useRecipesView();
+  const { factor, setFactor, metric, setMetric } = useRecipeScale();
   const { arm } = useTimers();
   const { scale, increase, decrease, canIncrease, canDecrease } = useCookTextScale();
 

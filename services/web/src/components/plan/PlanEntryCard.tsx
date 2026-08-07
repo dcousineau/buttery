@@ -1,6 +1,5 @@
 import { Check, CookingPot, EyeOff, Lock } from "lucide-react";
 import { useRef, useState } from "react";
-import { Link } from "@tanstack/react-router";
 import type { PlanEntry } from "#/server/meal-plan";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
 import { SLOT_LABELS, formatPlanDate } from "#/lib/plan/labels";
@@ -170,23 +169,22 @@ export function PlanEntryCard({ entry, date, slot, variant, isPast = false }: Pl
 
         {isDays && entry.kind === "recipe" && (
           <span className="flex shrink-0 items-center gap-1">
-            {/* §7.5: straight into the apron via the recipe route's `?cook=1`
-                deep link. A link, not a button — the shortcut navigates, and
-                `stopPropagation` keeps the click off the card's popover. */}
-            <Link
-              to="/household/recipes/$id"
-              params={{ id: entry.recipeId }}
-              search={{ cook: true }}
-              // An anchor is a drag source by default, and dragging one out of a
-              // draggable card would start a link drag instead of a card move.
-              draggable={false}
+            {/* §7.5: straight into the apron, opened over the week rather than
+                navigated to — cook mode is a fullscreen modal, so exiting it
+                hands the plan back. `stopPropagation` keeps the click off the
+                card's popover. */}
+            <button
+              type="button"
               title="Start cook mode"
               aria-label={`Start cook mode for ${entry.title}`}
-              onClick={(event) => event.stopPropagation()}
-              className="inline-flex size-[26px] items-center justify-center rounded-sm border-2 border-border bg-card text-foreground no-underline hover:bg-accent"
+              onClick={(event) => {
+                event.stopPropagation();
+                actions.startCook(entry.recipeId);
+              }}
+              className="inline-flex size-[26px] items-center justify-center rounded-sm border-2 border-border bg-card text-foreground hover:bg-accent"
             >
               <CookingPot className="size-[13px]" aria-hidden="true" />
-            </Link>
+            </button>
             <button
               type="button"
               disabled={pending}

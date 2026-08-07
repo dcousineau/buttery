@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Clock, CookingPot, UtensilsCrossed, Users } from "lucide-react";
 import { getRecipe } from "../server/recipes";
@@ -8,7 +7,6 @@ import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
 import { CookModeLauncher } from "#/components/recipes/CookModeLauncher";
-import { RecipesViewContext } from "#/components/recipes/context";
 import type { CookRecipe } from "#/components/recipes/cook/CookMode";
 import type { RecipeDetailData } from "../server/recipes";
 
@@ -322,16 +320,13 @@ function RecipeDetail({ recipe }: { recipe: RecipeDetailData }) {
 }
 
 /**
- * Cook mode on the public page. Cook mode reads its session reading prefs
- * (scale factor + metric toggle) from `RecipesViewContext`, which only the
- * household shell provides. The public page has no shell, so supply a minimal
- * cook-local provider: real `factor`/`metric` state, no-op stubs for the
- * add/toast affordances cook mode never touches. `RecipeDetailData` is adapted
- * to the `CookRecipe` shape (id→recipeId, name→title, yield→serves, ISO→display).
+ * Cook mode on the public page. No provider to set up: cook mode owns its own
+ * scale/units when nothing above it supplies them (`useRecipeScale`), and it
+ * needs nothing else from the recipes shell this page does not have.
+ * `RecipeDetailData` is adapted to the `CookRecipe` shape (id→recipeId,
+ * name→title, yield→serves, ISO→display).
  */
 function PublicCookMode({ recipe }: { recipe: RecipeDetailData }) {
-  const [factor, setFactor] = useState(1);
-  const [metric, setMetric] = useState(false);
   const cook: CookRecipe = {
     recipeId: recipe.id,
     title: recipe.name,
@@ -340,11 +335,7 @@ function PublicCookMode({ recipe }: { recipe: RecipeDetailData }) {
     serves: parseServes(recipe.recipeYield),
     totalTimeDisplay: recipe.totalTime ? formatDuration(recipe.totalTime) : null,
   };
-  return (
-    <RecipesViewContext.Provider value={{ factor, setFactor, metric, setMetric, openAddChooser: () => {}, openPicker: () => {}, pushToast: () => {} }}>
-      <CookModeLauncher recipe={cook} />
-    </RecipesViewContext.Provider>
-  );
+  return <CookModeLauncher recipe={cook} />;
 }
 
 function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {

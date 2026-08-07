@@ -1,38 +1,22 @@
-import { lazy, Suspense, useEffect, useState } from "react";
-import { ClientOnly } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { usePostHog } from "@posthog/react";
 import { CookingPot } from "lucide-react";
 import { Button } from "#/components/ui/button";
-import { Spinner } from "#/components/ui/spinner";
+import { CookModeOverlay } from "./CookModeOverlay";
 import type { CookRecipe } from "./cook/CookMode";
 
 /**
  * "Apron on" — the launch surface for cook mode (plan §4.1, §5). This is the ONLY
- * thing the detail pane imports; the heavy cook-mode subtree (audio, wake lock,
- * the large step renderer, ambient CSS) sits behind `React.lazy` + `<Suspense>`
- * and is fetched as a single chunk only when this button is pressed — it costs
- * the `/household/recipes/{id}` bundle and first paint nothing.
+ * thing the detail pane imports; the overlay it mounts is lazy, so the
+ * `/household/recipes/{id}` bundle and first paint pay nothing for it.
  *
- * `<ClientOnly>` (belt-and-suspenders with the lazy boundary) guarantees the
- * browser-only cook subtree only mounts after hydration, never during SSR (§4.1a).
- * This is the codebase's first `React.lazy`/`Suspense` — keep it as the template.
- */
-const CookMode = lazy(() => import("./cook/CookMode"));
-
-function CookModeFallback() {
-  return (
-    <div className="dark fixed inset-0 z-[70] grid place-content-center bg-background text-foreground" role="status" aria-label="Opening cook mode">
-      <Spinner className="size-8 text-primary" />
-    </div>
-  );
-}
-
-/**
- * `autoOpen` is the `?cook=1` deep link (meal planner §7.5): the planner's
- * "Start cook mode" sends someone straight from a plan card into the apron, with
- * no stop on the recipe page. It is the mount-time value only — the route drops
+ * `autoOpen` is the `?cook` deep link (meal planner §7.5), kept for links that
+ * arrive from outside the app. It is the mount-time value only — the route drops
  * the param when cook mode closes (`onAutoOpenConsumed`), so closing does not
- * immediately re-open, and a reload after that lands on the plain recipe.
+ * immediately re-open, and a reload after that lands on the plain recipe. The
+ * planner no longer uses this path: its cook shortcut opens the apron in place
+ * over the week, so closing returns to the plan rather than stranding someone on
+ * a recipe page they never asked to visit.
  */
 export function CookModeLauncher({ recipe, autoOpen = false, onAutoOpenConsumed }: { recipe: CookRecipe; autoOpen?: boolean; onAutoOpenConsumed?: () => void }) {
   const posthog = usePostHog();
@@ -60,13 +44,7 @@ export function CookModeLauncher({ recipe, autoOpen = false, onAutoOpenConsumed 
         <CookingPot data-icon="inline-start" aria-hidden="true" />
         Apron on
       </Button>
-      {open && (
-        <ClientOnly fallback={<CookModeFallback />}>
-          <Suspense fallback={<CookModeFallback />}>
-            <CookMode recipe={recipe} onClose={closeCookMode} />
-          </Suspense>
-        </ClientOnly>
-      )}
+      {open && <CookModeOverlay recipe={recipe} onClose={closeCookMode} />}
     </>
   );
 }

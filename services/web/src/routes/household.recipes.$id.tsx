@@ -11,19 +11,29 @@ import { DetailPane } from "#/components/recipes/DetailPane";
  * `visibility='public'`), so it can render a recipe whose source has since gone
  * unavailable, from cache. Deep-linkable and readable (path-based, not a query).
  *
- * `?cook=1` opens cook mode immediately (meal planner §7.5) — the planner's
- * "Start cook mode" points here. It is `.catch()`-guarded like every other
- * search param in the app: a mangled value renders the plain page rather than
- * throwing a route error.
+ * `?cook` opens cook mode immediately (meal planner §7.5). Nothing inside the
+ * app points here any more — the planner opens the apron over the week instead —
+ * but the URL is the app's only way to link straight into cook mode from
+ * outside, so it stays. It is `.catch()`-guarded like every other search param
+ * in the app: a mangled value renders the plain page rather than throwing a
+ * route error.
  *
- * The union has to cover the number `1` as well as the string: the router
- * JSON-parses search values, so the spec's own `?cook=1` arrives as `1`, not
- * `"1"`, and a string-only union would silently drop it (and, because the parsed
- * search is what the URL is rebuilt from, quietly strip the param too).
+ * Bare `?cook` is the form to hand out — a flag that is either present or not,
+ * with no value to get wrong. The union accepts the spelt-out variants too,
+ * because a link written by hand is as likely to say `=1` or `=true`, and each
+ * costs one member.
+ *
+ * Every member is a shape the router can actually hand us. Search values are
+ * decoded and then JSON-parsed, so bare `?cook` arrives as `""`, `?cook=1` as
+ * the number `1`, `?cook=true` as `true` — and a union that missed one would
+ * silently drop it (and, because the parsed search is what the URL is rebuilt
+ * from, quietly strip the param too). That rebuild is also why the address bar
+ * shows `?cook=true` for a moment on any of the spellings before the param is
+ * consumed: search is re-serialized from the parsed value, not echoed back.
  */
 const searchSchema = z.object({
   cook: z
-    .union([z.boolean(), z.literal(1), z.literal("1"), z.literal("true")])
+    .union([z.boolean(), z.literal(""), z.literal(1), z.literal("1"), z.literal("true")])
     .transform((value) => value !== false)
     .optional()
     .catch(undefined),

@@ -12,6 +12,7 @@ import { formatPlanDate, shortDow } from "#/lib/plan/labels";
 import { scaleIngredients } from "#/lib/recipe-scale";
 import { cn } from "#/lib/utils";
 import { useRecipesView } from "./context";
+import { useRecipeScale } from "./scale";
 import { SourceIcon } from "./SourceIcon";
 import { ScalePanel } from "./ScalePanel";
 import { NutritionStrip } from "./NutritionStrip";
@@ -33,13 +34,14 @@ export function DetailPane({
   onCookModeClosed,
 }: {
   recipe: HouseholdRecipeDetail;
-  /** `?cook=1` — the planner's "Start cook mode" deep link (meal planner §7.5). */
+  /** `?cook` — the external deep link straight into cook mode (meal planner §7.5). */
   autoOpenCook?: boolean;
   onCookModeClosed?: () => void;
 }) {
   const router = useRouter();
   const posthog = usePostHog();
-  const { factor, setFactor, metric, setMetric, pushToast } = useRecipesView();
+  const { pushToast } = useRecipesView();
+  const { factor, setFactor, metric, setMetric } = useRecipeScale();
   const scrollRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
 
