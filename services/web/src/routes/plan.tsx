@@ -1,5 +1,5 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useOptimistic, useRef, useState } from "react";
 import { usePostHog } from "@posthog/react";
 import { BookOpenText, CalendarCheck, CalendarRange, Check, ChevronLeft, ChevronRight, Copy, PanelLeft } from "lucide-react";
 import * as z from "zod";
@@ -97,10 +97,24 @@ function PlanPage() {
   const { toasts, push, dismiss, pauseAll, resumeAll } = useToasts(4000);
   const posthog = usePostHog();
 
-  // The optimistic overlay (§8.2). Held only between a mutation firing and its
-  // `router.invalidate()` landing; the week-start check discards a patch that
-  // belongs to a week the user has already navigated away from.
-  const [patched, setPatched] = useState<PlanWeek | null>(null);
+  /**
+   * The optimistic overlay (§8.2): the week as it should already look, laid over
+   * the week the loader last returned.
+   *
+   * `useOptimistic` rather than a patch in ordinary state, because React drops
+   * the optimistic value in the same commit that delivers the settled loader
+   * payload. Clearing it by hand cannot: `router.invalidate()` resolves *before*
+   * the router commits its matches (it commits inside a React transition), so a
+   * plain `setState(null)` after the await outranks that pending transition and
+   * paints one frame of pre-write data — a visible flicker on every write.
+   *
+   * The reducer's action is the patch itself, so `run` stays generic. Patches
+   * are no-op-safe against a week they do not belong to (`optimistic.ts`), which
+   * is what makes React's re-application of a still-pending patch on top of a
+   * newer `loaded` harmless — the case the old code needed a `weekStart` guard
+   * for.
+   */
+  const [week, applyPatch] = useOptimistic(loaded, (current: PlanWeek, patch: (week: PlanWeek) => PlanWeek) => patch(current));
   const [announcement, setAnnouncement] = useState("");
   const [addRequest, setAddRequest] = useState<AddEntryRequest | null>(null);
   const [moveRequest, setMoveRequest] = useState<MoveEntryRequest | null>(null);
@@ -119,7 +133,6 @@ function PlanPage() {
   const cookRequest = useRef<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
-  const week = patched && patched.weekStart === loaded.weekStart ? patched : loaded;
 
   /**
    * D10's answer to "two people planning at once": no sockets, just look again
@@ -145,29 +158,76 @@ function PlanPage() {
   }, [router]);
 
   /**
+   * "The fresh week is now on screen" — the signal `run` ends its transition on.
+   *
+   * `router.invalidate()` resolves when the loader has re-run, NOT when React
+   * has rendered the result: the router commits its matches inside a transition
+   * of its own. Ending the write's transition on the invalidate alone therefore
+   * lands in a hole — React drops the optimistic week while `loaded` is still
+   * the pre-write payload, and the card paints one frame of stale data before
+   * the router's commit arrives (measured: ~50ms of visible flicker per write).
+   *
+   * This effect runs in the commit that carries the new payload, which is
+   * exactly the moment the optimistic week can be let go.
+   */
+  const loaderCommitted = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    loaderCommitted.current?.();
+    loaderCommitted.current = null;
+  }, [loaded]);
+
+  const whenLoaderCommits = useCallback(
+    () =>
+      new Promise<void>((resolve) => {
+        loaderCommitted.current?.();
+        loaderCommitted.current = resolve;
+        // Nothing guarantees a *new* payload — a no-op write, or a load the
+        // router dedupes, can leave `loaded` untouched — and a transition that
+        // never ends would pin the optimistic week there for good.
+        setTimeout(() => {
+          if (loaderCommitted.current !== resolve) return;
+          loaderCommitted.current = null;
+          resolve();
+        }, 1000);
+      }),
+    [],
+  );
+
+  /**
    * One shape for every write: paint, send, then reconcile.
    *
-   * Failure does not try to un-apply the patch — it drops it. The loader is the
-   * only thing that knows what the week really contains, and after a failed
-   * write it is also the only thing that knows whether the write half-happened.
-   * The `finally` invalidate runs on both paths for the same reason.
+   * The whole body runs inside one async transition. That is what licenses the
+   * optimistic paint — `applyPatch` is only legal inside a transition — and the
+   * paint lives exactly as long as the transition does, so the two ends of the
+   * hand-off are the same event: React swaps the optimistic week out in the
+   * same commit that swaps the settled one in.
+   *
+   * The wait is registered before the write, not after it, so a payload that
+   * commits unusually fast cannot land before anyone is listening for it.
+   *
+   * Failure does not try to un-apply the patch — the transition ending drops it.
+   * The loader is the only thing that knows what the week really contains, and
+   * after a failed write it is also the only thing that knows whether the write
+   * half-happened. The `finally` runs on both paths for the same reason.
    */
   const run = useCallback(
-    async (options: { optimistic?: (week: PlanWeek) => PlanWeek; action: () => Promise<unknown>; toast?: string; announce?: string }) => {
-      const { optimistic } = options;
-      if (optimistic) setPatched((prev) => optimistic(prev && prev.weekStart === loaded.weekStart ? prev : loaded));
-      try {
-        await options.action();
-        if (options.toast) push({ variant: "success", title: options.toast });
-        if (options.announce) setAnnouncement(options.announce);
-      } catch (error) {
-        push({ variant: "destructive", title: error instanceof Error ? error.message : "That didn’t save. Try again." });
-      } finally {
-        await router.invalidate();
-        setPatched(null);
-      }
+    (options: { optimistic?: (week: PlanWeek) => PlanWeek; action: () => Promise<unknown>; toast?: string; announce?: string }) => {
+      startTransition(async () => {
+        if (options.optimistic) applyPatch(options.optimistic);
+        const settled = whenLoaderCommits();
+        try {
+          await options.action();
+          if (options.toast) push({ variant: "success", title: options.toast });
+          if (options.announce) setAnnouncement(options.announce);
+        } catch (error) {
+          push({ variant: "destructive", title: error instanceof Error ? error.message : "That didn’t save. Try again." });
+        } finally {
+          await router.invalidate();
+          await settled;
+        }
+      });
     },
-    [loaded, push, router],
+    [applyPatch, push, router, whenLoaderCommits],
   );
 
   /** The label a toast or announcement uses for an entry. */
@@ -208,7 +268,7 @@ function PlanPage() {
   }
 
   function submitRecipes(date: PlanDate, slot: MealSlot, rows: HouseholdRecipeRow[]) {
-    void run({
+    run({
       optimistic: (current) => withEntriesAppended(current, date, slot, rows.map(optimisticRecipeEntry)),
       action: () => addMealPlanRecipes({ data: { date, slot, recipeIds: rows.map((row) => row.recipeId) } }),
       toast: rows.length === 1 ? `${rows[0].title} added` : `${rows.length} recipes added`,
@@ -218,14 +278,14 @@ function PlanPage() {
 
   function submitNote(request: AddEntryRequest, body: string) {
     if (request.kind === "edit-note") {
-      void run({
+      run({
         optimistic: (current) => withNoteBody(current, request.entryId, body),
         action: () => updateMealPlanNote({ data: { entryId: request.entryId, body } }),
         toast: body.trim() === "" ? "Note removed" : "Note saved",
       });
       return;
     }
-    void run({
+    run({
       optimistic: (current) => withEntriesAppended(current, request.date, request.slot, [optimisticNoteEntry(body, 0)]),
       action: () => addMealPlanNote({ data: { date: request.date, slot: request.slot, body } }),
       toast: "Note added",
@@ -288,7 +348,7 @@ function PlanPage() {
       // one would be a lie, and the server no-ops it anyway.
       if (!found || (found.date === toDate && found.slot === toSlot)) return;
       const label = entryLabel(entryId);
-      void run({
+      run({
         optimistic: (current) => withEntryMoved(current, entryId, toDate, toSlot),
         action: () => moveMealPlanEntry({ data: { entryId, toDate, toSlot } }),
         toast: `Moved to ${toSlot} · ${formatPlanDate(toDate)}`,
@@ -297,7 +357,7 @@ function PlanPage() {
     },
     removeEntry(entryId) {
       const label = entryLabel(entryId);
-      void run({
+      run({
         optimistic: (current) => withEntryRemoved(current, entryId),
         action: () => removeMealPlanEntry({ data: { entryId } }),
         toast: `${label} removed`,
@@ -305,7 +365,7 @@ function PlanPage() {
       });
     },
     setCooked(entryId, cooked) {
-      void run({
+      run({
         optimistic: (current) => withEntryCooked(current, entryId, cooked),
         action: () => setMealPlanEntryCooked({ data: { entryId, cooked } }),
         toast: cooked ? "Marked cooked" : "Cooked mark cleared",
@@ -317,7 +377,7 @@ function PlanPage() {
       const { recipeId } = found.entry;
       // No optimistic patch: `inBox` is the box's answer, not the plan's, and
       // the invalidate is what re-reads it.
-      void run({ action: () => addRecipeToHousehold({ data: { recipeId } }), toast: "Added back to your box" });
+      run({ action: () => addRecipeToHousehold({ data: { recipeId } }), toast: "Added back to your box" });
     },
     draggingId,
     setDraggingId,

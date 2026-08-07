@@ -4,20 +4,23 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "#/lib/utils.ts";
 
-const dialogPopupVariants = cva("fixed z-50 flex flex-col gap-3 bg-card text-card-foreground transition duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0", {
-  variants: {
-    size: {
-      sm: "top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border-2 border-border p-5 shadow-pop-md data-ending-style:scale-95 data-starting-style:scale-95",
-      default:
-        "top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border-2 border-border p-5 shadow-pop-md data-ending-style:scale-95 data-starting-style:scale-95",
-      lg: "top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border-2 border-border p-6 shadow-pop-md data-ending-style:scale-95 data-starting-style:scale-95",
-      xl: "top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 gap-5 rounded-xl border-2 border-border p-8 shadow-pop-md data-ending-style:scale-95 data-starting-style:scale-95",
-      // Cook mode: the recipe owns the screen. No scrim, no border, no radius.
-      fullscreen: "inset-0 h-svh w-screen gap-6 overflow-auto bg-background p-8",
+const dialogPopupVariants = cva(
+  "fixed z-(--z-modal) flex flex-col gap-3 bg-card text-card-foreground transition duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0",
+  {
+    variants: {
+      size: {
+        sm: "top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border-2 border-border p-5 shadow-pop-md data-ending-style:scale-95 data-starting-style:scale-95",
+        default:
+          "top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border-2 border-border p-5 shadow-pop-md data-ending-style:scale-95 data-starting-style:scale-95",
+        lg: "top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border-2 border-border p-6 shadow-pop-md data-ending-style:scale-95 data-starting-style:scale-95",
+        xl: "top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 gap-5 rounded-xl border-2 border-border p-8 shadow-pop-md data-ending-style:scale-95 data-starting-style:scale-95",
+        // Cook mode: the recipe owns the screen. No scrim, no border, no radius.
+        fullscreen: "inset-0 h-svh w-screen gap-6 overflow-auto bg-background p-8",
+      },
     },
+    defaultVariants: { size: "default" },
   },
-  defaultVariants: { size: "default" },
-});
+);
 
 const dialogTitleVariants = cva("display-title m-0 text-foreground", {
   variants: {
@@ -44,7 +47,7 @@ function DialogBackdrop({ className, ...props }: DialogPrimitive.Backdrop.Props)
     <DialogPrimitive.Backdrop
       data-slot="dialog-backdrop"
       className={cn(
-        "fixed inset-0 z-50 bg-black/20 transition-opacity duration-150 supports-backdrop-filter:backdrop-blur-xs data-ending-style:opacity-0 data-starting-style:opacity-0",
+        "fixed inset-0 z-(--z-modal) bg-black/20 transition-opacity duration-150 supports-backdrop-filter:backdrop-blur-xs data-ending-style:opacity-0 data-starting-style:opacity-0",
         className,
       )}
       {...props}

@@ -25,10 +25,14 @@ const CookMode = lazy(() => import("./cook/CookMode"));
  * What the screen shows between the gesture and the chunk arriving. Deliberately
  * full-screen and `dark`, matching cook mode itself: the apron is a mode change,
  * and a spinner in the page's own colours would read as the page hanging.
+ *
+ * `--z-takeover`, the top of the scale in `styles.css`: a takeover of the whole
+ * screen cannot have a popover or a toast from the page underneath poking
+ * through it.
  */
 export function CookModeFallback() {
   return (
-    <div className="dark fixed inset-0 z-[70] grid place-content-center bg-background text-foreground" role="status" aria-label="Opening cook mode">
+    <div className="dark fixed inset-0 z-(--z-takeover) grid place-content-center bg-background text-foreground" role="status" aria-label="Opening cook mode">
       <Spinner className="size-8 text-primary" />
     </div>
   );

@@ -34,7 +34,7 @@ export default function Header({ ref, leftSlot, hidden = false }: { ref?: Ref<HT
     <header
       ref={ref}
       data-hidden={hidden || undefined}
-      className="fixed inset-x-0 top-0 z-50 border-b-2 border-border bg-background transition-transform duration-200 ease-linear data-[hidden]:-translate-y-full"
+      className="fixed inset-x-0 top-0 z-(--z-sticky) border-b-2 border-border bg-background transition-transform duration-200 ease-linear data-[hidden]:-translate-y-full"
     >
       <div className="flex items-center gap-2 px-3 py-2.5 sm:px-5">
         {leftSlot}
