@@ -311,6 +311,26 @@ export const getMealPlanWeek = createServerFn({ method: "GET" })
   });
 
 /**
+ * Today, as the household reckons it.
+ *
+ * The date a client picks has to be anchored to the household timezone like
+ * every other plan date (§2.3) — a member in Tokyo planning "tonight" must land
+ * on the same row as one in Chicago reading the same plan, and the browser's own
+ * clock cannot answer that. This exists rather than reusing `getMealPlanWeek`
+ * for surfaces that need the anchor but not the week: "add to meal planner" from
+ * a recipe cares about which dates it may offer, not about what is already in
+ * them.
+ */
+export const getPlanToday = createServerFn({ method: "GET" }).handler(async (): Promise<{ today: PlanDate; timezone: string }> => {
+  const { readHouseholdPreferences } = await import("./household/preferences");
+  const { assertMember } = await import("./authz");
+  const { did, householdId } = await activeContext();
+  await assertMember(did, householdId);
+  const { timezone } = await readHouseholdPreferences(householdId);
+  return { today: todayIn(timezone), timezone };
+});
+
+/**
  * The query behind `getMealPlanWeek`, callable directly by other server-side
  * readers that already hold a validated DID + household id — the `.ics` route
  * (§9.3) is not a server function and would otherwise duplicate this whole

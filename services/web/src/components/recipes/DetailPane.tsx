@@ -8,7 +8,9 @@ import { publishRecipe } from "#/server/recipes-write";
 import { Button } from "#/components/ui/button";
 import { Textarea } from "#/components/ui/textarea";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
-import { formatPlanDate, shortDow } from "#/lib/plan/labels";
+import { AddToPlanDialog, type AddToPlanRequest } from "#/components/plan/AddToPlanDialog";
+import { SLOT_LABELS, formatPlanDate, shortDow } from "#/lib/plan/labels";
+import type { MealSlot, PlanDate } from "#/lib/plan/week";
 import { scaleIngredients } from "#/lib/recipe-scale";
 import { cn } from "#/lib/utils";
 import { useRecipesView } from "./context";
@@ -60,6 +62,7 @@ export function DetailPane({
   const [removing, setRemoving] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [planRequest, setPlanRequest] = useState<AddToPlanRequest | null>(null);
 
   // Detail-pane state (favorite, scroll position, note) is keyed by recipeId at
   // the render site (`<DetailPane key={recipe.recipeId} …/>`), so switching
@@ -110,6 +113,14 @@ export function DetailPane({
       setPublishing(false);
       setConfirmPublish(false);
     }
+  }
+
+  async function onPlanned(date: PlanDate, slot: MealSlot) {
+    posthog.capture("meal_plan_entry_added", { recipe_id: recipe.recipeId, slot, source: "recipe_detail" });
+    pushToast(`Added to ${SLOT_LABELS[slot].toLowerCase()} on ${formatPlanDate(date)}`);
+    // The pane's own "on your meal plan" line comes from the loader's
+    // `plannedUsage`, so it is stale the moment this lands.
+    await router.invalidate();
   }
 
   async function onRemove() {
@@ -200,7 +211,7 @@ export function DetailPane({
             <ShoppingBasket data-icon="inline-start" aria-hidden="true" />
             Add to shopping list
           </Button>
-          <Button variant="outline" onClick={() => pushToast("Added to this week's plan")}>
+          <Button variant="outline" onClick={() => setPlanRequest({ recipeId: recipe.recipeId, title: recipe.title })}>
             <CalendarRange data-icon="inline-start" aria-hidden="true" />
             Add to meal planner
           </Button>
@@ -334,6 +345,8 @@ export function DetailPane({
         pending={removing}
         onConfirm={onRemove}
       />
+
+      <AddToPlanDialog request={planRequest} onClose={() => setPlanRequest(null)} onAdded={onPlanned} />
     </div>
   );
 }
