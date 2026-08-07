@@ -14,8 +14,7 @@ export const Route = createFileRoute("/acknowledgements")({
 
 /**
  * The acknowledgements surface (plan §11b) — an ungated, content-only page that
- * credits third-party content and the open source Buttery builds on. Seeded here
- * with the CC0 alarm sound; structured so future entries append cleanly. AIL-4:
+ * credits third-party content and the open source Buttery builds on. AIL-4:
  * LLM-drafted, human-reviewed.
  */
 function AcknowledgementsPage() {
@@ -36,8 +35,51 @@ function AcknowledgementsPage() {
         </li>
       </ul>
 
-      <h2>Open source</h2>
-      <p>Buttery stands on a large amount of open-source software. We&rsquo;ll credit those projects here as this page is filled out.</p>
+      <h2>The foundations</h2>
+      <p>Buttery is built with:</p>
+      <ul>
+        <li>
+          <strong>
+            <LegalLink href="https://atproto.com/">atproto</LegalLink>
+          </strong>{" "}
+          — the AT Protocol, and Bluesky&rsquo;s reference implementation of it. MIT, © 2022–2026 Bluesky Social PBC and Contributors.
+        </li>
+        <li>
+          <strong>
+            <LegalLink href="https://nodejs.org">Node.js</LegalLink>
+          </strong>{" "}
+          — MIT, © Node.js contributors and the OpenJS Foundation.
+        </li>
+        <li>
+          <strong>
+            <LegalLink href="https://www.postgresql.org">PostgreSQL</LegalLink>
+          </strong>{" "}
+          — PostgreSQL License, © 1996–2026 The PostgreSQL Global Development Group.
+        </li>
+        <li>
+          <strong>
+            <LegalLink href="https://redis.io">Redis</LegalLink>
+          </strong>{" "}
+          — source-available (RSALv2 / SSPLv1, plus AGPLv3 from Redis 8 onward), © Redis Ltd. Buttery runs it as a service rather than redistributing it.
+        </li>
+        <li>
+          <strong>
+            <LegalLink href="https://react.dev">React</LegalLink>
+          </strong>{" "}
+          — MIT, © Meta Platforms, Inc. and affiliates.
+        </li>
+        <li>
+          <strong>
+            <LegalLink href="https://tanstack.com/">TanStack</LegalLink>
+          </strong>{" "}
+          — Router and Start. MIT, © 2021–present Tanner Linsley and the TanStack contributors.
+        </li>
+      </ul>
+
+      <p>
+        If your work is credited here incorrectly — or belongs here and isn&rsquo;t — <LegalLink href="https://github.com/dcousineau/buttery/issues">open an issue</LegalLink> and
+        we&rsquo;ll fix it.
+      </p>
     </LegalPage>
   );
 }
