@@ -4,6 +4,47 @@ import type { Main as RecipeRecord } from "@buttery/lexicons/exchange/recipe/rec
 import { getAtprotoOAuthClient } from "./oauth-node";
 
 /**
+ * Thrown when the PDS rejects a write because the stored OAuth grant predates
+ * (or is narrower than) the scopes in `ATPROTO_SCOPE`. Not recoverable
+ * server-side: a refresh token carries its original scope, so the only fix is
+ * sending the user back through the authorization flow.
+ */
+export class AtprotoScopeError extends Error {
+  /** The scope the PDS said was missing, e.g. `blob:image/jpeg`. */
+  readonly missingScope: string | null;
+  constructor(missingScope: string | null) {
+    super(missingScope ? `atproto grant is missing the "${missingScope}" scope` : "atproto grant is missing a required scope");
+    this.name = "AtprotoScopeError";
+    this.missingScope = missingScope;
+  }
+}
+
+/**
+ * Recognize the PDS's 403 for an under-scoped grant. The message shape comes
+ * from `ScopeMissingError` in @atproto/oauth-scopes (`Missing required scope
+ * "<scope>"`); we match on it rather than on status or an error code, because
+ * 403 covers plenty of unrelated refusals (blocked, takedown, rate limit) and
+ * the code the PDS surfaces isn't specific to this case. Matching the message
+ * also hands us the exact missing scope to name in the re-auth prompt.
+ */
+function asScopeError(err: unknown): AtprotoScopeError | null {
+  const message = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  const match = /Missing required scope "([^"]*)"/.exec(message);
+  return match ? new AtprotoScopeError(match[1] || null) : null;
+}
+
+/** Run a PDS write, converting an under-scoped 403 into `AtprotoScopeError`. */
+async function withScopeCheck<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const scopeErr = asScopeError(err);
+    if (scopeErr) throw scopeErr;
+    throw err;
+  }
+}
+
+/**
  * Fields for a new exchange.recipe.recipe record. Derived from the generated
  * lexicon type so a schema change surfaces here as a compile error. `$type` is
  * stamped by `Client.create`; the timestamps are defaulted by `createRecipe`,
@@ -35,22 +76,28 @@ export async function getUserRecipeClient(did: string) {
  * reconciles onto the existing local row instead of inserting a duplicate. When
  * omitted the PDS generates a key.
  *
+ * That is why `exchange.recipe.recipe` declares `"key": "any"` rather than the
+ * more common `"tid"`: a ULID is 26 chars of Crockford base32, which is a valid
+ * record key but *not* a valid TID, so a tid-keyed lexicon rejects it outright
+ * (`Invalid TID string`). `any` is a strict widening — TIDs remain valid — so
+ * any record already written under the old declaration still validates.
+ *
  * Returns the created record's `{ uri, cid, rev }` — `rev` (from the commit) is
  * needed to seed the cron's rev-guarded sync bookkeeping.
  */
 export async function createRecipe(did: string, draft: NewRecipe, rkey?: string): Promise<{ uri: string; cid: string; rev: string | null }> {
   const now = currentDatetimeString();
   const client = await getUserRecipeClient(did);
-  const res = await client.create(
-    recipe,
-    {
-      ...draft,
-      createdAt: draft.createdAt ?? now,
-      updatedAt: draft.updatedAt ?? now,
-    },
-    // `rkey` is optional for a tid-keyed record; InferRecordKey is branded, so a
-    // plain ULID string needs the cast.
-    rkey ? { rkey: rkey as never } : ({} as never),
+  const res = await withScopeCheck(() =>
+    client.create(
+      recipe,
+      {
+        ...draft,
+        createdAt: draft.createdAt ?? now,
+        updatedAt: draft.updatedAt ?? now,
+      },
+      rkey ? { rkey } : {},
+    ),
   );
   return { uri: res.uri, cid: res.cid, rev: res.commit?.rev ?? null };
 }
@@ -64,6 +111,6 @@ export async function uploadRecipeImage(did: string, bytes: Uint8Array, mime: st
   if (!mime.startsWith("image/")) throw new Error("Recipe image must be an image/* file.");
   if (bytes.byteLength > 1_000_000) throw new Error("Recipe image must be 1 MB or smaller.");
   const client = await getUserRecipeClient(did);
-  const res = await client.uploadBlob(bytes, { encoding: mime as `${string}/${string}` });
+  const res = await withScopeCheck(() => client.uploadBlob(bytes, { encoding: mime as `${string}/${string}` }));
   return res.body.blob;
 }

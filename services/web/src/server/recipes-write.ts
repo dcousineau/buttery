@@ -55,7 +55,11 @@ export type SaveRecipeResult =
   | { status: "duplicate"; existingRecipeId: string }
   // Publishing is turned off by the atproto-publishing kill switch. Any draft was
   // still saved; `recipeId` points at it so the caller can land on the draft.
-  | { status: "publish_disabled"; recipeId: string };
+  | { status: "publish_disabled"; recipeId: string }
+  // The signed-in account's atproto grant predates the scopes publishing needs
+  // (see ATPROTO_SCOPE). The draft is saved; the caller must send the user back
+  // through authorization before the PDS write can succeed.
+  | { status: "reauth_required"; recipeId: string; missingScope: string | null };
 
 // --- attribution enforcement --------------------------------------------
 
@@ -241,9 +245,35 @@ async function runSave(db: Kysely<DB>, ctx: Ctx, input: SaveRecipeInput): Promis
   }
 
   // Upload image blob (if any), write the record to the PDS with the ULID as
-  // rkey, then flip the row public + reconcile the sync tables.
-  await publishLocalRecipe(db, ctx, recipeId, record, input.image ?? null);
+  // rkey, then flip the row public + reconcile the sync tables. An under-scoped
+  // grant leaves the draft intact and asks the caller to re-authorize.
+  const scopeErr = await publishOrScopeError(db, ctx, recipeId, record, input.image ?? null);
+  if (scopeErr) return scopeErr;
   return { status: "ok", recipeId, published: true };
+}
+
+/**
+ * Run the PDS publish, translating an under-scoped atproto grant into a
+ * `reauth_required` result. Any other failure propagates — publishing is
+ * all-or-nothing and a real error should surface as one.
+ */
+async function publishOrScopeError(
+  db: Kysely<DB>,
+  ctx: Ctx,
+  recipeId: string,
+  record: RecipeRecord,
+  image: RecipeImageInput | null,
+): Promise<{ status: "reauth_required"; recipeId: string; missingScope: string | null } | null> {
+  const { AtprotoScopeError } = await import("#/lib/atproto/recipe-writes");
+  try {
+    await publishLocalRecipe(db, ctx, recipeId, record, image);
+    return null;
+  } catch (err) {
+    if (err instanceof AtprotoScopeError) {
+      return { status: "reauth_required", recipeId, missingScope: err.missingScope };
+    }
+    throw err;
+  }
 }
 
 async function runPublishExisting(db: Kysely<DB>, ctx: Ctx, recipeId: string): Promise<SaveRecipeResult> {
@@ -282,7 +312,8 @@ async function runPublishExisting(db: Kysely<DB>, ctx: Ctx, recipeId: string): P
     return { status: "publish_disabled", recipeId };
   }
 
-  await publishLocalRecipe(db, ctx, recipeId, validated.value as RecipeRecord, built.pendingImage);
+  const scopeErr = await publishOrScopeError(db, ctx, recipeId, validated.value as RecipeRecord, built.pendingImage);
+  if (scopeErr) return scopeErr;
   return { status: "ok", recipeId, published: true };
 }
 

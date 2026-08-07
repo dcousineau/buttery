@@ -28,6 +28,25 @@ export const APP_URL = isLoopback ? `http://127.0.0.1:${process.env.PORT ?? "300
 const REDIRECT_URI = `${APP_URL}/api/auth/atproto/callback`;
 
 /**
+ * The OAuth scopes Buttery asks a PDS for — deliberately the narrowest set that
+ * covers what the app actually does:
+ *
+ * - `atproto`               — base identity scope; required, grants no writes.
+ * - `repo:exchange.recipe.recipe` — create/update/delete recipe records only.
+ *   No other collection in the user's repo is reachable with this grant.
+ * - `blob:image/*`          — upload image blobs (recipe hero photos). Wildcard
+ *   because an imported hero can be jpeg/png/webp/avif and we don't know which
+ *   until we fetch it.
+ *
+ * `atproto` alone authorizes *no* repo write and *no* blob upload: the PDS
+ * answers 403 `Missing required scope "…"`. Widening this string invalidates
+ * every existing grant — refresh tokens can't upgrade scope, so users must
+ * re-authorize. The publish path detects that 403 and prompts for it; see
+ * `AtprotoScopeError` in recipe-writes.ts.
+ */
+export const ATPROTO_SCOPE = "atproto repo:exchange.recipe.recipe blob:image/*";
+
+/**
  * In dev the atproto loopback client is used (`http://localhost` client_id
  * with metadata derived from its query string; redirect must target
  * 127.0.0.1, so browse the dev server at http://127.0.0.1:3000). In
@@ -35,13 +54,13 @@ const REDIRECT_URI = `${APP_URL}/api/auth/atproto/callback`;
  * that URL is the client_id.
  */
 export const clientMetadata: OAuthClientMetadataInput = isLoopback
-  ? atprotoLoopbackClientMetadata(`http://localhost?redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent("atproto")}`)
+  ? atprotoLoopbackClientMetadata(`http://localhost?redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(ATPROTO_SCOPE)}`)
   : {
       client_id: `${APP_URL}/oauth-client-metadata.json`,
       client_name: "Buttery",
       client_uri: APP_URL,
       redirect_uris: [REDIRECT_URI],
-      scope: "atproto",
+      scope: ATPROTO_SCOPE,
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       application_type: "web",

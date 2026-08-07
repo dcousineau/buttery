@@ -5,8 +5,8 @@ import { MEAL_SLOTS, type MealSlot, type PlanDate } from "#/lib/plan/week";
 /**
  * Pure patches over a `PlanWeek` payload — the optimistic half of §8.2.
  *
- * Every mutation on `/plan` paints its result immediately and reconciles with
- * `router.invalidate()` when the server answers. These functions are what
+ * Every mutation on `/household/plan` paints its result immediately and
+ * reconciles with `router.invalidate()` when the server answers. These are what
  * "paints immediately" means: given the week the loader returned and the change
  * the user asked for, they produce the week the user should already be looking
  * at. Nothing here touches the network, React, or the loader — the route holds

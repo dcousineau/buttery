@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { APIError, createAuthEndpoint, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
-import { getAtprotoOAuthClient } from "./oauth-node";
+import { ATPROTO_SCOPE, getAtprotoOAuthClient } from "./oauth-node";
 import type { BetterAuthPlugin } from "better-auth";
 
 const APPVIEW = "https://public.api.bsky.app";
@@ -86,8 +86,10 @@ export const atprotoPlugin = () => {
         async (ctx) => {
           const client = getAtprotoOAuthClient();
           try {
+            // Same scope string as the client metadata — an authorize request
+            // may only narrow the registered scope, never widen it.
             const url = await client.authorize(ctx.body.handle, {
-              scope: "atproto",
+              scope: ATPROTO_SCOPE,
             });
             return ctx.json({ url: url.toString() });
           } catch (err) {

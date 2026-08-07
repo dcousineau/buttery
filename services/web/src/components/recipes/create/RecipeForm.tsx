@@ -13,6 +13,8 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "#/
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Spinner } from "#/components/ui/spinner";
 import { RECIPE_VOCAB, slugForLabel, slugForToken, tokenForSlug } from "#/lib/recipe-vocab";
+import { authClient } from "#/lib/auth-client";
+import { reconnectAtproto } from "#/lib/atproto-reauth";
 import { type AttributionState, EMPTY_ATTRIBUTION, attributionComplete, buildAttribution } from "#/lib/recipe-attribution";
 import { deriveSource } from "#/server/recipe-provenance";
 import { saveRecipe, type RecipeRecordInput, type FieldIssue } from "#/server/recipes-write";
@@ -64,6 +66,8 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
   const router = useRouter();
   const posthog = usePostHog();
   const { pushToast } = useRecipesView();
+  // `handle` is an atproto-plugin column, absent from better-auth's base user type.
+  const { data: session } = authClient.useSession() as { data: { user?: { handle?: string | null } } | null };
 
   // `sourceUrl` null → manual; set → imported (attribution locked). "Start over by
   // hand" drops the lock by clearing this.
@@ -97,6 +101,10 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
   const [duplicateId, setDuplicateId] = useState<string | null>(null);
   const [pending, setPending] = useState<null | "draft" | "publish">(null);
   const [issues, setIssues] = useState<FieldIssue[]>([]);
+  // The draft saved but the PDS refused the write: this account's atproto grant
+  // predates the scopes publishing needs, so it has to be re-authorized.
+  const [needsReauth, setNeedsReauth] = useState(false);
+  const [reauthPending, setReauthPending] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const attrDone = imported || attributionComplete(attr);
@@ -146,7 +154,6 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
     return () => {
       cancelled = true;
     };
-     
   }, [importId]);
 
   function buildRecord(): RecipeRecordInput {
@@ -209,6 +216,17 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
         await navigate({ to: "/household/recipes/$id", params: { id: result.recipeId } });
         return;
       }
+      if (result.status === "reauth_required") {
+        // The recipe is saved as a draft; only the PDS write was refused. Stay
+        // put and offer the re-authorization rather than dumping the user on a
+        // draft with no explanation.
+        posthog.capture("recipe_created", { published: false, imported, reauth_required: true, missing_scope: result.missingScope });
+        setReauthPending(false);
+        setNeedsReauth(true);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        await router.invalidate();
+        return;
+      }
       posthog.capture("recipe_created", { published: result.published, imported });
       await router.invalidate();
       await navigate({ to: "/household/recipes/$id", params: { id: result.recipeId } });
@@ -216,6 +234,16 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
       setIssues([{ path: "", message: String(err instanceof Error ? err.message : err) }]);
     } finally {
       setPending(null);
+    }
+  }
+
+  async function onReconnect() {
+    setReauthPending(true);
+    const failure = await reconnectAtproto(session?.user?.handle);
+    // Only reached when the redirect didn't happen.
+    if (failure) {
+      setReauthPending(false);
+      setIssues([{ path: "", message: failure }]);
     }
   }
 
@@ -293,6 +321,24 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
             </p>
           )}
         </header>
+
+        {/* Re-authorization prompt — the draft is saved, only the PDS write failed. */}
+        {needsReauth && (
+          <div className="flex items-start gap-3 rounded-lg border-2 border-border bg-card px-3.5 py-3 shadow-(--shadow-pop-sm)">
+            <CircleAlert className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
+            <div className="flex flex-col items-start gap-2">
+              <div className="text-sm font-semibold text-foreground">Buttery needs new permissions on your atproto account</div>
+              <p className="m-0 text-sm text-muted-foreground">
+                Your recipe is saved here as a draft. Publishing writes it to your own account, and that permission was added after you last signed in — reconnect to grant it, then
+                publish again.
+              </p>
+              <Button size="sm" disabled={reauthPending} onClick={onReconnect}>
+                {reauthPending ? <Spinner /> : null}
+                Reconnect account
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Error summary */}
         {issues.length > 0 && (

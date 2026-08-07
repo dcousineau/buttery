@@ -26,7 +26,7 @@ const NAV_ENTRIES: Array<NavEntry> = [
   { label: "Recipes", icon: BookOpenText, to: "/household/recipes" },
   { label: "Collections", icon: FolderLock, soon: true },
   { label: "Shopping list", icon: ShoppingBasket, soon: true },
-  { label: "Meal planner", icon: CalendarRange, to: "/plan" },
+  { label: "Meal planner", icon: CalendarRange, to: "/household/plan" },
   { label: "Randomizer", icon: Dices, soon: true },
 ];
 

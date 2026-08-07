@@ -50,7 +50,7 @@ function PantryPage() {
           <CardContent className="flex flex-col items-start gap-4">
             <p className="m-0 text-sm text-muted-foreground">
               Once recipes, collections, and the{" "}
-              <Link to="/plan" className="font-semibold text-foreground underline underline-offset-2">
+              <Link to="/household/plan" className="font-semibold text-foreground underline underline-offset-2">
                 meal planner
               </Link>{" "}
               are live, this page will pull them together at a glance.

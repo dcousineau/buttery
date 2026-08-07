@@ -43,7 +43,7 @@ import { cn } from "#/lib/utils";
 import { seo } from "#/lib/seo";
 
 /**
- * The meal planner (`/plan?week=YYYY-MM-DD&view=week|days&panel=1`).
+ * The meal planner (`/household/plan?week=YYYY-MM-DD&view=week|days&panel=1`).
  *
  * Three pieces of state, all in the URL (D15) so a week is shareable and the
  * back button does what it looks like it does:
@@ -75,7 +75,7 @@ const searchSchema = z.object({
     .catch(undefined),
 });
 
-export const Route = createFileRoute("/plan")({
+export const Route = createFileRoute("/household/plan")({
   validateSearch: searchSchema,
   // ONLY `week`. Adding `view`/`panel` here would make a layout toggle refetch
   // the whole week for no new data.

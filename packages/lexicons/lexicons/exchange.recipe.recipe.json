@@ -2,7 +2,7 @@
   "id": "exchange.recipe.recipe",
   "defs": {
     "main": {
-      "key": "tid",
+      "key": "any",
       "type": "record",
       "record": {
         "type": "object",

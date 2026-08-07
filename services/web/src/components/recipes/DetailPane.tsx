@@ -13,6 +13,8 @@ import { SLOT_LABELS, formatPlanDate, shortDow } from "#/lib/plan/labels";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
 import { scaleIngredients } from "#/lib/recipe-scale";
 import { cn } from "#/lib/utils";
+import { authClient } from "#/lib/auth-client";
+import { reconnectAtproto } from "#/lib/atproto-reauth";
 import { useRecipesView } from "./context";
 import { useRecipeScale } from "./scale";
 import { SourceIcon } from "./SourceIcon";
@@ -62,7 +64,13 @@ export function DetailPane({
   const [removing, setRemoving] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  // Publishing was refused because this account's atproto grant predates the
+  // scopes the PDS write needs; only a fresh authorization fixes it.
+  const [needsReauth, setNeedsReauth] = useState(false);
+  const [reauthPending, setReauthPending] = useState(false);
   const [planRequest, setPlanRequest] = useState<AddToPlanRequest | null>(null);
+  // `handle` is an atproto-plugin column, absent from better-auth's base user type.
+  const { data: session } = authClient.useSession() as { data: { user?: { handle?: string | null } } | null };
 
   // Detail-pane state (favorite, scroll position, note) is keyed by recipeId at
   // the render site (`<DetailPane key={recipe.recipeId} …/>`), so switching
@@ -99,12 +107,30 @@ export function DetailPane({
     }
   }
 
+  async function onReconnect() {
+    setReauthPending(true);
+    const failure = await reconnectAtproto(session?.user?.handle);
+    // Only reached when the redirect didn't happen.
+    if (failure) {
+      setReauthPending(false);
+      setNeedsReauth(false);
+      pushToast(failure);
+    }
+  }
+
   async function onPublish() {
     setPublishing(true);
     try {
       const res = await publishRecipe({ data: { recipeId: recipe.recipeId } });
       if (res.status === "publish_disabled") {
         pushToast("Publishing is turned off right now.");
+        return;
+      }
+      if (res.status === "reauth_required") {
+        // Grant predates the scopes publishing needs — the recipe stays private
+        // until the user re-authorizes.
+        posthog.capture("recipe_publish_reauth_required", { recipe_id: recipe.recipeId, missing_scope: res.missingScope });
+        setNeedsReauth(true);
         return;
       }
       posthog.capture("recipe_published", { recipe_id: recipe.recipeId, from: "detail_lock" });
@@ -323,6 +349,17 @@ export function DetailPane({
         confirmLabel="Publish"
         pending={publishing}
         onConfirm={onPublish}
+      />
+
+      <ConfirmDialog
+        open={needsReauth}
+        onOpenChange={setNeedsReauth}
+        title="Buttery needs new permissions"
+        description="Publishing writes this recipe to your own atproto account, and that permission was added after you last signed in. Reconnect to grant it — you'll come back here and can publish again. The recipe stays private until then."
+        confirmLabel="Reconnect account"
+        cancelLabel="Not now"
+        pending={reauthPending}
+        onConfirm={onReconnect}
       />
 
       <ConfirmDialog
