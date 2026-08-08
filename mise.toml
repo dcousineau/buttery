@@ -2,7 +2,7 @@
 node = "26"
 # Keep in sync with the `packageManager` field in package.json (mise can't yet
 # infer it — jdx/mise#3549). CI reads the exact version from packageManager.
-pnpm = "11.17.0"
+pnpm = "11.20.0"
 railway = "latest"
 process-compose = "latest"
 

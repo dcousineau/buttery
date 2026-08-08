@@ -15,7 +15,7 @@
     "typecheck": "tsc6 --noEmit"
   },
   "dependencies": {
-    "node-html-parser": "^7.0.1"
+    "node-html-parser": "^9.0.1"
   },
   "devDependencies": {
     "@buttery/lexicons": "workspace:*",
