@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { LegalPage } from "../components/LegalPage";
+import { LegalPage, LegalLink } from "../components/LegalPage";
 import { seo } from "../lib/seo";
 
 export const Route = createFileRoute("/privacy")({
@@ -14,7 +14,7 @@ export const Route = createFileRoute("/privacy")({
 
 function PrivacyPage() {
   return (
-    <LegalPage eyebrow="Legal" title="Privacy Policy" updated="July 26, 2026" ail={4}>
+    <LegalPage eyebrow="Legal" title="Privacy Policy" updated="August 9, 2026" ail={4}>
       <p>
         Buttery is an open source, experimental project and is provided <strong>&ldquo;as is.&rdquo;</strong> We take your privacy seriously and protect your data to the best of
         our ability, but Buttery is a publicly available private test and does <strong>not</strong> yet offer formal privacy guarantees or regulatory compliance. If you require
@@ -49,6 +49,9 @@ function PrivacyPage() {
         <li>
           <strong>Basic operational data</strong> — like standard server logs needed to run and secure the service.
         </li>
+        <li>
+          <strong>Product analytics data</strong> — usage events, feature flag evaluations, and error reports sent to PostHog (see below).
+        </li>
       </ul>
 
       <h2>What we do with it</h2>
@@ -56,6 +59,19 @@ function PrivacyPage() {
         We use this data only to operate Buttery — to authenticate you and to display, store, and share your recipes and app data as you direct. We do not sell your data. Recipes
         you choose to share are, by nature, visible to those you share them with and may be publicly accessible via atproto. Private app data stored in Buttery&rsquo;s database is
         not published to atproto.
+      </p>
+
+      <h2>Analytics and third-party processors</h2>
+      <p>
+        Buttery uses <LegalLink href="https://posthog.com/">PostHog</LegalLink> to understand how the app is used, to drive feature flagging and gradual rollouts, and to power
+        various other in-app functionality (such as error reporting and the in-app support widget). This means data about how you use Buttery — page views, in-app events and
+        interactions, error reports, and, once you sign in, your atproto DID, handle, and display name — is sent to PostHog and processed on our behalf as a third-party data
+        processor. We do not send your recipe content, shopping lists, or meal plans to PostHog as analytics data.
+      </p>
+      <p>
+        We currently use PostHog&rsquo;s <strong>US Cloud</strong>, so this analytics data is stored and processed in the United States. PostHog describes what it collects and how
+        it handles data in its own <LegalLink href="https://posthog.com/privacy">privacy policy</LegalLink>, and documents its privacy and compliance practices in its{" "}
+        <LegalLink href="https://posthog.com/docs/privacy">privacy documentation</LegalLink>.
       </p>
 
       <h2>Data requests</h2>
