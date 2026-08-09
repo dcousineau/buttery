@@ -20,7 +20,7 @@
     "multiformats": "^14.0.5"
   },
   "devDependencies": {
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.2.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   }
 }
