@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Pure data/vocabulary package: no DOM, no network, no Node APIs beyond the
+    // WHATWG `URL` that @types/node supplies. Runs unchanged in Node and the
+    // browser, same as its consumer @buttery/recipe-extract.
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}

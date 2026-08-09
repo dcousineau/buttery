@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Clock, CookingPot, UtensilsCrossed, Users } from "lucide-react";
+import { lexiconToSchemaOrg } from "@buttery/recipe-schemas/bridge";
+import type { SchemaOrgRecipe } from "@buttery/recipe-schemas/schema-org";
 import { getRecipe } from "../server/recipes";
 import { formatDuration, formatPublished } from "../lib/format";
 import { parseServes } from "../lib/recipe-scale";
@@ -47,60 +49,45 @@ function NotFound() {
 
 // --- schema.org/Recipe structured data ----------------------------------
 
-// Recipe diet slugs → schema.org RestrictedDiet enumeration members. Only
-// mapped slugs land in `suitableForDiet` (the property is typed to the enum);
-// unmapped diets still ride along in `keywords`.
-const DIET_SCHEMA: Record<string, string> = {
-  diabetic: "https://schema.org/DiabeticDiet",
-  gluten_free: "https://schema.org/GlutenFreeDiet",
-  halal: "https://schema.org/HalalDiet",
-  hindu: "https://schema.org/HinduDiet",
-  kosher: "https://schema.org/KosherDiet",
-  low_calorie: "https://schema.org/LowCalorieDiet",
-  low_fat: "https://schema.org/LowFatDiet",
-  low_lactose: "https://schema.org/LowLactoseDiet",
-  low_salt: "https://schema.org/LowSaltDiet",
-  vegan: "https://schema.org/VeganDiet",
-  vegetarian: "https://schema.org/VegetarianDiet",
-};
-
-// Build a JSON-LD https://schema.org/Recipe document. Emitted alongside the
-// inline microdata so third parties can parse the recipe either way, with no
-// scraping of the human layout. Undefined fields are stripped before render.
-function buildRecipeLd(recipe: RecipeDetailData) {
+/**
+ * Build a JSON-LD https://schema.org/Recipe document. Emitted alongside the
+ * inline microdata so third parties can parse the recipe either way, with no
+ * scraping of the human layout.
+ *
+ * The vocabulary itself — property names, the RestrictedDiet crosswalk, which
+ * fields may be omitted — lives in `@buttery/recipe-schemas`, shared with the
+ * import parsers so the read and write sides can't drift. All this does is map
+ * our rendered read model onto that input.
+ */
+function buildRecipeLd(recipe: RecipeDetailData): SchemaOrgRecipe {
   const a = recipe.attribution;
   const authorName = a?.displayName ?? a?.author ?? a?.publisher ?? recipe.publishedBy;
-  // atproto attribution kinds: person/organization/publication/… — anything
-  // that isn't clearly a person is safest typed as an Organization.
-  const author = authorName ? { "@type": a && a.kind !== "person" ? "Organization" : "Person", name: authorName, ...(a?.url ? { url: a.url } : {}) } : undefined;
 
-  const diets = recipe.suitableForDiet.map((d) => DIET_SCHEMA[d]).filter(Boolean) as string[];
-
-  const ld = {
-    "@context": "https://schema.org",
-    "@type": "Recipe",
+  return lexiconToSchemaOrg({
     name: recipe.name,
-    description: recipe.description ?? undefined,
-    image: recipe.images.length ? recipe.images.map((i) => i.url) : undefined,
-    author,
-    datePublished: recipe.publishedAt ?? undefined,
+    description: recipe.description,
+    imageUrls: recipe.images.map((i) => i.url),
+    // atproto attribution kinds: person/organization/publication/… — the
+    // crosswalk types anything that isn't clearly a person as an Organization.
+    author: authorName ? { name: authorName, kind: a?.kind, url: a?.url } : null,
+    datePublished: recipe.publishedAt,
     // Already ISO-8601 durations (PT1H30M) — exactly schema's expected form.
-    prepTime: recipe.prepTime ?? undefined,
-    cookTime: recipe.cookTime ?? undefined,
-    totalTime: recipe.totalTime ?? undefined,
-    recipeYield: recipe.recipeYield ?? undefined,
-    recipeCuisine: recipe.cuisine ?? undefined,
-    recipeCategory: recipe.category ?? undefined,
-    cookingMethod: recipe.cookingMethod ?? undefined,
-    suitableForDiet: diets.length ? diets : undefined,
-    keywords: recipe.keywords.length ? recipe.keywords.join(", ") : undefined,
-    recipeIngredient: recipe.ingredients.length ? recipe.ingredients : undefined,
-    recipeInstructions: recipe.instructions.length ? recipe.instructions.map((text) => ({ "@type": "HowToStep", text })) : undefined,
-    nutrition: recipe.calories != null ? { "@type": "NutritionInformation", calories: `${recipe.calories} calories` } : undefined,
-    url: recipe.uri ?? undefined,
-  };
-  // Drop undefined keys so the emitted JSON-LD carries only present fields.
-  return Object.fromEntries(Object.entries(ld).filter(([, v]) => v !== undefined));
+    prepTime: recipe.prepTime,
+    cookTime: recipe.cookTime,
+    totalTime: recipe.totalTime,
+    recipeYield: recipe.recipeYield,
+    cuisine: recipe.cuisine,
+    category: recipe.category,
+    cookingMethod: recipe.cookingMethod,
+    // Diets with no RestrictedDiet member are dropped here; they still ride
+    // along in `keywords`.
+    dietSlugs: recipe.suitableForDiet,
+    keywords: recipe.keywords,
+    ingredients: recipe.ingredients,
+    instructions: recipe.instructions,
+    calories: recipe.calories,
+    url: recipe.uri,
+  });
 }
 
 function RecipeDetail({ recipe }: { recipe: RecipeDetailData }) {

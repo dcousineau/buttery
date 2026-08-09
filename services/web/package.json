@@ -30,6 +30,7 @@
     "@base-ui/react": "^1.7.0",
     "@buttery/lexicons": "workspace:*",
     "@buttery/recipe-extract": "workspace:*",
+    "@buttery/recipe-schemas": "workspace:*",
     "@mantine/hooks": "^9.5.1",
     "@posthog/react": "^1.10.3",
     "@tailwindcss/vite": "^4.3.3",

@@ -15,6 +15,7 @@
     "typecheck": "tsc6 --noEmit"
   },
   "dependencies": {
+    "@buttery/recipe-schemas": "workspace:*",
     "node-html-parser": "^9.0.1"
   },
   "devDependencies": {
