@@ -29,6 +29,14 @@ parsed **entirely client-side**; only dedupe keys (not recipe bodies) cross the 
 the user reviews duplicates and resolves attribution; then the accepted recipes are
 committed to the household box in chunks.
 
+Two things are being built here, and the plan keeps them apart on purpose. The **importer**
+(§4) is Paprika-specific and disposable: it knows what a Paprika export looks like on disk
+and how to read one recipe out of it. The **import pipeline** (§5–§9) is generic and is the
+part with the long life: dedupe, attribution, review, commit, session bookkeeping,
+telemetry. Paprika is the first importer, not the only one this pipeline will ever serve —
+read §2.5 before building anything, because it says where the line is and how it is
+enforced.
+
 Batch import is **private and local only. It never writes to atproto.** Not as a default,
 not behind a checkbox — the commit path has no publish branch at all (§7.4).
 
@@ -40,18 +48,21 @@ next.
 
 ### 1.1 In scope
 
-1. `@buttery/recipe-extract/paprika` — a Paprika-specific parser plus an export walker over
-   a pluggable entry source, pure and browser-safe (§4).
-2. `recipe_meta` (global) + `household_recipe_meta` (per-household) — namespaced key/value
+1. `@buttery/recipe-extract/import` — the importer seam: `RecipeImporter`,
+   `ImportCandidate`, `EntrySource`, `directoryEntrySource`. No Paprika in it (§2.5).
+2. `@buttery/recipe-extract/paprika` — the one importer phase 1 ships: a Paprika-specific
+   parser plus an export walker over an entry source, pure and browser-safe (§4).
+3. `recipe_meta` (global) + `household_recipe_meta` (per-household) — namespaced key/value
    sidecar tables, never published (§5).
-3. `recipe_import_session` — first-class batch session with status and counts (§5.3).
-4. Dedupe keys as a real, indexed, backfilled concept: normalized source URL + content
+4. `recipe_import_session` — first-class batch session with status and counts, stamped with
+   the importer that produced it (§5.3).
+5. Dedupe keys as a real, indexed, backfilled concept: normalized source URL + content
    fingerprint, written on **every** recipe save, not just imports (§6).
-5. A read-only `probeImportDuplicates` server function and a `commitImportChunk` server
+6. A read-only `probeImportDuplicates` server function and a `commitImportChunk` server
    function, both sharing the existing single-save core after a refactor (§7).
-6. Bulk attribution classification for source strings with no URL (§8).
-7. The `/household/recipes/import` route: drop → parse → review → commit → summary (§9).
-8. Backfill migration computing dedupe keys for every existing recipe (§6.5).
+7. Bulk attribution classification for source strings with no URL (§8).
+8. The `/household/recipes/import` route: drop → parse → review → commit → summary (§9).
+9. Backfill migration computing dedupe keys for every existing recipe (§6.5).
 
 ### 1.2 Out of scope (seams only)
 
@@ -61,9 +72,10 @@ next.
   not uploading. Pushing those bytes to blob storage is explicitly deferred (§11), and the
   schema is shaped to accept it later.
 - Publishing any imported recipe to atproto — deferred until batch import is trusted (§17).
-- Other importers (Paprika `.paprikarecipes` binary format, AnyList, Mela, plain JSON-LD
-  folders). The session table's `source` column and the entry-source interface (§4.2) are
-  the two seams.
+- Other importers (Paprika `.paprikarecipes` binary format, AnyList, Mela, Recipe Keeper,
+  plain JSON-LD folders). Phase 1 ships one importer but builds the seam it plugs into
+  (§2.5) and stores which importer ran on the session (§5.3), so the second one is a new
+  module rather than a refactor.
 - Undo/rollback of a completed import (`recipe_import_session` makes it possible later).
 - LLM enhancement — named only as the second consumer of §5.
 - Migrating the sidecar to typed columns (§5.5) — deliberately future work.
@@ -102,7 +114,92 @@ bytes" pattern. Paprika parsing reuses `schemaOrgToLexicon` and the normalizers 
 growing a parallel mapper, and `commitImportChunk` reuses the same persistence core as
 `saveRecipe` (§7.3). Divergence here is how the two paths silently drift apart.
 
----
+### 2.5 The importer is replaceable; the pipeline is not
+
+Paprika is a **launch point**, not the feature. What the user drops, how it is walked, and
+how one recipe is read out of it are facts about Paprika 3 and nothing else (§4). Everything
+downstream of "here is a list of parsed candidates with provenance" — dedupe key derivation
+(§6), the probe/commit/comparison contracts (§7), attribution classification (§8), the
+five-state review flow (§9, §10), the session row, resumability, and telemetry (§5.3, §7.5,
+§13) — is generic, and is the part worth building carefully. Adding Mela, AnyList, Recipe
+Keeper, or a `.paprikarecipes` binary reader should mean writing an importer and touching
+nothing else.
+
+The seam is one interface, exported from a new **`@buttery/recipe-extract/import`** subpath
+that contains no Paprika code:
+
+```ts
+/** The entire importer-specific surface. Phase 1 ships exactly one implementation. */
+export interface RecipeImporter {
+  /** Stable, lowercase, no spaces. Stored on the session (§5.3) and in the sidecar (§12.5). */
+  readonly id: string;
+  /** Product name for UI copy — "Paprika 3". The only place the brand is a string. */
+  readonly label: string;
+  /** Launch point: turn whatever the browser handed us into an entry source. */
+  open(input: ImporterDropInput): Promise<EntrySource>;
+  /** Lazily yield one entry per recipe. Drives the "Reading your recipe box…" progress. */
+  entries(source: EntrySource): AsyncIterable<ImportEntry>;
+  /** Pure, synchronous, worker-safe. */
+  parse(entry: ImportEntry): ImportCandidate | ImportParseFailure;
+}
+
+/** What every importer produces. The pipeline consumes only this. */
+export interface ImportCandidate {
+  /** Importer-minted (`crypto.randomUUID()`), stable for the session; joins probe→commit. */
+  clientId: string;
+  /** Lexicon-shaped, the same type every other extractor produces. */
+  recipe: ExtractedRecipe;
+  sourceUrl: string | null;
+  /** Free text when `sourceUrl` is null — drives the §8 attribution grouping. */
+  sourceText: string | null;
+  /** → `household_recipe_note` (§12.2). */
+  notes: string | null;
+  /** Personal tags → keywords (§12.3). Already split by the importer. */
+  tags: string[];
+  /** Remote image URL — what the commit path stores (§11). */
+  imageUrl: string | null;
+  /** Path resolvable through the same `EntrySource`, for review thumbnails only (§11). */
+  localImagePath: string | null;
+  /** Human-facing provenance; what the failure list shows (§7.2, §10.1). */
+  entryName: string;
+  /** Opaque to the pipeline. The importer owns the keys; written verbatim to the
+   *  sidecar under `ns='import'` (§12.5). */
+  meta: Record<string, unknown>;
+}
+
+export interface ImportParseFailure {
+  clientId: string;
+  entryName: string;
+  message: string;
+}
+```
+
+`EntrySource` (§4.2) and `directoryEntrySource` live here too, not in the Paprika module:
+"a bag of lazily-readable relative paths" is what every folder-shaped importer needs, and so
+are its guardrails. Root detection and entry filtering stay in the Paprika walker, because
+`index.html` and `Recipes/` are Paprika facts.
+
+**`PaprikaParsed` is deleted, not wrapped.** `parsePaprikaRecipe` returns `ImportCandidate`
+directly and its named extras — categories, rating, difficulty, photo UID, the verbatim
+`raw` strings — become documented `meta` keys (§4.1). A converter between two shapes is a
+second place the instruction-splitting logic could go wrong for no gain.
+
+Be honest about what this buys: the split above is real, but where the interface has a
+shape at all, **that shape came from Paprika**, and the second importer will find gaps — one
+with no per-recipe file has no natural `entryName`, one with multiple images per recipe has
+nowhere to put them, one that arrives over OAuth rather than a drop has no `EntrySource` at
+all. This interface is expected to move when that happens, and moving it is cheap as long
+as one property holds. **What phase 1 owes is that property: no module in the pipeline
+imports from `@buttery/recipe-extract/paprika`.** Exactly one module in the web app does —
+the importer registry, `services/web/src/lib/recipe-import/importers.ts`, which maps
+importer id → `RecipeImporter` and is the sole place the string `paprika` and the launch
+screen's importer-specific copy live. Server functions, the parse worker, the review
+components, and the route all reach the importer through the registry or consume
+`ImportCandidate` and never name it. This is enforced by an ESLint `no-restricted-imports`
+block over `services/web/src/server/recipe-import*`,
+`services/web/src/lib/recipe-import/**` (registry exempted), and
+`services/web/src/components/recipes/import/**`, banning `**/recipe-extract/paprika*` —
+not by review, which will not catch it on a Friday (§16).
 
 ## 3. Ground truth: what a Paprika 3 export actually contains
 
@@ -170,67 +267,70 @@ anywhere in the HTML.
 
 Consequence: **the photo UID is a ~73%-coverage weak key**, useful only for recognizing a
 re-import of an unchanged export. It is recorded in `household_recipe_meta`
-(`ns='import.paprika'`, `key='photo_uid'`) and may be consulted as a tie-breaker, but it is
+(`ns='import'`, `key='photo_uid'`, §12.5) and may be consulted as a tie-breaker, but it is
 **never a primary dedupe key** (§6.2).
 
 ---
 
-## 4. Package: `@buttery/recipe-extract/paprika`
+## 4. The importer (Paprika-specific): `@buttery/recipe-extract/paprika`
 
-New subpath export, reusing the microdata walker, `schemaOrgToLexicon`, and the
-normalizers.
+**This section is the only Paprika-shaped part of the feature.** Everything from §5 on is
+the pipeline and must work identically for the next importer (§2.5). Two new subpath
+exports, reusing the microdata walker, `schemaOrgToLexicon`, and the normalizers.
 
 ```
 packages/recipe-extract/
   src/
     parse/microdata.ts          (existing, reused)
-    paprika/
-      recipe.ts                 parsePaprikaRecipe(html, entryName) -> PaprikaParsed
-      export.ts                 walkPaprikaExport(source) -> AsyncIterable<PaprikaEntry>
-      source.ts                 PaprikaEntrySource + directoryEntrySource(files)
+    import/                     GENERIC — no Paprika anywhere under here
+      types.ts                  RecipeImporter, ImportCandidate, ImportEntry, ImportParseFailure
+      entry-source.ts           EntrySource + directoryEntrySource(files) + the size/escape guards
       index.ts
-  package.json                  exports: ".", "./paprika"
+    paprika/                    PAPRIKA-ONLY
+      recipe.ts                 parsePaprikaRecipe(html, entryName) -> ImportCandidate | ImportParseFailure
+      export.ts                 walkPaprikaExport(source) -> AsyncIterable<ImportEntry>
+      importer.ts               paprikaImporter: RecipeImporter
+      index.ts
+  package.json                  exports: ".", "./import", "./paprika"
 ```
 
+`paprika/` may import from `import/`; nothing under `import/` may import from `paprika/`,
+and the ESLint boundary of §2.5 covers this direction too.
+
 **No new dependencies.** Phase 1 reads a dropped directory, so there is no unzip step and
-therefore no archive library (D19). `walkPaprikaExport` takes a `PaprikaEntrySource`
-rather than bytes, so an archive-backed source can be added later without touching the
-parser (§4.2, §17).
+therefore no archive library (D19). `walkPaprikaExport` takes an `EntrySource` rather than
+bytes, so an archive-backed source can be added later without touching the parser (§4.2,
+§17).
 
-### 4.1 `parsePaprikaRecipe(html, entryName): PaprikaParsed`
+### 4.1 `parsePaprikaRecipe(html, entryName): ImportCandidate | ImportParseFailure`
 
-Pure, synchronous, no network. Returns the standard `ExtractedRecipe` **plus** the Paprika
-extras the lexicon has no home for:
+Pure, synchronous, no network. Returns the pipeline's `ImportCandidate` (§2.5) — there is no
+intermediate `PaprikaParsed` type. The lexicon has no home for several Paprika fields; those
+go in `meta`, which the pipeline carries opaquely to the sidecar (§12.5). The exact key set
+this importer writes:
 
 ```ts
-export interface PaprikaParsed {
-  /** Lexicon-shaped, same type every other extractor produces. */
-  recipe: ExtractedRecipe;
-  /** Source URL from itemprop="url", if the recipe had one. */
-  sourceUrl: string | null;
-  /** itemprop="author": a bare domain when sourceUrl exists, else free text. */
-  sourceText: string | null;
-  /** itemprop="comment" — Paprika's notes blob, paragraphs joined with "\n\n". */
-  notes: string | null;
-  /** Split recipeCategory, comma-separated in the export. */
+// ImportCandidate.meta, as written by the Paprika importer.
+{
+  /** Split recipeCategory, comma-separated in the export. Also surfaces as `tags`. */
   categories: string[];
   /** 0–5 from the rating element's `value` attribute; null when absent or 0. */
   rating: number | null;
   /** "Easy" / "Medium" / … verbatim. */
   difficulty: string | null;
-  /** Relative in-export image path from <img src>, e.g. "Images/<uuid>/<uuid>.jpg".
-   *  Resolved against the entry source for review thumbnails (§10.2, D26); never uploaded. */
-  imagePath: string | null;
-  /** Original remote image URL from the wrapping <a href> — what the commit path writes. */
-  imageUrl: string | null;
   /** The photo-asset UUID (§3.5). Weak key, ~73% coverage. */
-  photoUid: string | null;
-  /** Entry name relative to the export root, for provenance and error messages. */
-  entryName: string;
-  /** Verbatim strings for anything lossy or dropped (§12.5). */
+  photo_uid: string | null;
+  /** Verbatim strings for anything lossy or dropped — the unparseable durations especially (§3.4). */
   raw: Record<string, unknown>;
 }
 ```
+
+Mapping onto the rest of `ImportCandidate`: `recipe` from the microdata walk; `sourceUrl`
+from `itemprop="url"`; `sourceText` from `itemprop="author"`; `notes` from
+`itemprop="comment"`, paragraphs joined with `"\n\n"`; `tags` from the comma-split
+`recipeCategory`; `imageUrl` from the wrapping `<a href>`; `localImagePath` from the
+`<img src>`, e.g. `"Images/<uuid>/<uuid>.jpg"`; `entryName` relative to the detected export
+root.
 
 Implementation notes, in the order they matter:
 
@@ -242,18 +342,21 @@ Implementation notes, in the order they matter:
    yield stay on the shared crosswalk.
 3. Read the rating from the element's `value` **attribute** (`getAttribute("value")`), not
    its text. `0` means unrated → `null`.
-4. `imageUrl` comes from the **wrapping `<a href>`**, `imagePath` from the `<img src>`.
+4. `imageUrl` comes from the **wrapping `<a href>`**, `localImagePath` from the `<img src>`.
    Phase 1 commits the former and renders the latter as a local preview only (§11).
 5. `sourceText` is a domain when `sourceUrl` is present and free text otherwise — the
    caller must not assume which without checking `sourceUrl`.
 
-### 4.2 `walkPaprikaExport(source): AsyncIterable<PaprikaEntry>`
+### 4.2 `walkPaprikaExport(source): AsyncIterable<ImportEntry>`
 
-Walks a **`PaprikaEntrySource`** and yields one entry per recipe file. The source is the
-seam; phase 1 ships exactly one implementation.
+Walks an **`EntrySource`** and yields one entry per recipe file. The source type is generic
+and lives in `@buttery/recipe-extract/import` (§2.5) — a bag of lazily-readable relative
+paths is what any folder- or archive-shaped importer needs. Phase 1 ships exactly one
+implementation of it. The walking rules below are Paprika's.
 
 ```ts
-interface PaprikaEntrySource {
+// Generic — @buttery/recipe-extract/import
+export interface EntrySource {
   /** Every entry path, relative to whatever the user handed us, in no guaranteed order. */
   paths(): readonly string[];
   /** Decoded UTF-8 text for one path. */
@@ -264,7 +367,13 @@ interface PaprikaEntrySource {
   totalBytes(): number;
 }
 
-directoryEntrySource(files: File[]): PaprikaEntrySource
+export function directoryEntrySource(files: File[]): EntrySource;
+
+/** One recipe's worth of bytes, handed to `RecipeImporter.parse`. */
+export interface ImportEntry {
+  entryName: string;
+  html: string;
+}
 ```
 
 The web app builds `files` from `<input type="file" webkitdirectory>` or, on drop, by
@@ -277,17 +386,22 @@ costs nothing until parsing starts.
   depth; its directory is the root. Fall back to "the shallowest directory containing a
   `Recipes/` folder". Never hardcode `My Recipes/`. This matters as much for a directory as
   it did for an archive — the user may drop the parent (§3.1).
-- Yields `{ entryName, html }` for every `Recipes/*.html`, skipping `index.html`, anything
-  under `Images/`, and `__MACOSX/` / `.DS_Store` noise. `entryName` is always relative to
-  the detected root.
+- Yields `ImportEntry` for every `Recipes/*.html`, skipping `index.html`, anything under
+  `Images/`, and `__MACOSX/` / `.DS_Store` noise. `entryName` is always relative to the
+  detected root.
 - Yields lazily so the UI can show real progress across a few hundred files.
-- **Image bytes are read in phase 1, for previews only.** `source.bytes(imagePath)` +
-  `URL.createObjectURL` renders the review thumbnails (§10.2, D26). Reading is not
-  uploading: the commit path still writes `imageUrl` and nothing local reaches blob storage
-  (§11). Revoke the object URLs when the review screen unmounts.
-- **Guardrails:** reject an export over 200 MB total, over 5 000 entries, or any entry whose
-  normalized path escapes the detected root. Path-escape rejection is cheap insurance that
-  survives a future archive-backed source, where it stops being theoretical.
+- **Image bytes are read in phase 1, for previews only.** `source.bytes(localImagePath)` +
+  `URL.createObjectURL` renders the review thumbnails (§10.2, D26). The review pane does
+  this through the `EntrySource` it already holds and the candidate's `localImagePath`, so
+  it needs no Paprika knowledge. Reading is not uploading: the commit path still writes
+  `imageUrl` and nothing local reaches blob storage (§11). Revoke the object URLs when the
+  review screen unmounts.
+- **Guardrails belong to the generic entry source, not to Paprika:** reject an export over
+  200 MB total, over 5 000 entries, or any entry whose normalized path escapes the root.
+  They are properties of "a pile of files a user handed us", so `directoryEntrySource`
+  enforces them and every future source inherits them. Path-escape rejection is cheap
+  insurance that survives a future archive-backed source, where it stops being theoretical.
+  Root detection is the Paprika half and stays in the walker.
 
 ### 4.3 Tests
 
@@ -303,21 +417,23 @@ the point):
 | `apple-bourbon-bundt-cake.html`   | `cookTime` with the unparseable `1 1/2 hours plus cooling time`                              |
 
 Assertions that must exist: instructions split into ≥4 separate steps (not one blob);
-`sourceUrl === null` with a non-null `sourceText` on the no-URL fixture; `categories`
-splits on comma; `imageUrl` is the remote `https://` URL and `imagePath` is the relative
-one; rating reads from the attribute.
+`sourceUrl === null` with a non-null `sourceText` on the no-URL fixture; `tags` splits on
+comma; `imageUrl` is the remote `https://` URL and `localImagePath` is the relative one;
+`meta.rating` reads from the attribute.
 
-Plus an in-memory `PaprikaEntrySource` stub (a `Map<path, string>` — no filesystem, no
-`File`) exercising root detection when the root is nested one and two levels deep, the
-entry filters (`index.html`, `Images/`, `__MACOSX/`, `.DS_Store`), path-escape rejection,
-and both size caps. `directoryEntrySource` itself gets one thin test that it maps
-`webkitRelativePath` onto `paths()` correctly; everything else tests against the stub.
+Plus an in-memory `EntrySource` stub (a `Map<path, string>` — no filesystem, no `File`)
+exercising root detection when the root is nested one and two levels deep, the entry filters
+(`index.html`, `Images/`, `__MACOSX/`, `.DS_Store`), path-escape rejection, and both size
+caps. The stub lives under `src/import/` beside the interface, not under `paprika/`, so the
+second importer's tests can use it. `directoryEntrySource` itself gets one thin test that it
+maps `webkitRelativePath` onto `paths()` correctly; everything else tests against the stub.
 
 ---
 
-## 5. Buttery-only recipe metadata
+## 5. Buttery-only recipe metadata (pipeline)
 
-The foundation piece. Two tables, namespaced key/value with a `jsonb` value.
+The foundation piece, and entirely generic: these tables know about recipes, households, and
+imports, and never about Paprika. Two tables, namespaced key/value with a `jsonb` value.
 
 ### 5.1 `recipe_meta` — global, about the recipe itself
 
@@ -355,8 +471,27 @@ household_recipe_meta
 index household_recipe_meta_lookup on household_recipe_meta (household_id, ns, key, value)
 ```
 
-**All Paprika import bookkeeping lives here** — it is a fact about this household's import,
-not about the recipe (§2.2). Written under `ns='import.paprika'` (§12.5).
+**All import bookkeeping lives here** — it is a fact about this household's import, not
+about the recipe (§2.2).
+
+**One namespace for every importer: `ns='import'`, with the importer named in a key, not in
+the namespace.** The alternative — `ns='import.paprika'`, `ns='import.mela'` — was
+considered and rejected. It makes "everything I ever pulled in from Paprika" a single
+indexed prefix scan and gives each importer a private key space, but it makes "where did
+this recipe come from" and "everything I ever imported, from any app" an N-namespace union
+that grows every time an importer ships, and it forces the generic pipeline to build a
+namespace string out of the importer's id in order to write rows it otherwise handles
+opaquely. The app-agnostic question is the one the product actually asks — an import
+history, an undo-a-session pass (§17), a provenance line on a recipe — so it gets the cheap
+query and the per-app question pays a `key='importer'` filter.
+
+The cost, stated plainly: importers share a key space, so `rating` means whatever the last
+importer to touch this (household, recipe) pair meant by it. That is tolerable because these
+rows describe **how this recipe arrived in this box**, of which there is one true answer at
+a time; a second import of the same recipe is dedupe-skipped and writes nothing, and a
+deliberate re-import (§6.3, D23) overwriting the older provenance is the right outcome. The
+`importer` key says which app's vocabulary the rest of the namespace is speaking. §12.5 is
+the full key list.
 
 ### 5.3 `recipe_import_session`
 
@@ -365,9 +500,9 @@ recipe_import_session
   id              text  primary key            -- ulid()
   household_id    text  not null references household(id)
   did             text  not null
-  source          text  not null default 'paprika'
+  importer        text  not null               -- RecipeImporter.id, e.g. 'paprika' (§2.5)
   status          text  not null               -- see below
-  file_name       text                         -- the dropped folder's name, e.g. "My Recipes"
+  file_name       text                         -- what the user handed us, e.g. "My Recipes"
   total_count     integer not null default 0
   imported_count  integer not null default 0
   skipped_count   integer not null default 0
@@ -384,7 +519,22 @@ index recipe_import_session_household on recipe_import_session (household_id, st
 `abandoned`. A session left in `committing` is what makes resume-after-disconnect possible
 (§7.5). No cleanup job in phase 1; stale sessions are harmless rows.
 
-`source` is the seam for future importers — Mela, AnyList, a Paprika binary export.
+**The column is `importer`, and it holds `RecipeImporter.id` (§2.5) — nothing else.** Naming
+it `source` was the first instinct and is a trap: `recipe_import_attempt.source` already
+exists in `services/web/src/server/recipe-scrape.ts` and means something different — the
+_transport_ a single scraped recipe arrived over, `'scrape'` or `'bookmarklet'`. Those two
+value spaces must never be confused or merged: an importer id answers "which app's export is
+this", a transport answers "how did these bytes reach us". `'scrape'` and `'bookmarklet'` are
+not legal values here and never will be. The table is unshipped, so renaming costs nothing
+now and a mistaken join costs later.
+
+Legal values are exactly the ids in the importer registry (§2.5) — phase 1: `'paprika'`. The
+column is free text, following the sibling table's precedent, so a new importer needs no
+migration; validation lives at the boundary instead. The server function that opens a
+session validates the submitted id against a Zod enum **derived from the registry**, so
+adding an importer adds a value in one place and an unknown id is a 400, not a row. **No
+column default** — a default silently mislabels the second importer's sessions the first
+time someone forgets to pass one.
 
 ### 5.4 Access helpers
 
@@ -410,7 +560,11 @@ endorsement.
 
 ---
 
-## 6. Dedupe
+## 6. Dedupe (pipeline)
+
+Generic. Dedupe operates on `ImportCandidate` and on recipes already in the box; no rule
+here knows where a candidate came from. The percentages are from the reference Paprika
+export because that is the corpus we measured, not because the logic is Paprika-shaped.
 
 ### 6.1 `source_url_key` — normalized URL, the primary signal
 
@@ -520,7 +674,12 @@ day after this ships.
 
 ---
 
-## 7. Server contracts
+## 7. Server contracts (pipeline)
+
+Generic, and the most important place for that to be true: **no server module in this
+section imports from `@buttery/recipe-extract/paprika`** (§2.5, §16). Every input below is
+derived from `ImportCandidate`, and the importer's own vocabulary travels as an opaque
+`meta` bag the server writes to the sidecar without inspecting.
 
 ### 7.1 `probeImportDuplicates` — read-only
 
@@ -571,9 +730,12 @@ interface CommitChunkInput {
     attribution: AttributionInput | null; // resolved in review (§8)
     imageSourceUrl: string | null; // remote URL (§11)
     notes: string | null;
-    categories: string[];
+    tags: string[];
+    entryName: string;
     override?: "duplicate"; // user deliberately re-imported an `in_box` match (§6.3, D23)
-    paprika: { entryName: string; photoUid: string | null; rating: number | null; difficulty: string | null; raw: Record<string, unknown> };
+    /** ImportCandidate.meta, verbatim. The server writes it to the sidecar (§12.5)
+     *  and never reads a key out of it. Adding an importer adds no field here. */
+    meta: Record<string, unknown>;
   }>;
 }
 
@@ -591,6 +753,11 @@ counters. Client drives the loop and renders progress.
 `CommitItemResult` deliberately does **not** carry the entry name. The client holds the
 `clientId → entryName` map from the parse and joins locally to render the "didn't make it"
 list (§10.1). Do not add a server field for it.
+
+`meta` being opaque does not make it unbounded: it is client-supplied `jsonb`, so cap it
+(8 KB serialized per item is generous — the Paprika `raw` blob is well under 1 KB) and
+reject the item rather than the chunk when it is over. Opaque to the pipeline's _logic_,
+still validated at the _boundary_.
 
 ### 7.3 Required refactor of `recipes-write.ts`
 
@@ -696,12 +863,17 @@ type ComparisonResult = Record<
 
 ---
 
-## 8. Attribution for the 81 URL-less recipes
+## 8. Attribution for candidates with no source URL (pipeline)
 
-`saveRecipe` rejects a record with no lexicon-valid attribution, and 81/341 recipes have no
-source URL. Their source strings are cookbooks, and there are only **28 distinct values**
-across those 81 recipes — including six spellings of one Gordon Ramsay title
-(`Godon`, `Godron`, `ROmsay's`, `Appettie`, `Heathly`).
+Generic. This step's whole input is `ImportCandidate.sourceText` for every candidate whose
+`sourceUrl` is null; it never asks which app produced them. Every recipe-manager export has
+this shape — a free-text "where this came from" field that is not a lexicon attribution —
+so this is the pipeline step most likely to pay off on the second importer unchanged.
+
+`saveRecipe` rejects a record with no lexicon-valid attribution, and in the reference export
+81/341 recipes have no source URL. Their source strings are cookbooks, and there are only
+**28 distinct values** across those 81 recipes — including six spellings of one Gordon
+Ramsay title (`Godon`, `Godron`, `ROmsay's`, `Appettie`, `Heathly`).
 
 ### 8.1 Bulk classification step
 
@@ -737,7 +909,7 @@ client-side string work in the parse worker** — neither needs a server call (�
   page reference into a person's `name`, produces wrong data that publishes later if the
   user ever makes the recipe public. This was considered and rejected.
 - The raw source string is **always** preserved verbatim in the sidecar
-  (`ns='import.paprika'`, `key='source_text'`) regardless of what the user chose.
+  (`ns='import'`, `key='source_text'`) regardless of what the user chose.
 - Three recipes in the sample have neither a URL nor a source string. They cannot be
   auto-attributed. Surface them as a **29th group** — an "no source at all" card carrying
   the same four classification controls as every other group — and gate the import on it
@@ -749,34 +921,45 @@ client-side string work in the parse worker** — neither needs a server call (�
 
 ---
 
-## 9. Client flow
+## 9. Client flow (pipeline, with one importer-specific screen)
 
 Route `/household/recipes/import`, reached from the existing `AddRecipeChooser`.
 **§10 and the design files own layout and copy.** This is the state machine and the
 technical constraints they have to live inside.
 
 ```
-  drop folder
-    → parse        walkPaprikaExport + parsePaprikaRecipe, in a Web Worker
-    → keys         normalizeSourceUrl + content_fp per recipe; collapse in-batch dupes
+  drop                 IMPORTER-SPECIFIC: the launch point. What to drop, the copy that
+                       explains it, and turning it into an EntrySource all come from the
+                       RecipeImporter the registry resolved (§2.5). Everything below is not.
+    → parse        importer.entries() + importer.parse(), in a Web Worker → ImportCandidate[]
+    → keys         normalizeSourceUrl + content_fp per candidate; collapse in-batch dupes
     → probe        POST keys only → verdicts
     → review       attribution classification, duplicates, per-recipe include/exclude/edit
     → commit       chunks of 25, progress from real per-item results
     → summary      imported / linked / skipped / failed, with the failures listed
 ```
 
+The `drop` state is where a second importer plugs in: it renders `importer.label` and the
+importer's own drop copy, and calls `importer.open()`. Phase 1 resolves the importer to
+`'paprika'` on entry rather than offering a choice — the chooser is a second-importer
+problem, and building it now would be UI nobody asked for (§10). Everything from `parse` on
+is written against `ImportCandidate` and must not name an importer.
+
 Technical constraints on the UI:
 
 - **Parse in a Web Worker.** 341 files through `node-html-parser` on the main thread will
-  visibly jank. The parser is pure and worker-safe by construction.
+  visibly jank. `RecipeImporter.parse` is required to be pure and worker-safe for exactly
+  this reason (§2.5); the Paprika implementation is, by construction. The worker takes an
+  importer **id** and resolves it through the registry — it does not import a parser
+  directly, or the boundary of §2.5 leaks through a worker entrypoint.
 - Everything up to `commit` is in-memory and discardable; a refresh loses only work, never
   data. That now includes per-recipe edits (§7.5) — no drafts, no autosave, no local
   storage in phase 1.
 - 341 rows needs virtualization or pagination; grouping by verdict (`new` / `in_box` /
   `public_exists` / `maybe`) is what makes it reviewable at all. The design supplies the
   grouping but not the windowing (§10.3).
-- Failed items are listed by **export entry name** (§4.1) so the user can find them in
-  Paprika; the client joins `clientId → entryName` locally (§7.2).
+- Failed items are listed by **`ImportCandidate.entryName`** (§2.5) so the user can find them
+  in the app they exported from; the client joins `clientId → entryName` locally (§7.2).
 - Bulk actions are needed at this scale: select-all-new, skip-all-duplicates,
   link-all-public. The design satisfies all three with per-group Select all / Skip all
   plus group defaults (§10.1) — three separately named buttons are not required.
@@ -798,6 +981,11 @@ Kept for the record; the design settled all four.
 The design workshop happened after this plan's first draft. **The design files are the
 source of truth for layout, copy, spacing, and interaction detail — this section does not
 restate them.** Read them before building anything in §9.
+
+The comp draws one Paprika-specific screen — the drop state, whose copy is built on what
+Paprika writes — and four generic ones. Build the four against `ImportCandidate`, not
+against the export (§2.5). The only Paprika strings that survive into the shipped UI are the
+ones the registry hands over as `label` and drop copy.
 
 - Project — <https://claude.ai/design/p/fbfc377d-df73-49b5-8611-a35de8c690c2>
 - Final comp — [`Paprika Import.dc.html`](https://claude.ai/design/p/fbfc377d-df73-49b5-8611-a35de8c690c2?file=Paprika+Import.dc.html)
@@ -848,8 +1036,9 @@ skip-all-duplicates, and link-all-public without three separate buttons. Do not 
 - **D19 — the drop target takes the folder Paprika writes, and only that** (§4.2). Paprika 3
   emits a directory, and the comp's copy is built on that fact ("Paprika writes a folder, not
   a single file"). Phase 1 drops the archive path entirely: no unzip dependency, no bundle
-  assertion. `walkPaprikaExport` takes a `PaprikaEntrySource` so an archive-backed source
-  stays a later addition rather than a rewrite (§17).
+  assertion. That copy is importer-owned and lives with the Paprika importer, not in the
+  route; `walkPaprikaExport` takes a generic `EntrySource` so an archive-backed source stays
+  a later addition rather than a rewrite (§17).
 - **D20 — probe verdicts carry the matched recipe's identity, not just its id** (§7.1). The
   preview alert and the compare header render its name, when it was added, and who added it,
   so every verdict returns `ExistingRef`, with DIDs resolved in one batched query.
@@ -939,7 +1128,7 @@ Known cost, accepted: images whose source is dead, paywalled, or hotlink-blocked
 
 **Review thumbnails are a separate question, and they read locally** (§10.2, D26). The
 export's ~11 MB of image bytes sit on the user's disk behind lazy `File` handles, so the
-review screen resolves `imagePath` through `source.bytes()` + `URL.createObjectURL` and
+review screen resolves `localImagePath` through `source.bytes()` + `URL.createObjectURL` and
 shows the real photo — including for recipes whose remote URL is already dead, which is
 precisely when the user is deciding whether to keep them. The alternative, hotlinking 293
 third-party URLs from the user's browser during review, is slower, leaks a referer to 293
@@ -948,8 +1137,9 @@ domains, and renders broken tiles at the worst moment.
 **Reading is not uploading.** No local byte ever reaches the server in phase 1: object URLs
 are created in the browser, revoked on unmount, and the commit path sends `imageSourceUrl`
 and nothing else. Phase 2 (§17) is the part that uploads — it prefers the export's blob and
-falls back to the remote URL, strictly additive, and the seam is already in place
-(`parsePaprikaRecipe` returns `imagePath`; the entry source exposes `bytes()`).
+falls back to the remote URL, strictly additive, and the seam is already in place and is
+generic (`ImportCandidate.localImagePath` plus `EntrySource.bytes()`, §2.5), so phase 2
+lands for every importer at once rather than per-importer.
 
 **Rate limiting:** `storePendingImageFromUrl` performs a server-side fetch per recipe.
 250 of those in a burst is a self-inflicted outbound traffic spike. Either bound
@@ -960,6 +1150,10 @@ implementation and record it — do not let a chunk of 25 fire 25 uncapped outbo
 
 ## 12. Field mapping summary
 
+The left-hand side of §12.1–§12.4 is the Paprika export; the right-hand side is what the
+pipeline does with an `ImportCandidate`, and it does the same thing regardless of which
+importer filled one in.
+
 ### 12.1 Into the lexicon record
 
 `name`, `text` (from `description`), `ingredients`, `instructions` (split, §4.1),
@@ -968,41 +1162,56 @@ lossy per §3.4), `nutrition` (via the bridge; empty in practice), `keywords` (�
 
 ### 12.2 Notes → `household_recipe_note`
 
-`itemprop="comment"` paragraphs joined with `\n\n`, authored by the importing user's DID.
-The table is keyed `(household_id, recipe_id)` and Paprika has one notes blob per recipe —
-a clean 1:1. Empty notes write no row.
+`ImportCandidate.notes` — for Paprika, the `itemprop="comment"` paragraphs joined with
+`\n\n` — authored by the importing user's DID. The table is keyed
+`(household_id, recipe_id)`, and the candidate carries at most one notes blob, so this is a
+clean 1:1. Empty notes write no row. An importer with multiple note objects per recipe joins
+them itself; the pipeline takes one string.
 
-### 12.3 Categories → keywords, not category
+### 12.3 Tags → keywords, not category
 
-Paprika's categories are personal tags (§3.3), not a controlled vocabulary. For each
-comma-split value:
+`ImportCandidate.tags` is personal tags (§3.3), not a controlled vocabulary — Paprika's
+comma-split `recipeCategory`, and whatever the equivalent is elsewhere. Splitting is the
+importer's job; what follows is the pipeline's, for each value:
 
 1. Try `slugForLabel('category', value)`. The **first** match sets `recipe.recipe_category`
    (a single column). In practice almost nothing will match, which is correct.
 2. **Every** value — matched or not — becomes a `recipe_keyword` row.
-3. The full raw list goes to the sidecar (§12.5).
+3. The importer's raw list also reaches the sidecar via `meta` (§12.5).
 
 ### 12.4 Rating and difficulty → dropped from the record, kept in the sidecar
 
 Neither has a lexicon field, and inventing one is out of scope. They are **not lost**: both
-land in `household_recipe_meta` under `ns='import.paprika'`, which is the right scope for
-them anyway (a rating is a household's opinion, not a property of the recipe). A future
-household-rating feature can read them straight out.
+ride in `ImportCandidate.meta` and land in `household_recipe_meta` under `ns='import'`,
+which is the right scope for them anyway (a rating is a household's opinion, not a property
+of the recipe). A future household-rating feature can read them straight out. The pipeline
+never reads either key; it writes what the importer put in `meta`.
 
 ### 12.5 Sidecar rows written per imported recipe
 
-`household_recipe_meta`, `ns='import.paprika'`:
+`household_recipe_meta`, `ns='import'` (§5.2 — one namespace for every importer). The
+pipeline writes these four itself, for every import from every importer:
 
-| key           | value                                                                                     |
-| ------------- | ----------------------------------------------------------------------------------------- |
-| `session_id`  | the `recipe_import_session.id`                                                            |
-| `entry_name`  | export entry name, e.g. `"Beef Bourguignon 2.html"`                                       |
-| `photo_uid`   | photo-asset UUID or null (§3.5)                                                           |
-| `source_text` | verbatim `itemprop="author"` string (§8.2)                                                |
-| `rating`      | 0–5 or null                                                                               |
-| `difficulty`  | `"Easy"` / `"Medium"` / null                                                              |
-| `categories`  | the raw comma-split array                                                                 |
-| `raw`         | full `PaprikaParsed.raw` — every verbatim string, including the unparseable duration text |
+| key           | value                                                         |
+| ------------- | ------------------------------------------------------------- |
+| `importer`    | `RecipeImporter.id`, e.g. `"paprika"` (§2.5, §5.3)            |
+| `session_id`  | the `recipe_import_session.id`                                |
+| `entry_name`  | `ImportCandidate.entryName`, e.g. `"Beef Bourguignon 2.html"` |
+| `source_text` | the candidate's verbatim source string (§8.2)                 |
+
+Then one row per key of `ImportCandidate.meta`, written verbatim and never inspected. What
+the Paprika importer puts there (§4.1):
+
+| key          | value                                                                 |
+| ------------ | --------------------------------------------------------------------- |
+| `photo_uid`  | photo-asset UUID or null (§3.5)                                       |
+| `rating`     | 0–5 or null                                                           |
+| `difficulty` | `"Easy"` / `"Medium"` / null                                          |
+| `categories` | the raw comma-split array                                             |
+| `raw`        | every verbatim string, including the unparseable duration text (§3.4) |
+
+A second importer's keys land beside these, in the same namespace, and `importer` says whose
+vocabulary they are.
 
 `recipe_meta`, `ns='dedupe'`: `source_url_key`, `content_fp`.
 
@@ -1018,15 +1227,19 @@ the audit need. **Flagged explicitly because it contradicts an earlier decision.
 
 ---
 
-## 13. Telemetry
+## 13. Telemetry (pipeline)
 
 PostHog, server-side, one event per session (not per recipe — 341 events per import is
-noise):
+noise). **The event names are importer-agnostic and carry `importer` as a property** —
+`recipe_import_completed`, not `paprika_import_completed`. A per-app event name means every
+funnel, insight, and alert has to be rebuilt when the second importer ships, and comparing
+importers becomes a union instead of a breakdown. Every event below carries
+`importer: "paprika"`.
 
-- `paprika_import_completed`: total, imported, linked, skipped-duplicate, skipped-user,
+- `recipe_import_completed`: total, imported, linked, skipped-duplicate, skipped-user,
   overridden-duplicate (§6.3), edited-before-commit count, failed,
   distinct-source-strings-classified, duration, parse-failure count.
-- `paprika_import_failed`: where it died (`parse` / `probe` / `comparison` / `commit`) and
+- `recipe_import_failed`: where it died (`parse` / `probe` / `comparison` / `commit`) and
   the message.
 
 `skipped-duplicate` and `skipped-user` stay separate all the way to the summary screen —
@@ -1046,7 +1259,7 @@ No recipe names, URLs, or ingredient text in properties.
 - `walkPaprikaExport` against the in-memory entry-source stub: root detection at two nesting
   depths, entry filtering, path-escape rejection, both size caps.
 - `directoryEntrySource`: `webkitRelativePath` maps onto `paths()`; `bytes()` resolves an
-  `Images/<uuid>/<uuid>.jpg` path that `parsePaprikaRecipe` reported as `imagePath`.
+  `Images/<uuid>/<uuid>.jpg` path that `parsePaprikaRecipe` reported as `localImagePath`.
 - The page-reference split and the misspelling hint (§8.1), including all six Ramsay
   variants clustering and the hint never mutating a string.
 - `normalizeSourceUrl`: the NYT tracking-param case verbatim from the export, http/https
@@ -1075,6 +1288,16 @@ No recipe names, URLs, or ingredient text in properties.
   publish path is never invoked (§7.4).
 - The backfill migration produces fingerprints byte-identical to the runtime function.
 - Sidecar rows do not change the published record shape (§2.3).
+- A session opened with an importer id that is not in the registry is rejected (§5.3).
+- `commitImportChunk` round-trips an item whose `meta` holds keys it has never heard of, and
+  an oversized `meta` fails that item alone.
+
+**Boundary** (lint, not runtime)
+
+- `pnpm lint` fails if any module under the pipeline's directories imports
+  `@buttery/recipe-extract/paprika` (§2.5, §16). Prove the rule works by adding the import,
+  watching it fail, and removing it — a boundary rule nobody has ever seen fire is a
+  boundary rule that does not exist.
 
 **Manual**
 
@@ -1089,7 +1312,7 @@ No recipe names, URLs, or ingredient text in properties.
 | --- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | D1  | schema.org microdata parser, not hRecipe                                    | The export is microdata; the issue was wrong (§3.2)                     |
 | D2  | Bespoke Paprika parser over generic `fromMicrodata`                         | Instruction splitting, attribute-valued rating, dual image paths (§3.3) |
-| D3  | `@buttery/recipe-extract/paprika` subpath, not a new package                | Reuses the bridge and normalizers; no new dependency at all (§4)        |
+| D3  | `/import` and `/paprika` subpaths, not new packages                         | Reuses the bridge and normalizers; no new dependency at all (§4)        |
 | D4  | Namespaced key/value + `jsonb` sidecar                                      | Velocity now; typed columns are the acknowledged future (§5.5)          |
 | D5  | Paprika bookkeeping is household-scoped                                     | It's a fact about this household's import, not the recipe (§2.2)        |
 | D6  | Normalized URL primary, content fingerprint secondary, fuzzy title advisory | URL alone leaves 24% unchecked (§6)                                     |
@@ -1121,6 +1344,14 @@ Design-driven, from §10:
 | D27 | Attribution is the first review group and gates commit                 | 81 recipes cannot be saved unattributed; make that unmissable (§10.1)       |
 | D28 | `maybe` gets its own one-at-a-time diff queue                          | 9 judgement calls deserve a decision surface, not a badge (§10.1)           |
 | D29 | The summary is transient; failures are reported, not retryable         | Session rows make both revisitable later; neither is phase 1 (§17)          |
+
+Boundary decisions, from §2.5:
+
+| #   | Decision                                                                           | Why                                                                                            |
+| --- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| D30 | One `RecipeImporter` / `ImportCandidate` seam; the pipeline never imports Paprika  | The importer is disposable, the pipeline is not; enforced by lint, not by review (§2.5, §16)   |
+| D31 | The session column is `importer`, holding a registry-validated `RecipeImporter.id` | `recipe_import_attempt.source` already means _transport_; the two spaces must not merge (§5.3) |
+| D32 | One shared sidecar namespace `ns='import'`, with `importer` as a key inside it     | "Everything I ever imported" is one query; per-app is one filter (§5.2, §12.5)                 |
 
 ---
 
@@ -1160,21 +1391,47 @@ Design-driven, from §10:
 17. A member of another household cannot probe, compare, or commit into this household.
 18. Review thumbnails render from local bytes, and a full import uploads zero image bytes —
     every stored image arrived through `storePendingImageFromUrl` (§11).
-19. Results logged to `docs/plans/results/2026-08-09-paprika-import-results.md`.
+19. **No module under `services/web/src/server/recipe-import*`,
+    `services/web/src/components/recipes/import/**`, or `services/web/src/lib/recipe-import/**`
+    imports from `@buttery/recipe-extract/paprika`** — the sole exception is the registry,
+    `lib/recipe-import/importers.ts`. Enforced by an ESLint `no-restricted-imports` block
+    over those paths (§2.5), so `pnpm lint` fails on a violation; the rule is committed with
+    a test that it actually fires (§14). The same rule bans `paprika` imports from
+    `packages/recipe-extract/src/import/**`. Directory convention and review are the backup,
+    not the mechanism.
+20. A **fixture importer** — a dozen lines returning one hand-written `ImportCandidate` over
+    a `Map`-backed `EntrySource` — can be registered and driven through parse → probe →
+    commit in a test without editing a single pipeline module. This is the cheapest honest
+    proof that D30 holds; it lives in tests and ships nothing.
+21. Results logged to `docs/plans/results/2026-08-09-paprika-import-results.md`.
 
 ---
 
 ## 17. Deferred / next
 
+**The payoff is the second importer.** Everything in §5–§13 was built once so that Mela,
+AnyList, Recipe Keeper, a `.paprikarecipes` binary reader, or a plain-CSV importer is a new
+module under `packages/recipe-extract/src/<app>/` plus one line in the registry — a parser, a
+walker, a `label`, an id — and nothing else. Dedupe, attribution, review, commit, sessions,
+and telemetry are already theirs. If the second importer turns out to need a pipeline change,
+that is the interface moving as §2.5 predicted; make the change in the seam and keep the
+`no-restricted-imports` boundary rather than letting a second app's vocabulary leak
+downstream. The plan's estimate is that `ImportCandidate` grows a field or two and nothing
+else has to move.
+
 - **Uploading the export's image bytes** (§11) — the client already reads them for review
   thumbnails; phase 2 uploads them to blob storage and falls back to the remote URL.
-  Strictly additive; the parser already returns `imagePath` and the entry source already
-  exposes `bytes()`.
+  Strictly additive, and generic: `ImportCandidate.localImagePath` and `EntrySource.bytes()`
+  are already in the seam, so it lands for every importer at once.
 - **An archive-backed entry source.** Phase 1 ships `directoryEntrySource` only, but
-  `walkPaprikaExport` takes a `PaprikaEntrySource` (§4.2) precisely so a `.paprikarecipes`
-  binary importer — or a plain zip, if users ask for one — is a new source implementation
-  rather than a parser change. **Keep the abstraction; do not inline directory traversal
-  into the walker** for the sake of a few lines.
+  `EntrySource` is a generic interface (§4.2) precisely so a `.paprikarecipes` binary
+  importer — or a plain zip, if users ask for one — is a new source implementation rather
+  than a parser change. **Keep the abstraction; do not inline directory traversal into the
+  walker** for the sake of a few lines.
+- **An importer chooser on the drop screen.** Phase 1 hard-resolves `'paprika'` because
+  there is one importer and a picker with one option is worse than no picker (§9). The
+  second importer makes this a real screen; the registry already supplies `label` and drop
+  copy for it.
 - **Retrying failed items** in place, instead of listing them for the user to re-export.
 - **A revisitable import summary.** `recipe_import_session` already stores the counts; the
   design deliberately made the summary transient (D29), and un-deferring it is a UI change
@@ -1186,7 +1443,8 @@ Design-driven, from §10:
 - **LLM enhancement** — the second consumer of `recipe_meta` (§5): derived summaries and
   normalized fields for public atproto recipes we cannot edit.
 - **Typed-column migration** for durable sidecar namespaces (§5.5).
-- **Other importers** — `.paprikarecipes` binary, Mela, AnyList. `recipe_import_session.source`
-  is the seam.
+- **Other importers** — `.paprikarecipes` binary, Mela, AnyList, Recipe Keeper. The
+  `RecipeImporter` seam (§2.5) and `recipe_import_session.importer` (§5.3) are what make
+  each one a module rather than a project.
 - **Household ratings** — a real home for the Paprika ratings sitting in the sidecar.
 - **Duration parsing for vulgar fractions** — only if it turns out to matter.
