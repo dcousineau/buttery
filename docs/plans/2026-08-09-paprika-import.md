@@ -1,8 +1,9 @@
 # 2026-08-09 — Paprika 3 recipe library import (+ Buttery-only recipe metadata)
 
 Status: **spec / pre-development**
-Supersedes: [issue #24](https://github.com/dcousineau/buttery/issues/24) — this plan is the
-living version of that ticket; the issue becomes a pointer here.
+Tracking issue: [#24 — Support Paprika 3 recipe library imports](https://github.com/dcousineau/buttery/issues/24).
+This plan is the living version of that ticket; the issue is a pointer here. Every PR in
+this effort should reference `#24` so progress tracks back to it.
 Depends on: `02-households-and-private-foundation.md` (household spine, `assertMember`),
 `03-household-recipe-collection.md` (the box + rendered `recipe` layer),
 `2026-08-02-create-recipes.md` (`extractRecipe`, `saveRecipe`, attribution enforcement,
