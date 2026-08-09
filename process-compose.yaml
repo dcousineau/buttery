@@ -191,3 +191,38 @@ processes:
       failure_threshold: 60
     log_location: ./.dev-logs/web.log
     log_configuration: *log_config
+
+  # Opt-in. Docusaurus is a slow, memory-hungry second bundler and nothing else
+  # in the stack needs it, so it is defined here — dependencies, probe, logs and
+  # all — but boots `Disabled`. Three ways to get it running:
+  #
+  #   • TUI: select `docs`, then the "Start Process" shortcut in the footer
+  #   • running stack: `process-compose process start docs`
+  #   • from cold: `BUTTERY_DOCS_DISABLED=false pnpm dev` for the whole stack
+  #     plus docs, or `pnpm dev docs` for docs and its dependencies alone
+  #     (naming a process on `up` overrides `disabled`).
+  docs:
+    description: "Docusaurus docs site (http://127.0.0.1:3001) — opt-in, starts Disabled"
+    command: "pnpm dev:docs"
+    # Static site generator: no database, no auth, no atproto. It only waits on
+    # the containers so that `pnpm dev docs` doesn't leave a half-booted stack
+    # behind when someone then starts `web` from the TUI.
+    depends_on:
+      railway-dev:
+        condition: process_completed_successfully
+    # `disabled` is a real bool, so the expansion has to yield a bare
+    # `true`/`false` literal — hence the `:-` default rather than a `vars:`
+    # entry (Go-template `{{ .X }}` values stay strings and fail to unmarshal).
+    disabled: ${BUTTERY_DOCS_DISABLED:-true}
+    availability: *app_availability
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 3001
+        path: /
+        scheme: http
+      initial_delay_seconds: 5
+      period_seconds: 2
+      failure_threshold: 60
+    log_location: ./.dev-logs/docs.log
+    log_configuration: *log_config

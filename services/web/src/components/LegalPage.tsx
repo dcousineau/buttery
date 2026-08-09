@@ -2,7 +2,8 @@ import { ExternalLink } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 import type { ReactNode } from "react";
 
-const AIL_URL = "https://danielmiessler.com/blog/ai-influence-level-ail";
+/** Canonical AI Influence Level definition. Exported so no page hand-types it. */
+export const AIL_URL = "https://danielmiessler.com/blog/ai-influence-level-ail";
 
 const AIL_COPY: Record<number, string> = {
   1: "Human-written, with minimal AI assistance.",

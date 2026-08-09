@@ -1,0 +1,11 @@
+{
+  "label": "Microformats",
+  "position": 3,
+  "collapsible": true,
+  "collapsed": false,
+  "link": {
+    "type": "generated-index",
+    "title": "Microformats",
+    "description": "The semantic web's recipe vocabularies — schema.org and microformats.org, where they came from, how they mark up a recipe, and what each one gets right and wrong."
+  }
+}
