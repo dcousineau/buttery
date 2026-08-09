@@ -3,6 +3,13 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.20.0",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^26",
+      "onFail": "error"
+    }
+  },
   "scripts": {
     "dev": "bash scripts/dev/up.sh",
     "dev:attach": "process-compose attach",

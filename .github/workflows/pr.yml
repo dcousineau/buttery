@@ -29,8 +29,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
-          # Single source of truth for the Node version (kept in sync with mise.toml).
-          node-version-file: .nvmrc
+          # Single source of truth for the Node version: `devEngines.runtime`
+          # in package.json, which mise reads too. .nvmrc is vestigial.
+          node-version-file: package.json
           cache: pnpm
 
       - name: Install dependencies
@@ -58,7 +59,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
-          node-version-file: .nvmrc
+          node-version-file: package.json
           cache: pnpm
 
       - name: Install dependencies

@@ -34,6 +34,7 @@ Before edit files for big task:
 - UI use semantic tokens only (`bg-primary`, `text-muted-foreground`). Never raw hex or `bg-[var(--butter)]`.
 - All frontend WCAG A minimum, lean AA (keyboard, focus, labels, reduced motion, touch targets). Strict AA contrast ratios not required.
 - New system CLIs go in `[tools]` in `mise.toml` — not homebrew, not npm globals. Fresh clones need `mise trust`.
+- `package.json` is the only place tool versions live: node in `devEngines.runtime`, pnpm in `packageManager`. mise and `actions/setup-node` both read them. Never re-pin either in `mise.toml`, and treat `.nvmrc` as vestigial (nothing reads it).
 
 ## Architecture Decisions
 

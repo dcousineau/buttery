@@ -9,7 +9,7 @@ The monorepo has two services:
 
 ## Local development
 
-Requires [Docker](https://www.docker.com/) (for the local Postgres) and [mise](https://mise.jdx.dev/), which manages the Node, pnpm, Railway CLI, and process-compose versions this repo pins in `mise.toml`.
+Requires [Docker](https://www.docker.com/) (for the local Postgres) and [mise](https://mise.jdx.dev/), which installs the Node and pnpm versions declared in `package.json` (`devEngines.runtime` and `packageManager`) plus the Railway CLI and process-compose versions pinned in `mise.toml`.
 
 ```bash
 # Install mise (macOS/Linux). See https://mise.jdx.dev/installing-mise.html for other options.
