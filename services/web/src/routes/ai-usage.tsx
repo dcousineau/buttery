@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { LegalLink, LegalPage } from "../components/LegalPage";
+import { AIL_URL, LegalLink, LegalPage } from "../components/LegalPage";
 import { seo } from "../lib/seo";
 
 export const Route = createFileRoute("/ai-usage")({
@@ -37,8 +37,8 @@ function AiUsagePage() {
         over whether you want to use this application or not.
       </p>
       <p>
-        Additionally I have come to appreciate Daniel Meissler's <LegalLink href="https://danielmeissler.com/2023/03/05/ai-influence-levels/">AI Influence Level</LegalLink> rubrik
-        for written content and will endeavor to include a notice on any content-heavy page like this one.
+        Additionally I have come to appreciate Daniel Miessler's <LegalLink href={AIL_URL}>AI Influence Level</LegalLink> rubrik for written content and will endeavor to include a
+        notice on any content-heavy page like this one.
       </p>
       <p>
         <strong>This article is deliberatley AIL-1</strong> meaning the words are truly my own and at no point for this page specifically did I ask any LLM to rephrase,

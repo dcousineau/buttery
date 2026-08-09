@@ -15,6 +15,7 @@
     "dev:attach": "process-compose attach",
     "dev:down": "process-compose down; railway dev down",
     "dev:web": "pnpm --filter @buttery/web dev",
+    "dev:docs": "pnpm --filter @buttery/docs start --port 3001 --host 127.0.0.1 --no-open",
     "atproto:dev-env": "pnpm --filter @buttery/atproto-dev-env start",
     "build": "pnpm -r build",
     "start": "pnpm --filter @buttery/web start",

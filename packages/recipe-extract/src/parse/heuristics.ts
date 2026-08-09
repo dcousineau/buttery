@@ -1,5 +1,5 @@
 import type { ExtractedRecipe, ParsedInput } from "../types.ts";
-import { absoluteUrl, cleanText } from "../normalize/text.ts";
+import { absoluteUrl, cleanText } from "@buttery/recipe-schemas/normalize";
 
 /**
  * Last-resort coarse heuristics. Deliberately shallow: reliably guessing which

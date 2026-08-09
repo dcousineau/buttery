@@ -61,6 +61,18 @@
 
   --ifm-code-font-size: 90%;
   --docusaurus-highlighted-code-line-bg: rgba(226, 35, 26, 0.1);
+
+  /* Arrow-out-of-box glyph appended to external links (see the rule near the
+   * bottom of this file). Painted through a CSS mask, so the stroke color here
+   * is irrelevant — only the alpha channel matters. `%23` is an escaped `#`;
+   * a raw one would cut the data URI short. */
+  --bt-external-link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M13 9.5V13a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.5'/%3E%3Cpath d='M10 1h5v5'/%3E%3Cpath d='M6.5 9.5 15 1'/%3E%3C/svg%3E");
+
+  /* Inline code: a faint butter wash instead of Infima's grey chip, and ink
+   * pushed toward yellow rather than a second accent color. Translucent so it
+   * reads the same over cream body and paper surfaces (cards, tables, admonitions). */
+  --ifm-code-background: rgba(255, 216, 77, 0.25);
+  --bt-code-color: #4a3800;
 }
 
 /* ---- dark mode ("toasted") ---- */
@@ -97,14 +109,27 @@
   --ifm-footer-title-color: #ffd84d;
 
   --docusaurus-highlighted-code-line-bg: rgba(255, 98, 66, 0.15);
+
+  /* Same idea inverted: less wash (the toasted surfaces are already warm) and
+   * the ink lifts to pale butter instead of dropping to dark yellow. */
+  --ifm-code-background: rgba(255, 216, 77, 0.12);
+  --bt-code-color: #fff2c4;
 }
 
 /* ---- gingham trim: a 14px band at the navbar's bottom edge and the footer's
  * top edge — trim, not wallpaper, matching the app. Two overlapping repeating
  * check gradients, 7px cells. Built in CSS, never an image. ---- */
-.navbar,
 .footer {
   position: relative;
+}
+
+/* The navbar stays pinned while you scroll. Infima already does this via
+ * `.navbar--fixed-top`, but it's restated here because this rule set needs the
+ * navbar to be a positioned ancestor for its gingham band — and a plain
+ * `position: relative` here would silently unpin the header. */
+.navbar {
+  position: sticky;
+  top: 0;
 }
 
 .navbar::after,
@@ -182,14 +207,23 @@
   font-weight: 600;
 }
 
-/* Inline code: warm surface + relaxed border, tight xs corners. */
+/* Inline code: no border — the butter wash alone is enough separation, and a
+ * chip outline every few words fights the prose. Tight xs corners. */
 code {
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 0.25rem;
+  color: var(--bt-code-color);
+}
+
+/* Code inside a link stays the link's color, or every inline-code link would
+ * lose its affordance. */
+a code {
+  color: inherit;
 }
 
 /* Code blocks: ink border + hard offset shadow + rounded corners (neo-brutalist).
- * The inner <code> drops its own border/radius so only the block frames itself. */
+ * The inner <code> drops the inline treatment entirely so only the block frames
+ * itself and Prism owns the palette. */
 .theme-code-block {
   border: var(--bt-border);
   border-radius: var(--ifm-global-radius);
@@ -200,4 +234,39 @@ code {
 .theme-code-block code {
   border: 0;
   border-radius: 0;
+  color: inherit;
+  background-color: transparent;
+}
+
+/* ---- external link marker (Wikipedia-style) ----
+ * Every off-site link in article content gets a small arrow-out-of-box glyph.
+ * Scoped to `.markdown` on purpose: navbar, sidebar, and footer links are
+ * chrome, and an icon there reads as decoration rather than a signal.
+ *
+ * The glyph is a CSS mask, not a background image, so it paints in
+ * `currentColor` — it tracks the link color through hover and dark mode for
+ * free, and needs no second copy of the SVG.
+ *
+ * Skipped: image links (`:has(img)`), anything opting out with
+ * `.no-external-icon`, and absolute links back to this site. Relative and
+ * anchor links never match — the selector keys on the scheme. */
+.markdown a[href^="http://"]:not([href*="//docs.buttery.recipes"]):not(.no-external-icon):not(:has(img))::after,
+.markdown a[href^="https://"]:not([href*="//docs.buttery.recipes"]):not(.no-external-icon):not(:has(img))::after {
+  content: "";
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  /* A hair of lead-in, and the glyph rides slightly above the baseline so it
+   * optically centers against lowercase text rather than hanging low. */
+  margin-inline-start: 0.2em;
+  vertical-align: 0.05em;
+  background-color: currentColor;
+  -webkit-mask-image: var(--bt-external-link-icon);
+  mask-image: var(--bt-external-link-icon);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
 }

@@ -1,0 +1,17 @@
+/* AIL disclosure. Mirrors the web app's LegalPage footer: a 2px rule, small
+ * muted text, the level itself in full-strength ink. */
+.ail {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: var(--bt-border);
+}
+
+.ailText {
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+
+.ailLabel {
+  opacity: 1;
+}

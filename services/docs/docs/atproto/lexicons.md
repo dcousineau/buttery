@@ -1,4 +1,5 @@
 ---
+ail: 4
 title: Lexicons
 sidebar_position: 1
 description: The recipe.exchange lexicons behind Buttery — the shape of your recipe data on atproto, field by field, plus how the network reality differs from the published schema.
@@ -22,13 +23,35 @@ data you'll actually see on the network diverge**.
 | ----------------------------- | -------------------------------------------------------------------- |
 | **Namespace**                 | `exchange.recipe.*`                                                  |
 | **Published by**              | `did:plc:4cx7ts7lqgjtsfquo53qo3sz`                                   |
+| **Upstream reference**        | [recipe.exchange/lexicons](https://recipe.exchange/lexicons)         |
 | **Discover it**               | the `_lexicon.recipe.exchange` DNS TXT record resolves the publisher |
 | **Reflects the schema as of** | 2026-08-01                                                           |
 
 `recipe.exchange` is an open, third-party lexicon — Buttery didn't author it and
-doesn't own it. The tables below describe the schema as published on the network
-on the date above. Lexicons evolve, so treat this as a snapshot; the network is
-always the source of truth.
+doesn't own it. Its authors publish their own human-readable reference at
+[recipe.exchange/lexicons](https://recipe.exchange/lexicons); read that for the
+canonical schema, and this page for how it behaves in practice. The tables below
+describe the schema as published on the network on the date above. Lexicons
+evolve, so treat this as a snapshot; the network is always the source of truth.
+
+### It borrows its vocabulary from schema.org {#schema-org-lineage}
+
+The field names on `exchange.recipe.recipe` are
+[schema.org `Recipe`](../microformats/schema-org-recipe.md) property names, not
+new ones. `name`, `text`, `keywords`, `cookTime`, `prepTime`, `totalTime`,
+`recipeYield`, `nutrition`, `cookingMethod`, `recipeCuisine`, `recipeCategory`
+and `suitableForDiet` all carry the same meanings they have there, and the
+[`#nutrition`](#nutrition) shape takes its property names from schema.org's
+`NutritionInformation`. If you already
+know how to read a recipe out of a web page, you already know most of this
+lexicon.
+
+Two names diverge. `ingredients` and `instructions` are schema.org's
+**superseded** spellings — the current vocabulary calls them `recipeIngredient`
+and `recipeInstructions`. And `instructions` here is a flat `string[]`, where
+schema.org permits [four different shapes](../microformats/schema-org-recipe.md#in-practice)
+for the same property. The lexicon picks one and requires it, which is why a
+schema.org page needs coercing before it fits.
 
 ## The record types
 
@@ -225,4 +248,6 @@ into a database you own.
 
 > **A living document.** This reference reflects the `recipe.exchange` schema as
 > of 2026-08-01. Open lexicons change over time; if something here disagrees with
-> what you see on the network, the network wins.
+> what you see on the network, the network wins. For the publishers' own
+> human-readable reference, see
+> [recipe.exchange/lexicons](https://recipe.exchange/lexicons).

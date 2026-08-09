@@ -33,6 +33,7 @@ pnpm dev:attach                    # attach the TUI to the running stack
 pnpm dev:down                      # stop the stack and the containers
 
 process-compose process list       # status + health of every process
+process-compose process start docs # the docs site (port 3001) is opt-in, off by default
 process-compose process logs web   # or grep .dev-logs/<process>.log
 process-compose process restart web
 ```

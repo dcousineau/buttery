@@ -2,6 +2,7 @@ import { parse } from "node-html-parser";
 import type { ExtractInput, ExtractResult, ExtractedRecipe, ExtractorName, ExtractWarning, ParsedInput } from "./types.ts";
 import { fromJsonLd } from "./parse/jsonld.ts";
 import { fromMicrodata } from "./parse/microdata.ts";
+import { fromHRecipe } from "./parse/hrecipe.ts";
 import { fromHeuristics } from "./parse/heuristics.ts";
 import { findSiteExtractor } from "./sites/index.ts";
 
@@ -15,7 +16,8 @@ import { findSiteExtractor } from "./sites/index.ts";
  *   1. a bespoke site adapter (if one is registered for the host),
  *   2. schema.org JSON-LD,
  *   3. schema.org microdata,
- *   4. coarse heuristics (title/image only).
+ *   4. microformats hRecipe / h-recipe,
+ *   5. coarse heuristics (title/image only).
  *
  * Fields are merged across sources: the primary (first source to yield a recipe
  * body) wins, and later sources only backfill fields it left blank. `extractor`
@@ -37,6 +39,7 @@ export function extractRecipe(input: ExtractInput): ExtractResult {
   }
   sources.push({ name: "jsonld", recipe: safe(() => fromJsonLd(parsed)) });
   sources.push({ name: "microdata", recipe: safe(() => fromMicrodata(parsed)) });
+  sources.push({ name: "hrecipe", recipe: safe(() => fromHRecipe(parsed)) });
   sources.push({ name: "heuristics", recipe: safe(() => fromHeuristics(parsed)) });
 
   // Merge: iterate in priority order, backfilling only-undefined fields. The

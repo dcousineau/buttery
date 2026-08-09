@@ -6,6 +6,10 @@
  * run this same code against a page's live DOM-serialized HTML. Keeping it pure
  * is what lets both callers — and a future scrape worker — share one parser.
  *
+ * This package owns DOM work only: finding a recipe in a document. What the
+ * markup MEANS — schema.org and hRecipe property names, their coercion, and the
+ * crosswalk to the lexicon — lives in `@buttery/recipe-schemas`.
+ *
  * See docs/plans/2026-08-02-create-recipes.md §B3.
  */
 export { extractRecipe } from "./extract.ts";

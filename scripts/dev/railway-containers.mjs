@@ -37,6 +37,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { connect } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -107,6 +108,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * Readiness per container. Postgres and Redis get real protocol-level checks so
  * dependents (migrations, the web server) don't race a still-booting server;
  * anything else is considered ready once the container is up.
+ *
+ * These run *inside* the container, so they say nothing about whether the app
+ * can reach the server — see `hostPort` below.
  */
 const READY_CHECKS = {
   postgres: (file) => execInService(file, "postgres", ["pg_isready", "-q"]).status === 0,
@@ -116,10 +120,56 @@ const READY_CHECKS = {
   redis: (file) => /PONG|NOAUTH/.test(execInService(file, "redis", ["redis-cli", "ping"]).stdout ?? ""),
 };
 
-function isReady(file, service) {
+/**
+ * Container port each service listens on. Presence here means the app talks to
+ * it over `localhost`, so readiness has to include the published host mapping.
+ */
+const SERVICE_PORTS = { postgres: 5432, redis: 6379 };
+
+/**
+ * Host port `railway dev` published for a service, or null if it published
+ * none.
+ *
+ * Worth checking because `railway dev up` only publishes a service whose
+ * Railway service has a **public TCP proxy**; without one it generates the
+ * compose entry with no `ports:` key at all, silently. `railway run` still
+ * injects a `…@localhost:<port>` URL for it either way, so the container runs
+ * and answers pings happily, and only the app notices — as an endless
+ * `ECONNREFUSED` in `.dev-logs/web.log`.
+ */
+function hostPort(file, service) {
+  const container = SERVICE_PORTS[service];
+  if (!container) return null;
+  // `docker compose port` prints `invalid IP:0` and still exits 0 when there's
+  // no mapping, so trust the output shape rather than the status code.
+  const match = /:(\d+)\s*$/.exec((compose(file, ["port", service, String(container)]).stdout ?? "").trim());
+  const port = match ? Number(match[1]) : 0;
+  return port > 0 ? port : null;
+}
+
+/** Can something on this machine actually open a connection to that port? */
+function hostReachable(port, timeoutMs = 2_000) {
+  return new Promise((resolve) => {
+    const socket = connect({ host: "127.0.0.1", port });
+    const settle = (ok) => {
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => settle(true));
+    socket.once("timeout", () => settle(false));
+    socket.once("error", () => settle(false));
+  });
+}
+
+async function isReady(file, service) {
   if (!isRunning(file, service)) return false;
   const check = READY_CHECKS[service];
-  return check ? check(file) : true;
+  if (check && !check(file)) return false;
+  if (!(service in SERVICE_PORTS)) return true;
+
+  const port = hostPort(file, service);
+  return port !== null && (await hostReachable(port));
 }
 
 async function streamLogs(file, service) {
@@ -130,6 +180,20 @@ async function streamLogs(file, service) {
   while (!isRunning(file, service)) {
     if (Date.now() > deadline) fail(`container for \`${service}\` never appeared (is \`railway dev\` running?)`);
     await sleep(POLL_INTERVAL_MS);
+  }
+
+  // The readiness probe fails on an unpublished port, but a red process in the
+  // TUI doesn't say why. Say it here, in the log pane for the service at fault.
+  if (service in SERVICE_PORTS && hostPort(file, service) === null) {
+    console.error(
+      `!! \`railway dev\` published no host port for \`${service}\` (container :${SERVICE_PORTS[service]}).\n` +
+        `!! Nothing on this machine can reach it, but \`railway run\` still hands the app a\n` +
+        `!! localhost URL for it — the app will hang or spin on ECONNREFUSED.\n` +
+        `!! \`railway dev\` only publishes a service that has a public TCP proxy on Railway.\n` +
+        `!! Give \`${service}\` one (Railway dashboard -> the service -> Settings -> Networking\n` +
+        `!! -> TCP Proxy, application port ${SERVICE_PORTS[service]}), then regenerate the compose\n` +
+        `!! file with \`pnpm dev:down && pnpm dev\` — it is written fresh on every \`up\`.`,
+    );
   }
 
   const child = spawn("docker", ["compose", "-f", file, "logs", "-f", "--no-log-prefix", "--tail", "100", service], {
@@ -152,7 +216,7 @@ if (command === "compose-file") {
   if (!service) fail("usage: railway-containers.mjs ready <service>");
   // A missing compose file means the containers aren't up — not ready, but not
   // worth a hard failure either: process-compose polls this on a loop.
-  process.exit(existsSync(composePath()) && isReady(composePath(), service) ? 0 : 1);
+  process.exit(existsSync(composePath()) && (await isReady(composePath(), service)) ? 0 : 1);
 } else if (command === "logs") {
   if (!service) fail("usage: railway-containers.mjs logs <service>");
   await streamLogs(composeFile(), service);

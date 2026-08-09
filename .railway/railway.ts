@@ -8,6 +8,51 @@ export default defineRailway((ctx) => {
   // the web service consumes it as REDIS_URL (see services/web/src/lib/redis.ts).
   const cache = redis("redis");
 
+  // @todo REMOVE BOTH OF THESE once `railway dev` no longer needs them.
+  //
+  // Public TCP proxies put Postgres and Redis on the open internet, behind
+  // nothing but a password. We do not want that — production datastores should
+  // be reachable over private networking only, never publicly. They are here
+  // solely because `railway dev` cannot work without them.
+  //
+  // The dependency is structural, not a bug we can wait out quietly: the CLI
+  // derives a service's local port mapping from its *public* networking config
+  // and nothing else. From the original `railway dev` PR
+  // (railwayapp/cli#710, and unchanged since):
+  //
+  //     pub fn get_ports(&self) -> Vec<i64> {
+  //         // networking.service_domains[*].port + networking.tcp_proxies.keys()
+  //     }
+  //
+  // No domain and no TCP proxy → no ports → the generated docker-compose.yml
+  // gets no `ports:` key for that service at all, silently, while `railway run`
+  // still hands the app a `…@localhost:<port>` URL. The app then spins on
+  // ECONNREFUSED with nothing explaining why. `scripts/dev/railway-containers.mjs`
+  // fails its readiness probe on exactly that and says so in the log pane.
+  //
+  // Not a regression — that is how the feature shipped (2025-12-12), and no
+  // issue tracks it. `railway dev` is still marked experimental. Watch for a
+  // release that decouples local port publishing from public networking; when
+  // one lands, delete these two lines and the proxies with them.
+  //
+  // Worth knowing meanwhile: dev traffic does NOT flow through the public
+  // endpoints. `railway dev` allocates its own host port per container and
+  // rewrites the service's RAILWAY_TCP_PROXY_DOMAIN/PORT to
+  // `localhost:<that port>`, which is what `railway run` injects — so the app
+  // always talks to the local container, never to production. Verify with:
+  //   railway run --service buttery -- printenv DATABASE_URL REDIS_URL
+  //
+  // Keyed by application port. Railway assigns the public port itself, and it
+  // is unrelated to the local one; never hardcode either.
+  //
+  // `railway config plan` reports "Update postgres/redis networking" on every
+  // run, including immediately after a successful apply — the current-state
+  // snapshot reads networking back as null, so it can never see that the
+  // proxies already exist. The apply is idempotent (verified: postgres kept its
+  // existing proxy id and port), so treat that pair of lines as noise.
+  db.networking = { tcpProxies: { "5432": {} } };
+  cache.networking = { tcpProxies: { "6379": {} } };
+
   // S3-compatible object storage for Buttery-owned uploads (pre-publish recipe
   // draft images). Buckets are per-environment with isolated credentials.
   // Railway provides BUCKET/ACCESS_KEY_ID/SECRET_ACCESS_KEY/REGION/ENDPOINT as

@@ -1,34 +1,14 @@
-import type { Main } from "@buttery/lexicons/exchange/recipe/recipe";
+import type { ExtractedRecipe } from "@buttery/recipe-schemas/bridge";
 
 /**
- * What the extractor produces: the parts of an `exchange.recipe.recipe` record
- * we can pull from a page, minus the fields the server owns (`$type`, timestamps,
- * `attribution` — always re-derived from the source URL — and `embed` — built on
- * publish from the fetched image bytes).
- *
- * Controlled-vocabulary dimensions (cuisine / category / method / diet) are NOT
- * resolved to lexicon tokens here on purpose: that mapping lives in the web app's
- * `recipe-vocab` (the single source of truth mirroring the DB seed), so the
- * parser stays free of vocab drift. We surface the page's raw free-text values in
- * `vocab` and let the app map what it recognizes. `suitableForDiet` is the one
- * exception — schema.org's RestrictedDiet enum is a fixed, stable URL set, so we
- * resolve those to lexicon tokens directly (see normalize/diet).
+ * The extracted-recipe shape now lives with the schema crosswalks
+ * (`@buttery/recipe-schemas/bridge`) — it's the lexicon side of every mapping,
+ * not a parser concern. Re-exported here so callers keep one import.
  */
-export type ExtractedRecipe = Partial<
-  Pick<Main, "name" | "text" | "ingredients" | "instructions" | "keywords" | "prepTime" | "cookTime" | "totalTime" | "recipeYield" | "nutrition" | "suitableForDiet">
-> & {
-  /** Absolute URL of the page's hero image, if found. Fetched + uploaded later. */
-  imageUrl?: string;
-  /** Raw, unresolved free-text vocab values for the app to best-effort map. */
-  vocab?: {
-    cuisine?: string;
-    category?: string;
-    method?: string;
-  };
-};
+export type { ExtractedRecipe };
 
 /** Which extraction path produced the primary result. `site:<host>` = a bespoke adapter. */
-export type ExtractorName = "jsonld" | "microdata" | "heuristics" | `site:${string}`;
+export type ExtractorName = "jsonld" | "microdata" | "hrecipe" | "heuristics" | `site:${string}`;
 
 /** Non-blocking note about something we couldn't confidently pull. */
 export interface ExtractWarning {

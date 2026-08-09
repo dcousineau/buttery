@@ -35,6 +35,22 @@ Editing the `mcp_server:` block needs a full project restart (`process-compose d
 | `migrate`         | `db:migrate:up`, gated on Postgres reporting ready                                                     |
 | `atproto-dev-env` | Isolated PDS + local PLC on `localhost:2583` / `:2582`, probed on `/xrpc/_health`                      |
 | `web`             | TanStack Start dev server on port 3000, gated on migrations, Redis, and the atproto dev-env            |
+| `docs`            | Docusaurus site on port 3001 — **opt-in**, boots `Disabled` (see below)                                |
+
+### The opt-in `docs` process
+
+`docs` is a second bundler that nothing else in the stack depends on, so it carries `disabled: ${BUTTERY_DOCS_DISABLED:-true}`: process-compose loads it — dependencies, readiness probe, `.dev-logs/docs.log` and all — but leaves it in `Disabled` state instead of starting it. Start it whichever way suits:
+
+```bash
+# ...from the TUI: select `docs`, then the "Start Process" shortcut in the footer
+process-compose process start docs        # against an already-running stack
+BUTTERY_DOCS_DISABLED=false pnpm dev      # whole stack, docs included, from cold
+pnpm dev docs                             # docs + its dependencies only
+```
+
+The last two are worth distinguishing. The env var flips the `disabled` default, so the stack boots exactly as usual plus `docs`. Naming a process on `up` instead overrides `disabled` for that process _and_ narrows the boot to it and its dependency closure — handy for a docs-only session, but no `web`.
+
+`vars:` + `{{ .X }}` templating does **not** work for this: templated values stay strings and `disabled` is a bool, so the config fails to parse. Plain `${VAR:-default}` expansion does.
 
 The cron sync service is deliberately absent — it's a periodic batch job, not part of the interactive app. Run it on demand:
 

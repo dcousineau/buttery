@@ -1,0 +1,34 @@
+{
+  "name": "@buttery/recipe-schemas",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./normalize": "./src/normalize/index.ts",
+    "./schema-org": "./src/schema-org/index.ts",
+    "./schema-org/zod": "./src/schema-org/zod.ts",
+    "./hrecipe": "./src/hrecipe/index.ts",
+    "./hrecipe/zod": "./src/hrecipe/zod.ts",
+    "./bridge": "./src/bridge/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc6 --noEmit"
+  },
+  "peerDependencies": {
+    "zod": "^4.4.3"
+  },
+  "peerDependenciesMeta": {
+    "zod": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@buttery/lexicons": "workspace:*",
+    "@types/node": "^26.2.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.10",
+    "zod": "^4.4.3"
+  }
+}
