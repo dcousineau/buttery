@@ -19,7 +19,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
  * - **Row height as a guess.** A hardcoded constant that disagrees with the rendered row
  *   makes the scrollbar lie and the window drift. The first mounted row is measured
  *   (`measureRow`) and the measurement replaces the estimate, so the constant only has to be
- *   close enough for the first frame.
+ *   close enough for the first frame. The measurement is *kept* live rather than taken once,
+ *   because the row's own container queries can restyle it under a window drag.
  * - **Keyboard reach.** Tab only reaches mounted rows once the rest are gone, so the list
  *   grows real arrow-key navigation: `scrollRowIntoView` puts the target row inside the
  *   window *before* React renders it, and the caller focuses it afterwards. See
@@ -43,7 +44,19 @@ export interface RowWindow {
  * The slice to render for a scroll position. Pure, so the arithmetic is unit-testable without
  * a DOM — a windowing bug is an off-by-one that only shows up at one scroll offset.
  */
-export function rowWindow({ scrollTop, viewportHeight, count, rowHeight, overscan = OVERSCAN }: { scrollTop: number; viewportHeight: number; count: number; rowHeight: number; overscan?: number }): RowWindow {
+export function rowWindow({
+  scrollTop,
+  viewportHeight,
+  count,
+  rowHeight,
+  overscan = OVERSCAN,
+}: {
+  scrollTop: number;
+  viewportHeight: number;
+  count: number;
+  rowHeight: number;
+  overscan?: number;
+}): RowWindow {
   if (count <= 0 || rowHeight <= 0) return { start: 0, end: 0 };
   // Before the first measurement the pane has no height yet; render a screenful rather than
   // nothing, so the first paint is never an empty list.
@@ -60,7 +73,7 @@ export interface WindowedRows extends RowWindow {
   scrollRef: React.RefObject<HTMLUListElement | null>;
   /** Wire to the scroller's `onScroll`. */
   onScroll: () => void;
-  /** Ref callback for any rendered row; the first one measured sets the real row height. */
+  /** Ref callback for any rendered row; the row it is given is measured and then watched. */
   measureRow: (element: HTMLElement | null) => void;
   /** Height in px of the spacer standing in for the rows above the window. */
   topPad: number;
@@ -120,11 +133,25 @@ export function useWindowedRows({ count, resetKey }: { count: number; resetKey?:
     setMetrics({ scrollTop: 0, viewportHeight: el.clientHeight });
   }, [resetKey]);
 
+  // Measured once on mount *and* watched from then on. A row's height is not the constant it
+  // looks like: `RecipeSlat` steps its type scale on the width of the list (`@container/slat`),
+  // so dragging the window across that threshold makes every row a pixel or two taller. A
+  // measurement taken only at mount would keep the old number until a scroll happened to mount
+  // a new first row, and every spacer in between would be wrong by that much times the rows
+  // above the window. The observer is on one row, not all of them, and it only sets state when
+  // the number actually moves.
   const measureRow = useCallback((element: HTMLElement | null) => {
     if (!element) return;
-    const height = element.getBoundingClientRect().height;
-    // Sub-pixel jitter is not a new row height.
-    if (height > 0) setRowHeight((prev) => (Math.abs(prev - height) < 0.5 ? prev : height));
+    const apply = () => {
+      const height = element.getBoundingClientRect().height;
+      // Sub-pixel jitter is not a new row height.
+      if (height > 0) setRowHeight((prev) => (Math.abs(prev - height) < 0.5 ? prev : height));
+    };
+    apply();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(apply);
+    observer.observe(element);
+    return () => observer.disconnect();
   }, []);
 
   const scrollRowIntoView = useCallback(

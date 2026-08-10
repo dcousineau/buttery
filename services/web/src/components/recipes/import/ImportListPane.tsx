@@ -4,8 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
-import { selectableRowVariants } from "#/components/ui/selectable-row";
-import { cn } from "#/lib/utils.ts";
+import { RecipeSlat, RecipeSlatAction, RecipeSlatAside, RecipeSlatBody, RecipeSlatList, RecipeSlatMeta, RecipeSlatTitle } from "#/components/recipes/RecipeSlat";
 import { LocalImage } from "./LocalImage.tsx";
 import { useWindowedRows } from "./useWindowedRows.ts";
 
@@ -156,7 +155,10 @@ export function ImportListPane({
 
   const activeAlert = activeItem
     ? activeItem.verdict === "dupe_in_batch"
-      ? { title: "Already in this folder", body: `${batchDuplicateName(activeItem) ?? "An earlier recipe in this folder"} has the same key — only the first copy is imported. Tick this row to bring in a second copy anyway.` }
+      ? {
+          title: "Already in this folder",
+          body: `${batchDuplicateName(activeItem) ?? "An earlier recipe in this folder"} has the same key — only the first copy is imported. Tick this row to bring in a second copy anyway.`,
+        }
       : activeItem.verdict === "in_box"
         ? { title: "Already in your box", body: existingLine(activeItem) ?? "A recipe in your box has the same key." }
         : activeItem.verdict === "maybe"
@@ -186,49 +188,60 @@ export function ImportListPane({
             reaches a row that is not currently in the DOM (§10.4). */}
         <p className="sr-only">Use the up and down arrow keys to move through this list. Home and End jump to the first and last recipe.</p>
 
-        <ul ref={scrollRef} onScroll={onScroll} className="m-0 min-h-0 flex-1 list-none overflow-auto p-0">
+        <RecipeSlatList ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-auto">
           {topPad > 0 ? <li aria-hidden="true" style={{ height: topPad }} /> : null}
           {visible.map((item, offset) => {
             const index = start + offset;
             const active = activeItem?.clientId === item.clientId;
             const checkId = `include-${item.clientId}`;
             return (
-              <li
+              <RecipeSlat
                 key={item.clientId}
                 // Every row is the same height; the first one measured is what the window's
-                // arithmetic runs on from then on.
+                // arithmetic runs on from then on. The slat keeps that true — its lines all
+                // truncate, and the container-query tiers are a property of the pane's width,
+                // so they switch for every row at once or for none.
                 ref={offset === 0 ? measureRow : undefined}
-                className={cn("flex items-center gap-2.5 border-b border-border/60 px-4 py-2", selectableRowVariants({ selected: active }))}
+                selected={active}
               >
-                <Checkbox id={checkId} size="sm" checked={isChecked(item)} onChange={(event) => onToggle(item, event.target.checked)} aria-label={`${checkboxLabel} ${item.record.name}`} />
-                <button
+                <Checkbox
+                  id={checkId}
+                  size="sm"
+                  checked={isChecked(item)}
+                  onChange={(event) => onToggle(item, event.target.checked)}
+                  aria-label={`${checkboxLabel} ${item.record.name}`}
+                />
+                <RecipeSlatAction
                   type="button"
                   id={rowButtonId(item.clientId)}
                   onClick={() => onSelect(item.clientId)}
                   onKeyDown={(event) => onRowKeyDown(event, index)}
                   aria-current={active ? "true" : undefined}
-                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 >
                   <LocalImage url={localImageUrl(item.localImagePath)} alt="" className="h-[34px] w-11 flex-none" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">{item.record.name || item.entryName}</span>
-                    <span className="block truncate text-xs text-muted-foreground">{metaLine(item)}</span>
-                  </span>
-                  {item.verdict === "maybe" ? (
-                    <Badge variant="destructive" size="xs">
-                      maybe a dupe
-                    </Badge>
-                  ) : null}
-                  <span aria-hidden="true" className="flex-none font-bold text-muted-foreground">
-                    ›
-                  </span>
-                </button>
-              </li>
+                  <RecipeSlatBody>
+                    <RecipeSlatTitle>
+                      <span className="truncate">{item.record.name || item.entryName}</span>
+                    </RecipeSlatTitle>
+                    <RecipeSlatMeta>{metaLine(item)}</RecipeSlatMeta>
+                  </RecipeSlatBody>
+                  <RecipeSlatAside>
+                    {item.verdict === "maybe" ? (
+                      <Badge variant="destructive" size="xs">
+                        maybe a dupe
+                      </Badge>
+                    ) : null}
+                    <span aria-hidden="true" className="font-bold">
+                      ›
+                    </span>
+                  </RecipeSlatAside>
+                </RecipeSlatAction>
+              </RecipeSlat>
             );
           })}
           {bottomPad > 0 ? <li aria-hidden="true" style={{ height: bottomPad }} /> : null}
           {items.length === 0 ? <li className="px-4 py-6 text-sm text-muted-foreground">Nothing in this group.</li> : null}
-        </ul>
+        </RecipeSlatList>
 
         <div className="flex flex-none items-center gap-3 border-t-2 border-border bg-card px-4 py-2.5">
           <div className="text-[0.8125rem] text-muted-foreground">{summary}</div>

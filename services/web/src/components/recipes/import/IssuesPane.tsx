@@ -7,7 +7,7 @@ import { Input } from "#/components/ui/input";
 import { Textarea } from "#/components/ui/textarea";
 import { IngredientsEditor } from "#/components/recipes/create/IngredientsEditor";
 import { InstructionsEditor } from "#/components/recipes/create/InstructionsEditor";
-import { cn } from "#/lib/utils.ts";
+import { RecipeSlat, RecipeSlatAction, RecipeSlatAside, RecipeSlatBody, RecipeSlatDetail, RecipeSlatList, RecipeSlatMeta, RecipeSlatTitle } from "#/components/recipes/RecipeSlat";
 import { recipeCount } from "./groups.ts";
 
 /**
@@ -87,42 +87,51 @@ export function IssuesPane({
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <ul className="m-0 flex w-80 flex-none list-none flex-col gap-2.5 overflow-auto border-r-2 border-border p-3.5">
+        {/* Slats, not cards (`RecipeSlat`). This column is a list of recipes to work through,
+            exactly like the box and the review list, and it was the odd one out: gapped rounded
+            cards with a `pop-md` shadow on the current one. Same bar, same butter marker, and
+            the container queries do the rest — this column is 320px, so it lands a tier below
+            the import review pane without either of them knowing the viewport's width. */}
+        <RecipeSlatList className="w-80 flex-none overflow-auto border-r-2 border-border">
           {entries.map((entry) => {
             const key = `${entry.item.clientId}#${entry.problem.path}`;
             const current = active?.item.clientId === entry.item.clientId && active.problem.path === entry.problem.path;
             return (
-              <li key={key}>
-                <button
+              <RecipeSlat key={key} selected={current}>
+                <RecipeSlatAction
                   type="button"
                   aria-current={current ? "true" : undefined}
                   onClick={() => {
                     setSelection({ clientId: entry.item.clientId, path: entry.problem.path });
                     pendingFocus.current = fieldDomId(entry.item.clientId, entry.problem);
                   }}
-                  className={cn(
-                    "w-full cursor-(--cursor-interactive) rounded-2xl border-2 border-border px-3.5 py-3 text-left transition-all focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ring",
-                    current ? "bg-secondary text-secondary-foreground shadow-pop-md" : "bg-card hover:bg-accent",
-                  )}
+                  className="cursor-(--cursor-interactive) items-start"
                 >
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-[0.9375rem] font-semibold">{entry.item.record.name || entry.item.entryName}</span>
+                  <RecipeSlatBody>
+                    <RecipeSlatTitle>
+                      <span className="truncate">{entry.item.record.name || entry.item.entryName}</span>
+                    </RecipeSlatTitle>
+                    {/* The message is a sentence, not a label: it wraps rather than truncating,
+                        because "This step is 1,120 characters; the limit is…" is the whole point
+                        of the row. */}
+                    <RecipeSlatMeta wrap>{entry.problem.message}</RecipeSlatMeta>
+                    {/* A problem in a field this editor has no control for (a cuisine token, say)
+                        still gets a row — being told what is wrong beats being told nothing —
+                        but it must not pretend clicking will take you somewhere. */}
+                    {entry.problem.editable ? null : <RecipeSlatDetail wrap>Not editable here — this one will be reported at the end.</RecipeSlatDetail>}
+                  </RecipeSlatBody>
+                  <RecipeSlatAside>
                     <Badge variant="outline" size="xs">
                       {entry.problem.label}
                     </Badge>
-                  </span>
-                  <span className="mt-1 block text-[0.8125rem] text-muted-foreground">{entry.problem.message}</span>
-                  {/* A problem in a field this editor has no control for (a cuisine token, say)
-                      still gets a card — being told what is wrong beats being told nothing —
-                      but it must not pretend clicking will take you somewhere. */}
-                  {entry.problem.editable ? null : <span className="mt-1 block text-xs text-muted-foreground">Not editable here — this one will be reported at the end.</span>}
-                </button>
-              </li>
+                  </RecipeSlatAside>
+                </RecipeSlatAction>
+              </RecipeSlat>
             );
           })}
 
-          {entries.length === 0 ? <li className="text-sm text-muted-foreground">Nothing to fix.</li> : null}
-        </ul>
+          {entries.length === 0 ? <li className="px-2.5 py-4 text-sm text-muted-foreground">Nothing to fix.</li> : null}
+        </RecipeSlatList>
 
         {active ? (
           <IssueEditor
@@ -156,7 +165,17 @@ function fieldDomId(clientId: string, problem: RecordProblem): string | null {
   return problem.index === null ? `issue-${clientId}-${problem.field}` : `issue-${clientId}-${problem.field}-${problem.index}`;
 }
 
-function IssueEditor({ item, problems, onPatch, onSkip }: { item: ImportItem; problems: RecordProblem[]; onPatch: (patch: Partial<RecipeRecordInput>) => void; onSkip: () => void }) {
+function IssueEditor({
+  item,
+  problems,
+  onPatch,
+  onSkip,
+}: {
+  item: ImportItem;
+  problems: RecordProblem[];
+  onPatch: (patch: Partial<RecipeRecordInput>) => void;
+  onSkip: () => void;
+}) {
   const [ingMode, setIngMode] = useState<"paste" | "rows">("rows");
   const [stepMode, setStepMode] = useState<"paste" | "rows">("rows");
 
