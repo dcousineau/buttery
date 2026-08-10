@@ -14,6 +14,14 @@ dayjs.extend(duration);
 //
 // Server-only deps (db, blob storage, atproto client) are pulled in via dynamic
 // import() inside the handlers so this module stays out of the client bundle.
+// This applies to the exported helpers too: `persistRecipeDraft` takes `db` as a
+// parameter and reaches everything else (`ulid`, `recipe-meta`, the normalizers)
+// through dynamic import, so importing it costs a client bundle nothing.
+//
+// `persistRecipeDraft` is the shared persistence core: `saveRecipe` and the batch
+// import commit path both go through it, so a recipe is written exactly one way
+// (docs/plans/2026-08-09-paprika-import.md §2.4, §7.3). It validates, inserts and
+// writes the dedupe keys; it never checks for duplicates and never publishes.
 
 // The record the client sends — everything the author controls. $type and the
 // createdAt/updatedAt timestamps are stamped server-side; `embed` (the image
@@ -75,13 +83,60 @@ function domainOf(url: string): string | null {
 }
 
 /**
+ * What a human said a URL-less recipe came from, before it is a lexicon
+ * attribution. The three shapes are the three answerable choices from the
+ * import review screen's bulk classification step (§8.1) — "skip these" is the
+ * fourth choice there and never reaches the server.
+ *
+ * This exists so the one place that turns free text into an attribution is
+ * `resolveAttribution`, shared by the create form and the import commit path.
+ * Duplicating it in the importer is how the two drift: §8.2 forbids inventing
+ * an author from a title or a name from a page reference, and that rule is only
+ * enforceable if there is a single implementation of it.
+ */
+export type AttributionChoice =
+  /** Cookbook or magazine. Both fields are lexicon-required; the UI collects the author and prefills nothing. */
+  | { kind: "publication"; title: string; author: string }
+  /** A person the recipe came from — family, a friend. */
+  | { kind: "person"; name: string }
+  /** A site the user supplied a URL for by hand (e.g. a bare "Tiktok" source string). */
+  | { kind: "website"; name: string; url: string };
+
+/** Build a lexicon attribution from a user's classification, or null if the choice is incomplete. */
+function attributionFromChoice(choice: AttributionChoice): RecipeRecord["attribution"] | null {
+  const trim = (v: string | undefined): string => (typeof v === "string" ? v.trim() : "");
+  switch (choice.kind) {
+    case "publication": {
+      const title = trim(choice.title);
+      const author = trim(choice.author);
+      // Both are lexicon-required. Never fabricate one from the other (§8.2).
+      if (!title || !author) return null;
+      return { $type: "exchange.recipe.defs#attributionPublication", title, author } as RecipeRecord["attribution"];
+    }
+    case "person": {
+      const name = trim(choice.name);
+      if (!name) return null;
+      return { $type: "exchange.recipe.defs#attributionPerson", name } as RecipeRecord["attribution"];
+    }
+    case "website": {
+      const url = trim(choice.url);
+      const name = trim(choice.name) || domainOf(url) || url;
+      if (!url || !name) return null;
+      return { $type: "exchange.recipe.defs#attributionWebsite", name, url } as RecipeRecord["attribution"];
+    }
+  }
+}
+
+/**
  * Enforce Buttery's non-negotiable attribution rule (the lexicon marks it
  * optional; we don't). For imported recipes, re-derive a Website attribution
  * server-side from the source URL — the client's attribution is never trusted
- * when `sourceUrl` is present. Returns the attribution object, or null if the
- * caller must be rejected.
+ * when `sourceUrl` is present. Failing that, a caller may hand in an explicit
+ * free-text classification (§8.1); failing that, the record must already carry
+ * a lexicon attribution. Returns the attribution object, or null if the caller
+ * must be rejected.
  */
-function resolveAttribution(record: RecipeRecordInput, sourceUrl: string | null): RecipeRecord["attribution"] | null {
+export function resolveAttribution(record: RecipeRecordInput, sourceUrl: string | null, choice?: AttributionChoice | null): RecipeRecord["attribution"] | null {
   if (sourceUrl) {
     const name = domainOf(sourceUrl);
     return {
@@ -90,6 +145,7 @@ function resolveAttribution(record: RecipeRecordInput, sourceUrl: string | null)
       name: name ?? sourceUrl,
     } as RecipeRecord["attribution"];
   }
+  if (choice) return attributionFromChoice(choice);
   const attr = record.attribution as { $type?: string } | undefined;
   if (!attr || typeof attr.$type !== "string" || !attr.$type.startsWith(ATTR_TYPE_PREFIX)) {
     return null;
@@ -171,24 +227,89 @@ interface Ctx {
   householdId: string;
 }
 
-async function runSave(db: Kysely<DB>, ctx: Ctx, input: SaveRecipeInput): Promise<SaveRecipeResult> {
-  const { sql } = await import("kysely");
+// --- persistRecipeDraft: the shared persistence core (§7.3) --------------
+
+/** Namespace the dedupe keys live under in `recipe_meta` (§5.1, §6). */
+export const DEDUPE_NS = "dedupe";
+
+/**
+ * The two dedupe keys (§6). `sourceUrlKey` is null when the recipe has no
+ * usable source URL — 24% of the reference corpus — which is exactly why
+ * `contentFp` is not optional.
+ */
+export interface DedupeKeys {
+  sourceUrlKey: string | null;
+  contentFp: string;
+}
+
+/**
+ * Derive both dedupe keys from a recipe's own content.
+ *
+ * **Always computed from the submitted record, never accepted from a caller**
+ * (§6.1, §7.3). The import review screen lets a user rename a recipe and edit
+ * its ingredients *after* the duplicate probe ran, so a key computed anywhere
+ * but here describes a recipe that was never saved.
+ */
+export async function computeDedupeKeys(recipe: { name: string; ingredients?: readonly string[] }, sourceUrl: string | null): Promise<DedupeKeys> {
+  const { normalizeSourceUrl, contentFingerprint } = await import("@buttery/recipe-schemas/normalize");
+  return {
+    sourceUrlKey: normalizeSourceUrl(sourceUrl),
+    contentFp: await contentFingerprint(recipe.name, recipe.ingredients ?? []),
+  };
+}
+
+export interface PersistRecipeDraftInput {
+  record: RecipeRecordInput;
+  /**
+   * Already resolved by the caller via `resolveAttribution` — this function
+   * enforces no attribution rule of its own, it just stamps what it is given
+   * onto the record before the lexicon gate.
+   */
+  attribution: RecipeRecord["attribution"];
+  /** Provenance. Used only to derive `source_url_key`; attribution was the caller's job. */
+  sourceUrl: string | null;
+  /** A cross-origin hero we only have a URL for. Fetched here (SSRF-guarded) if set. */
+  imageSourceUrl?: string | null;
+  visibility: "draft" | "private";
+}
+
+export type PersistRecipeDraftResult =
+  /**
+   * `record` is the exact validated, server-stamped record that was written.
+   * `saveRecipe` publishes *that* object rather than re-assembling one, so the
+   * `createdAt`/`updatedAt` on the PDS match the row byte for byte. The import
+   * path never publishes (§7.4) and can ignore it.
+   */
+  { status: "ok"; recipeId: string; record: RecipeRecord } | { status: "invalid"; issues: FieldIssue[] };
+
+/**
+ * Persist one new local recipe — the reusable middle of `saveRecipe`, shared
+ * verbatim with the batch import commit path (§7.3, §2.4). Validate → insert →
+ * dedupe keys → pending image, and nothing else.
+ *
+ * Deliberately absent, both by contract:
+ *
+ * - **No dedupe check.** The two callers check different corpora — `saveRecipe`
+ *   probes the public atproto index only when publishing, the import path
+ *   probes this household's box — so neither belongs in here.
+ * - **No publish.** Publishing is irreversible and attributed; keeping it out
+ *   is what makes it structurally impossible for a 341-recipe batch to reach a
+ *   PDS (§2.1, §7.4).
+ *
+ * `db` is a parameter rather than a module-level import so a caller can hand in
+ * its own open transaction (the import path commits a chunk atomically) — and
+ * so this function needs no dynamic `import()` of `#/lib/db` to stay out of the
+ * client bundle.
+ */
+export async function persistRecipeDraft(db: Kysely<DB>, ctx: Ctx, input: PersistRecipeDraftInput): Promise<PersistRecipeDraftResult> {
   const { ulid } = await import("./household/ids");
 
-  const sourceUrl = input.sourceUrl?.trim() || null;
-
-  // 1. Attribution enforcement (imported → server-built Website; else required).
-  const attribution = resolveAttribution(input.record, sourceUrl);
-  if (!attribution) {
-    return { status: "invalid", issues: [{ path: "attribution", message: "Choose where this recipe came from." }] };
-  }
-
-  // 2. Assemble the full record + lexicon validation gate.
+  // 1. Assemble the full record + lexicon validation gate.
   const now = new Date().toISOString();
   const full = {
     $type: "exchange.recipe.recipe",
     ...input.record,
-    attribution,
+    attribution: input.attribution,
     createdAt: now,
     updatedAt: now,
   };
@@ -202,7 +323,36 @@ async function runSave(db: Kysely<DB>, ctx: Ctx, input: SaveRecipeInput): Promis
   }
   const record = validated.value as RecipeRecord;
 
-  // 3. Dedupe (publish + import only): block a URL an existing PUBLIC record cites.
+  // 2. Mint the stable ULID id, then write the local rows AND the dedupe keys
+  //    in one transaction — a recipe must never exist without its keys, or it
+  //    is invisible to every future dedupe pass (§6.6).
+  const recipeId = ulid();
+  const dedupeKeys = await computeDedupeKeys(record, input.sourceUrl);
+  await insertLocalRecipe(db, ctx, recipeId, record, input.visibility, dedupeKeys);
+
+  // 3. Imported hero we only have a cross-origin URL for. Fetch it now
+  //    (SSRF-guarded, ≤1MB) and store it in the bucket like an uploaded image so
+  //    a privately-saved import keeps its photo. Falls back to a URL-only
+  //    pointer (fetched at publish) if the fetch fails.
+  if (input.imageSourceUrl) {
+    await storePendingImageFromUrl(db, recipeId, input.imageSourceUrl, input.record.name);
+  }
+
+  return { status: "ok", recipeId, record };
+}
+
+async function runSave(db: Kysely<DB>, ctx: Ctx, input: SaveRecipeInput): Promise<SaveRecipeResult> {
+  const { sql } = await import("kysely");
+
+  const sourceUrl = input.sourceUrl?.trim() || null;
+
+  // 1. Attribution enforcement (imported → server-built Website; else required).
+  const attribution = resolveAttribution(input.record, sourceUrl);
+  if (!attribution) {
+    return { status: "invalid", issues: [{ path: "attribution", message: "Choose where this recipe came from." }] };
+  }
+
+  // 2. Dedupe (publish + import only): block a URL an existing PUBLIC record cites.
   if (input.publish && sourceUrl) {
     const dup = await db
       .selectFrom("recipe_attribution as a")
@@ -217,27 +367,29 @@ async function runSave(db: Kysely<DB>, ctx: Ctx, input: SaveRecipeInput): Promis
     if (dup) return { status: "duplicate", existingRecipeId: dup.id };
   }
 
-  // 4. Mint the stable ULID id and write the local (draft/private) rows.
-  const recipeId = ulid();
-  await insertLocalRecipe(db, ctx, recipeId, record, input.visibility);
+  // 3. Validate + insert + dedupe keys + imported hero. An uploaded image
+  //    (bytes on the wire) suppresses the URL hero exactly as before.
+  const persisted = await persistRecipeDraft(db, ctx, {
+    record: input.record,
+    attribution,
+    sourceUrl,
+    imageSourceUrl: input.image ? null : input.imageSourceUrl,
+    visibility: input.visibility,
+  });
+  if (persisted.status === "invalid") return persisted;
+  const { recipeId, record } = persisted;
 
-  // 5. Pending image → bucket + pointer row (draft path). On the publish path we
-  //    upload the blob directly instead (below), so skip the pending row there.
+  // 4. Uploaded image → bucket + pointer row (draft path). On the publish path
+  //    we upload the blob directly instead (below), so skip the pending row.
   if (input.image && !input.publish) {
     await storePendingImage(db, recipeId, input.image);
-  } else if (!input.image && input.imageSourceUrl) {
-    // Imported hero we only have a cross-origin URL for. Fetch it now
-    // (SSRF-guarded, ≤1MB) and store it in the bucket like an uploaded image so a
-    // privately-saved import keeps its photo. Falls back to a URL-only pointer
-    // (fetched at publish) if the fetch fails.
-    await storePendingImageFromUrl(db, recipeId, input.imageSourceUrl, input.record.name);
   }
 
   if (!input.publish) {
     return { status: "ok", recipeId, published: false };
   }
 
-  // 6. Publish — gated by the atproto-publishing kill switch. If disabled, the
+  // 5. Publish — gated by the atproto-publishing kill switch. If disabled, the
   //    draft above is kept and we return without any PDS write.
   const { isAtprotoPublishEnabled } = await import("#/lib/posthog-server");
   if (!(await isAtprotoPublishEnabled(ctx.did))) {
@@ -317,10 +469,25 @@ async function runPublishExisting(db: Kysely<DB>, ctx: Ctx, recipeId: string): P
   return { status: "ok", recipeId, published: true };
 }
 
-// Insert the recipe + all child rows for a new local (unpublished) recipe.
-async function insertLocalRecipe(db: Kysely<DB>, ctx: Ctx, id: string, record: RecipeRecord, visibility: "draft" | "private"): Promise<void> {
+/**
+ * Run `fn` in a transaction, reusing the caller's if there already is one.
+ *
+ * `Transaction#transaction()` throws in Kysely, so a helper that unconditionally
+ * opens one cannot be called from inside a caller's transaction — and the import
+ * commit path needs exactly that, to make a chunk atomic.
+ */
+async function inTransaction<T>(db: Kysely<DB>, fn: (trx: Kysely<DB>) => Promise<T>): Promise<T> {
+  if (db.isTransaction) return await fn(db);
+  return await db.transaction().execute(fn);
+}
+
+// Insert the recipe + all child rows for a new local (unpublished) recipe,
+// plus its dedupe keys — one transaction, so a recipe cannot exist without the
+// keys that make it findable by every later dedupe pass (§6.6).
+async function insertLocalRecipe(db: Kysely<DB>, ctx: Ctx, id: string, record: RecipeRecord, visibility: "draft" | "private", dedupeKeys: DedupeKeys): Promise<void> {
   const { sql } = await import("kysely");
-  await db.transaction().execute(async (trx) => {
+  const { setRecipeMeta } = await import("./recipe-meta");
+  await inTransaction(db, async (trx) => {
     await trx
       .insertInto("recipe")
       .values({
@@ -358,6 +525,15 @@ async function insertLocalRecipe(db: Kysely<DB>, ctx: Ctx, id: string, record: R
       .values({ household_id: ctx.householdId, recipe_id: id, added_by_did: ctx.did })
       .onConflict((oc) => oc.columns(["household_id", "recipe_id"]).doNothing())
       .execute();
+
+    // Dedupe sidecar (§6). A recipe with no usable source URL simply has no
+    // `source_url_key` row — an absent key and a null key are the same thing to
+    // every reader, and writing null would make the value index carry noise.
+    // NEVER published; `recipe_meta` is Buttery-only (§2.3).
+    await setRecipeMeta(trx, id, DEDUPE_NS, {
+      content_fp: dedupeKeys.contentFp,
+      ...(dedupeKeys.sourceUrlKey ? { source_url_key: dedupeKeys.sourceUrlKey } : {}),
+    });
   });
 }
 

@@ -101,12 +101,55 @@ export interface ImportParseFailure {
   message: string;
 }
 
+/** A link the drop screen renders beside the export instructions. */
+export interface ImporterDropLink {
+  label: string;
+  href: string;
+}
+
+/**
+ * The drop screen's importer-specific copy (§9, §10.2 D19).
+ *
+ * The *field set* is generic — every importer's launch point has to say what to drop, why
+ * it is safe, and how to produce it from the source app — while every *value* is a fact
+ * about one export format ("Paprika writes a folder, not a single file"). Keeping the copy
+ * on the importer is what lets `/household/recipes/import` render a launch screen without
+ * ever naming an importer, which is the §2.5 boundary the ESLint rule enforces.
+ *
+ * Copy is plain text, not markup: the route owns typography and emphasis, and a string
+ * carrying `<strong>` would have to be dangerously-set to render.
+ */
+export interface ImporterDropCopy {
+  /** Page heading — "Import from Paprika". */
+  title: string;
+  /** Lede under the heading. `{household}` is substituted by the route with the
+   *  household's display name; it is a token rather than a slot so the sentence stays
+   *  translatable and the importer stays ignorant of household types. */
+  lede: string;
+  /** Dropzone headline. */
+  heading: string;
+  /** Dropzone sub-line: what "the folder" actually contains, so the user recognizes it. */
+  body: string;
+  /** Dropzone button label. */
+  cta: string;
+  /** "How do I get this file in the first place?" — the card beneath the dropzone. */
+  help: {
+    title: string;
+    /** Ordered steps, rendered as an `<ol>`. */
+    steps: readonly string[];
+    /** Vendor documentation, per platform. */
+    links: readonly ImporterDropLink[];
+  };
+}
+
 /** The entire importer-specific surface. Phase 1 ships exactly one implementation. */
 export interface RecipeImporter {
   /** Stable, lowercase, no spaces. Stored on the session (§5.3) and in the sidecar (§12.5). */
   readonly id: string;
   /** Product name for UI copy — "Paprika 3". The only place the brand is a string. */
   readonly label: string;
+  /** What the launch screen renders (§9). Generic field, importer-specific value. */
+  readonly dropCopy: ImporterDropCopy;
   /** Launch point: turn whatever the browser handed us into an entry source. */
   open(input: ImporterDropInput): Promise<EntrySource>;
   /** Lazily yield one entry per recipe. Drives the "Reading your recipe box…" progress. */
