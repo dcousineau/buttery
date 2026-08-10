@@ -150,7 +150,25 @@ export type CommitItem =
       sourceText: string | null;
       meta: JsonObject;
     })
-  | (CommitItemBase & { action: "skip" });
+  | (CommitItemBase & {
+      action: "skip";
+      /**
+       * Why this entry produced nothing (§10.2, D24): `duplicate` — the probe
+       * already said it is in the box or duplicates an earlier entry in the same
+       * drop; `user` — the user took it off the list.
+       *
+       * DEVIATION from §7.2's literal item shape, which returns a flat
+       * `skipped: "user"`. D24 requires the summary AND the session row to keep
+       * the two reasons apart, and the server cannot infer this one: a skip item
+       * deliberately carries no record and no keys (that is what makes 341
+       * no-ops cheap), and `dupe_in_batch` — two copies inside one drop, neither
+       * in the box — is not visible to the server at all. The count itself is
+       * still derived from rows, never taken from the client (§7.7); only the
+       * label on a row is the client's to state, and it is the only party that
+       * knows it. Absent reads as `user`, the conservative half.
+       */
+      reason?: SkipReason;
+    });
 
 export interface CommitChunkInput {
   sessionId: string;
@@ -165,8 +183,11 @@ export interface CommitChunkInput {
 export type CommitItemResult =
   | { clientId: string; status: "imported"; recipeId: string }
   | { clientId: string; status: "linked"; recipeId: string }
-  | { clientId: string; status: "skipped"; reason: "duplicate" | "user" }
+  | { clientId: string; status: "skipped"; reason: SkipReason }
   | { clientId: string; status: "failed"; message: string };
+
+/** The two reasons an item produced no recipe, kept apart all the way to the summary (§10.2, D24). */
+export type SkipReason = "duplicate" | "user";
 
 // --- §7.6 comparison: shapes --------------------------------------------
 
@@ -223,7 +244,15 @@ export interface FinalizeOutcome {
   total: number;
   imported: number;
   linked: number;
+  /**
+   * IGNORED by `finalizeImportSession`, like `imported` and `linked` and for the
+   * same reason: every skipped item is sent to the commit endpoint and recorded
+   * as a row, so both halves are derived (§7.7). They stay on the type because
+   * the done screen computes the same shape from its own observed results and
+   * there is nothing to gain from two of them.
+   */
   skippedDuplicate: number;
+  /** IGNORED — see {@link FinalizeOutcome.skippedDuplicate}. */
   skippedUser: number;
   failed: number;
   overriddenDuplicate: number;
@@ -271,13 +300,38 @@ export interface FailImportSessionInput {
 const IMPORT_NS = "import";
 
 /**
+ * Skips are rows, not a reported number.
+ *
+ * Every item that produces no recipe — the user's own exclusions AND the ones
+ * the commit path declines as duplicates — writes one `recipe_import_skip` row
+ * keyed `(session_id, client_id)`, so BOTH of §7.7's skip counters are derived
+ * by querying, exactly like `imported` and `linked`. See the migration header
+ * for why it is a table of its own rather than a `household_recipe_meta`
+ * namespace: a user skip has no recipe to hang a marker on, and a skip is a fact
+ * about an item in a session rather than about a recipe.
+ *
+ * The write is an upsert on the primary key, so a replayed chunk rewrites the
+ * same rows and no count moves — which is the property a client-supplied
+ * `skipped_count` could never have.
+ */
+const SKIP_TABLE = "recipe_import_skip" as const;
+
+/**
  * Pipeline-owned keys in `ns='import'`. An item whose `meta` contains any of them
  * is REJECTED, not merged and not silently overwritten (§7.2, §12.5, D42): all
  * rows land in one key space, so an importer emitting one of these would clobber
  * the provenance the pipeline is required to write. A constant beside the writer,
  * not a comment.
+ *
+ * `client_id` is a FIFTH key beyond §12.5's four. It is the idempotency ledger
+ * (see {@link findLedgerRecipe}): `(session_id, client_id)` is what makes a
+ * replayed chunk return the recipe it already created instead of creating a
+ * second one, and unlike the dedupe re-check it keeps holding after the user
+ * edits the recipe or force-imports a known duplicate. It is reserved for the
+ * same reason the other four are — an importer that could write `client_id`
+ * could point this household's ledger at an arbitrary recipe.
  */
-export const RESERVED_META_KEYS = ["importer", "session_id", "entry_name", "source_text"] as const;
+export const RESERVED_META_KEYS = ["importer", "session_id", "entry_name", "source_text", "client_id"] as const;
 
 /** Serialized `meta` cap per item (§7.2). Generous next to a sub-1 KB importer blob. */
 export const META_MAX_BYTES = 8 * 1024;
@@ -362,7 +416,14 @@ const commitItem = z.discriminatedUnion("action", [
     action: z.literal("link"),
     clientId: z.string().min(1).max(128),
     entryName: z.string().max(1024),
-    existingRecipeId: opaqueId,
+    /**
+     * Bounded but NOT `.min(1)`, unlike {@link opaqueId}. A wire schema that
+     * rejects the empty string rejects the whole 25-item chunk before the
+     * per-item try/catch ever runs, which breaks §7.5's isolation guarantee for
+     * the other 24 items. Emptiness and existence are both checked in
+     * {@link commitLink}, where they fail exactly one item.
+     */
+    existingRecipeId: z.string().max(512),
     notes: z.string().max(10_000).nullable(),
     sourceText: z.string().max(4096).nullable(),
     meta: looseMeta,
@@ -371,6 +432,13 @@ const commitItem = z.discriminatedUnion("action", [
     action: z.literal("skip"),
     clientId: z.string().min(1).max(128),
     entryName: z.string().max(1024),
+    /**
+     * Loose on purpose, like `existingRecipeId` above: a chunk of 25 is mostly
+     * skips on a re-import, and an unrecognised reason must not 400 the other 24
+     * items. {@link skipReasonOf} narrows it, and anything that is not
+     * `"duplicate"` reads as `"user"`.
+     */
+    reason: z.string().max(32).optional(),
   }),
 ]);
 
@@ -378,6 +446,15 @@ const commitInput = z.object({
   sessionId: opaqueId,
   items: z.array(commitItem).max(COMMIT_CHUNK_SIZE),
 });
+
+/**
+ * The commit wire boundary, exported so a test can assert what it does and does
+ * NOT reject: everything a per-item path can turn into one `failed` result must
+ * get through here, or one malformed item 400s the other 24 (§7.5).
+ */
+export function parseCommitChunk(data: unknown): CommitChunkInput {
+  return commitInput.parse(data) as CommitChunkInput;
+}
 
 const comparisonInput = z.object({
   sessionId: opaqueId,
@@ -447,7 +524,7 @@ export const probeImportDuplicates = createServerFn({ method: "POST" })
 
 /** §7.2. Chunk size 25; a per-item failure fails that item only. */
 export const commitImportChunk = createServerFn({ method: "POST" })
-  .validator((data: unknown) => commitInput.parse(data) as CommitChunkInput)
+  .validator((data: unknown) => parseCommitChunk(data))
   .handler(async ({ data }): Promise<CommitItemResult[]> => {
     const { getDb } = await import("#/lib/db");
     const { assertMember } = await import("./authz");
@@ -496,13 +573,36 @@ export const failImportSession = createServerFn({ method: "POST" })
 // --- session helpers ----------------------------------------------------
 
 /**
+ * The three statuses a session never leaves (§5.3). ONE list, used by every
+ * guard: `advanceSession`, the commit gate, finalize's conditional update and
+ * fail's. They drifted once — finalize guarded only `complete`, so a finalize
+ * arriving after a `failed` flipped the session to `complete` and emitted
+ * `recipe_import_completed` for a session that had already emitted
+ * `recipe_import_failed`. Two events, one session. Do not re-split them.
+ */
+const TERMINAL_STATUSES = ["complete", "failed", "abandoned"] as const satisfies readonly ImportSessionStatus[];
+
+function isTerminal(status: string): boolean {
+  return (TERMINAL_STATUSES as readonly string[]).includes(status);
+}
+
+/**
  * A session row scoped to the caller's household (§16.17). Every entry point
  * loads through here, so a session id from another household is simply not found
  * — a member of another household cannot probe, compare, or commit into this one.
+ *
+ * `requireLive` additionally refuses a session that has already ended. Only the
+ * WRITE path sets it: a probe or a comparison against a finished session is a
+ * harmless read (the client re-probes on re-entry, §7.5), but a chunk that
+ * arrives after finalize would create rows against a session whose counters are
+ * already derived, stored and reported — recipes that belong to no session
+ * anyone will ever look at again. `advanceSession` alone did not stop that: it
+ * declines to reopen the session and then the chunk commits anyway.
  */
-async function loadSession(db: Kysely<DB>, householdId: string, sessionId: string) {
+async function loadSession(db: Kysely<DB>, householdId: string, sessionId: string, opts?: { requireLive?: boolean }) {
   const row = await db.selectFrom("recipe_import_session").selectAll().where("id", "=", sessionId).where("household_id", "=", householdId).executeTakeFirst();
   if (!row) throw new Error("Import session not found.");
+  if (opts?.requireLive && isTerminal(row.status)) throw new Error(`This import session has already finished (${row.status}).`);
   return row;
 }
 
@@ -511,7 +611,7 @@ async function loadSession(db: Kysely<DB>, householdId: string, sessionId: strin
  * arriving after finalize must not reopen a `complete` session.
  */
 async function advanceSession(db: Kysely<DB>, sessionId: string, status: ImportSessionStatus): Promise<void> {
-  await db.updateTable("recipe_import_session").set({ status }).where("id", "=", sessionId).where("status", "not in", ["complete", "failed", "abandoned"]).execute();
+  await db.updateTable("recipe_import_session").set({ status }).where("id", "=", sessionId).where("status", "not in", TERMINAL_STATUSES).execute();
 }
 
 export async function runOpenImportSession(db: Kysely<DB>, did: string, householdId: string, input: OpenImportSessionInput): Promise<ImportSessionView> {
@@ -864,15 +964,37 @@ interface PendingImage {
  *
  * Each item is wrapped independently — its own transaction, its own try/catch —
  * so a validation failure or a bad row fails THAT item and the chunk still
- * returns results for the other 24 (§7.5 resumability, §16.11). The chunk
- * deliberately does not increment session counters; they are derived at finalize
- * (§7.7), which is what makes a replayed chunk a no-op by construction.
+ * returns results for the other 24 (§7.5 resumability, §16.11). The wire schema
+ * is deliberately loose for the same reason: anything a per-item path can turn
+ * into a `failed` result must not be a 400 for the whole chunk.
+ *
+ * The chunk deliberately does not increment session counters; they are derived
+ * at finalize (§7.7). Replaying a chunk is a no-op because each item is keyed by
+ * `(session_id, client_id)` in the sidecar ledger (see {@link findLedgerRecipe})
+ * — the derived counters are what makes that visible, not what makes it true.
  *
  * Nothing here can publish (§7.4) — see the module header.
  */
 export async function runCommitImportChunk(db: Kysely<DB>, did: string, householdId: string, input: CommitChunkInput): Promise<CommitItemResult[]> {
-  const session = await loadSession(db, householdId, input.sessionId);
+  // `requireLive`: a chunk that arrives after the session ended is refused
+  // outright rather than quietly creating rows nothing will ever count.
+  const session = await loadSession(db, householdId, input.sessionId, { requireLive: true });
   await advanceSession(db, input.sessionId, "committing");
+
+  // Every skip in the chunk in ONE upsert, before the per-item loop. A re-import
+  // sends ~14 chunks of nothing but skips (§16.12) and none of them deserves a
+  // transaction, an advisory lock, or a row-at-a-time round trip: a skip claims
+  // no recipe, so it races nothing and needs no serialization — the primary key
+  // makes the replay converge instead. If the statement throws, the whole chunk
+  // errors and the client re-sends it (§7.5); that is the right failure, because
+  // a silently unrecorded skip would come back as a missing recipe in the
+  // finalize counters.
+  await recordSkips(
+    db,
+    householdId,
+    session.id,
+    input.items.filter((item): item is Extract<CommitItem, { action: "skip" }> => item.action === "skip").map((item) => ({ clientId: item.clientId, reason: skipReasonOf(item.reason) })),
+  );
 
   const results: CommitItemResult[] = [];
   const images: PendingImage[] = [];
@@ -896,18 +1018,111 @@ export async function runCommitImportChunk(db: Kysely<DB>, did: string, househol
   return results;
 }
 
+/**
+ * Narrow a wire `reason` to the two the column accepts. Absent, unknown, or
+ * misspelled all read as `"user"`: the conservative half, because "the user
+ * chose to drop this" is true of every skip the client sends and "Buttery
+ * declined to duplicate it" is the stronger claim.
+ */
+function skipReasonOf(reason: string | undefined): SkipReason {
+  return reason === "duplicate" ? "duplicate" : "user";
+}
+
+/**
+ * Record skipped items so §7.7 can DERIVE both skip counters instead of
+ * believing a client number a replay would inflate (see {@link SKIP_TABLE}).
+ *
+ * One statement for the whole chunk, and idempotent by primary key: re-sending
+ * the same 25 skips rewrites the same 25 rows. `do update` rather than
+ * `do nothing` so a re-sent item's reason reflects the latest claim rather than
+ * the first one — the count is identical either way, but the split is not.
+ *
+ * Callable inside an item's transaction (the commit-time duplicate path) or on
+ * the pooled connection (the bulk chunk path); it holds no state either way.
+ */
+async function recordSkips(db: Kysely<DB>, householdId: string, sessionId: string, skips: readonly { clientId: string; reason: SkipReason }[]): Promise<void> {
+  if (skips.length === 0) return;
+  const { sql } = await import("kysely");
+  await db
+    .insertInto(SKIP_TABLE)
+    .values(skips.map((skip) => ({ session_id: sessionId, client_id: skip.clientId, household_id: householdId, reason: skip.reason })))
+    .onConflict((oc) => oc.columns(["session_id", "client_id"]).doUpdateSet({ reason: (eb) => eb.ref("excluded.reason"), updated_at: sql`now()` }))
+    .execute();
+}
+
 /** One item's outcome plus the image the post-commit pass owes it. */
 interface ItemOutcome {
   result: CommitItemResult;
   image?: PendingImage;
 }
 
+/**
+ * Serialize every commit of one `(household, session, clientId)` item.
+ *
+ * The ledger check below is a read followed by a write, so two replays of the
+ * same chunk racing each other would both read "no row" and both create a
+ * recipe. There is no unique constraint that could stop them —
+ * `household_recipe_meta`'s primary key is `(household, recipe, ns, key)` and
+ * the whole problem is that a second recipe id makes a *different* row — so the
+ * mutual exclusion is a transaction-scoped advisory lock instead, taken as the
+ * first statement of the item's transaction and released by COMMIT/ROLLBACK
+ * whatever happens. Nothing else in the codebase takes advisory locks, so the
+ * only contention possible is the one this exists to serialize; a hash
+ * collision costs an unnecessary wait and nothing else.
+ */
+async function lockImportItem(trx: Kysely<DB>, householdId: string, sessionId: string, clientId: string): Promise<void> {
+  const { sql } = await import("kysely");
+  const key = `recipe-import ${householdId} ${sessionId} ${clientId}`;
+  await sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`.execute(trx);
+}
+
+/**
+ * §7.5/§16.13's idempotency ledger: the recipe this exact `(session, clientId)`
+ * item already produced, or null.
+ *
+ * **This, not the dedupe re-check, is what makes a replay converge.** The
+ * re-check in `commitImport` compares content, so it silently does nothing for
+ * the two cases that matter most: an item the user force-imported with
+ * `override: "duplicate"` (which deliberately bypasses it — a replayed override
+ * therefore imported a SECOND copy), and a recipe edited after it was committed
+ * (whose `content_fp` no longer matches the row it created). The ledger keys on
+ * the client's own item id, so it survives both.
+ *
+ * `client_id` is written into `ns='import'` beside the §12.5 provenance in the
+ * same statement, inside the same transaction as the recipe, so a recipe from
+ * this pipeline can never exist without its ledger entry — and it cascades away
+ * with the recipe, so deleting an imported recipe correctly makes a re-run
+ * import it again.
+ *
+ * The `session_id` leg is the indexed one (`household_recipe_meta_session`,
+ * §5.2); `client_id` is the join, filtered from the handful of rows a session
+ * has for one key.
+ */
+async function findLedgerRecipe(trx: Kysely<DB>, householdId: string, sessionId: string, clientId: string): Promise<string | null> {
+  const { sql } = await import("kysely");
+  const row = await trx
+    .selectFrom("household_recipe_meta as s")
+    .innerJoin("household_recipe_meta as c", (join) =>
+      join.onRef("c.household_id", "=", "s.household_id").onRef("c.recipe_id", "=", "s.recipe_id").on("c.ns", "=", IMPORT_NS).on("c.key", "=", "client_id"),
+    )
+    .where("s.household_id", "=", householdId)
+    .where("s.ns", "=", IMPORT_NS)
+    .where("s.key", "=", "session_id")
+    .where(sql<boolean>`s.value #>> '{}' = ${sessionId}`)
+    .where(sql<boolean>`c.value #>> '{}' = ${clientId}`)
+    .select("s.recipe_id as recipe_id")
+    .executeTakeFirst();
+  return row?.recipe_id ?? null;
+}
+
 async function commitOne(db: Kysely<DB>, did: string, householdId: string, sessionId: string, importer: string, item: CommitItem): Promise<ItemOutcome> {
   if (item.action === "skip") {
-    // Writes nothing. It exists so the client can report a complete accounting of
-    // the session (§7.7) without the server inferring absence — an excluded
-    // recipe is a decision the user made, not a gap.
-    return { result: { clientId: item.clientId, status: "skipped", reason: "user" } };
+    // Its row was already written in one statement for the whole chunk (see
+    // `runCommitImportChunk`), which is the whole of a skip's work: no recipe, no
+    // transaction, no lock. §7.2's "it exists so the client can report a complete
+    // accounting of the session without the server having to infer absence" is
+    // now literal — the server records the absence rather than being told a total.
+    return { result: { clientId: item.clientId, status: "skipped", reason: skipReasonOf(item.reason) } };
   }
 
   const checked = validateItemMeta(item.meta);
@@ -921,10 +1136,16 @@ async function commitOne(db: Kysely<DB>, did: string, householdId: string, sessi
     importer,
     session_id: sessionId,
     entry_name: item.entryName,
+    // The idempotency ledger's other half (see `findLedgerRecipe`). Written in
+    // the same statement as the rest of the provenance, inside the recipe's own
+    // transaction, so it can never be missing from a row this path created.
+    client_id: item.clientId,
     source_text: item.sourceText ?? null,
   };
 
-  return item.action === "link" ? await commitLink(db, did, householdId, sessionId, item, provenance) : await commitImport(db, did, householdId, item, provenance);
+  return item.action === "link"
+    ? await commitLink(db, did, householdId, sessionId, item, provenance)
+    : await commitImport(db, did, householdId, sessionId, item, provenance);
 }
 
 /**
@@ -945,60 +1166,92 @@ async function commitLink(
   item: Extract<CommitItem, { action: "link" }>,
   provenance: JsonObject,
 ): Promise<ItemOutcome> {
-  const recipe = await db.selectFrom("recipe").select(["id", "visibility", "uri"]).where("id", "=", item.existingRecipeId).executeTakeFirst();
-  if (!recipe || recipe.visibility !== "public" || recipe.uri === null) {
-    return { result: { clientId: item.clientId, status: "failed", message: "That recipe is no longer available to add." } };
-  }
-
-  const alreadyBoxed = await db
-    .selectFrom("household_recipe")
-    .select("recipe_id")
-    .where("household_id", "=", householdId)
-    .where("recipe_id", "=", item.existingRecipeId)
-    .executeTakeFirst();
-  if (alreadyBoxed) {
-    // Distinguish a REPLAY of this session's own chunk from a recipe that was
-    // already in the box before the import started. The first must converge
-    // (§7.5) and report `linked` again; the second is the "already in your box"
-    // case §7.2 says to fail.
-    const owned = await db
-      .selectFrom("household_recipe_meta")
-      .select("value")
-      .where("household_id", "=", householdId)
-      .where("recipe_id", "=", item.existingRecipeId)
-      .where("ns", "=", IMPORT_NS)
-      .where("key", "=", "session_id")
-      .executeTakeFirst();
-    if (owned?.value !== sessionId) {
-      return { result: { clientId: item.clientId, status: "failed", message: "That recipe is already in your box." } };
-    }
+  // The emptiness check the wire schema deliberately does NOT do, so a client
+  // that emits `existingRecipeId: ""` loses that item and not the chunk.
+  const existingRecipeId = item.existingRecipeId.trim();
+  if (!existingRecipeId) {
+    return { result: { clientId: item.clientId, status: "failed", message: "This item has no recipe to link to." } };
   }
 
   const { setManyHouseholdRecipeMeta } = await import("./recipe-meta");
-  await db.transaction().execute(async (trx) => {
+  return await db.transaction().execute(async (trx): Promise<ItemOutcome> => {
+    await lockImportItem(trx, householdId, sessionId, item.clientId);
+
+    // A replay of this exact item links what it linked before, whatever has
+    // happened to the recipe's visibility since.
+    const prior = await findLedgerRecipe(trx, householdId, sessionId, item.clientId);
+    const recipeId = prior ?? existingRecipeId;
+
+    if (!prior) {
+      const recipe = await trx.selectFrom("recipe").select(["id", "visibility", "uri"]).where("id", "=", existingRecipeId).executeTakeFirst();
+      if (!recipe || recipe.visibility !== "public" || recipe.uri === null) {
+        return { result: { clientId: item.clientId, status: "failed", message: "That recipe is no longer available to add." } };
+      }
+
+      const alreadyBoxed = await trx
+        .selectFrom("household_recipe")
+        .select("recipe_id")
+        .where("household_id", "=", householdId)
+        .where("recipe_id", "=", existingRecipeId)
+        .executeTakeFirst();
+      if (alreadyBoxed) {
+        // Distinguish another item of THIS session having linked it — the
+        // client failed to collapse two entries onto one public record — from a
+        // recipe that was already in the box before the import started. The
+        // first converges (§7.5) and reports `linked` again; the second is the
+        // "already in your box" case §7.2 says to fail. (An exact replay of
+        // this item never reaches here: the ledger answered it above.)
+        const owned = await trx
+          .selectFrom("household_recipe_meta")
+          .select("value")
+          .where("household_id", "=", householdId)
+          .where("recipe_id", "=", existingRecipeId)
+          .where("ns", "=", IMPORT_NS)
+          .where("key", "=", "session_id")
+          .executeTakeFirst();
+        if (owned?.value !== sessionId) {
+          return { result: { clientId: item.clientId, status: "failed", message: "That recipe is already in your box." } };
+        }
+      }
+    }
+
     await trx
       .insertInto("household_recipe")
-      .values({ household_id: householdId, recipe_id: item.existingRecipeId, added_by_did: did })
+      .values({ household_id: householdId, recipe_id: recipeId, added_by_did: did })
       .onConflict((oc) => oc.columns(["household_id", "recipe_id"]).doNothing())
       .execute();
-    await writeNote(trx, householdId, item.existingRecipeId, did, item.notes);
-    await setManyHouseholdRecipeMeta(trx, householdId, [{ recipeId: item.existingRecipeId, ns: IMPORT_NS, entries: provenance }]);
-  });
+    await writeNote(trx, householdId, recipeId, did, item.notes);
+    await setManyHouseholdRecipeMeta(trx, householdId, [{ recipeId, ns: IMPORT_NS, entries: provenance }]);
 
-  return { result: { clientId: item.clientId, status: "linked", recipeId: item.existingRecipeId } };
+    return { result: { clientId: item.clientId, status: "linked", recipeId } };
+  });
 }
 
 /**
- * `action: "import"` — attribution → recomputed dedupe keys → household re-check
- * → `persistRecipeDraft` → notes, keywords, sidecar rows.
+ * `action: "import"` — attribution → recomputed dedupe keys → ledger check →
+ * household re-check → `persistRecipeDraft` → notes, keywords, sidecar rows.
  *
- * The re-check (§7.3) runs for EVERY item, not just edited ones. It is what makes
- * a retried chunk converge (§7.5) and what makes the earlier probe advisory
- * rather than load-bearing: the verdict shown in review is the verdict for the
- * recipe *as parsed*, and the review screen lets the user edit one into an exact
- * match of something already in the box after the probe ran (§10.2, D25).
+ * Everything from the ledger check down runs in ONE transaction, opened by the
+ * advisory lock on `(household, session, clientId)`. That ordering is the whole
+ * idempotency guarantee: two replays of a lost chunk cannot both read "no
+ * ledger row" and both create a recipe, because the second one waits for the
+ * first to commit and then finds it.
+ *
+ * The content re-check (§7.3) still runs for EVERY item, and is a different
+ * question — it is what makes the earlier probe advisory rather than
+ * load-bearing, since the review screen lets the user edit a recipe into an
+ * exact match of something already in the box after the probe ran (§10.2, D25).
+ * It is NOT sufficient for replay convergence: it does not fire for an
+ * `override: "duplicate"` item, and it stops matching once the recipe is edited.
  */
-async function commitImport(db: Kysely<DB>, did: string, householdId: string, item: Extract<CommitItem, { action: "import" }>, provenance: JsonObject): Promise<ItemOutcome> {
+async function commitImport(
+  db: Kysely<DB>,
+  did: string,
+  householdId: string,
+  sessionId: string,
+  item: Extract<CommitItem, { action: "import" }>,
+  provenance: JsonObject,
+): Promise<ItemOutcome> {
   const { computeDedupeKeys, persistRecipeDraft, resolveAttribution } = await import("./recipes-write");
   const { setManyHouseholdRecipeMeta } = await import("./recipe-meta");
 
@@ -1017,16 +1270,32 @@ async function commitImport(db: Kysely<DB>, did: string, householdId: string, it
   // Keys are recomputed from the SUBMITTED record, never taken from the client
   // (§6.1, §7.3) — the review screen can rename a recipe after the probe ran.
   const keys = await computeDedupeKeys(record, sourceUrl);
-  const box = await findInBoxMatches(db, householdId, [{ clientId: item.clientId, sourceUrlKey: keys.sourceUrlKey, contentFp: keys.contentFp }]);
-  const existing = (keys.sourceUrlKey ? box.byUrlKey.get(keys.sourceUrlKey) : undefined) ?? box.byFp.get(keys.contentFp);
-  if (existing && item.override !== "duplicate") {
-    // The correct outcome, not an error: the summary reports it, the chunk is fine.
-    return { result: { clientId: item.clientId, status: "skipped", reason: "duplicate" } };
-  }
 
-  let recipeId = "";
-  let invalid: string | null = null;
-  await db.transaction().execute(async (trx) => {
+  return await db.transaction().execute(async (trx): Promise<ItemOutcome> => {
+    await lockImportItem(trx, householdId, sessionId, item.clientId);
+
+    // §7.5/§16.13: this item already produced a recipe. Report that same recipe
+    // — never a second one, and never a phantom `skipped` the client would then
+    // count as a duplicate on top of the derived import (§7.7).
+    const prior = await findLedgerRecipe(trx, householdId, sessionId, item.clientId);
+    if (prior) {
+      // No image is queued: the first attempt already queued it, and the row it
+      // belongs to is committed either way.
+      return { result: { clientId: item.clientId, status: "imported", recipeId: prior } };
+    }
+
+    const box = await findInBoxMatches(trx, householdId, [{ clientId: item.clientId, sourceUrlKey: keys.sourceUrlKey, contentFp: keys.contentFp }]);
+    const existing = (keys.sourceUrlKey ? box.byUrlKey.get(keys.sourceUrlKey) : undefined) ?? box.byFp.get(keys.contentFp);
+    if (existing && item.override !== "duplicate") {
+      // The correct outcome, not an error: the summary reports it, the chunk is
+      // fine. Recorded like any other skip (§7.7) so `skipped_count` is DERIVED
+      // like the other counters instead of trusting a client number that a
+      // replay would double — and recorded as `duplicate` whatever the client
+      // called this item, because the server is the one that just declined it.
+      await recordSkips(trx, householdId, sessionId, [{ clientId: item.clientId, reason: "duplicate" }]);
+      return { result: { clientId: item.clientId, status: "skipped", reason: "duplicate" } };
+    }
+
     const persisted = await persistRecipeDraft(
       trx,
       { did, householdId },
@@ -1044,21 +1313,20 @@ async function commitImport(db: Kysely<DB>, did: string, householdId: string, it
       },
     );
     if (persisted.status === "invalid") {
-      invalid = persisted.issues.map((i) => (i.path ? `${i.path}: ${i.message}` : i.message)).join("; ") || "Recipe failed validation.";
-      return;
+      const message = persisted.issues.map((i) => (i.path ? `${i.path}: ${i.message}` : i.message)).join("; ") || "Recipe failed validation.";
+      return { result: { clientId: item.clientId, status: "failed", message } };
     }
-    recipeId = persisted.recipeId;
+
+    const recipeId = persisted.recipeId;
     await writeNote(trx, householdId, recipeId, did, item.notes);
     await setManyHouseholdRecipeMeta(trx, householdId, [{ recipeId, ns: IMPORT_NS, entries: provenance }]);
+
+    const imageUrl = item.imageSourceUrl?.trim() || null;
+    return {
+      result: { clientId: item.clientId, status: "imported", recipeId },
+      ...(imageUrl ? { image: { recipeId, sourceUrl: imageUrl, alt: record.name ?? null } } : {}),
+    };
   });
-
-  if (invalid) return { result: { clientId: item.clientId, status: "failed", message: invalid } };
-
-  const imageUrl = item.imageSourceUrl?.trim() || null;
-  return {
-    result: { clientId: item.clientId, status: "imported", recipeId },
-    ...(imageUrl ? { image: { recipeId, sourceUrl: imageUrl, alt: record.name ?? null } } : {}),
-  };
 }
 
 /**
@@ -1215,31 +1483,58 @@ export async function runGetImportComparison(db: Kysely<DB>, _did: string, house
  * `household_recipe_meta_session` index (§5.2) exists to serve.
  *
  * **Never incremented.** Per-chunk `count = count + n` is not idempotent: a chunk
- * whose response is lost is retried, the §7.3 re-check correctly refuses to
- * create a second recipe, and the counters gain a phantom skip while keeping the
- * original import. Deriving makes a replayed chunk a no-op by construction, with
- * no ledger table and no `(session_id, client_id)` idempotency record to maintain.
+ * whose response is lost is retried and the counters gain a phantom skip while
+ * keeping the original import. Deriving makes a replayed chunk a no-op by
+ * construction — but only for the counters that are actually derived, which is
+ * why `skippedDuplicate` is one of them: it used to come from the client, and a
+ * replay reported the same 25 recipes once as derived `imported` and again as
+ * client-supplied `skippedDuplicate`.
  *
- * `imported` vs `linked` is read off the recipe itself rather than a fifth
+ * `imported` vs `linked` is read off the recipe itself rather than another
  * sidecar key: §7.4 guarantees everything this path CREATES is `uri is null`, and
- * everything it LINKS is a public record with a `uri`. Adding a `resolution` key
- * would mean a fifth reserved key, and §7.2's list is exactly four.
+ * everything it LINKS is a public record with a `uri`.
+ *
+ * **Both skip counters are derived too**, from `recipe_import_skip` — one row per
+ * `(session, clientId)` that produced no recipe, upserted, so a replayed chunk
+ * rewrites the same rows and no count moves. `skippedUser` used to be the one
+ * figure taken from the client, on the reasoning that a user skip writes nothing
+ * anywhere; the client answered that by not sending its skips at all, at which
+ * point the screen and the row disagreed about what 341 recipes had become. The
+ * client sends them, the server records them, nothing here is told a total.
  */
-async function deriveSessionCounts(db: Kysely<DB>, householdId: string, sessionId: string): Promise<{ imported: number; linked: number }> {
+async function deriveSessionCounts(
+  db: Kysely<DB>,
+  householdId: string,
+  sessionId: string,
+): Promise<{ imported: number; linked: number; skippedDuplicate: number; skippedUser: number }> {
   const { sql } = await import("kysely");
-  const row = await db
-    .selectFrom("household_recipe_meta as m")
-    .innerJoin("recipe as r", "r.id", "m.recipe_id")
-    .where("m.household_id", "=", householdId)
-    .where("m.ns", "=", IMPORT_NS)
-    .where("m.key", "=", "session_id")
-    .where(sql<boolean>`m.value #>> '{}' = ${sessionId}`)
-    .select([
-      sql<number>`count(distinct m.recipe_id) filter (where r.uri is null)::int`.as("imported"),
-      sql<number>`count(distinct m.recipe_id) filter (where r.uri is not null)::int`.as("linked"),
-    ])
-    .executeTakeFirst();
-  return { imported: row?.imported ?? 0, linked: row?.linked ?? 0 };
+  const [rows, skips] = await Promise.all([
+    db
+      .selectFrom("household_recipe_meta as m")
+      .innerJoin("recipe as r", "r.id", "m.recipe_id")
+      .where("m.household_id", "=", householdId)
+      .where("m.ns", "=", IMPORT_NS)
+      .where("m.key", "=", "session_id")
+      .where(sql<boolean>`m.value #>> '{}' = ${sessionId}`)
+      .select([
+        sql<number>`count(distinct m.recipe_id) filter (where r.uri is null)::int`.as("imported"),
+        sql<number>`count(distinct m.recipe_id) filter (where r.uri is not null)::int`.as("linked"),
+      ])
+      .executeTakeFirst(),
+    // One row per skipped item, split by reason (D24). `(household_id,
+    // session_id)` is the index; `reason` is a two-value column, so the filtered
+    // counts cost nothing over the same scan.
+    db
+      .selectFrom(SKIP_TABLE)
+      .where("household_id", "=", householdId)
+      .where("session_id", "=", sessionId)
+      .select([
+        sql<number>`count(*) filter (where reason = 'duplicate')::int`.as("duplicate"),
+        sql<number>`count(*) filter (where reason = 'user')::int`.as("user"),
+      ])
+      .executeTakeFirst(),
+  ]);
+  return { imported: rows?.imported ?? 0, linked: rows?.linked ?? 0, skippedDuplicate: skips?.duplicate ?? 0, skippedUser: skips?.user ?? 0 };
 }
 
 /**
@@ -1250,6 +1545,14 @@ async function deriveSessionCounts(db: Kysely<DB>, householdId: string, sessionI
  * can transition the session; every later call recomputes, returns the stored
  * numbers, and emits nothing. That is what makes it safe for the client to retry
  * a lost finalize, and it is why the telemetry event fires here and nowhere else.
+ *
+ * The guard is {@link TERMINAL_STATUSES}, the SAME set `runFailImportSession`
+ * uses — not `!= 'complete'`. A session that already failed is finished: a
+ * finalize arriving afterwards (the client's error path and its retry racing)
+ * must not resurrect it into `complete`, and must not emit
+ * `recipe_import_completed` for a session that already emitted
+ * `recipe_import_failed`. Between the two calls, exactly one event is emitted
+ * per session, and the loser reports the terminal status that actually stuck.
  *
  * A session that is never finalized stays in `committing` forever and is harmless
  * (§5.3): the recipes are saved, the next run converges, and phase 1 has no
@@ -1270,17 +1573,19 @@ export async function runFinalizeImportSession(db: Kysely<DB>, did: string, hous
       // linked records are reported in the result and the event but have no
       // column on a table this plan does not migrate.
       imported_count: derived.imported,
-      // The sidecar cannot answer a skip — nothing is written for one — so these
-      // two come from the client's reconciled `outcome`. Reporting figures, not
-      // facts about rows, and §7.7 says so.
-      skipped_count: input.outcome.skippedDuplicate + input.outcome.skippedUser,
+      // Both halves DERIVED from `recipe_import_skip` (§7.7). Summing them is
+      // what this column has always meant; what changed is that neither half is
+      // a number the client sent, so the done screen's five tiles and this row
+      // cannot disagree about what happened to a recipe.
+      skipped_count: derived.skippedDuplicate + derived.skippedUser,
       failed_count: input.outcome.failed,
     })
     .where("id", "=", input.sessionId)
     .where("household_id", "=", householdId)
     // The whole idempotency guarantee, in one predicate: only one caller can
-    // move the row out of a non-`complete` status, so only one caller emits.
-    .where("status", "!=", "complete")
+    // move the row out of a live status, so only one caller emits — and that
+    // one caller is either this or `runFailImportSession`, never both.
+    .where("status", "not in", TERMINAL_STATUSES)
     .returning("id")
     .executeTakeFirst();
 
@@ -1296,8 +1601,8 @@ export async function runFinalizeImportSession(db: Kysely<DB>, did: string, hous
     // Split all the way to the summary screen: they are different facts about
     // different user intent, and collapsing them hides recipes the user chose to
     // drop (§10.2, D24). The stored `skipped_count` is their sum.
-    skippedDuplicate: input.outcome.skippedDuplicate,
-    skippedUser: input.outcome.skippedUser,
+    skippedDuplicate: derived.skippedDuplicate,
+    skippedUser: derived.skippedUser,
     failed: stored.failed_count,
   };
 
@@ -1324,8 +1629,11 @@ export async function runFinalizeImportSession(db: Kysely<DB>, did: string, hous
   }
 
   return {
+    // The status that actually stuck, not an assumption. A finalize that lost
+    // the race to `runFailImportSession` reports `failed`, because that is what
+    // the session is.
     sessionId: session.id,
-    status: "complete",
+    status: stored.status as ImportSessionStatus,
     finishedAt: new Date(stored.finished_at ?? new Date()).toISOString(),
     firstFinalize,
     counters,
@@ -1334,7 +1642,10 @@ export async function runFinalizeImportSession(db: Kysely<DB>, did: string, hous
 
 /**
  * §13's other event. Terminal, and idempotent for the same reason finalize is:
- * only the call that actually moves the session out of a live status emits.
+ * only the call that actually moves the session out of a live status emits, and
+ * both calls guard on the same {@link TERMINAL_STATUSES} set, so a session emits
+ * `recipe_import_completed` or `recipe_import_failed` — exactly one, exactly
+ * once, whichever call arrived first.
  */
 export async function runFailImportSession(db: Kysely<DB>, did: string, householdId: string, input: FailImportSessionInput): Promise<{ ok: true }> {
   const { sql } = await import("kysely");
@@ -1344,7 +1655,7 @@ export async function runFailImportSession(db: Kysely<DB>, did: string, househol
     .set({ status: "failed" satisfies ImportSessionStatus, finished_at: sql<Date>`now()` })
     .where("id", "=", input.sessionId)
     .where("household_id", "=", householdId)
-    .where("status", "not in", ["complete", "failed", "abandoned"])
+    .where("status", "not in", TERMINAL_STATUSES)
     .returning("id")
     .executeTakeFirst();
 

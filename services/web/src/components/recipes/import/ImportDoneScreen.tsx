@@ -9,10 +9,20 @@ import { useScreenHeading } from "./useScreenHeading.ts";
 /**
  * "The pantry is stocked" — the summary (plan §10.1, §7.7).
  *
- * The four tiles are the whole outcome, and the failure list is the only place the user will
+ * The tiles are the whole outcome, and the failure list is the only place the user will
  * ever see which entries did not make it: §7.7 reconciles counters into the session row, but
  * the *names* are client-side state and vanish on reload. The screen says so rather than
  * letting someone discover it after closing the tab.
+ *
+ * **Five tiles, not the comp's four** (D24). "Already yours" and "you skipped" are different
+ * facts about different intent — one is Buttery declining to write a duplicate, the other is
+ * a recipe the user deliberately dropped — and a single "skipped" tile hides the second
+ * behind the first. The server keeps them apart all the way to `finalizeImportSession`; this
+ * is where that split is for.
+ *
+ * A run where nothing was written is a **finished** import, not a failed one: re-importing an
+ * export already in the box is the §16.12 case, and it gets its own heading rather than
+ * "The pantry is stocked · 0 recipes".
  *
  * It also says the one thing a network-shaped app has to say out loud: nothing here was
  * published. Everything imported is private to the household until the user publishes it.
@@ -24,10 +34,17 @@ export function ImportDoneScreen({ state, importerLabel, householdName, onRestar
 
   const byReason = [...failures.reduce((map, failure) => map.set(failure.message, [...(map.get(failure.message) ?? []), failure]), new Map<string, typeof failures>())].sort((a, b) => b[1].length - a[1].length);
 
+  const added = outcome.imported + outcome.linked;
+  // Nothing written, and nothing lost either — the "already yours" case, which is what a
+  // second run of the same export looks like end to end (§16.12).
+  const nothingAdded = added === 0 && outcome.failed + outcome.parseFailures === 0;
+
   const tiles: { value: number; label: string; tone?: "primary" | "danger" }[] = [
-    { value: outcome.imported, label: "imported", tone: "primary" },
+    { value: outcome.imported, label: "imported", tone: nothingAdded ? undefined : "primary" },
     { value: outcome.linked, label: "linked to public" },
-    { value: outcome.skippedDuplicate + outcome.skippedUser, label: "skipped" },
+    // D24, kept apart: what Buttery declined to duplicate, and what the user chose to drop.
+    { value: outcome.skippedDuplicate, label: "already yours", tone: nothingAdded ? "primary" : undefined },
+    { value: outcome.skippedUser, label: "you skipped" },
     { value: outcome.failed + outcome.parseFailures, label: "didn't make it", tone: "danger" },
   ];
 
@@ -39,16 +56,22 @@ export function ImportDoneScreen({ state, importerLabel, householdName, onRestar
             Import complete
           </Badge>
           <h1 ref={heading} tabIndex={-1} className="display-title m-0 text-4xl/[1.08] outline-none">
-            The pantry is stocked
+            {nothingAdded ? "Your box was already stocked" : "The pantry is stocked"}
           </h1>
-          <p className="mt-3 mb-0 text-base text-pretty text-muted-foreground">
-            {outcome.imported + outcome.linked} {outcome.imported + outcome.linked === 1 ? "recipe" : "recipes"} from {importerLabel} are in{" "}
-            <strong className="text-foreground">{householdName}</strong>. They're private to your household — nothing was published to the network. Open any one and publish it
-            yourself when you're ready.
-          </p>
+          {nothingAdded ? (
+            <p className="mt-3 mb-0 text-base text-pretty text-muted-foreground">
+              Nothing new came out of {importerLabel} — all {outcome.total} {outcome.total === 1 ? "recipe" : "recipes"} were already in{" "}
+              <strong className="text-foreground">{householdName}</strong> or left behind on purpose. Nothing was written, nothing was changed, and nothing was published.
+            </p>
+          ) : (
+            <p className="mt-3 mb-0 text-base text-pretty text-muted-foreground">
+              {added} {added === 1 ? "recipe" : "recipes"} from {importerLabel} are in <strong className="text-foreground">{householdName}</strong>. They're private to your
+              household — nothing was published to the network. Open any one and publish it yourself when you're ready.
+            </p>
+          )}
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {tiles.map((tile) => (
             <div key={tile.label} className={cn("rounded-2xl border-2 border-border p-3.5", tile.tone === "primary" ? "bg-secondary shadow-pop-md" : "bg-card")}>
               <div className={cn("display-title text-[1.75rem]/[1]", tile.tone === "danger" && tile.value > 0 && "text-destructive")}>{tile.value}</div>

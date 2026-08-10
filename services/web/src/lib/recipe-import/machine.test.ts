@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ImportCandidate } from "@buttery/recipe-extract/import";
 import type { CommitItemResult, ProbeVerdict } from "./contracts.ts";
 import {
+  batchDuplicateOf,
   commitBlockedReason,
   commitChunks,
   commitItemFor,
@@ -299,13 +300,19 @@ describe("attribution gating (§8, §10.1)", () => {
     expect(commitItem.sourceText).toBe("Nana's book");
   });
 
-  it("a group answered only with `skip` blocks the commit instead of sending a chunk that must fail", () => {
+  it("a group answered only with `skip` leaves nothing to write, and that is a finishable import", () => {
     const state = toReview([parsed(candidate({ sourceText: "from mum" }))]);
     const key = state.groups[0].key;
 
     const answered = reduce(state, { type: "set_group_kind", groupKey: key, kind: "skip" });
 
-    expect(commitBlockedReason(answered)).toBe("Nothing is selected to import.");
+    // Every source string is answered, so nothing is blocking: a commit that writes nothing
+    // is a real outcome, and the user still has to be able to reach the summary that says so.
+    expect(selectedForCommit(answered)).toHaveLength(0);
+    expect(commitBlockedReason(answered)).toBeNull();
+    // It is still SENT, as a `skip` item: that is the only way the session row can account
+    // for the recipe (§7.2).
+    expect(commitItemFor(answered, answered.items[0])).toEqual({ clientId: answered.items[0].clientId, entryName: answered.items[0].entryName, action: "skip", reason: "user" });
   });
 });
 
@@ -419,13 +426,18 @@ describe("commit chunking and resumability (§7.2, §7.5)", () => {
     expect(next.items.map((item) => item.clientId)).toEqual(order.slice(25, 50));
   });
 
-  it("commit_start sends only the items that will do something", () => {
+  it("commit_start sends every item, including the ones that will do nothing", () => {
     const a = candidate({ sourceUrl: "https://example.com/a" });
     const b = candidate({ sourceUrl: "https://example.com/b" });
     let state = toReview([parsed(a), parsed(b)]);
     state = reduce(state, { type: "set_action", clientId: b.clientId, action: "skip" });
     state = reduce(state, { type: "commit_start" });
-    expect(state.commit?.order).toEqual([a.clientId]);
+    // `b` writes nothing, but it is a decision the user made and the only party that can put
+    // it in `recipe_import_session.skipped_count` is the server (§7.2, §7.7).
+    expect(state.commit?.order).toEqual([a.clientId, b.clientId]);
+    expect(selectedForCommit(state)).toHaveLength(1);
+    const chunk = nextCommitChunk(state)!;
+    expect(chunk.items.map((item) => item.action)).toEqual(["import", "skip"]);
   });
 });
 
@@ -456,14 +468,223 @@ describe("outcome (§7.7)", () => {
 
     const outcome = finalizeOutcome(state);
     expect(outcome).toMatchObject({ total: 5, imported: 1, linked: 1, failed: 1, parseFailures: 1 });
-    // `d` was never sent (in_box defaults to skip) and is still counted as a user skip.
-    expect(outcome.skippedUser).toBe(1);
+    // `d` was never sent (in_box defaults to skip) and is counted as a *duplicate* skip: the
+    // machine skipped it because the probe said it is already here, not because the user
+    // dropped it (D24).
+    expect(outcome.skippedDuplicate).toBe(1);
+    expect(outcome.skippedUser).toBe(0);
 
     // A retried chunk overwrites its item's result instead of adding to a tally.
     const retried = reduce(state, { type: "chunk_complete", results: [{ clientId: c.clientId, status: "imported", recipeId: "r-c" }] });
     expect(finalizeOutcome(retried)).toMatchObject({ imported: 2, failed: 0 });
 
     expect(failedItems(state).map((failure) => failure.entryName)).toEqual(["Broken.html", c.entryName]);
+  });
+
+  it("separates the two skip reasons D24 asks the summary to keep apart", () => {
+    const mine = candidate({ sourceUrl: "https://example.com/mine" });
+    const dropped = candidate({ sourceUrl: "https://example.com/dropped" });
+    const maybe = candidate({ sourceUrl: "https://example.com/maybe" });
+
+    let state = toReview([parsed(mine), parsed(dropped), parsed(maybe)], [
+      { clientId: mine.clientId, verdict: "in_box", existing: { recipeId: "r1", name: "Mine", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } },
+      { clientId: dropped.clientId, verdict: "new" },
+      { clientId: maybe.clientId, verdict: "maybe", candidates: [{ recipeId: "r2", name: "Close", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null }] },
+    ]);
+
+    // The user unticks a `new` row, and decides a `maybe` is a dupe at the queue. Both are
+    // decisions the user made; only the `in_box` row was skipped by the machine.
+    state = run(state, { type: "set_action", clientId: dropped.clientId, action: "skip" }, { type: "set_action", clientId: maybe.clientId, action: "skip" });
+
+    const outcome = finalizeOutcome(state);
+    expect(outcome.skippedDuplicate).toBe(1);
+    expect(outcome.skippedUser).toBe(2);
+
+    // Overriding the duplicate moves it out of both tallies — it is an import now.
+    const overridden = reduce(state, { type: "set_override", clientId: mine.clientId, override: true });
+    expect(finalizeOutcome(overridden)).toMatchObject({ skippedDuplicate: 0, skippedUser: 2, overriddenDuplicate: 1 });
+  });
+});
+
+describe("re-importing an export that is already in the box (§16.12)", () => {
+  /** Every entry comes back `in_box` — what the second run of the same export looks like. */
+  function reimport(count: number): ImportState {
+    const candidates = Array.from({ length: count }, (_, i) => candidate({ sourceUrl: `https://example.com/${i}` }));
+    return toReview(
+      candidates.map((c) => parsed(c, { sourceUrlKey: `example.com/${c.clientId}` })),
+      candidates.map((c) => ({ clientId: c.clientId, verdict: "in_box" as const, existing: { recipeId: `r-${c.clientId}`, name: c.recipe.name ?? "", addedAt: "2026-01-01T00:00:00Z", addedByHandle: "@dan" } })),
+    );
+  }
+
+  it("reaches the summary with nothing selected instead of dead-ending on the review screen", () => {
+    let state = reimport(12);
+
+    expect(itemsInGroup(state, "in_box")).toHaveLength(12);
+    expect(selectedForCommit(state)).toHaveLength(0);
+    // The whole of the defect: a disabled primary button here is a flow with no exit, and
+    // §16.12's "reports 341 duplicates" is unreachable.
+    expect(commitBlockedReason(state)).toBeNull();
+
+    state = reduce(state, { type: "commit_start" });
+    expect(state.phase).toBe("committing");
+    // All 12 are in the order even though none of them writes anything: a skip the server
+    // never sees is a recipe `recipe_import_session` cannot account for (§7.2).
+    expect(state.commit?.order).toHaveLength(12);
+    expect(commitProgress(state)).toEqual({ done: 0, total: 12 });
+
+    const chunk = nextCommitChunk(state)!;
+    expect(chunk.items).toHaveLength(12);
+    expect(chunk.items.every((item) => item.action === "skip" && item.reason === "duplicate")).toBe(true);
+
+    state = reduce(state, { type: "chunk_complete", results: chunk.items.map((item) => ({ clientId: item.clientId, status: "skipped" as const, reason: "duplicate" as const })) });
+    expect(nextCommitChunk(state)).toBeNull();
+
+    state = reduce(state, { type: "finalized" });
+    expect(state.phase).toBe("done");
+    expect(finalizeOutcome(state)).toMatchObject({ total: 12, imported: 0, linked: 0, skippedDuplicate: 12, skippedUser: 0, failed: 0, parseFailures: 0 });
+  });
+
+  it("sends every skip with the reason D24 splits on, and never counts one twice", () => {
+    // The defect this replaced: skips were dropped from `commit.order`, so the server saw an
+    // empty commit, could derive nothing, and the client had to fold all 12 into the one
+    // counter §7.7 let it report — `0 imported / 54 already yours / 287 you skipped` on
+    // screen against `imported 0, skipped 341` in the row. Now the wire carries the same
+    // split the screen shows, and there is only one number.
+    // Nine the probe found in the box, three the user unticked by hand.
+    const dupes = Array.from({ length: 9 }, (_, i) => candidate({ sourceUrl: `https://example.com/dupe-${i}` }));
+    const mine = Array.from({ length: 3 }, (_, i) => candidate({ sourceUrl: `https://example.com/mine-${i}` }));
+    let state = toReview(
+      [...dupes, ...mine].map((c) => parsed(c)),
+      [
+        ...dupes.map((c) => ({ clientId: c.clientId, verdict: "in_box" as const, existing: { recipeId: `r-${c.clientId}`, name: "", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } })),
+        ...mine.map((c) => ({ clientId: c.clientId, verdict: "new" as const })),
+      ],
+    );
+    for (const c of mine) state = reduce(state, { type: "set_action", clientId: c.clientId, action: "skip" });
+
+    state = reduce(state, { type: "commit_start" });
+    const chunk = nextCommitChunk(state)!;
+    const reasons = chunk.items.map((item) => (item.action === "skip" ? item.reason : "sent"));
+    expect(reasons.filter((r) => r === "user")).toHaveLength(3);
+    expect(reasons.filter((r) => r === "duplicate")).toHaveLength(9);
+
+    state = run(
+      state,
+      { type: "chunk_complete", results: chunk.items.map((item) => ({ clientId: item.clientId, status: "skipped" as const, reason: item.action === "skip" ? item.reason! : "user" })) },
+      { type: "finalized" },
+    );
+
+    const shown = finalizeOutcome(state);
+    expect(shown).toMatchObject({ skippedDuplicate: 9, skippedUser: 3 });
+    // Every recipe is accounted for exactly once — the property `skipped_count < total_count`
+    // used to violate.
+    expect(shown.imported + shown.linked + shown.skippedDuplicate + shown.skippedUser + shown.failed + shown.parseFailures).toBe(shown.total);
+  });
+
+  it("counts a replayed item once, as the import it was — not as a second import or a duplicate", () => {
+    // The server's ledger answers a re-sent item with `imported` and the SAME recipe id
+    // (never `skipped: duplicate`, which would report the same recipe twice). `results` is
+    // keyed by clientId, so the second answer overwrites the first.
+    const c = candidate({ sourceUrl: "https://example.com/a" });
+    let state = reduce(toReview([parsed(c)]), { type: "commit_start" });
+    const landed: CommitItemResult[] = [{ clientId: c.clientId, status: "imported", recipeId: "r-a" }];
+    state = run(state, { type: "chunk_complete", results: landed }, { type: "chunk_complete", results: landed }, { type: "finalized" });
+
+    expect(finalizeOutcome(state)).toMatchObject({ total: 1, imported: 1, linked: 0, skippedDuplicate: 0, skippedUser: 0, failed: 0 });
+  });
+
+  it("leaves a duplicate the server itself declined in `skippedDuplicate`", () => {
+    // A `new` verdict the server found in the box anyway (the review screen let the user edit
+    // it into a match after the probe ran). The server's answer wins over the client's guess.
+    const c = candidate({ sourceUrl: "https://example.com/a" });
+    let state = toReview([parsed(c)]);
+    state = reduce(state, { type: "commit_start" });
+    state = reduce(state, { type: "chunk_complete", results: [{ clientId: c.clientId, status: "skipped", reason: "duplicate" }] });
+    state = reduce(state, { type: "finalized" });
+
+    expect(finalizeOutcome(state)).toMatchObject({ skippedDuplicate: 1, skippedUser: 0 });
+  });
+
+  it("still reaches it when the user skips a box-full of new recipes by hand", () => {
+    // Same shape, different reason — the condition is "nothing left to import", not "they
+    // were all duplicates".
+    const candidates = [candidate({ sourceUrl: "https://example.com/a" }), candidate({ sourceUrl: "https://example.com/b" })];
+    let state = toReview(candidates.map((c) => parsed(c)));
+    state = reduce(state, { type: "set_group_actions", group: "ready", action: "skip" });
+
+    expect(commitBlockedReason(state)).toBeNull();
+    state = reduce(state, { type: "commit_start" });
+    const chunk = nextCommitChunk(state)!;
+    expect(chunk.items.every((item) => item.action === "skip" && item.reason === "user")).toBe(true);
+
+    state = run(
+      state,
+      { type: "chunk_complete", results: chunk.items.map((item) => ({ clientId: item.clientId, status: "skipped" as const, reason: "user" as const })) },
+      { type: "finalized" },
+    );
+    expect(state.phase).toBe("done");
+    expect(finalizeOutcome(state)).toMatchObject({ skippedDuplicate: 0, skippedUser: 2 });
+  });
+
+  it("still reaches the summary when the export produced nothing at all", () => {
+    // The genuinely empty order — every entry failed to parse. `nextCommitChunk` has nothing
+    // to send and the driver finalizes immediately; this is the defect-2 fix and it survives
+    // sending skips.
+    let state = run(
+      initialState("fixture"),
+      { type: "drop_accepted", fileName: "My Recipes" },
+      { type: "session_opened", sessionId: "s1" },
+      { type: "parse_complete", result: { items: [], failures: [{ kind: "failure", clientId: "f1", entryName: "Broken.html", message: "no title" }] } },
+      { type: "probe_complete", verdicts: [] },
+    );
+    state = reduce(state, { type: "commit_start" });
+    expect(state.commit?.order).toEqual([]);
+    expect(nextCommitChunk(state)).toBeNull();
+    expect(commitProgress(state)).toEqual({ done: 0, total: 0 });
+
+    state = reduce(state, { type: "finalized" });
+    expect(state.phase).toBe("done");
+    expect(finalizeOutcome(state)).toMatchObject({ total: 1, imported: 0, parseFailures: 1 });
+  });
+});
+
+describe("`dupe_in_batch` (§6.3)", () => {
+  it("is reachable past the client's collapse, and lands as a skipped duplicate of a named entry", () => {
+    // The client collapses on the URL key when there is one and the fingerprint otherwise;
+    // the server claims BOTH key spaces for every item it lets through. Two entries saved
+    // from different sites with the same name and ingredients therefore survive the collapse
+    // (`u:a` ≠ `u:b`) and the second comes back a batch dupe off the shared fingerprint.
+    const first = candidate({ name: "Ragù", sourceUrl: "https://a.example/ragu" });
+    const second = candidate({ name: "Ragù", sourceUrl: "https://b.example/ragu" });
+    const state = toReview(
+      [parsed(first, { sourceUrlKey: "a.example/ragu", contentFp: "sha256:same" }), parsed(second, { sourceUrlKey: "b.example/ragu", contentFp: "sha256:same" })],
+      [
+        { clientId: first.clientId, verdict: "new" },
+        { clientId: second.clientId, verdict: "dupe_in_batch", duplicateOfClientId: first.clientId },
+      ],
+    );
+
+    // Both survived the collapse: this is not a case the client can pretend away.
+    expect(state.items).toHaveLength(2);
+    expect(state.collapsedInBatch).toBe(0);
+
+    const dupe = state.items[1];
+    expect(dupe.verdict).toBe("dupe_in_batch");
+    expect(dupe.action).toBe("skip");
+    expect(itemsInGroup(state, "in_box")).toEqual([dupe]);
+    // It has no household match to name, so the UI names the entry it duplicates instead of
+    // claiming a recipe in the box that does not exist.
+    expect(dupe.existing).toBeNull();
+    expect(batchDuplicateOf(state, dupe)?.clientId).toBe(first.clientId);
+    expect(batchDuplicateOf(state, state.items[0])).toBeNull();
+
+    expect(finalizeOutcome(state)).toMatchObject({ skippedDuplicate: 1, skippedUser: 0 });
+
+    // And it is overridable like any other duplicate row (D23).
+    const overridden = reduce(state, { type: "set_override", clientId: dupe.clientId, override: true });
+    const commitItem = commitItemFor(overridden, overridden.items[1]);
+    if (commitItem.action !== "import") throw new Error("unreachable");
+    expect(commitItem.override).toBe("duplicate");
   });
 });
 

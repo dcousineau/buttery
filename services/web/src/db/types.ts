@@ -277,6 +277,14 @@ export interface RecipeImportSession {
   total_count: Generated<number>;
 }
 
+export interface RecipeImportSkip {
+  client_id: string;
+  household_id: string;
+  reason: string;
+  session_id: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface RecipeIngredient {
   ordinal: number;
   recipe_id: string;
@@ -384,6 +392,7 @@ export interface DB {
   recipe_image: RecipeImage;
   recipe_import_attempt: RecipeImportAttempt;
   recipe_import_session: RecipeImportSession;
+  recipe_import_skip: RecipeImportSkip;
   recipe_ingredient: RecipeIngredient;
   recipe_instruction: RecipeInstruction;
   recipe_keyword: RecipeKeyword;

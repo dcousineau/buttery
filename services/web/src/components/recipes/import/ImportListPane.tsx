@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import type { ImportItem, RailGroupId } from "#/lib/recipe-import/machine.ts";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Badge } from "#/components/ui/badge";
@@ -5,30 +6,35 @@ import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
 import { cn } from "#/lib/utils.ts";
 import { LocalImage } from "./LocalImage.tsx";
+import { useWindowedRows } from "./useWindowedRows.ts";
 
 /**
  * The list + preview pane (plan §10.1) — "Ready to import", "Already yours", "Already public".
  *
- * **341 rows with no virtualization.** `package.json` ships no windowing library and the plan
- * does not add one, so the list leans on CSS containment instead: every row declares
- * `content-visibility: auto` with a `contain-intrinsic-size` matching its real height, and the
- * browser skips layout, paint, and style for the rows outside the viewport while still
- * reserving their space (so the scrollbar is honest and Ctrl-F still finds them). It is a
- * one-line answer to the problem windowing solves, and unlike windowing it does not break
- * tab order or in-page find.
+ * **341 rows, windowed** (§9, §10.3, §16.16). Only the rows inside the scrollport plus an
+ * overscan are mounted; two spacer `<li>`s stand in for the rest, so the scrollbar is honest
+ * and the pane holds ~25 elements instead of 341. The rows are uniform by construction — one
+ * truncated title, one truncated meta line, a fixed thumbnail — which is what makes a
+ * fixed-height window correct here; `useWindowedRows` measures the real height rather than
+ * trusting a constant. The earlier `content-visibility: auto` answer is gone: it skipped paint
+ * for offscreen rows but still reconciled all 341 and still minted an object URL per
+ * thumbnail, which is what forced the image cache's bound to 1024.
+ *
+ * The cost windowing has to buy back is keyboard reach — Tab cannot visit a row that is not in
+ * the DOM. So the rows carry real arrow-key navigation (↑/↓, Home/End, PageUp/PageDown): the
+ * target row is scrolled into the window, selected, and focused, which also makes 341 rows
+ * navigable without 341 Tab presses. In-page find no longer reaches unmounted rows; nothing in
+ * this flow depends on Ctrl-F, and a 341-row Tab loop was never a usable substitute either.
  *
  * The checkbox's meaning changes per group — include, link, or "import a second copy anyway" —
  * so the label is passed in rather than assumed; a checkbox that reads "import" in one group
  * and "link" in another with the same label would be a lie in one of them.
  */
 
-/**
- * Space a not-yet-rendered row reserves. Measured, not guessed: a row is 69px in the shipped
- * type scale, and an intrinsic size shorter than the real one makes the scrollbar lie and the
- * thumb jump as rows come into view. The `auto` keyword lets the browser replace this estimate
- * with each row's last-rendered height once it has seen it, so the guess only ever matters once.
- */
-const ROW_HEIGHT = "auto 4.3125rem";
+/** Stable id per row, so a row scrolled into view can be focused once React has mounted it. */
+function rowButtonId(clientId: string): string {
+  return `import-row-${clientId}`;
+}
 
 function metaLine(item: ImportItem): string {
   const parts: string[] = [];
@@ -66,6 +72,7 @@ export function ImportListPane({
   onOpenEditor,
   onOpenCompare,
   localImageUrl,
+  batchDuplicateName,
   title,
   summary,
   footer,
@@ -83,13 +90,82 @@ export function ImportListPane({
   onOpenEditor: (clientId: string) => void;
   onOpenCompare: (clientId: string) => void;
   localImageUrl: (path: string | null) => string | null;
+  /** Name of the earlier entry in this same drop a `dupe_in_batch` row duplicates. */
+  batchDuplicateName: (item: ImportItem) => string | null;
   title: string;
   summary: string;
   footer: React.ReactNode;
 }) {
+  const { scrollRef, onScroll, measureRow, start, end, topPad, bottomPad, scrollRowIntoView, rowHeight } = useWindowedRows({ count: items.length, resetKey: group });
+  const visible = items.slice(start, end);
+
+  // Focus cannot be moved to a row that has not been rendered yet, so the keyboard handler
+  // records the row it wants and this effect focuses it in the commit that mounts it.
+  const pendingFocus = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const clientId = pendingFocus.current;
+    if (!clientId) return;
+    pendingFocus.current = null;
+    document.getElementById(rowButtonId(clientId))?.focus();
+  });
+
+  function moveTo(index: number) {
+    const item = items[index];
+    if (!item) return;
+    pendingFocus.current = item.clientId;
+    // Scroll first: `scrollRowIntoView` updates the window synchronously, so the render that
+    // follows this handler already contains the row the effect above is about to focus.
+    scrollRowIntoView(index);
+    onSelect(item.clientId);
+  }
+
+  function onRowKeyDown(event: React.KeyboardEvent<HTMLElement>, index: number) {
+    const last = items.length - 1;
+    if (last < 0) return;
+    const page = Math.max(1, Math.floor((scrollRef.current?.clientHeight ?? 0) / rowHeight) - 1);
+    let target: number;
+    switch (event.key) {
+      case "ArrowDown":
+        target = Math.min(index + 1, last);
+        break;
+      case "ArrowUp":
+        target = Math.max(index - 1, 0);
+        break;
+      case "Home":
+        target = 0;
+        break;
+      case "End":
+        target = last;
+        break;
+      case "PageDown":
+        target = Math.min(index + page, last);
+        break;
+      case "PageUp":
+        target = Math.max(index - page, 0);
+        break;
+      default:
+        return;
+    }
+    // Claimed even when the target is the current row: at the ends of the list the arrow keys
+    // belong to the list, and letting them scroll the pane under a stationary focus ring is
+    // the confusing half of the behaviour.
+    event.preventDefault();
+    if (target !== index) moveTo(target);
+  }
+
+  const activeAlert = activeItem
+    ? activeItem.verdict === "dupe_in_batch"
+      ? { title: "Already in this folder", body: `${batchDuplicateName(activeItem) ?? "An earlier recipe in this folder"} has the same key — only the first copy is imported. Tick this row to bring in a second copy anyway.` }
+      : activeItem.verdict === "in_box"
+        ? { title: "Already in your box", body: existingLine(activeItem) ?? "A recipe in your box has the same key." }
+        : activeItem.verdict === "maybe"
+          ? { title: "Might already be in your box", body: existingLine(activeItem) ?? "A recipe in your box has the same key." }
+          : null
+    : null;
+
   // `min-h-0` at every level of the column chain: without it a flex child's implicit
-  // `min-height: auto` lets 341 rows push the pane past the viewport, the whole document
-  // scrolls, and the footer's primary button ends up 23,000px down the page.
+  // `min-height: auto` lets the rows push the pane past the viewport, the whole document
+  // scrolls, and the footer's primary button ends up far down the page.
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col border-r-2 border-border">
@@ -105,18 +181,33 @@ export function ImportListPane({
           </div>
         </div>
 
-        <ul className="m-0 min-h-0 flex-1 list-none overflow-auto p-0">
-          {items.map((item) => {
+        {/* Said once, not per row: the list is windowed, so the arrow keys are how a keyboard
+            reaches a row that is not currently in the DOM (§10.4). */}
+        <p className="sr-only">Use the up and down arrow keys to move through this list. Home and End jump to the first and last recipe.</p>
+
+        <ul ref={scrollRef} onScroll={onScroll} className="m-0 min-h-0 flex-1 list-none overflow-auto p-0">
+          {topPad > 0 ? <li aria-hidden="true" style={{ height: topPad }} /> : null}
+          {visible.map((item, offset) => {
+            const index = start + offset;
             const active = activeItem?.clientId === item.clientId;
             const checkId = `include-${item.clientId}`;
             return (
               <li
                 key={item.clientId}
-                style={{ contentVisibility: "auto", containIntrinsicSize: ROW_HEIGHT }}
+                // Every row is the same height; the first one measured is what the window's
+                // arithmetic runs on from then on.
+                ref={offset === 0 ? measureRow : undefined}
                 className={cn("flex items-center gap-2.5 border-b border-border/60 px-4 py-2", active && "bg-accent shadow-[inset_4px_0_0_var(--secondary)]")}
               >
                 <Checkbox id={checkId} size="sm" checked={isChecked(item)} onChange={(event) => onToggle(item, event.target.checked)} aria-label={`${checkboxLabel} ${item.record.name}`} />
-                <button type="button" onClick={() => onSelect(item.clientId)} aria-current={active ? "true" : undefined} className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ring">
+                <button
+                  type="button"
+                  id={rowButtonId(item.clientId)}
+                  onClick={() => onSelect(item.clientId)}
+                  onKeyDown={(event) => onRowKeyDown(event, index)}
+                  aria-current={active ? "true" : undefined}
+                  className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                >
                   <LocalImage url={localImageUrl(item.localImagePath)} alt="" className="h-[34px] w-11 flex-none" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{item.record.name || item.entryName}</span>
@@ -134,6 +225,7 @@ export function ImportListPane({
               </li>
             );
           })}
+          {bottomPad > 0 ? <li aria-hidden="true" style={{ height: bottomPad }} /> : null}
           {items.length === 0 ? <li className="px-4 py-6 text-sm text-muted-foreground">Nothing in this group.</li> : null}
         </ul>
 
@@ -152,10 +244,10 @@ export function ImportListPane({
               <LocalImage url={localImageUrl(activeItem.localImagePath)} alt="" className="h-[132px] w-full" />
               <div className="display-title text-lg/[1.2]">{activeItem.record.name || activeItem.entryName}</div>
               <div className="text-[0.8125rem] text-muted-foreground">{metaLine(activeItem)}</div>
-              {activeItem.verdict === "maybe" || activeItem.verdict === "in_box" ? (
+              {activeAlert ? (
                 <Alert variant="destructive">
-                  <AlertTitle>{activeItem.verdict === "in_box" ? "Already in your box" : "Might already be in your box"}</AlertTitle>
-                  <AlertDescription>{existingLine(activeItem) ?? "A recipe in your box has the same key."}</AlertDescription>
+                  <AlertTitle>{activeAlert.title}</AlertTitle>
+                  <AlertDescription>{activeAlert.body}</AlertDescription>
                 </Alert>
               ) : null}
               <div className="flex flex-col gap-1">

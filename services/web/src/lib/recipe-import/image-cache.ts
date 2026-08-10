@@ -17,19 +17,23 @@ import { type DroppedFile, normalizeEntryPath } from "@buttery/recipe-extract/im
 /**
  * Live object URLs held at once.
  *
- * It has to exceed the number of thumbnails **mounted** at once, not the number visible:
- * the review list renders a row per recipe and leans on `content-visibility` rather than
- * windowing, so all 250 photos of a reference export ask for a URL in one pass. Evicting
- * below that revokes URLs that are still an `<img src>` — measured on the real export, the
- * first 200 rows ended up with dead blobs and rendered only because the decode had already
- * won the race. A revoked URL under a live element does not re-request; it just breaks.
+ * It has to exceed the number of thumbnails **mounted** at once, not the number that exist:
+ * evicting below that revokes URLs that are still an `<img src>`, and a revoked URL under a
+ * live element does not re-request — it just breaks.
  *
- * The bound is cheap, because an object URL pins a `Blob` this cache is already holding in
- * `byPath` for the life of the session: the marginal cost is a handle, not the bytes. The
- * eviction path stays as the backstop for a drop far larger than a recipe box (entries are
- * capped at 5,000), and `dispose()` — not the LRU — is what makes the session leak-free.
+ * The review list is windowed (`useWindowedRows`), so what is mounted is a viewport of rows
+ * plus an overscan — around 25 — plus the preview pane and the compare dialog. It was 1024
+ * when the list mounted a row per recipe and leaned on `content-visibility`, which skips
+ * paint but not mounting: all 341 thumbnails asked for a URL in one pass and the bound had to
+ * clear the whole export. 128 is several windows' worth of headroom over what windowing
+ * actually mounts, and it is now a bound that can be reached in a normal session rather than
+ * a number chosen to never bind.
+ *
+ * The URLs are cheap either way — an object URL pins a `Blob` this cache already holds in
+ * `byPath` for the life of the session, so the marginal cost is a handle, not the bytes — and
+ * `dispose()`, not the LRU, is what makes the session leak-free.
  */
-const MAX_LIVE_URLS = 1024;
+const MAX_LIVE_URLS = 128;
 
 export interface LocalImageCache {
   /**

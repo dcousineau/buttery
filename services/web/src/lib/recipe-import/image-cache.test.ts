@@ -64,26 +64,29 @@ describe("createLocalImageCache", () => {
     expect(revoked).toHaveLength(0);
   });
 
-  it("keeps every thumbnail of a reference-sized export live at once", () => {
-    // The list mounts a row per recipe (no windowing), so 250 photos ask for a URL in one
-    // pass. Anything evicted here would be a revoked URL under a live `<img>`.
-    const paths = Array.from({ length: 250 }, (_, i) => `Box/Images/${i}.jpg`);
+  it("keeps a windowed list's worth of thumbnails live at once", () => {
+    // The list is windowed, so what is mounted is a viewport of rows plus overscan — around
+    // 25 — plus the preview and the compare dialog. Anything evicted inside one window would
+    // be a revoked URL under a live `<img>`; the bound has to clear it several times over.
+    const paths = Array.from({ length: 64 }, (_, i) => `Box/Images/${i}.jpg`);
     const cache = createLocalImageCache(drop(...paths));
 
     for (const path of paths) expect(cache.get(path)).not.toBeNull();
 
-    expect(cache.size()).toBe(250);
+    expect(cache.size()).toBe(64);
     expect(revoked).toHaveLength(0);
   });
 
   it("evicts oldest-first once past the bound, revoking as it goes", () => {
-    const paths = Array.from({ length: 1100 }, (_, i) => `Box/Images/${i}.jpg`);
+    // Scrolling the whole of a 341-recipe export past the window does reach the bound now —
+    // which is the point: it is a live LRU, not a number picked to never bind.
+    const paths = Array.from({ length: 341 }, (_, i) => `Box/Images/${i}.jpg`);
     const cache = createLocalImageCache(drop(...paths));
 
     for (const path of paths) cache.get(path);
 
-    expect(cache.size()).toBe(1024);
-    expect(revoked).toEqual(created.slice(0, 1100 - 1024));
+    expect(cache.size()).toBe(128);
+    expect(revoked).toEqual(created.slice(0, 341 - 128));
   });
 
   it("revokes everything on dispose and goes inert", () => {

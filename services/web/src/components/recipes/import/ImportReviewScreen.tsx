@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { UseImportSession } from "#/lib/recipe-import/useImportSession.ts";
 import {
+  batchDuplicateOf,
   commitBlockedReason,
   itemsInGroup,
   railCounts,
@@ -58,8 +59,18 @@ export function ImportReviewScreen({ session, onCommit }: { session: UseImportSe
   // reason a disabled button is disabled is rendered beside it and wired with
   // `aria-describedby`, because a dead control with no explanation is the §10.4 failure the
   // plan calls out by name.
+  const selectedCount = selectedForCommit(state).length;
   const primaryDisabled = atBottom ? blocked !== null : group === "sources" && counts.unansweredGroups > 0;
-  const primaryLabel = atBottom ? (blocked ? "Sort the sources first" : `Import ${recipeCount(selectedForCommit(state).length)}`) : `Done · next: ${GROUP_LABELS_INLINE[next]}`;
+  // Nothing selected is a real outcome, not a blocked one: a second run of an export already
+  // in the box lands every row in "Already yours", and the user still needs the summary that
+  // says so. The button changes what it promises rather than going dead (§16.12).
+  const primaryLabel = atBottom
+    ? blocked
+      ? "Sort the sources first"
+      : selectedCount === 0
+        ? "Nothing to import · finish up"
+        : `Import ${recipeCount(selectedCount)}`
+    : `Done · next: ${GROUP_LABELS_INLINE[next]}`;
   const primaryReasonId = "import-primary-reason";
   const primaryReason = primaryDisabled ? (blocked ?? `${counts.unansweredGroups} ${counts.unansweredGroups === 1 ? "source needs" : "sources need"} an answer first.`) : null;
 
@@ -247,6 +258,10 @@ export function ImportReviewScreen({ session, onCommit }: { session: UseImportSe
           onOpenEditor={(clientId) => dispatch({ type: "open_editor", clientId })}
           onOpenCompare={setCompareId}
           localImageUrl={localImageUrl}
+          batchDuplicateName={(item) => {
+            const other = batchDuplicateOf(state, item);
+            return other ? other.record.name || other.entryName : null;
+          }}
           title={listTitle}
           summary={listSummary}
           footer={footer}

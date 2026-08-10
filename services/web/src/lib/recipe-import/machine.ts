@@ -68,6 +68,13 @@ export interface ImportItem {
   /** True once the user changed anything — drives `outcome.editedBeforeCommit` (§7.7). */
   edited: boolean;
   verdict: VerdictKind;
+  /**
+   * For a `dupe_in_batch`: the earlier item in **this drop** that claimed the key first.
+   * Null for every other verdict. The row is skipped by default like any duplicate, but the
+   * copy it shows has to say "another recipe in this folder", not "already in your box" —
+   * there is no `existing` for it, because nothing was matched in the household.
+   */
+  duplicateOfClientId: string | null;
   /** The matched recipe for `in_box` / `public_exists`; the first candidate for `maybe`. */
   existing: ExistingRef | null;
   /** Every trigram match for a `maybe` (§7.1). Empty otherwise. */
@@ -325,10 +332,12 @@ export function defaultAction(verdict: VerdictKind): ItemAction {
  * Which rail group an item is listed under. `sources` is cross-cutting and computed
  * separately.
  *
- * `dupe_in_batch` has no group of its own because this client collapses same-key entries
- * before the probe, so the verdict is unreachable here (§6.3, and see `contracts.ts`). If a
- * future change drops the collapse, those items surface under "Already yours" — skipped by
- * default, visible, and overridable — rather than vanishing from every list.
+ * `dupe_in_batch` has no group of its own, but it is **reachable** (see `contracts.ts`): the
+ * client's collapse and the server's claim use different key spaces, so two entries with
+ * different URLs and identical name + ingredients both survive `parse_complete` and the
+ * second one comes back a batch dupe. Those items list under "Already yours" — skipped by
+ * default, visible, and overridable — with copy of their own (`duplicateOfClientId`),
+ * because "already in your box" would be a lie about a recipe that is only in this folder.
  */
 export function railGroupOf(verdict: VerdictKind): Exclude<RailGroupId, "sources"> {
   switch (verdict) {
@@ -378,20 +387,45 @@ export function railCounts(state: ImportState): RailCounts {
   };
 }
 
-/** Items the commit will actually send an `import` or `link` for. Drives the primary button's count. */
+/**
+ * Items the commit will actually write something for. Drives the primary button's count — "Add
+ * 287 recipes" is about what lands in the box, not about how many items the chunk loop sends
+ * (which is all of them, skips included: see `commit_start`).
+ */
 export function selectedForCommit(state: ImportState): ImportItem[] {
   return state.items.filter((item) => item.action !== "skip");
+}
+
+/**
+ * The earlier entry in this same drop that a `dupe_in_batch` row duplicates, when the client
+ * still holds it. Null for every other verdict.
+ */
+export function batchDuplicateOf(state: ImportState, item: ImportItem): ImportItem | null {
+  if (!item.duplicateOfClientId) return null;
+  const i = state.itemIndex[item.duplicateOfClientId];
+  return i === undefined ? null : (state.items[i] ?? null);
 }
 
 /**
  * Commit is blocked until every distinct source string is answered (§10.1) — the primary
  * button reads "Sort the sources first" until then. Returned as a reason string rather than
  * a boolean because §10.4 requires a disabled primary button to have a reachable reason.
+ *
+ * **An all-skip commit is not blocked.** Re-importing an export that is already in the box
+ * puts every row in "Already yours" with `action: 'skip'`, and so does skipping everything by
+ * hand; that is a finished import with nothing to write, not a dead end. Blocking it stranded
+ * the user on the review screen with a disabled button and no way to reach the summary that
+ * §16.12 asks for ("imports nothing **and reports 341 duplicates**"). The commit still runs:
+ * the chunks carry nothing but `skip` items, which write no recipes, and
+ * `finalizeImportSession` closes the session with the real counters (§7.7) — so the numbers
+ * land in the session row and the §13 event, not just on screen.
+ *
+ * The genuinely empty order — an export whose every entry failed to parse — still reaches
+ * `done`: `nextCommitChunk` returns null immediately and the hook finalizes.
  */
 export function commitBlockedReason(state: ImportState): string | null {
   const unanswered = state.groups.filter((group) => !isGroupAnswered(state.groupChoices[group.key])).length;
   if (unanswered > 0) return `${unanswered} ${unanswered === 1 ? "source needs" : "sources need"} an answer before anything can be imported.`;
-  if (selectedForCommit(state).length === 0) return "Nothing is selected to import.";
   return null;
 }
 
@@ -422,7 +456,11 @@ function groupKeyFor(item: ImportItem, groups: readonly SourceGroup[]): string |
 
 /** One item's `CommitItem`, resolved against its group's attribution answer. */
 export function commitItemFor(state: ImportState, item: ImportItem): CommitItem {
-  if (item.action === "skip") return { clientId: item.clientId, entryName: item.entryName, action: "skip" };
+  // The reason travels with the skip: the server records it and derives both of D24's skip
+  // counters from the rows, and it cannot work this out for itself — a skip carries no record
+  // and no keys, and `dupe_in_batch` (two copies inside one drop, neither in the box) is
+  // invisible to it entirely.
+  if (item.action === "skip") return { clientId: item.clientId, entryName: item.entryName, action: "skip", reason: isDuplicateSkip(item) ? "duplicate" : "user" };
 
   if (item.action === "link") {
     return {
@@ -501,9 +539,15 @@ export function commitProgress(state: ImportState): CommitProgress {
 /**
  * What the summary screen shows and what `finalizeImportSession` is told (§7.7).
  *
- * Derived from observed per-item results, never incremented as they arrive: a retried chunk
- * overwrites its item's entry rather than adding to a tally, which is the same reason the
- * server derives its counters from the sidecar.
+ * Derived from observed per-item results, never incremented as they arrive: `results` is keyed
+ * by `clientId`, so a retried chunk overwrites its item's entry rather than adding to a tally.
+ * That is what makes the server's replay convergence legible on screen — **a re-sent item that
+ * already imported comes back `imported` with the same recipe id, not `skipped: duplicate`**,
+ * and it lands on the same key it landed on the first time. One recipe, one tile, one count.
+ *
+ * The server derives the same five numbers from its own rows, and since every item — skips
+ * included — is now sent, both sides are counting the same events rather than one side
+ * counting rows and the other counting decisions.
  */
 export function finalizeOutcome(state: ImportState): FinalizeOutcome {
   const results = Object.values(state.commit?.results ?? {});
@@ -526,11 +570,30 @@ export function finalizeOutcome(state: ImportState): FinalizeOutcome {
     else if (result.reason === "duplicate") outcome.skippedDuplicate++;
     else outcome.skippedUser++;
   }
-  // Items the user excluded are never sent, so they have no result to count (§7.2: a `skip`
-  // item still rides in the chunk, but a chunk of nothing but skips is not worth a round
-  // trip — see `commit_start`). They are user-skips all the same.
-  outcome.skippedUser += state.items.filter((item) => item.action === "skip").length;
+  // A skip whose chunk never got an answer — the commit was abandoned, or a chunk failed and
+  // the user left. Every item is sent now (see `commit_start`), so in a completed run this
+  // loop adds nothing and the tiles are exactly the results the server returned; it exists so
+  // a half-finished session still shows the user's own decisions rather than five zeros.
+  for (const item of state.items) {
+    if (item.action !== "skip") continue;
+    if (state.commit?.results[item.clientId]) continue;
+    if (isDuplicateSkip(item)) outcome.skippedDuplicate++;
+    else outcome.skippedUser++;
+  }
   return outcome;
+}
+
+/**
+ * Was this skip the duplicate's doing or the user's?
+ *
+ * Verdict-driven, not history-driven: `in_box` and `dupe_in_batch` are the two verdicts whose
+ * default action is `skip` *because the recipe already exists* (§6.3's table). `maybe`
+ * defaults to `import`, so skipping one is a decision the user made at the duplicate queue,
+ * and a `new` or `public_exists` row only reaches `skip` by being unticked or by its source
+ * group being answered "Skip these" — all of which are the user's.
+ */
+export function isDuplicateSkip(item: ImportItem): boolean {
+  return item.action === "skip" && !item.override && (item.verdict === "in_box" || item.verdict === "dupe_in_batch");
 }
 
 /** Per-item outcomes joined back to their export entry names, for the done screen's list. */
@@ -607,7 +670,10 @@ export function reduce(state: ImportState, event: ImportEvent): ImportState {
         if (!verdict) return item; // no verdict = treat as new, which is what it was seeded as
         const existing = verdict.verdict === "in_box" || verdict.verdict === "public_exists" ? verdict.existing : null;
         const matches = verdict.verdict === "maybe" ? verdict.candidates : [];
-        return { ...item, verdict: verdict.verdict, existing: existing ?? matches[0] ?? null, matches, action: defaultAction(verdict.verdict) };
+        // Kept, not discarded: it is the only thing that can name what this row duplicates,
+        // and a `dupe_in_batch` has no `existing` to fall back on.
+        const duplicateOfClientId = verdict.verdict === "dupe_in_batch" ? verdict.duplicateOfClientId : null;
+        return { ...item, verdict: verdict.verdict, duplicateOfClientId, existing: existing ?? matches[0] ?? null, matches, action: defaultAction(verdict.verdict) };
       });
       const next: ImportState = { ...state, phase: "review", progress: null, items, itemIndex: indexOf(items) };
       // The rail is worked top to bottom; land on the first group that has anything in it.
@@ -688,10 +754,12 @@ export function reduce(state: ImportState, event: ImportEvent): ImportState {
       return patchItem(state, event.clientId, (item) => ({ ...item, record: { ...item.record, ...event.patch }, edited: true }));
 
     case "commit_start": {
-      // Only items that will actually do something are sent. A pure `skip` still has a
-      // `CommitItem` shape (§7.2) but sending 34 of them buys nothing: they write no rows,
-      // and the summary counts them from the client's own decisions either way.
-      const order = selectedForCommit(state).map((item) => item.clientId);
+      // EVERY item, skips included (§7.2). A skip is a decision the user made, not a gap, and
+      // it is the only way the server can record one: dropping them from the order left the
+      // session row counting 54 of 341 recipes while the screen accounted for all of them.
+      // The cost is what §7.2 signs up for — ~14 chunks of no-op items on a full re-import,
+      // each one statement server-side.
+      const order = state.items.map((item) => item.clientId);
       return { ...state, phase: "committing", editingItemId: null, commit: { order, chunkIndex: 0, results: {}, chunkError: null, finalized: false } };
     }
 
@@ -742,6 +810,7 @@ function itemFromCandidate(candidate: ImportCandidate, sourceUrlKey: string | nu
     record,
     edited: false,
     verdict: "new",
+    duplicateOfClientId: null,
     existing: null,
     matches: [],
     action: "import",

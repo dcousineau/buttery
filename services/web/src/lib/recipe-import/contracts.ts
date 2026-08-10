@@ -53,10 +53,22 @@ export type { FinalizeOutcome } from "#/server/recipe-import";
 /**
  * The verdict names.
  *
- * Five, not §6.3's four: the server also reports `dupe_in_batch` for a second item claiming
- * a key an earlier item already took, because the collapse is a *client* behaviour it cannot
- * assume ran. This client does run it (see `machine.ts`'s `parse_complete`), so the verdict
- * should never come back — the machine still handles it rather than falling through.
+ * Five, not §6.3's four: the server also reports `dupe_in_batch` for a second item claiming a
+ * key an earlier item already took, because the collapse is a *client* behaviour it cannot
+ * assume ran.
+ *
+ * **It comes back even though this client does collapse**, because the two sides claim
+ * different key spaces. `machine.ts`'s `parse_complete` collapses on one key per item — the
+ * URL key when there is one, the fingerprint otherwise — while `runProbeImportDuplicates`
+ * claims *both* for every item it lets through. Two entries with different URLs and identical
+ * name + ingredients therefore have different client keys (`u:a`, `u:b`) and both survive the
+ * collapse, and the server hands the second one `dupe_in_batch` off the shared fingerprint.
+ * A Paprika export with the same recipe saved from two sites is exactly that shape.
+ *
+ * So the machine handles the verdict for real rather than asserting it away: it keeps
+ * `duplicateOfClientId`, lists the row under "Already yours" skipped by default, and says it
+ * duplicates another recipe *in this folder* instead of claiming a household match it does
+ * not have.
  */
 export type VerdictKind = ProbeVerdict["verdict"];
 
