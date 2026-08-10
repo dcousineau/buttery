@@ -129,6 +129,13 @@ The seam is one interface, exported from a new **`@buttery/recipe-extract/import
 that contains no Paprika code:
 
 ```ts
+/** Everything crossing a worker boundary or landing in `jsonb` is JSON, and the type
+ *  says so. `Record<string, unknown>` admits functions, `bigint`, and cycles, which
+ *  fail `postMessage` structured cloning or `JSON.stringify` *before* the boundary
+ *  check in §7.2 can turn them into a clean per-item failure. */
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue };
+export type JsonObject = { [k: string]: JsonValue };
+
 /** The entire importer-specific surface. Phase 1 ships exactly one implementation. */
 export interface RecipeImporter {
   /** Stable, lowercase, no spaces. Stored on the session (§5.3) and in the sidecar (§12.5). */
@@ -158,13 +165,16 @@ export interface ImportCandidate {
   tags: string[];
   /** Remote image URL — what the commit path stores (§11). */
   imageUrl: string | null;
-  /** Path resolvable through the same `EntrySource`, for review thumbnails only (§11). */
+  /** **Source-relative** path — directly passable to `EntrySource.bytes()` with no
+   *  further joining, for review thumbnails only (§4.2, §11). Resolving it is the
+   *  importer's job, not the caller's. */
   localImagePath: string | null;
   /** Human-facing provenance; what the failure list shows (§7.2, §10.1). */
   entryName: string;
   /** Opaque to the pipeline. The importer owns the keys; written verbatim to the
-   *  sidecar under `ns='import'` (§12.5). */
-  meta: Record<string, unknown>;
+   *  sidecar under `ns='import'` (§12.5). Must not use a pipeline-reserved key
+   *  (§12.5) — the boundary rejects the item if it does. */
+  meta: JsonObject;
 }
 
 export interface ImportParseFailure {
@@ -321,16 +331,21 @@ this importer writes:
   /** The photo-asset UUID (§3.5). Weak key, ~73% coverage. */
   photo_uid: string | null;
   /** Verbatim strings for anything lossy or dropped — the unparseable durations especially (§3.4). */
-  raw: Record<string, unknown>;
+  raw: JsonObject;
 }
 ```
 
 Mapping onto the rest of `ImportCandidate`: `recipe` from the microdata walk; `sourceUrl`
 from `itemprop="url"`; `sourceText` from `itemprop="author"`; `notes` from
 `itemprop="comment"`, paragraphs joined with `"\n\n"`; `tags` from the comma-split
-`recipeCategory`; `imageUrl` from the wrapping `<a href>`; `localImagePath` from the
-`<img src>`, e.g. `"Images/<uuid>/<uuid>.jpg"`; `entryName` relative to the detected export
-root.
+`recipeCategory`; `imageUrl` from the wrapping `<a href>`; `localImagePath` **resolved**
+from the `<img src>` (see note 4 — it is not the raw attribute); `entryName` relative to the
+detected export root.
+
+The signature therefore takes the entry's own path, not just its name:
+`parsePaprikaRecipe(html, entry: ImportEntry): ImportCandidate | ImportParseFailure`, where
+`ImportEntry` carries both `entryName` (root-relative, for humans) and `sourcePath`
+(source-relative, for `EntrySource`) — §4.2.
 
 Implementation notes, in the order they matter:
 
@@ -342,8 +357,16 @@ Implementation notes, in the order they matter:
    yield stay on the shared crosswalk.
 3. Read the rating from the element's `value` **attribute** (`getAttribute("value")`), not
    its text. `0` means unrated → `null`.
-4. `imageUrl` comes from the **wrapping `<a href>`**, `localImagePath` from the `<img src>`.
-   Phase 1 commits the former and renders the latter as a local preview only (§11).
+4. `imageUrl` comes from the **wrapping `<a href>`**. `localImagePath` comes from the
+   `<img src>` — **but the raw attribute is not a usable path and must not be stored as
+   one.** `src` is `"Images/<uuid>/<uuid>.jpg"`, relative to the _recipe HTML file_ that
+   contains it (`Recipes/Foo.html`), while `EntrySource` paths are relative to _whatever
+   the user dropped_, which may be a parent of the export root (§3.1). Resolve both hops
+   before storing: `localImagePath = normalize(dirname(entry.sourcePath) + "/" + src)`,
+   which for a root dropped one level deep yields
+   `"My Recipes/Recipes/Images/<uuid>/<uuid>.jpg"`. Storing the bare `src` makes
+   `source.bytes(localImagePath)` miss on both axes and every thumbnail render blank.
+   Phase 1 commits `imageUrl` and renders `localImagePath` as a local preview only (§11).
 5. `sourceText` is a domain when `sourceUrl` is present and free text otherwise — the
    caller must not assume which without checking `sourceUrl`.
 
@@ -367,20 +390,35 @@ export interface EntrySource {
   totalBytes(): number;
 }
 
-export function directoryEntrySource(files: File[]): EntrySource;
+/** A file plus the path it was found at. The path is supplied by the caller, because
+ *  only one of the two acquisition paths below puts it on the `File` (see next para). */
+export interface DroppedFile {
+  path: string;
+  file: File;
+}
+
+export function directoryEntrySource(files: DroppedFile[]): EntrySource;
 
 /** One recipe's worth of bytes, handed to `RecipeImporter.parse`. */
 export interface ImportEntry {
+  /** Root-relative, human-facing: `"Beef Bourguignon 2.html"`. Goes in the sidecar. */
   entryName: string;
+  /** Source-relative, machine-facing: what `EntrySource` was keyed by. Sibling assets
+   *  (images) resolve against this, never against `entryName` (§4.1 note 4). */
+  sourcePath: string;
   html: string;
 }
 ```
 
-The web app builds `files` from `<input type="file" webkitdirectory>` or, on drop, by
-recursing `DataTransferItem.webkitGetAsEntry()`; both give `File` handles carrying a
-relative path (`webkitRelativePath` / the traversal's accumulated path). **`File` handles
-are lazy** — nothing is read off disk until `text()` or `bytes()` asks, so a 15 MB export
-costs nothing until parsing starts.
+**Why `DroppedFile` and not `File[]`:** the two acquisition paths do not agree on where the
+path lives. `<input type="file" webkitdirectory>` populates `File.webkitRelativePath`;
+directory **drag** traversal does not — `FileSystemFileEntry.file()` hands back a `File`
+whose `webkitRelativePath` is `""`, and the only path that exists is the one the traversal
+accumulated (or `FileSystemEntry.fullPath`). Reducing both inputs to `File[]` silently
+discards every drag path, which is the primary interaction the design draws. The route
+adapts both to `{ path, file }`: `webkitRelativePath` for the picker, the accumulated
+traversal path for the drop. **`File` handles are lazy** — nothing is read off disk until
+`text()` or `bytes()` asks, so a 15 MB export costs nothing until parsing starts.
 
 - **Root detection:** find the entry whose basename is `index.html` at the shallowest
   depth; its directory is the root. Fall back to "the shallowest directory containing a
@@ -388,12 +426,14 @@ costs nothing until parsing starts.
   it did for an archive — the user may drop the parent (§3.1).
 - Yields `ImportEntry` for every `Recipes/*.html`, skipping `index.html`, anything under
   `Images/`, and `__MACOSX/` / `.DS_Store` noise. `entryName` is always relative to the
-  detected root.
+  detected root; `sourcePath` is always the key the `EntrySource` actually holds. The two
+  differ by exactly the detected root prefix, and conflating them is the bug in §4.1 note 4.
 - Yields lazily so the UI can show real progress across a few hundred files.
 - **Image bytes are read in phase 1, for previews only.** `source.bytes(localImagePath)` +
   `URL.createObjectURL` renders the review thumbnails (§10.2, D26). The review pane does
-  this through the `EntrySource` it already holds and the candidate's `localImagePath`, so
-  it needs no Paprika knowledge. Reading is not uploading: the commit path still writes
+  this through the `EntrySource` it already holds and the candidate's `localImagePath` —
+  no joining, no root prefixing, no Paprika knowledge; the importer already resolved the
+  path (§4.1 note 4). Reading is not uploading: the commit path still writes
   `imageUrl` and nothing local reaches blob storage (§11). Revoke the object URLs when the
   review screen unmounts.
 - **Guardrails belong to the generic entry source, not to Paprika:** reject an export over
@@ -418,15 +458,17 @@ the point):
 
 Assertions that must exist: instructions split into ≥4 separate steps (not one blob);
 `sourceUrl === null` with a non-null `sourceText` on the no-URL fixture; `tags` splits on
-comma; `imageUrl` is the remote `https://` URL and `localImagePath` is the relative one;
-`meta.rating` reads from the attribute.
+comma; `imageUrl` is the remote `https://` URL; **`localImagePath` is source-relative and
+round-trips** — feed the parser an entry at `Outer/My Recipes/Recipes/Foo.html` and assert
+the returned `localImagePath` is a key the stub source actually holds, not the bare
+`Images/<uuid>/<uuid>.jpg` from the attribute; `meta.rating` reads from the attribute.
 
-Plus an in-memory `EntrySource` stub (a `Map<path, string>` — no filesystem, no `File`)
-exercising root detection when the root is nested one and two levels deep, the entry filters
-(`index.html`, `Images/`, `__MACOSX/`, `.DS_Store`), path-escape rejection, and both size
-caps. The stub lives under `src/import/` beside the interface, not under `paprika/`, so the
-second importer's tests can use it. `directoryEntrySource` itself gets one thin test that it
-maps `webkitRelativePath` onto `paths()` correctly; everything else tests against the stub.
+Plus an in-memory `EntrySource` stub (a `Map<path, string | Uint8Array>` — no filesystem, no
+`File`) exercising root detection when the root is nested one and two levels deep, the entry
+filters (`index.html`, `Images/`, `__MACOSX/`, `.DS_Store`), path-escape rejection, and both
+size caps. The stub lives under `src/import/` beside the interface, not under `paprika/`, so
+the second importer's tests can use it. `directoryEntrySource` itself gets one thin test
+that `DroppedFile.path` maps onto `paths()`; everything else tests against the stub.
 
 ---
 
@@ -448,8 +490,18 @@ recipe_meta
 ```
 
 ```
-index recipe_meta_lookup on recipe_meta (ns, key, value)
+index recipe_meta_lookup on recipe_meta (ns, key)
+index recipe_meta_dedupe on recipe_meta ((value #>> '{}')) where ns = 'dedupe'
 ```
+
+**The generic index deliberately does not include `value`.** A B-tree index entry is capped
+at ~2704 bytes (a third of an 8 kB page), while §7.2 permits an 8 kB serialized metadata
+value — so indexing `value` generically makes an in-spec write fail with `index row size
+… exceeds btree maximum` at insert time, for no reason other than that the row is indexed.
+Lookups by value are only ever needed for the dedupe keys, which are short, bounded strings,
+so those get their own narrow expression index and everything else gets a
+`(ns, key)`-prefixed scan. Any future namespace that needs a value lookup adds its own
+partial index and takes responsibility for its own size bound.
 
 Facts true of the recipe regardless of who holds it. Phase 1 writes exactly two:
 `('dedupe','source_url_key')` and `('dedupe','content_fp')` (§6).
@@ -468,8 +520,16 @@ household_recipe_meta
 ```
 
 ```
-index household_recipe_meta_lookup on household_recipe_meta (household_id, ns, key, value)
+index household_recipe_meta_lookup on household_recipe_meta (household_id, ns, key)
+index household_recipe_meta_session
+  on household_recipe_meta ((value #>> '{}'))
+  where ns = 'import' and key = 'session_id'
 ```
+
+Same reasoning as §5.1, and it bites harder here: this is where the importer's `raw` blob
+lands, so it is exactly the table whose values approach the 8 kB cap. The one value lookup
+the pipeline actually performs — "every recipe from session X", for the counters (§7.7) and
+the future undo pass (§17) — gets its own bounded partial index.
 
 **All import bookkeeping lives here** — it is a fact about this household's import, not
 about the recipe (§2.2).
@@ -541,9 +601,9 @@ time someone forgets to pass one.
 `services/web/src/server/recipe-meta.ts`, server-only, thin:
 
 ```ts
-getRecipeMeta(db, recipeId, ns): Promise<Record<string, unknown>>
+getRecipeMeta(db, recipeId, ns): Promise<JsonObject>
 setRecipeMeta(db, recipeId, ns, entries): Promise<void>          // upsert
-getHouseholdRecipeMeta(db, householdId, recipeId, ns): Promise<Record<string, unknown>>
+getHouseholdRecipeMeta(db, householdId, recipeId, ns): Promise<JsonObject>
 setHouseholdRecipeMeta(db, householdId, recipeId, ns, entries): Promise<void>
 ```
 
@@ -577,16 +637,32 @@ normalizeSourceUrl(raw) -> string | null
   1. parse; non-http(s) -> null
   2. host: lowercase, strip leading "www.", drop default port
   3. drop the fragment entirely
-  4. drop tracking params (exact names, case-insensitive):
+  4. drop GLOBAL tracking params (exact names, case-insensitive) -- these carry no
+     resource identity anywhere:
        utm_*  fbclid  gclid  dclid  msclkid  mc_cid  mc_eid  _ga  igshid  si
-       ref  ref_src  ref_source  source  action  module  region  pgType  rank
-  5. sort surviving params by name, then value
-  6. path: percent-decode safely, collapse "//", strip trailing "/" unless path is "/"
-  7. return "<host><path>[?<params>]"   -- no scheme; http/https are the same recipe
+       ref  ref_src  ref_source
+  5. drop HOST-SCOPED params, only on the hosts that mint them:
+       nytimes.com, cooking.nytimes.com -> action  module  region  pgType  rank  source
+     (match on the normalized host or any subdomain of it)
+  6. sort surviving params by name, then value
+  7. path: percent-decode UNRESERVED characters only (ALPHA / DIGIT / "-" / "." / "_" /
+     "~"); leave every reserved delimiter encoded -- %2F, %3F, %23, %26, %3D stay as
+     written. Then collapse "//", strip trailing "/" unless path is "/"
+  8. return "<host><path>[?<params>]"   -- no scheme; http/https are the same recipe
 ```
 
-The `action`/`module`/`region`/`pgType`/`rank` entries are not speculative — they are
-exactly the junk NYT Cooking appends, present in the sample export.
+Two deliberate narrowings, both to stop the **primary** dedupe key producing a hard skip:
+
+- **`source`, `action`, `module`, `region`, `rank` are host-scoped, not global.** They are
+  exactly the junk NYT Cooking appends and are present verbatim in the sample export — but
+  they are ordinary semantic query parameters elsewhere (`?action=print`,
+  `?source=archive`), and stripping them everywhere collapses genuinely distinct URLs onto
+  one key. A false positive here silently skips a recipe the user wanted; a false negative
+  merely shows them a duplicate they can dismiss. Prefer the false negative. `pgType` is
+  NYT-only in practice too and is scoped with the rest.
+- **Percent-decoding is unreserved-only.** Decoding the whole path makes `/a%2Fb` and `/a/b`
+  the same key, and they are not the same resource. Unreserved decoding still gets the
+  normalization that matters (`%2D` → `-`, `%7E` → `~`) with no collapse risk.
 
 Stored at `recipe_meta (ns='dedupe', key='source_url_key')`. Null source URL → no row.
 
@@ -643,13 +719,33 @@ to an existing record.
 
 ### 6.4 Fuzzy title matching
 
-`maybe` uses `pg_trgm`'s `similarity(normalized_title, $1) > 0.85` against the household's
-own recipes, scoped to the household and capped at a handful of candidates per probe.
+There is **no `normalized_title` column**, and this plan does not add one. The `recipe` table
+has `name` plus a gin trigram index on that raw column
+(`services/web/src/db/migrations/1785300000000_create_recipe_rendered.ts:90-94`), so the
+probe matches against what exists:
 
-**Risk:** requires `CREATE EXTENSION IF NOT EXISTS pg_trgm`. If the extension is
-unavailable on the target Postgres, **fall back to exact normalized-title equality** rather
-than failing the import — the signal is advisory. Decide this at migration time and record
-which path shipped in the results doc.
+```sql
+similarity(r.name, $1) > 0.85
+```
+
+where `$1` is the candidate's **raw** name, not `normalizedTitle`. Scoped to the household,
+capped at a handful of candidates per probe, and served by the existing
+`recipe_name_trgm_idx` with no new index and no new column to keep in sync across the local
+write path _and_ the cron-sync render path (§6.6) — which a stored normalized column would
+require, and which is exactly the kind of second writer that goes stale.
+
+`ProbeInput.items[].normalizedTitle` is therefore replaced by `title` (§7.1): the server
+compares raw names, `pg_trgm` absorbs the case and punctuation differences that
+normalization was there to handle, and a client-computed value that no index can match is
+not sent at all. The `maybe` verdict is advisory and never auto-skips (§6.3), so trigram
+similarity on the raw name is precise enough for what it drives.
+
+**`pg_trgm` is a hard prerequisite, not a risk to hedge.** The earlier fallback-to-exact-
+equality paragraph was wrong: migration `1785300000000_create_recipe_rendered.ts:41` already
+runs `create extension if not exists pg_trgm` and line 90 builds a trigram index on it, so a
+Postgres without the extension fails that migration and never reaches this feature's
+migration at all. There is no database that runs this code and lacks `pg_trgm`. Nothing to
+decide at migration time, nothing to record in the results doc.
 
 ### 6.5 Backfill migration — do not skip this
 
@@ -666,11 +762,33 @@ The fingerprint is easiest to get exactly right in TypeScript (it must be byte-i
 the runtime one). Do it in the migration's `up` with the shared `normalize` functions
 rather than reimplementing the hash in SQL — a divergent backfill is worse than none.
 
-### 6.6 Dedupe keys are written on every save, not just imports
+### 6.6 Dedupe keys are written by **every** writer, not just imports
 
-`persistRecipeDraft` (§7.3) writes both keys for every recipe it creates, and the recipe
-edit path updates them when name or ingredients change. Otherwise the corpus goes stale the
-day after this ships.
+There are three writers into `recipe`, and all three must maintain the keys. Missing any one
+of them does not degrade dedupe gracefully — it makes a whole corpus invisible to it.
+
+1. **`persistRecipeDraft` (§7.3)** writes both keys for every recipe it creates.
+2. **The recipe edit path** updates them when name or ingredients change.
+3. **The cron-sync render path** — `renderRecipe` in
+   `services/atproto-cron-sync/src/render.ts:385-471` — upserts `recipe` and rewrites
+   `recipe_ingredient` and `recipe_attribution` wholesale, entirely outside
+   `persistRecipeDraft`. It must compute and upsert both `recipe_meta` dedupe rows in the
+   same transaction, from the same projected values it just wrote.
+
+**Writer 3 is load-bearing and easy to miss.** The §6.5 backfill covers public records that
+exist _the day it runs_; every record synced or re-rendered afterwards would arrive with no
+keys at all, so the `public_exists` check (§6.3) would quietly stop firing for anything
+published after ship — the failure mode is a silent absence of matches, not an error.
+Re-render also invalidates: the upsert replaces `name` and every ingredient row, so keys
+written earlier describe content that is gone. And `DELETE_RENDERED_SQL`
+(`render.ts:346`) deletes sync rows whose record turned invalid, which cascades the
+`recipe_meta` rows away — correct, and it means re-render is the only thing that puts them
+back.
+
+The cron service is Node-native TypeScript with the import rules that implies: pull
+`normalizeSourceUrl` and the fingerprint helper from `packages/recipe-schemas` through an
+explicit `.js` subpath, and use `node:crypto` for the digest. Same input string, same digest
+as the web path (§6.2) — assert it in a test that runs both.
 
 ---
 
@@ -691,7 +809,9 @@ interface ProbeInput {
     clientId: string; // client-minted, stable for this session
     sourceUrlKey: string | null;
     contentFp: string;
-    normalizedTitle: string;
+    /** Raw candidate name. Compared with `similarity(recipe.name, $1)` against the
+     *  existing trigram index — there is no normalized-title column (§6.4). */
+    title: string;
   }>;
 }
 
@@ -720,24 +840,47 @@ for the recipes the user actually opens — not from fattening this response.
 
 ### 7.2 `commitImportChunk`
 
+**Items are a discriminated union on `action`.** The result type has always had a `linked`
+status, but an import-shaped item carries no way to say _which_ record to link, and §6.3
+requires linking the exact record the user reviewed — so the shape below is the only one
+that can express what the review screen already lets the user decide. A bare
+import-shaped item is ambiguous between "create this privately" and "add that existing
+public record", and the server must not guess.
+
 ```ts
 interface CommitChunkInput {
   sessionId: string;
-  items: Array<{
-    clientId: string;
-    record: RecipeRecordInput; // lexicon-shaped, minus server-owned fields; MAY be user-edited (§10.2, D25)
-    sourceUrl: string | null;
-    attribution: AttributionInput | null; // resolved in review (§8)
-    imageSourceUrl: string | null; // remote URL (§11)
-    notes: string | null;
-    tags: string[];
-    entryName: string;
-    override?: "duplicate"; // user deliberately re-imported an `in_box` match (§6.3, D23)
-    /** ImportCandidate.meta, verbatim. The server writes it to the sidecar (§12.5)
-     *  and never reads a key out of it. Adding an importer adds no field here. */
-    meta: Record<string, unknown>;
-  }>;
+  items: CommitItem[];
 }
+
+interface CommitItemBase {
+  clientId: string;
+  entryName: string;
+}
+
+type CommitItem =
+  | (CommitItemBase & {
+      action: "import";
+      record: RecipeRecordInput; // lexicon-shaped, minus server-owned fields; MAY be user-edited (§10.2, D25)
+      sourceUrl: string | null;
+      attribution: AttributionInput | null; // resolved in review (§8)
+      imageSourceUrl: string | null; // remote URL (§11)
+      notes: string | null;
+      tags: string[];
+      override?: "duplicate"; // user deliberately re-imported an `in_box` match (§6.3, D23)
+      /** ImportCandidate.meta, verbatim. The server writes it to the sidecar (§12.5)
+       *  and never reads a key out of it. Adding an importer adds no field here. */
+      meta: JsonObject;
+    })
+  | (CommitItemBase & {
+      action: "link";
+      /** The `ExistingRef.recipeId` the probe returned for this item's `public_exists`
+       *  verdict and the user accepted (§6.3, D22). */
+      existingRecipeId: string;
+      notes: string | null;
+      meta: JsonObject;
+    })
+  | (CommitItemBase & { action: "skip" });
 
 type CommitItemResult =
   | { clientId: string; status: "imported"; recipeId: string }
@@ -746,18 +889,41 @@ type CommitItemResult =
   | { clientId: string; status: "failed"; message: string };
 ```
 
+`action: "link"` calls the existing `addRecipeToHousehold({ recipeId })` and writes the
+sidecar rows, nothing else — no `persistRecipeDraft`, no new `recipe` row. **The server
+revalidates `existingRecipeId` rather than trusting it:** the row must exist, be
+`visibility='public'` with a non-null `uri`, and not already be in this household. Anything
+else fails that item. A client-supplied id that reaches `addRecipeToHousehold` unchecked is
+an arbitrary-row-into-my-box primitive, and it is reachable by anyone who can call the
+endpoint — the probe having returned the id earlier is not a check the server can rely on,
+because the server does not remember what it returned.
+
+`action: "skip"` writes nothing and returns `skipped: "user"`. It exists so the client can
+report a complete accounting of the session (§7.7) without the server having to infer
+absence — an excluded recipe is a decision the user made, not a gap.
+
 Chunk size **25**. Each item is wrapped independently: a validation failure or a bad row
-fails that item only and the chunk returns partial results. The chunk updates the session's
-counters. Client drives the loop and renders progress.
+fails that item only and the chunk returns partial results. Client drives the loop and
+renders progress. **The chunk does not increment session counters** — see §7.7.
 
 `CommitItemResult` deliberately does **not** carry the entry name. The client holds the
 `clientId → entryName` map from the parse and joins locally to render the "didn't make it"
 list (§10.1). Do not add a server field for it.
 
-`meta` being opaque does not make it unbounded: it is client-supplied `jsonb`, so cap it
-(8 KB serialized per item is generous — the Paprika `raw` blob is well under 1 KB) and
-reject the item rather than the chunk when it is over. Opaque to the pipeline's _logic_,
-still validated at the _boundary_.
+`meta` being opaque does not make it unbounded or unvalidated. It is client-supplied
+`jsonb`, so the boundary enforces three things, failing the **item** and never the chunk:
+
+- **Size** — 8 KB serialized per item, generous next to the Paprika `raw` blob's well under
+  1 KB.
+- **Shape** — parses as `JsonObject` (§2.5). No functions, no `bigint`, no cycles.
+- **Reserved keys** — `importer`, `session_id`, `entry_name`, and `source_text` are
+  pipeline-owned (§12.5) and are **rejected**, not merged and not silently overwritten. All
+  five namespaced rows are upserted into the same `ns='import'` key space, so an importer
+  that emitted one of these would clobber the provenance the pipeline is required to write.
+  Paprika does not, and a reserved-key list is cheaper than finding out when the second
+  importer does.
+
+Opaque to the pipeline's _logic_, still validated at the _boundary_.
 
 ### 7.3 Required refactor of `recipes-write.ts`
 
@@ -781,8 +947,9 @@ Then:
 - `saveRecipe` = attribution resolution → public-atproto dedupe (when publishing) →
   `persistRecipeDraft` → optional publish. **Behavior unchanged; this must be true and
   the existing tests must prove it.**
-- `commitImportChunk` = per-item attribution (§8) → `persistRecipeDraft` → notes,
-  keywords, and sidecar rows → counters. No publish branch exists.
+- `commitImportChunk` = per-item attribution (§8) → **recompute keys → household dedupe
+  check** (below) → `persistRecipeDraft` → notes, keywords, and sidecar rows. No publish
+  branch exists, and no counter increments (§7.7).
 
 `resolveAttribution` gains an explicit free-text/publication path (§8) rather than being
 duplicated.
@@ -793,12 +960,31 @@ because the review screen lets the user edit a recipe's name and ingredients _af
 probe ran (§10.2, D25). `persistRecipeDraft` derives both keys from `record` at write time,
 so the stored fingerprint always describes what was actually saved.
 
-**An edited recipe is not re-probed.** The verdict shown in review is the verdict for the
-recipe as parsed. If a user edits one into an exact match of something already in the box,
-the review screen will not notice — `persistRecipeDraft`'s key computation will, and the
-item comes back `skipped: "duplicate"` rather than `imported`. That is the correct outcome
-and the summary reports it; it is not an error and must not fail the chunk. Do not add a
-re-probe on every keystroke to close this gap.
+**An edited recipe is not re-probed, so `commitImportChunk` re-checks.** The verdict shown in
+review is the verdict for the recipe as parsed; a user can edit one into an exact match of
+something already in the box and the review screen will not notice. Closing that gap is the
+commit path's job, and it needs an explicit check — `persistRecipeDraft` is defined above to
+perform **no** dedupe, and `recipe_meta`'s primary key is `(recipe_id, ns, key)`, so writing
+a key that already exists on a _different_ recipe raises no conflict and nothing "notices" on
+its own. Per item, before `persistRecipeDraft`:
+
+```
+1. recompute source_url_key + content_fp from the SUBMITTED record
+2. look for a recipe in this household carrying either key
+     (household_recipe join recipe join recipe_meta, ns='dedupe')
+3. found, and no `override: "duplicate"`  -> return skipped:"duplicate", write nothing
+   found, with the override                -> import anyway (§6.3, D23)
+   not found                               -> persistRecipeDraft
+```
+
+Step 2 is the same query the probe already runs for the `in_box` verdict, against one item
+instead of 200 — reuse it rather than writing a second one that can drift. The check runs
+for **every** item, not just edited ones: it is also what makes a retried chunk converge
+(§7.5) and what makes the earlier probe advisory rather than load-bearing.
+
+A duplicate found here is the correct outcome, not an error: the summary reports it and the
+chunk must not fail. Do not add a re-probe on every keystroke to close the gap at the other
+end.
 
 ### 7.4 Publishing is structurally impossible here
 
@@ -811,7 +997,9 @@ re-probe on every keystroke to close this gap.
 
 The session row plus per-item `clientId`s make a dropped connection recoverable: on
 re-entry, the client re-probes and the server reports already-imported items as `in_box`,
-so a retry converges rather than duplicating. Full resume-from-session UI is out of scope;
+so a retry converges rather than duplicating. The server-side check in §7.3 is what makes
+that guarantee hold even when the probe is skipped, stale, or replayed — convergence does
+not depend on the client asking first. Full resume-from-session UI is out of scope;
 **convergence on retry is not** — a user who refreshes mid-import and re-runs it must not
 end up with 200 duplicates.
 
@@ -860,6 +1048,54 @@ type ComparisonResult = Record<
   roughly 55 recipes out of 341, versus 341 bodies if this were folded into the probe.
 - **The diff itself is computed client-side.** Both sides are in the browser by then. There
   is no server-side diff, no match score, and no per-line similarity field — do not add one.
+
+### 7.7 `finalizeImportSession` — counters and completion
+
+The client drives the commit loop, so nothing on the server knows a chunk was the last one.
+Without an explicit end there is no moment at which `status='complete'` and `finished_at`
+can be set, and §13's exactly-once `recipe_import_completed` event has no emitter. An
+`isLast` flag on the final chunk is the wrong shape — the last chunk is exactly the one most
+likely to be lost to the network, and items the user excluded may mean there is no final
+chunk at all.
+
+```ts
+interface FinalizeInput {
+  sessionId: string;
+  /** What the client actually observed across every chunk. Reconciled, not trusted — see
+   *  below. Sent so the summary screen and the event agree with each other. */
+  outcome: {
+    total: number;
+    imported: number;
+    linked: number;
+    skippedDuplicate: number;
+    skippedUser: number;
+    failed: number;
+    overriddenDuplicate: number;
+    editedBeforeCommit: number;
+    parseFailures: number;
+    distinctSourceStringsClassified: number;
+  };
+}
+```
+
+**Counters are derived, never incremented.** `imported_count`, `skipped_count`, and
+`failed_count` on `recipe_import_session` (§5.3) are computed at finalize from
+`household_recipe_meta` rows carrying this `session_id` — which is what
+`household_recipe_meta_session` (§5.2) indexes. Per-chunk `count = count + n` is not
+idempotent: a chunk whose response is lost is retried, dedupe correctly refuses to create a
+second recipe, and the counters gain a phantom skip and keep the original import. Deriving
+them makes a retried chunk a no-op by construction, with no per-item ledger table and no
+`(session_id, client_id)` idempotency record to maintain. Counts the sidecar cannot answer —
+user-skipped, parse failures, edited-before-commit — come from the client's `outcome`, and
+are reporting figures rather than facts about rows.
+
+**Finalize is idempotent.** Called on an already-`complete` session it recomputes, returns
+the same numbers, and emits nothing. That is what makes it safe for the client to retry, and
+it is why the telemetry event fires here and nowhere else.
+
+Sessions that are never finalized — the user closed the tab — stay in `committing` forever
+and are harmless (§5.3): the recipes are saved, the next run converges, and no cleanup job
+exists in phase 1.
 
 ---
 
@@ -935,7 +1171,8 @@ technical constraints they have to live inside.
     → keys         normalizeSourceUrl + content_fp per candidate; collapse in-batch dupes
     → probe        POST keys only → verdicts
     → review       attribution classification, duplicates, per-recipe include/exclude/edit
-    → commit       chunks of 25, progress from real per-item results
+    → commit       chunks of 25, progress from real per-item results, then one
+                   finalizeImportSession call that closes the session (§7.7)
     → summary      imported / linked / skipped / failed, with the failures listed
 ```
 
@@ -1199,6 +1436,11 @@ pipeline writes these four itself, for every import from every importer:
 | `entry_name`  | `ImportCandidate.entryName`, e.g. `"Beef Bourguignon 2.html"` |
 | `source_text` | the candidate's verbatim source string (§8.2)                 |
 
+**Those four key names are reserved.** They live in the same `ns='import'` key space as the
+importer's own keys, so `commitImportChunk` rejects an item whose `meta` contains any of them
+rather than letting the upsert overwrite pipeline-owned provenance (§7.2). The list is a
+constant beside the writer, not a comment.
+
 Then one row per key of `ImportCandidate.meta`, written verbatim and never inspected. What
 the Paprika importer puts there (§4.1):
 
@@ -1230,7 +1472,10 @@ the audit need. **Flagged explicitly because it contradicts an earlier decision.
 ## 13. Telemetry (pipeline)
 
 PostHog, server-side, one event per session (not per recipe — 341 events per import is
-noise). **The event names are importer-agnostic and carry `importer` as a property** —
+noise), emitted from `finalizeImportSession` (§7.7) and nowhere else — that is the only call
+that knows the import ended, and its idempotency is what makes "one event per session" true
+rather than aspirational. **The event names are importer-agnostic and carry `importer` as a
+property** —
 `recipe_import_completed`, not `paprika_import_completed`. A per-app event name means every
 funnel, insight, and alert has to be rebuilt when the second importer ships, and comparing
 importers becomes a union instead of a breakdown. Every event below carries
@@ -1258,12 +1503,19 @@ No recipe names, URLs, or ingredient text in properties.
   headline test.
 - `walkPaprikaExport` against the in-memory entry-source stub: root detection at two nesting
   depths, entry filtering, path-escape rejection, both size caps.
-- `directoryEntrySource`: `webkitRelativePath` maps onto `paths()`; `bytes()` resolves an
-  `Images/<uuid>/<uuid>.jpg` path that `parsePaprikaRecipe` reported as `localImagePath`.
+- **`localImagePath` is a real key**: with the export root nested one level deep, the path
+  `parsePaprikaRecipe` returns is present in `source.paths()` and `source.bytes()` resolves
+  it. Assert against the stub's key set, not against a string literal — the bug this catches
+  (§4.1 note 4) produces a plausible-looking path that simply is not there.
+- `directoryEntrySource`: `DroppedFile.path` maps onto `paths()`, for both a picker-shaped
+  input (path from `webkitRelativePath`) and a drag-shaped one (path from the traversal, with
+  `webkitRelativePath === ""` on the `File`) — the second is the regression test for §4.2.
 - The page-reference split and the misspelling hint (§8.1), including all six Ramsay
   variants clustering and the hint never mutating a string.
 - `normalizeSourceUrl`: the NYT tracking-param case verbatim from the export, http/https
-  equivalence, `www.` stripping, param sorting, trailing slash.
+  equivalence, `www.` stripping, param sorting, trailing slash. Plus the two narrowings of
+  §6.1 — `?action=print` **survives** on a non-NYT host and is stripped on
+  `cooking.nytimes.com`; `/a%2Fb` and `/a/b` produce different keys.
 - `content_fp`: stable under ingredient reordering and whitespace/case changes; different
   under a name change; **identical between the WebCrypto and node:crypto paths**.
 
@@ -1281,16 +1533,33 @@ No recipe names, URLs, or ingredient text in properties.
 - A record edited after the probe is fingerprinted from the **submitted** record, and an
   edit that turns a recipe into an existing duplicate comes back `skipped: "duplicate"`
   without failing the chunk (§7.3).
-- `commitImportChunk` partial failure: a bad item fails alone, the rest import, counters
-  are correct.
+- `commitImportChunk` partial failure: a bad item fails alone, the rest import, and the
+  counters derived at finalize match what was actually written.
+- An `action: "link"` item adds the reviewed public record to the box and creates no new
+  `recipe` row; an `existingRecipeId` that is private, non-existent, or belongs to another
+  household fails **that item** and adds nothing.
+- **Chunk replay is a no-op**: committing the identical chunk twice produces the same
+  recipes and the same finalized counters as committing it once (§7.7 derived counters).
+- `finalizeImportSession` is idempotent — called twice, the session reads `complete` with
+  identical counts and exactly one `recipe_import_completed` event is emitted.
+- A session whose commit loop is abandoned mid-way stays `committing` and leaves its already
+  imported recipes intact.
 - Re-running an identical import produces zero new recipes (§7.5 convergence).
+- **The cron-sync render path writes dedupe keys** (§6.6): rendering a synced record
+  populates both `recipe_meta` rows; re-rendering it with changed content replaces them; the
+  values are byte-identical to the web path's for the same input.
 - **No published record**: after a full import, zero rows have a non-null `uri`; the
   publish path is never invoked (§7.4).
 - The backfill migration produces fingerprints byte-identical to the runtime function.
 - Sidecar rows do not change the published record shape (§2.3).
 - A session opened with an importer id that is not in the registry is rejected (§5.3).
-- `commitImportChunk` round-trips an item whose `meta` holds keys it has never heard of, and
-  an oversized `meta` fails that item alone.
+- `commitImportChunk` round-trips an item whose `meta` holds keys it has never heard of; an
+  oversized `meta` fails that item alone; and a `meta` carrying a reserved key
+  (`importer` / `session_id` / `entry_name` / `source_text`) fails that item rather than
+  overwriting the pipeline's own sidecar row (§7.2, §12.5).
+- A metadata value at the 8 KB cap **inserts successfully** — the regression test for the
+  index shape of §5.1/§5.2, which fails with `index row size … exceeds btree maximum` if
+  anyone puts `value` back into the generic B-tree.
 
 **Boundary** (lint, not runtime)
 
@@ -1353,6 +1622,22 @@ Boundary decisions, from §2.5:
 | D31 | The session column is `importer`, holding a registry-validated `RecipeImporter.id` | `recipe_import_attempt.source` already means _transport_; the two spaces must not merge (§5.3) |
 | D32 | One shared sidecar namespace `ns='import'`, with `importer` as a key inside it     | "Everything I ever imported" is one query; per-app is one filter (§5.2, §12.5)                 |
 
+Review-driven, from the PR on this plan:
+
+| #   | Decision                                                                   | Why                                                                                                 |
+| --- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| D33 | Commit items are a union on `action: import \| link \| skip`               | `linked` was a result with no input that could ask for it; the id is revalidated server-side (§7.2) |
+| D34 | `commitImportChunk` re-checks household dedupe before writing              | `persistRecipeDraft` does no dedupe and duplicate keys raise no conflict — nothing "noticed" (§7.3) |
+| D35 | Session counters are derived at `finalizeImportSession`, never incremented | Per-chunk increments are not idempotent; deriving beats an item ledger (§7.7)                       |
+| D36 | An explicit finalize call, not an `isLast` chunk flag                      | The last chunk may be lost or may not exist; completion and telemetry need one owner (§7.7)         |
+| D37 | Sidecar indexes drop `value`; dedupe gets a narrow expression index        | B-tree caps an entry at ~2704 B while §7.2 permits 8 KB values (§5.1, §5.2)                         |
+| D38 | `source`/`action`/`module`/`region`/`rank` are host-scoped to NYT          | They are semantic parameters elsewhere; over-stripping hard-skips valid recipes (§6.1)              |
+| D39 | Fuzzy match runs on raw `recipe.name`; no normalized-title column          | The column never existed, and a second stored field means a second writer to keep in sync (§6.4)    |
+| D40 | The entry source takes `{ path, file }`, not `File[]`                      | Drag traversal leaves `webkitRelativePath` empty; `File[]` silently loses every drag path (§4.2)    |
+| D41 | The importer resolves `localImagePath` to a source-relative key            | `<img src>` is relative to the recipe file, and source paths may be root-prefixed (§4.1)            |
+| D42 | Four sidecar keys are reserved against `ImportCandidate.meta`              | Shared key space; an importer could otherwise clobber pipeline provenance (§7.2, §12.5)             |
+| D43 | `pg_trgm` is a prerequisite, not a fallback                                | An earlier migration already creates it; a database without it never reaches this feature (§6.4)    |
+
 ---
 
 ## 16. Acceptance criteria
@@ -1365,11 +1650,14 @@ Boundary decisions, from §2.5:
 3. Recipes already in the household's box are detected by normalized URL **or** content
    fingerprint and skipped by default.
 4. A recipe whose source URL an existing public atproto record cites offers the existing
-   record instead of creating a private copy; accepting adds it to the box.
-5. Two zip entries that resolve to the same key collapse before the probe.
+   record instead of creating a private copy; accepting adds that exact record to the box
+   via an `action: "link"` item whose id the server revalidates as public (§7.2).
+5. Two export entries that resolve to the same key collapse before the probe.
 6. Possible duplicates by title are flagged, never auto-skipped.
-7. All 81 URL-less recipes are attributable through at most 28 classification decisions,
-   and no attribution is auto-invented.
+7. All 81 URL-less recipes are attributable through at most **29** classification decisions
+   — the 28 distinct source strings plus the "no source at all" group covering the three
+   recipes with neither a URL nor a source string (§8.2) — and no attribution is
+   auto-invented.
 8. Every recipe with a URL gets server-built `attributionWebsite`; the raw source string is
    preserved in the sidecar in every case.
 9. **No imported recipe is published to atproto.** Every row is `visibility='private'` with
@@ -1378,10 +1666,14 @@ Boundary decisions, from §2.5:
     difficulty, and the full raw parse are readable from `household_recipe_meta`.
 11. A commit chunk with one bad recipe imports the other 24 and reports the failure by
     export entry name.
-12. Re-importing the same export imports nothing and reports 341 duplicates, **unless the
-    user explicitly overrides a duplicate** (§6.3) — an overridden item imports again, and
-    that is the only way a re-run creates a row.
-13. Refreshing mid-import and re-running converges — no duplicate recipes.
+12. Re-importing the same export after a **completed** import imports nothing and reports
+    341 duplicates. The only ways a re-run creates a row are a recipe that was never
+    committed the first time — skipped by the user, excluded, failed, or left uncommitted
+    when the tab closed, all of which are still genuinely new — and an item the user
+    explicitly overrides (§6.3), which imports a second copy of something already in the
+    box. No recipe already imported or linked is ever created twice without an override.
+13. Refreshing mid-import and re-running converges — no duplicate recipes — and a chunk
+    replayed after a lost response changes neither the recipes nor the final counters (§7.7).
 14. `saveRecipe`'s existing behavior is unchanged by the refactor; its tests pass untouched.
 15. Every existing recipe has `source_url_key` (where applicable) and `content_fp` after
     the backfill migration, byte-identical to the runtime computation.
@@ -1399,11 +1691,17 @@ Boundary decisions, from §2.5:
     a test that it actually fires (§14). The same rule bans `paprika` imports from
     `packages/recipe-extract/src/import/**`. Directory convention and review are the backup,
     not the mechanism.
-20. A **fixture importer** — a dozen lines returning one hand-written `ImportCandidate` over
+20. A completed import ends with `finalizeImportSession`: the session reads `complete` with
+    `finished_at` set, its counters match the rows the session actually produced, and exactly
+    one `recipe_import_completed` event is emitted no matter how many times the client calls
+    it (§7.7).
+21. Every recipe rendered by `services/atproto-cron-sync` carries both dedupe keys, and
+    re-rendering a changed record replaces them rather than leaving stale ones (§6.6).
+22. A **fixture importer** — a dozen lines returning one hand-written `ImportCandidate` over
     a `Map`-backed `EntrySource` — can be registered and driven through parse → probe →
     commit in a test without editing a single pipeline module. This is the cheapest honest
     proof that D30 holds; it lives in tests and ships nothing.
-21. Results logged to `docs/plans/results/2026-08-09-paprika-import-results.md`.
+23. Results logged to `docs/plans/results/2026-08-09-paprika-import-results.md`.
 
 ---
 
