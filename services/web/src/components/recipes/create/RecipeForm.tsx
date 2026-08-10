@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { usePostHog } from "@posthog/react";
 import { ArrowLeft, BookOpenText, Check, CircleAlert, Clock, Compass, CookingPot, Eye, Link2, ShoppingBasket, UtensilsCrossed, X } from "lucide-react";
+import { useAnalytics } from "#/lib/analytics";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
@@ -64,7 +64,7 @@ type FormImage = { kind: "bytes"; dataBase64: string; mime: string; previewUrl: 
 export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importId }: { householdName: string; sourceUrl: string | null; importId?: string | null }) {
   const navigate = useNavigate();
   const router = useRouter();
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
   const { pushToast } = useRecipesView();
   // `handle` is an atproto-plugin column, absent from better-auth's base user type.
   const { data: session } = authClient.useSession() as { data: { user?: { handle?: string | null } } | null };

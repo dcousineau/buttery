@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { usePostHog } from "@posthog/react";
 import { CookingPot } from "lucide-react";
+import { useAnalytics } from "#/lib/analytics";
 import { Button } from "#/components/ui/button";
 import { CookModeOverlay } from "./CookModeOverlay";
 import type { CookRecipe } from "./cook/CookMode";
@@ -19,7 +19,7 @@ import type { CookRecipe } from "./cook/CookMode";
  * a recipe page they never asked to visit.
  */
 export function CookModeLauncher({ recipe, autoOpen = false, onAutoOpenConsumed }: { recipe: CookRecipe; autoOpen?: boolean; onAutoOpenConsumed?: () => void }) {
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
   const [open, setOpen] = useState(autoOpen);
 
   // The button path captures on the gesture; a deep link has no gesture to hang
