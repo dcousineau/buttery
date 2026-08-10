@@ -1,11 +1,12 @@
 import { HeadContent, Scripts, createRootRoute, useRouterState } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
-import { PostHogProvider, usePostHog } from "@posthog/react";
+import { PostHogProvider } from "@posthog/react";
 import { useEffect, useRef } from "react";
 import { authClient } from "../lib/auth-client";
 import AppShell from "../components/AppShell";
 import Waitlist from "../components/Waitlist";
+import { POSTHOG_CLIENT_CONFIG, useAnalytics } from "../lib/analytics";
 import { getGateState } from "../lib/gate";
 import { absolute, seo } from "../lib/seo";
 
@@ -53,9 +54,12 @@ function isLoggedInRoute(pathname: string): boolean {
  * The widget auto-loads from remote config; we `show()` it on app routes and
  * `hide()` it everywhere else. Calls are client-only (guarded by `useEffect`)
  * and no-op until conversations finish loading, so we poll briefly to still hide
- * an auto-shown widget once it lands on a marketing/legal page. */
+ * an auto-shown widget once it lands on a marketing/legal page.
+ *
+ * Production-only, like the rest of analytics: outside production `conversations`
+ * is permanently undefined and this component does nothing (see `lib/analytics`). */
 function PostHogSupportWidget() {
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
   const loggedIn = useRouterState({ select: (s) => isLoggedInRoute(s.location.pathname) });
 
   useEffect(() => {
@@ -86,7 +90,7 @@ function PostHogSupportWidget() {
 }
 
 function PostHogIdentity() {
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
   const { data: session } = authClient.useSession();
   const did = session?.user.did;
   const identifiedDid = useRef<string | undefined>(undefined);
@@ -118,13 +122,6 @@ function PostHogIdentity() {
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
-  // Inlined into the client bundle at build time (see .railway/railway.ts).
-  // Missing in dev means events are silently dropped, so surface it once.
-  const posthogToken = import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN;
-  const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST;
-  if (import.meta.env.DEV && (!posthogToken || !posthogHost)) {
-    console.error(`[posthog] ${!posthogToken ? "VITE_PUBLIC_POSTHOG_PROJECT_TOKEN" : "VITE_PUBLIC_POSTHOG_HOST"} is unset — analytics is disabled until it's configured.`);
-  }
   const gate = Route.useLoaderData();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // A signed-in user without the `invited` flag gets the waitlist takeover,
@@ -133,7 +130,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   // Canonical / og:url are per-page; derive both from the current path so every
   // route gets them without per-route wiring. Query/hash are intentionally dropped.
   const canonical = absolute(pathname);
-  // PostHog wraps the app only when configured; otherwise render the same tree bare.
+  // PostHog wraps the app in PRODUCTION ONLY; everywhere else the same tree
+  // renders bare and posthog-js is never initialized (see `lib/analytics`).
   const app = gated ? <Waitlist /> : <AppShell>{children}</AppShell>;
   return (
     <html lang="en" suppressHydrationWarning>
@@ -144,11 +142,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <meta property="og:url" content={canonical} />
       </head>
       <body className="font-sans antialiased [overflow-wrap:anywhere] selection:bg-[rgba(255,216,77,0.55)]">
-        {posthogToken && posthogHost ? (
+        {POSTHOG_CLIENT_CONFIG ? (
           <PostHogProvider
-            apiKey={posthogToken}
+            apiKey={POSTHOG_CLIENT_CONFIG.apiKey}
             options={{
-              api_host: posthogHost,
+              api_host: POSTHOG_CLIENT_CONFIG.host,
               capture_exceptions: true,
               // Don't mint a person profile for anonymous visitors — events are
               // still captured (lightly tracked), but a profile is only created

@@ -12,6 +12,11 @@ import type { PostHog } from "posthog-node";
  * Config comes from runtime env (NOT the `VITE_` client vars): `POSTHOG_PROJECT_TOKEN`
  * and `POSTHOG_HOST`. Talks to PostHog's ingestion host directly — server-to-server,
  * so it skips the client reverse-proxy.
+ *
+ * PRODUCTION-ONLY, gated on `POSTHOG_ENABLED === "true"` (see {@link isEnabled}).
+ * Outside production no client is constructed at all, so nothing is written and no
+ * flag is evaluated — note that evaluating a flag is itself a write, since
+ * posthog-node captures a `$feature_flag_called` event per evaluation.
  */
 
 /** The PostHog flag that gates the post-login experience. */
@@ -27,16 +32,32 @@ export const INVITED_FLAG = "invited";
  */
 export const ATPROTO_PUBLISH_FLAG = "atproto-publishing-enabled";
 
+/**
+ * Whether this process may talk to PostHog at all — the server half of the gate
+ * in `./analytics`. Explicit runtime opt-in, set only by the Railway service
+ * definition (`.railway/railway.ts`).
+ *
+ * Deliberately NOT "is a token present": `pnpm dev` and `pnpm test:db` run through
+ * `railway run`, which injects the real production project token into a laptop
+ * shell. Deliberately NOT `NODE_ENV !== "production"` either: a future staging
+ * deploy runs with `NODE_ENV=production` and must still write nothing. Allowlist,
+ * so unset/empty/misspelled all resolve to OFF.
+ */
+function isEnabled(): boolean {
+  return process.env.POSTHOG_ENABLED === "true";
+}
+
 /** Memoized one-shot init of the posthog-node client for this server process.
- * Resolves to `null` when no project token is configured (local dev), which the
- * callers treat as "PostHog absent" rather than an error. */
+ * Resolves to `null` outside production, or when no project token is configured,
+ * which the callers treat as "PostHog absent" rather than an error. */
 let clientInit: Promise<PostHog | null> | null = null;
 
 async function getClient(): Promise<PostHog | null> {
   if (!clientInit) {
     clientInit = (async () => {
+      if (!isEnabled()) return null; // dev / test / staging → total no-op
       const key = process.env.POSTHOG_PROJECT_TOKEN;
-      if (!key) return null; // local dev without PostHog wired up
+      if (!key) return null; // opted in but not configured
       const { PostHog } = await import("posthog-node");
       return new PostHog(key, {
         host: process.env.POSTHOG_HOST ?? "https://us.i.posthog.com",
@@ -70,8 +91,9 @@ function isDevOrTest(): boolean {
  * in through the local atproto dev-env (see services/atproto-dev-env), which mints
  * a brand-new throwaway `did:plc` on every restart — no such DID can be on the
  * invite list, so honoring the flag would lock every local session behind the
- * waitlist screen. Note `railway run` DOES inject `POSTHOG_PROJECT_TOKEN` locally,
- * so a live client is not evidence of production.
+ * waitlist screen. It would also be unanswerable: outside production there is no
+ * client to ask (see {@link isEnabled}) — `railway run` injects `POSTHOG_PROJECT_TOKEN`
+ * locally, but a token is not evidence of production and no longer builds a client.
  *
  * Any other environment (production, or an unset `NODE_ENV`) fails CLOSED, with or
  * without a token, so a missing prod token can't silently open the gate.
@@ -99,8 +121,9 @@ export async function isInvited(did: string, personProperties?: Record<string, s
  * Fail-closed kill switch (see {@link ATPROTO_PUBLISH_FLAG}): returns `true` ONLY
  * when the flag explicitly serves `true`. A local/server env override
  * (`ATPROTO_PUBLISH_ENABLED=true|false`) wins over PostHog — the escape hatch for
- * dev + emergencies. With no override and no PostHog client (local dev), or on any
- * flag error, publishing is BLOCKED.
+ * dev + emergencies, and the ONLY way to allow publishing outside production, where
+ * there is no PostHog client to evaluate the flag. With no override and no client,
+ * or on any flag error, publishing is BLOCKED.
  */
 export async function isAtprotoPublishEnabled(did: string, personProperties?: Record<string, string>): Promise<boolean> {
   const override = process.env.ATPROTO_PUBLISH_ENABLED;
@@ -122,6 +145,9 @@ export async function isAtprotoPublishEnabled(did: string, personProperties?: Re
  * Durably attach person properties (notably `handle`) to the DID-keyed person so
  * PostHog is filterable by handle, not just the opaque DID. Fire-and-forget: the
  * write is queued and flushed asynchronously; failures are logged, never thrown.
+ *
+ * No-op outside production — dev sign-ins mint throwaway DIDs, and a person row
+ * per local restart is exactly the noise the gate exists to keep out.
  */
 export async function identify(did: string, properties: Record<string, string>): Promise<void> {
   const client = await getClient();

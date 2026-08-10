@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useRouter } from "@tanstack/react-router";
-import { usePostHog } from "@posthog/react";
 import { ArrowLeft, CalendarRange, Clock, EyeOff, Lock, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
+import { useAnalytics } from "#/lib/analytics";
 import type { HouseholdRecipeDetail } from "#/server/household-recipes";
 import { removeRecipeFromHousehold, toggleHouseholdRecipeFavorite, upsertHouseholdRecipeNote } from "#/server/household-recipes";
 import { publishRecipe } from "#/server/recipes-write";
@@ -43,7 +43,7 @@ export function DetailPane({
   onCookModeClosed?: () => void;
 }) {
   const router = useRouter();
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
   const { pushToast } = useRecipesView();
   const { factor, setFactor, metric, setMetric } = useRecipeScale();
   const scrollRef = useRef<HTMLDivElement>(null);

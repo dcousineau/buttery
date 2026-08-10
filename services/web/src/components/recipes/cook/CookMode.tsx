@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AArrowDown, AArrowUp, Maximize, Minimize, X } from "lucide-react";
-import { usePostHog } from "@posthog/react";
+import { useAnalytics } from "#/lib/analytics";
 import { Dialog, DialogContent, DialogTitle } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
 import { CheckboxRow } from "#/components/ui/checkbox";
@@ -56,7 +56,7 @@ interface FsDocument extends Document {
  * bundles.
  */
 export default function CookMode({ recipe, onClose }: { recipe: CookRecipe; onClose: () => void }) {
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
   const { factor, setFactor, metric, setMetric } = useRecipeScale();
   const { arm } = useTimers();
   const { scale, increase, decrease, canIncrease, canDecrease } = useCookTextScale();
