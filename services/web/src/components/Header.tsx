@@ -1,20 +1,20 @@
 import { Link } from "@tanstack/react-router";
-import { authClient } from "../lib/auth-client";
+import { useHydratedSession } from "../lib/auth-client";
 import HouseholdSwitcher from "./HouseholdSwitcher";
 import UserMenu from "./UserMenu";
 import { HeaderTimerIndicator } from "./timers/HeaderTimerIndicator";
 import type { ReactNode, Ref } from "react";
 
 /** The wordmark's destination depends on auth: a signed-in user goes to their
- * logged-in landing (`/pantry`, which itself routes on to the household picker /
+ * logged-in landing (`/household`, which itself routes on to the household picker /
  * onboarding when there's no active household); a signed-out (or still-loading)
  * visitor goes to the public marketing home (`/`). */
 function Wordmark() {
-  const { data: session } = authClient.useSession();
+  const { data: session } = useHydratedSession();
   return (
     // `shrink-0` + `nowrap`: on a 390px phone the switcher and menus squeeze
     // this down until the wordmark breaks mid-word ("Butter / y").
-    <Link to={session ? "/pantry" : "/"} className="flex shrink-0 items-center whitespace-nowrap text-foreground no-underline">
+    <Link to={session ? "/household" : "/"} className="flex shrink-0 items-center whitespace-nowrap text-foreground no-underline">
       <span className="display-title text-lg leading-none">Buttery</span>
     </Link>
   );

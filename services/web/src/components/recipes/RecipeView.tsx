@@ -1,6 +1,6 @@
 import { Clock, UtensilsCrossed } from "lucide-react";
 import { NutritionStrip } from "./NutritionStrip";
-import { SourceIcon } from "./SourceIcon";
+import { SourceLink } from "./SourceLink";
 import type { RecipeSource } from "#/server/recipe-provenance";
 import type { RecipeNutrition } from "#/server/household-recipes";
 
@@ -35,12 +35,7 @@ export function RecipeView({ data }: { data: RecipeViewData }) {
       <div className="flex flex-col gap-1.5">
         <h1 className="display-title m-0 text-[1.625rem] leading-[1.1] text-balance text-foreground">{data.title || "Untitled recipe"}</h1>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.75rem] font-semibold text-muted-foreground">
-          {data.source && (
-            <span className="inline-flex items-center gap-1 whitespace-nowrap">
-              <SourceIcon kind={data.source.kind} className="size-3.5" />
-              {data.source.label}
-            </span>
-          )}
+          {data.source && <SourceLink source={data.source} />}
           {data.totalTimeDisplay && (
             <>
               <span aria-hidden>·</span>

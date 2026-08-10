@@ -44,7 +44,7 @@ const UNGATED_ROUTES = new Set(["/terms", "/privacy", "/ai-usage", "/acknowledge
 /** Route prefixes for the signed-in app surfaces. The PostHog support widget
  * (Conversations) is shown only here — never on marketing, legal, or public
  * share pages (`/`, `/login`, `/recipes/*`, `/invite/*`, …). */
-const LOGGED_IN_ROUTE_PREFIXES = ["/household", "/households", "/pantry", "/onboarding"];
+const LOGGED_IN_ROUTE_PREFIXES = ["/household", "/households", "/onboarding"];
 
 function isLoggedInRoute(pathname: string): boolean {
   return LOGGED_IN_ROUTE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));

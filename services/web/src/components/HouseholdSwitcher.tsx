@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { ChevronsUpDown, Home } from "lucide-react";
-import { authClient } from "#/lib/auth-client";
+import { useHydratedSession } from "#/lib/auth-client";
 import { resolveOnboarding } from "#/server/household/onboarding";
 import { Button } from "#/components/ui/button";
 import {
@@ -25,7 +25,7 @@ import type { OnboardingVerdict } from "#/server/household/onboarding";
  * request" guarantee even on screens that don't otherwise touch the household.
  */
 export default function HouseholdSwitcher() {
-  const { data: session } = authClient.useSession();
+  const { data: session } = useHydratedSession();
   const userId = session?.user.id ?? null;
   // Tag the fetched verdict with the userId it belongs to, so a stale/removed
   // session is cleared by DERIVING null at render (below) rather than a

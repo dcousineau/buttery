@@ -247,14 +247,14 @@ Defaulted (not asked, stated for the record):
 Household-scoped app screens live under a new **`/household`** namespace
 (singular — the household you are currently operating inside), distinct from the
 existing **`/households`** (plural) management surfaces (switch, invites,
-members) and from `/pantry` (the overview landing). The active household is
+members) and from `/household` (the overview landing). The active household is
 **session-global** (`session.active_household_id`, plan 02) — it is NOT in the
 path, so the URL can never disagree with the session's active household.
 
 - **`/household/recipes`** — new `services/web/src/routes/household.recipes.index.tsx`.
   The master–detail shell (ledger; detail pane empty-state when nothing is
   selected). Loader gates through `requireActiveHousehold()` (the §8 stale-active
-  guard) exactly like `/pantry`, then loads the ledger via
+  guard) exactly like `/household`, then loads the ledger via
   `listHouseholdRecipes()`.
 - **`/household/recipes/{id}`** — `household.recipes.$id.tsx`, a **child route**
   of the ledger so the ledger stays mounted (no re-fetch, scroll/place kept) and

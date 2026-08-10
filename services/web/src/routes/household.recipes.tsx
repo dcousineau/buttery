@@ -17,7 +17,7 @@ import { seo } from "#/lib/seo";
  * stays mounted while the detail (`$id` child) or the empty-state (`index` child)
  * renders in the right pane via <Outlet/> — so selecting a recipe keeps the
  * ledger's scroll/place and never re-fetches it. The loader gates through
- * `requireActiveHousehold` (the stale-active guard) exactly like `/pantry`, then
+ * `requireActiveHousehold` (the stale-active guard) exactly like `/household`, then
  * loads the whole box.
  */
 export const Route = createFileRoute("/household/recipes")({

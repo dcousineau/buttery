@@ -202,7 +202,7 @@ function readCookie(header: string, name: string): string | null {
  * - Unauthenticated → `{ authed: false }`; the marketing page renders.
  * - Authenticated, with a pending-invite cookie carried through the logged-out
  *   invite → OAuth round-trip (§15) → resume it at `/invite/$token`.
- * - Authenticated otherwise → the §5 landing: `/pantry` (active/single),
+ * - Authenticated otherwise → the §5 landing: `/household` (active/single),
  *   `/households/switch` (2+, none active), or `/onboarding` (no household).
  *
  * A signed-in user therefore never sits on the marketing page — they are always
@@ -221,7 +221,7 @@ export const resolveHomeRedirect = createServerFn({ method: "GET" }).handler(asy
   if (token) throw redirect({ to: "/invite/$token", params: { token } });
 
   const verdict = await computeOnboarding();
-  if (verdict.kind === "active") throw redirect({ to: "/pantry" });
+  if (verdict.kind === "active") throw redirect({ to: "/household" });
   if (verdict.kind === "pick") throw redirect({ to: "/households/switch" });
   throw redirect({ to: "/onboarding" });
 });
