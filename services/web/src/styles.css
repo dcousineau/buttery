@@ -161,6 +161,12 @@
   --shadow-pop-md: 4px 4px 0 var(--shadow-hard);
   --shadow-pop-lg: 6px 6px 0 var(--shadow-hard);
 
+  /* Registered as a theme animation (rather than a bare `.animate-*` class further
+   * down this file) precisely so the `motion-safe:` / `motion-reduce:` variants
+   * generate real utilities for it — the unlayered classes below can't be turned
+   * off by a variant, because unlayered CSS outranks Tailwind's utility layer. */
+  --animate-progress-indeterminate: progress-indeterminate 1.4s ease-in-out infinite;
+
   /*
    * STACKING LAYERS — the app's whole z-index story, in one place.
    *
@@ -363,6 +369,21 @@
 }
 .animate-cook-blob-b {
   animation: cook-blob-b 28s ease-in-out infinite;
+}
+
+/* Progress bar (`components/ui/progress.tsx`) in its indeterminate state: a
+ * third-width sliver sweeping the track while a total is still unknown. Bound to
+ * the `--animate-progress-indeterminate` theme key above, so the component can
+ * apply it as `motion-safe:animate-progress-indeterminate` and pair it with a
+ * `motion-reduce:` static full-width fill — a sliver parked at 33% would read as
+ * a real percentage. */
+@keyframes progress-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

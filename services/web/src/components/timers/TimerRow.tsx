@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { AlarmClock, Pause, Play, Plus, X } from "lucide-react";
 import { Button } from "#/components/ui/button";
+import { Progress } from "#/components/ui/progress";
 import { cn } from "#/lib/utils";
 import { remainingMs, useTimers, type Timer } from "#/lib/timers/store";
 
@@ -74,11 +75,7 @@ export function TimerRow({
         </Link>
       )}
 
-      {!alarming && (
-        <div className="h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}>
-          <div className={cn("h-full rounded-full transition-[width] duration-500", gold ? "bg-secondary" : "bg-primary")} style={{ width: `${progress * 100}%` }} />
-        </div>
-      )}
+      {!alarming && <Progress value={progress * 100} variant={gold ? "secondary" : "default"} aria-label="Timer progress" label={`${formatRemaining(remaining)} left`} />}
 
       <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
         {alarming ? (

@@ -8,7 +8,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./sites": "./src/sites/index.ts"
+    "./sites": "./src/sites/index.ts",
+    "./import": "./src/import/index.ts"
   },
   "scripts": {
     "test": "vitest run",

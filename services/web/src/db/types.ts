@@ -146,6 +146,15 @@ export interface HouseholdRecipe {
   recipe_id: string;
 }
 
+export interface HouseholdRecipeMeta {
+  household_id: string;
+  key: string;
+  ns: string;
+  recipe_id: string;
+  updated_at: Generated<Timestamp>;
+  value: Json;
+}
+
 export interface HouseholdRecipeNote {
   author_did: string;
   body: string;
@@ -253,6 +262,21 @@ export interface RecipeImportAttempt {
   url: string;
 }
 
+export interface RecipeImportSession {
+  did: string;
+  failed_count: Generated<number>;
+  file_name: string | null;
+  finished_at: Timestamp | null;
+  household_id: string;
+  id: string;
+  imported_count: Generated<number>;
+  importer: string;
+  skipped_count: Generated<number>;
+  started_at: Generated<Timestamp>;
+  status: string;
+  total_count: Generated<number>;
+}
+
 export interface RecipeIngredient {
   ordinal: number;
   recipe_id: string;
@@ -268,6 +292,14 @@ export interface RecipeInstruction {
 export interface RecipeKeyword {
   keyword: string;
   recipe_id: string;
+}
+
+export interface RecipeMeta {
+  key: string;
+  ns: string;
+  recipe_id: string;
+  updated_at: Generated<Timestamp>;
+  value: Json;
 }
 
 export interface RecipePendingImage {
@@ -343,6 +375,7 @@ export interface DB {
   household_member: HouseholdMember;
   household_preference: HouseholdPreference;
   household_recipe: HouseholdRecipe;
+  household_recipe_meta: HouseholdRecipeMeta;
   household_recipe_note: HouseholdRecipeNote;
   meal_plan_entry: MealPlanEntry;
   recipe: Recipe;
@@ -350,9 +383,11 @@ export interface DB {
   recipe_fetch_cache: RecipeFetchCache;
   recipe_image: RecipeImage;
   recipe_import_attempt: RecipeImportAttempt;
+  recipe_import_session: RecipeImportSession;
   recipe_ingredient: RecipeIngredient;
   recipe_instruction: RecipeInstruction;
   recipe_keyword: RecipeKeyword;
+  recipe_meta: RecipeMeta;
   recipe_pending_image: RecipePendingImage;
   recipe_search: RecipeSearch;
   recipe_vocab: RecipeVocab;
