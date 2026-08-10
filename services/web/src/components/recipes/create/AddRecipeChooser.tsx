@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { BookOpenText, Link2, PencilLine, Puzzle } from "lucide-react";
+import { BookOpenText, Boxes, Link2, PencilLine, Puzzle } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
@@ -12,7 +12,7 @@ import { useRecipesView } from "../context";
 import { FetchingDialog, type FetchPhase } from "./FetchingDialog";
 import { BookmarkletInstallDialog } from "./BookmarkletInstallDialog";
 
-type Choice = "import" | "manual" | "bookmarklet";
+type Choice = "import" | "manual" | "bookmarklet" | "library";
 
 /**
  * The single "Add a recipe" entry point (plan §A4). Offers the three create paths
@@ -40,6 +40,11 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
   function goManual() {
     onOpenChange(false);
     navigate({ to: "/household/recipes/new" });
+  }
+
+  function goLibrary() {
+    onOpenChange(false);
+    navigate({ to: "/household/recipes/import" });
   }
 
   async function goImport() {
@@ -148,6 +153,27 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
                 <Button onClick={() => setInstallOpen(true)}>
                   <Puzzle data-icon="inline-start" aria-hidden="true" />
                   Get the bookmarklet
+                </Button>
+              </div>
+            )}
+          </Option>
+
+          {/* Bulk import (plan §9). Deliberately named by what the user has — a recipe box —
+              rather than by the app that wrote it: the route resolves the importer itself, and
+              naming one here would put an importer's name in a component, which is the thing
+              §2.5 exists to prevent. */}
+          <Option
+            selected={choice === "library"}
+            onSelect={() => setChoice("library")}
+            icon={<Boxes className="size-4" aria-hidden="true" />}
+            title="Bring in your recipe box"
+            description="Move a whole library over from another recipe app."
+          >
+            {choice === "library" && (
+              <div className="mt-2">
+                <Button onClick={goLibrary}>
+                  <Boxes data-icon="inline-start" aria-hidden="true" />
+                  Start an import
                 </Button>
               </div>
             )}
