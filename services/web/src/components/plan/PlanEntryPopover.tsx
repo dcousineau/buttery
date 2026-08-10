@@ -4,7 +4,7 @@ import type { ComponentType } from "react";
 import type { PlanEntry } from "#/server/meal-plan";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
 import { slotDayLine } from "#/lib/plan/labels";
-import { SourceIcon } from "#/components/recipes/SourceIcon";
+import { SourceLink } from "#/components/recipes/SourceLink";
 import { PopoverContent } from "#/components/ui/popover";
 import { PlanEntryFlags } from "./PlanEntryCard";
 import { usePlanActions } from "./PlanActions";
@@ -118,12 +118,7 @@ export function PlanEntryPopover({ entry, date, slot, variant, onAction }: PlanE
               {entry.totalTimeDisplay}
             </span>
           )}
-          {entry.kind === "recipe" && (
-            <span className="inline-flex items-center gap-1.5">
-              <SourceIcon kind={entry.source.kind} className="size-3 shrink-0" />
-              {entry.source.label}
-            </span>
-          )}
+          {entry.kind === "recipe" && <SourceLink source={entry.source} className="gap-1.5" iconClassName="size-3" />}
           {entry.addedByHandle && (
             <span className="inline-flex items-center gap-1.5">
               <Users className="size-3 shrink-0" aria-hidden="true" />

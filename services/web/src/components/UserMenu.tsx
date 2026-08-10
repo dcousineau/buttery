@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { LogOut, Monitor, Moon, Sun } from "lucide-react";
-import { authClient, signOutAndGoHome } from "../lib/auth-client";
+import { signOutAndGoHome, useHydratedSession } from "../lib/auth-client";
 import UserAvatar from "./UserAvatar";
 import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
@@ -26,7 +26,10 @@ const THEME_META: Record<ThemeMode, { label: string; icon: typeof Sun; next: The
  * header can render it unconditionally.
  */
 export default function UserMenu() {
-  const { data: session, isPending } = authClient.useSession();
+  // `useHydratedSession`, not the raw hook: the server has no session and the
+  // client's store answers from cache immediately, so reading the raw one here
+  // renders the menu during hydration against a skeleton in the SSR HTML.
+  const { data: session, isPending } = useHydratedSession();
   const { mode, setMode } = useTheme();
 
   if (isPending) {

@@ -1,4 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
+import type { Kysely } from "kysely";
+import type { DB } from "#/db/types";
 import { blobImageUrl } from "#/lib/atproto/images";
 import type { PlannedUsage } from "./meal-plan";
 import { type RecipeSource, deriveSource, prettify } from "./recipe-provenance";
@@ -31,6 +33,10 @@ export interface HouseholdRecipeRow {
   totalTimeDisplay: string | null;
   keywords: string[];
   thumbUrl: string | null;
+  /** ISO timestamp the recipe was added to the box (`household_recipe.added_at`). */
+  addedAt: string;
+  /** "@handle" of whoever added it, already prefixed; null when unresolvable. */
+  addedByHandle: string | null;
   /** Source went unavailable on the network; still renders from cache. */
   unavailable: boolean;
   /** A local draft/private recipe with no atproto record yet (shows a lock). */
@@ -94,6 +100,8 @@ export interface GlobalRecipeResult {
   description: string | null;
   source: RecipeSource;
   thumbUrl: string | null;
+  /** "@handle" of the publishing repo, already prefixed; null when unresolvable. */
+  handle: string | null;
 }
 
 // --- helpers ------------------------------------------------------------
@@ -140,6 +148,45 @@ async function activeContext(): Promise<{ did: string; householdId: string }> {
   return { did, householdId };
 }
 
+/**
+ * "@handle" for each of `dids`, batched — the adder-attribution lookup, never a
+ * per-row query and never the `atproto_repo as repo` join the recipe queries use
+ * (that one resolves the recipe's PUBLISHER via `r.did`).
+ *
+ * Two tables, one round-trip. `atproto_repo` is filled by the sync worker, so it
+ * only knows DIDs whose repos we have crawled — someone who signed in and boxed
+ * a recipe without ever publishing one is simply absent from it. `user` is the
+ * sign-in table and therefore has every possible adder, so it is the fallback.
+ * Repo wins when both know the DID: it is the handle the network currently
+ * resolves, where `user.handle` is a snapshot from whenever they last signed in.
+ *
+ * That precedence is carried by the `priority` literal rather than by two awaits
+ * — `order by priority` puts the repo rows last, so writing straight into the
+ * map lets them overwrite the sign-in ones. `user` is the base arm because its
+ * `did` is nullable and `atproto_repo`'s is not, and a union arm must be
+ * assignable to the base.
+ */
+async function resolveAdderHandles(db: Kysely<DB>, dids: string[]): Promise<Map<string, string>> {
+  const byDid = new Map<string, string>();
+  if (dids.length === 0) return byDid;
+
+  const rows = await db
+    .selectFrom("user")
+    .select((eb) => ["did", "handle", eb.lit<number>(0).as("priority")])
+    .where("did", "in", dids)
+    .unionAll(
+      db
+        .selectFrom("atproto_repo")
+        .select((eb) => ["did", "handle", eb.lit<number>(1).as("priority")])
+        .where("did", "in", dids),
+    )
+    .orderBy("priority")
+    .execute();
+
+  for (const row of rows) if (row.did && row.handle) byDid.set(row.did, `@${row.handle}`);
+  return byDid;
+}
+
 // --- §6.1 listHouseholdRecipes ------------------------------------------
 
 /**
@@ -169,6 +216,7 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
       "r.total_time_seconds as total_time_seconds",
       "hr.favorite as favorite",
       "hr.added_at as added_at",
+      "hr.added_by_did as added_by_did",
       "img.blob_cid as blob_cid",
       "img.blob_mime as blob_mime",
       "attr.display_name as attr_display_name",
@@ -193,6 +241,8 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
       keywordsByRecipe.set(recipe_id, list);
     }
   }
+
+  const handleByDid = await resolveAdderHandles(db, [...new Set(rows.map((r) => r.added_by_did))]);
 
   return rows.map((row): HouseholdRecipeRow => {
     const { minutes, display } = minutesDisplay(row.total_time_seconds);
@@ -219,6 +269,8 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
       totalTimeDisplay: display,
       keywords: keywordsByRecipe.get(row.id) ?? [],
       thumbUrl: row.did && row.blob_cid ? blobImageUrl(row.did, row.blob_cid, row.blob_mime, "feed_thumbnail") : null,
+      addedAt: new Date(row.added_at).toISOString(),
+      addedByHandle: handleByDid.get(row.added_by_did) ?? null,
       unavailable,
       unpublished: row.visibility !== "public" || row.uri == null,
     };
@@ -300,7 +352,7 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
       db.selectFrom("recipe_instruction").select("text").where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
       db.selectFrom("recipe_keyword").select("keyword").where("recipe_id", "=", data.recipeId).execute(),
       db.selectFrom("household_recipe_note").select(["body", "updated_at"]).where("household_id", "=", householdId).where("recipe_id", "=", data.recipeId).executeTakeFirst(),
-      db.selectFrom("atproto_repo").select("handle").where("did", "=", boxed.added_by_did).executeTakeFirst(),
+      resolveAdderHandles(db, [boxed.added_by_did]).then((byDid) => byDid.get(boxed.added_by_did) ?? null),
       readPlannedUsage(db, householdId, data.recipeId),
     ]);
 
@@ -347,7 +399,7 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
       },
       favorite: boxed.favorite,
       note: note ? { body: note.body, updatedAt: new Date(note.updated_at).toISOString() } : null,
-      addedByHandle: adder?.handle ? `@${adder.handle}` : null,
+      addedByHandle: adder,
       unavailable,
       unavailableSince: row.acr_deleted_at ? new Date(row.acr_deleted_at).toISOString() : null,
       unpublished: row.visibility !== "public" || row.uri == null,
@@ -560,6 +612,9 @@ export const searchGlobalRecipes = createServerFn({ method: "GET" })
         attrUrl: row.attr_url,
       }),
       thumbUrl: row.did && row.blob_cid ? blobImageUrl(row.did, row.blob_cid, row.blob_mime, "feed_thumbnail") : null,
+      // Same `repo` join `deriveSource` already consumes — prefixed the way every
+      // other handle in this module is surfaced.
+      handle: row.repo_handle ? `@${row.repo_handle}` : null,
     }));
 
     return { results, nextCursor: hasMore ? String(data.cursor + data.limit) : null };

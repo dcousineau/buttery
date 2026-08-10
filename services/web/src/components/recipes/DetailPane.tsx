@@ -13,11 +13,11 @@ import { SLOT_LABELS, formatPlanDate, shortDow } from "#/lib/plan/labels";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
 import { scaleIngredients } from "#/lib/recipe-scale";
 import { cn } from "#/lib/utils";
-import { authClient } from "#/lib/auth-client";
+import { useHydratedSession } from "#/lib/auth-client";
 import { reconnectAtproto } from "#/lib/atproto-reauth";
 import { useRecipesView } from "./context";
 import { useRecipeScale } from "./scale";
-import { SourceIcon } from "./SourceIcon";
+import { SourceLink } from "./SourceLink";
 import { ScalePanel } from "./ScalePanel";
 import { NutritionStrip } from "./NutritionStrip";
 import { UnavailableBanner } from "./UnavailableBanner";
@@ -70,7 +70,7 @@ export function DetailPane({
   const [reauthPending, setReauthPending] = useState(false);
   const [planRequest, setPlanRequest] = useState<AddToPlanRequest | null>(null);
   // `handle` is an atproto-plugin column, absent from better-auth's base user type.
-  const { data: session } = authClient.useSession() as { data: { user?: { handle?: string | null } } | null };
+  const { data: session } = useHydratedSession() as { data: { user?: { handle?: string | null } } | null };
 
   // Detail-pane state (favorite, scroll position, note) is keyed by recipeId at
   // the render site (`<DetailPane key={recipe.recipeId} …/>`), so switching
@@ -192,10 +192,7 @@ export function DetailPane({
                 <span aria-hidden>·</span>
               </>
             )}
-            <span className="inline-flex items-center gap-1 whitespace-nowrap">
-              <SourceIcon kind={recipe.source.kind} className="size-3.5" />
-              {recipe.source.label}
-            </span>
+            <SourceLink source={recipe.source} />
             {recipe.totalTimeDisplay && (
               <>
                 <span aria-hidden>·</span>

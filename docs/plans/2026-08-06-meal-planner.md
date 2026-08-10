@@ -521,7 +521,7 @@ not the public `/recipes/$id`, so the household note/favorite context comes alon
 
 `AppSidebar.tsx` already carries `{ label: "Meal planner", icon: CalendarRange, soon: true }`
 in exactly the position the design shows — the only change is adding `to: "/plan"` and
-dropping `soon`. `/pantry`'s "planner-at-a-glance" placeholder copy (`routes/pantry.tsx`)
+dropping `soon`. `/household`'s "planner-at-a-glance" placeholder copy (`routes/household.index.tsx`)
 gets a link to `/plan`.
 
 ---
@@ -542,7 +542,7 @@ section covers only what the implementation must get structurally right.
   `view`/`panel` are pure client state that happens to live in the URL (D15), so toggling
   them must not refetch.
 - `loader: ({ deps }) => getMealPlanWeek({ data: deps })`.
-- Gated by `requireActiveHousehold()` like `/pantry`.
+- Gated by `requireActiveHousehold()` like `/household`.
 - Week nav = search-param navigation (`shiftWeeks`), so back/forward and deep links work.
 - `head`/`seo()` per the existing routes.
 
@@ -706,7 +706,7 @@ announcement on move/remove, no colour-only encoding of cooked state.
 | `services/web/src/components/recipes/cook/CookMode.tsx`           | finish prompt (§7.1)                  |
 | `services/atproto-cron-sync/src/render.ts`                        | sweep guard (§7.3)                    |
 | `services/web/src/components/AppSidebar.tsx`                      | `to: "/plan"`, drop `soon` (§7.5)     |
-| `services/web/src/routes/pantry.tsx`                              | link to `/plan` (§7.5)                |
+| `services/web/src/routes/household.index.tsx`                     | link to `/plan` (§7.5)                |
 
 ---
 

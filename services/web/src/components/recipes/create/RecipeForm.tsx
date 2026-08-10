@@ -13,7 +13,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "#/
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Spinner } from "#/components/ui/spinner";
 import { RECIPE_VOCAB, slugForLabel, slugForToken, tokenForSlug } from "#/lib/recipe-vocab";
-import { authClient } from "#/lib/auth-client";
+import { useHydratedSession } from "#/lib/auth-client";
 import { reconnectAtproto } from "#/lib/atproto-reauth";
 import { type AttributionState, EMPTY_ATTRIBUTION, attributionComplete, buildAttribution } from "#/lib/recipe-attribution";
 import { deriveSource } from "#/server/recipe-provenance";
@@ -67,7 +67,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
   const { posthog } = useAnalytics();
   const { pushToast } = useRecipesView();
   // `handle` is an atproto-plugin column, absent from better-auth's base user type.
-  const { data: session } = authClient.useSession() as { data: { user?: { handle?: string | null } } | null };
+  const { data: session } = useHydratedSession() as { data: { user?: { handle?: string | null } } | null };
 
   // `sourceUrl` null → manual; set → imported (attribution locked). "Start over by
   // hand" drops the lock by clearing this.

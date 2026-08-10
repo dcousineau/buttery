@@ -16,9 +16,9 @@ import { Route as BookmarkletDotjsRouteImport } from './routes/bookmarklet[.]js'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OauthClientMetadataDotjsonRouteImport } from './routes/oauth-client-metadata[.]json'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
-import { Route as PantryRouteImport } from './routes/pantry'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as HouseholdIndexRouteImport } from './routes/household.index'
 import { Route as HouseholdPlanRouteImport } from './routes/household.plan'
 import { Route as HouseholdRecipesRouteImport } from './routes/household.recipes'
 import { Route as HouseholdsIndexRouteImport } from './routes/households.index'
@@ -69,11 +69,6 @@ const OnboardingRoute = OnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PantryRoute = PantryRouteImport.update({
-  id: '/pantry',
-  path: '/pantry',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
@@ -82,6 +77,11 @@ const PrivacyRoute = PrivacyRouteImport.update({
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HouseholdIndexRoute = HouseholdIndexRouteImport.update({
+  id: '/household/',
+  path: '/household/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HouseholdPlanRoute = HouseholdPlanRouteImport.update({
@@ -159,7 +159,6 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
   '/onboarding': typeof OnboardingRoute
-  '/pantry': typeof PantryRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/household/plan': typeof HouseholdPlanRoute
@@ -167,6 +166,7 @@ export interface FileRoutesByFullPath {
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
   '/recipes/$id': typeof RecipesIdRoute
+  '/household/': typeof HouseholdIndexRoute
   '/households/': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
@@ -184,13 +184,13 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
   '/onboarding': typeof OnboardingRoute
-  '/pantry': typeof PantryRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
   '/recipes/$id': typeof RecipesIdRoute
+  '/household': typeof HouseholdIndexRoute
   '/households': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
@@ -209,7 +209,6 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
   '/onboarding': typeof OnboardingRoute
-  '/pantry': typeof PantryRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/household/plan': typeof HouseholdPlanRoute
@@ -217,6 +216,7 @@ export interface FileRoutesById {
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
   '/recipes/$id': typeof RecipesIdRoute
+  '/household/': typeof HouseholdIndexRoute
   '/households/': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
@@ -236,7 +236,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/oauth-client-metadata.json'
     | '/onboarding'
-    | '/pantry'
     | '/privacy'
     | '/terms'
     | '/household/plan'
@@ -244,6 +243,7 @@ export interface FileRouteTypes {
     | '/households/switch'
     | '/invite/$token'
     | '/recipes/$id'
+    | '/household/'
     | '/households/'
     | '/api/auth/$'
     | '/api/plan/week.ics'
@@ -261,13 +261,13 @@ export interface FileRouteTypes {
     | '/login'
     | '/oauth-client-metadata.json'
     | '/onboarding'
-    | '/pantry'
     | '/privacy'
     | '/terms'
     | '/household/plan'
     | '/households/switch'
     | '/invite/$token'
     | '/recipes/$id'
+    | '/household'
     | '/households'
     | '/api/auth/$'
     | '/api/plan/week.ics'
@@ -285,7 +285,6 @@ export interface FileRouteTypes {
     | '/login'
     | '/oauth-client-metadata.json'
     | '/onboarding'
-    | '/pantry'
     | '/privacy'
     | '/terms'
     | '/household/plan'
@@ -293,6 +292,7 @@ export interface FileRouteTypes {
     | '/households/switch'
     | '/invite/$token'
     | '/recipes/$id'
+    | '/household/'
     | '/households/'
     | '/api/auth/$'
     | '/api/plan/week.ics'
@@ -311,7 +311,6 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   OauthClientMetadataDotjsonRoute: typeof OauthClientMetadataDotjsonRoute
   OnboardingRoute: typeof OnboardingRoute
-  PantryRoute: typeof PantryRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
   HouseholdPlanRoute: typeof HouseholdPlanRoute
@@ -319,6 +318,7 @@ export interface RootRouteChildren {
   HouseholdsSwitchRoute: typeof HouseholdsSwitchRoute
   InviteTokenRoute: typeof InviteTokenRoute
   RecipesIdRoute: typeof RecipesIdRoute
+  HouseholdIndexRoute: typeof HouseholdIndexRoute
   HouseholdsIndexRoute: typeof HouseholdsIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiPlanWeekDoticsRoute: typeof ApiPlanWeekDoticsRoute
@@ -377,13 +377,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/pantry': {
-      id: '/pantry'
-      path: '/pantry'
-      fullPath: '/pantry'
-      preLoaderRoute: typeof PantryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/privacy': {
       id: '/privacy'
       path: '/privacy'
@@ -396,6 +389,13 @@ declare module '@tanstack/react-router' {
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/household/': {
+      id: '/household/'
+      path: '/household'
+      fullPath: '/household/'
+      preLoaderRoute: typeof HouseholdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/household/plan': {
@@ -515,7 +515,6 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   OauthClientMetadataDotjsonRoute: OauthClientMetadataDotjsonRoute,
   OnboardingRoute: OnboardingRoute,
-  PantryRoute: PantryRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
   HouseholdPlanRoute: HouseholdPlanRoute,
@@ -523,6 +522,7 @@ const rootRouteChildren: RootRouteChildren = {
   HouseholdsSwitchRoute: HouseholdsSwitchRoute,
   InviteTokenRoute: InviteTokenRoute,
   RecipesIdRoute: RecipesIdRoute,
+  HouseholdIndexRoute: HouseholdIndexRoute,
   HouseholdsIndexRoute: HouseholdsIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiPlanWeekDoticsRoute: ApiPlanWeekDoticsRoute,

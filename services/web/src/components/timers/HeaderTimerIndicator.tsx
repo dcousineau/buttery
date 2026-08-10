@@ -1,5 +1,5 @@
 import { AlarmClock, BellOff, BellRing, Timer as TimerIcon } from "lucide-react";
-import { authClient } from "#/lib/auth-client";
+import { useHydratedSession } from "#/lib/auth-client";
 import { Popover, PopoverContent, PopoverTrigger } from "#/components/ui/popover";
 import { cn } from "#/lib/utils";
 import { useHydrateTimers, useTimers, useTimerSummary } from "#/lib/timers/store";
@@ -15,7 +15,10 @@ import { TimerRow } from "./TimerRow";
  */
 export function HeaderTimerIndicator() {
   useHydrateTimers();
-  const { data: session } = authClient.useSession();
+  // Hydration-safe by construction: the timer store fills in from an effect and
+  // `useHydratedSession` withholds the session until the same point, so the
+  // first client render of this indicator matches the SSR pass that had neither.
+  const { data: session } = useHydratedSession();
   const { inProgress, alarming, total } = useTimerSummary();
   const { timers, muted, setMuted } = useTimers();
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DoorOpen, UtensilsCrossed } from "lucide-react";
-import { authClient } from "#/lib/auth-client";
+import { useHydratedSession } from "#/lib/auth-client";
 import { getInvitePreview, acceptInvite, declineBoundInvite } from "#/server/household/invites";
 import { stashPendingInvite, clearPendingInvite, errorMessage } from "#/server/household/pending-invite";
 import { Badge } from "#/components/ui/badge";
@@ -61,7 +61,7 @@ function InvalidInvite({ message }: { message: string }) {
 }
 
 function ValidInvite({ token, preview }: { token: string; preview: InvitePreview }) {
-  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const { data: session, isPending: sessionPending } = useHydratedSession();
   const navigate = useNavigate();
   const [pending, setPending] = useState<"accept" | "decline" | null>(null);
   const [error, setError] = useState<string | null>(null);

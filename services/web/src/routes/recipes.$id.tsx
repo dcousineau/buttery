@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowLeft, Clock, CookingPot, UtensilsCrossed, Users } from "lucide-react";
+import { ArrowLeft, Clock, CookingPot, ExternalLink, UtensilsCrossed, Users } from "lucide-react";
 import { lexiconToSchemaOrg } from "@buttery/recipe-schemas/bridge";
 import type { SchemaOrgRecipe } from "@buttery/recipe-schemas/schema-org";
 import { getRecipe } from "../server/recipes";
@@ -285,8 +285,16 @@ function RecipeDetail({ recipe }: { recipe: RecipeDetailData }) {
             <p className="m-0" itemProp="author" itemScope itemType={recipe.attribution.kind === "person" ? "https://schema.org/Person" : "https://schema.org/Organization"}>
               <span className="font-semibold text-foreground">Source: </span>
               {recipe.attribution.url ? (
-                <a itemProp="url" href={recipe.attribution.url} target="_blank" rel="noreferrer noopener nofollow" className="text-primary underline underline-offset-4">
+                <a
+                  itemProp="url"
+                  href={recipe.attribution.url}
+                  target="_blank"
+                  rel="noreferrer noopener nofollow"
+                  className="inline-flex items-center gap-1 text-primary underline underline-offset-4"
+                >
                   <span itemProp="name">{recipe.attribution.displayName ?? recipe.attribution.author ?? recipe.attribution.publisher}</span>
+                  <ExternalLink className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span className="sr-only"> (opens in a new tab)</span>
                 </a>
               ) : (
                 <span itemProp="name">{recipe.attribution.displayName ?? recipe.attribution.author ?? recipe.attribution.publisher}</span>

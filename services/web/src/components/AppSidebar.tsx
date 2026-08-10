@@ -18,11 +18,14 @@ type NavEntry = {
   label: string;
   icon: ComponentType<{ className?: string }>;
   to?: string;
+  /** Match `to` exactly instead of by prefix — for entries that are an ancestor
+   * of another entry's path and would otherwise stay lit on its pages. */
+  exact?: boolean;
   soon?: boolean;
 };
 
 const NAV_ENTRIES: Array<NavEntry> = [
-  { label: "Home", icon: Home, to: "/pantry" },
+  { label: "Home", icon: Home, to: "/household", exact: true },
   { label: "Recipes", icon: BookOpenText, to: "/household/recipes" },
   { label: "Collections", icon: FolderLock, soon: true },
   { label: "Shopping list", icon: ShoppingBasket, soon: true },
@@ -49,9 +52,9 @@ export default function AppSidebar() {
                       <SidebarMenuButton
                         // Prefix match keeps a section active on its child routes
                         // (e.g. /household/recipes stays active on
-                        // /household/recipes/{id}); the home route "/pantry" has
-                        // no children so exact and prefix agree.
-                        isActive={pathname === entry.to || pathname.startsWith(`${entry.to}/`)}
+                        // /household/recipes/{id}). Home is "/household", the
+                        // parent of every other section, so it opts out.
+                        isActive={pathname === entry.to || (!entry.exact && pathname.startsWith(`${entry.to}/`))}
                         className="data-active:border-2 data-active:border-border data-active:shadow-pop-sm"
                         render={<Link to={entry.to} onClick={() => setOpenMobile(false)} />}
                       >

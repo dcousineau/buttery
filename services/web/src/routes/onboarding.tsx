@@ -22,7 +22,7 @@ import type { FormEvent } from "react";
 export const Route = createFileRoute("/onboarding")({
   loader: async () => {
     const verdict = await resolveOnboarding();
-    if (verdict.kind === "active") throw redirect({ to: "/pantry" });
+    if (verdict.kind === "active") throw redirect({ to: "/household" });
     if (verdict.kind === "pick") throw redirect({ to: "/households/switch" });
     return { pendingInvites: verdict.pendingInvites };
   },

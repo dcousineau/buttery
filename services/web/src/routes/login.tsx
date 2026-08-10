@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ExternalLink } from "lucide-react";
-import { authClient, signOutAndGoHome } from "../lib/auth-client";
+import { authClient, signOutAndGoHome, useHydratedSession } from "../lib/auth-client";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
@@ -84,7 +84,7 @@ function CreateAccountCard() {
 }
 
 function SignInCard() {
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session, isPending } = useHydratedSession();
   const { auth_error: authError } = Route.useSearch();
   const [handle, setHandle] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +133,7 @@ function SignInCard() {
             Signed in as <code className="break-all">{session.user.name}</code>
           </p>
           <div className="flex flex-wrap gap-3">
-            <Button render={<Link to="/pantry" />} nativeButton={false}>
+            <Button render={<Link to="/household" />} nativeButton={false}>
               Go to your pantry
             </Button>
             <Button variant="outline" onClick={() => void signOutAndGoHome()}>
