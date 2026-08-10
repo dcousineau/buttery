@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { usePostHog } from "@posthog/react";
 import { BookOpenText, Link2, PencilLine, Puzzle } from "lucide-react";
+import { useAnalytics } from "#/lib/analytics";
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -24,7 +24,7 @@ type Choice = "import" | "manual" | "bookmarklet";
  */
 export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: boolean; onOpenChange: (o: boolean) => void; onAddExisting: () => void }) {
   const navigate = useNavigate();
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
   const { pushToast } = useRecipesView();
   const [choice, setChoice] = useState<Choice>("manual");
   const [url, setUrl] = useState("");

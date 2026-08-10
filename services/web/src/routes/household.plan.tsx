@@ -1,8 +1,8 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { startTransition, useCallback, useEffect, useOptimistic, useRef, useState } from "react";
-import { usePostHog } from "@posthog/react";
 import { BookOpenText, CalendarCheck, CalendarRange, Check, ChevronLeft, ChevronRight, Copy, PanelLeft } from "lucide-react";
 import * as z from "zod";
+import { useAnalytics } from "#/lib/analytics";
 import {
   addMealPlanNote,
   addMealPlanRecipes,
@@ -95,7 +95,7 @@ function PlanPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
   const { toasts, push, dismiss, pauseAll, resumeAll } = useToasts(4000);
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
 
   /**
    * The optimistic overlay (§8.2): the week as it should already look, laid over

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
-import { usePostHog } from "@posthog/react";
 import { Check, Copy, Crown, Link2, LogOut, Mail, Pencil, Plus, Shield, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
+import { useAnalytics } from "#/lib/analytics";
 import { requireActiveHousehold, listHouseholdMembers } from "#/server/household/onboarding";
 import { listMyHouseholds, renameHousehold, deleteHousehold, createHousehold } from "#/server/household/households";
 import { listInvites, createInvite, revokeInvite } from "#/server/household/invites";
@@ -80,7 +80,7 @@ function HouseholdPage() {
 
 function HouseholdHeader({ householdId, name, isOwner }: { householdId: string; name: string; isOwner: boolean }) {
   const router = useRouter();
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(name);
   const [pending, setPending] = useState(false);
@@ -184,7 +184,7 @@ function MembersSection({ householdId, members, isOwner }: { householdId: string
 
 function MemberRow({ householdId, member, isOwner }: { householdId: string; member: HouseholdMemberView; isOwner: boolean }) {
   const router = useRouter();
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [removeOpen, setRemoveOpen] = useState(false);
@@ -307,7 +307,7 @@ function InvitesSection({ householdId, invites }: { householdId: string; invites
 
 function CreateInviteForm({ householdId, invites }: { householdId: string; invites: InviteSummary[] }) {
   const router = useRouter();
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
   const [mode, setMode] = useState<"bound" | "open">("bound");
   const [role, setRole] = useState<Role>("member");
   const [handle, setHandle] = useState("");
@@ -466,7 +466,7 @@ function CreateInviteForm({ householdId, invites }: { householdId: string; invit
 
 function InviteRow({ invite }: { invite: InviteSummary }) {
   const router = useRouter();
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revokeOpen, setRevokeOpen] = useState(false);
@@ -626,7 +626,7 @@ function CreateAnotherSection({ currentName }: { currentName: string }) {
 
 function DangerZone({ householdId, isOwner, memberCount }: { householdId: string; isOwner: boolean; memberCount: number }) {
   const navigate = useNavigate();
-  const posthog = usePostHog();
+  const { posthog } = useAnalytics();
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pending, setPending] = useState(false);
