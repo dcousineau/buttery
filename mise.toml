@@ -29,5 +29,12 @@ PC_PORT_NUM = "8099"
 description = "Install Railway skills into this project"
 run = "railway skills install"
 
+# No `sources`/`outputs`: what goes stale is the dev DB port inside an unchanged
+# template, which an mtime check can't see. The `||` fallback renders the
+# placeholder for a clone that has never run `railway dev up`.
+[tasks."mcp:setup"]
+description = "Render .mcp.json from .mcp.json.example with the live dev DATABASE_URL"
+run = "railway run --service buttery -- node scripts/dev/render-mcp.mjs || node scripts/dev/render-mcp.mjs"
+
 [hooks]
-postinstall = "mise run railway-skills"
+postinstall = "mise run railway-skills && mise run mcp:setup"

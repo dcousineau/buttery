@@ -38,7 +38,9 @@ process-compose process logs web   # or grep .dev-logs/<process>.log
 process-compose process restart web
 ```
 
-Agents should use the `pc_*` MCP tools instead — the running stack serves them from `localhost:8098`, registered as the `process-compose` server in `.mcp.json` (copy `.mcp.json.example` if you don't have one).
+Agents should use the `pc_*` MCP tools instead — the running stack serves them from `localhost:8098`, registered as the `process-compose` server in `.mcp.json`.
+
+`.mcp.json` is generated, not committed: `mise install` renders it from `.mcp.json.example` with the current dev database URI. Re-run `mise run mcp:setup` if `railway dev` republishes the Postgres port. MCP clients read the file at startup, so a rewrite lands on their next session.
 
 Run a one-off command against the dev services:
 
