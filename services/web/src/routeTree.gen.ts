@@ -30,6 +30,7 @@ import { Route as ApiPlanWeekDoticsRouteImport } from './routes/api/plan/week[.]
 import { Route as HouseholdRecipesIndexRouteImport } from './routes/household.recipes.index'
 import { Route as HouseholdRecipesIdRouteImport } from './routes/household.recipes.$id'
 import { Route as HouseholdRecipesNewRouteImport } from './routes/household.recipes.new'
+import { Route as HouseholdRecipesImportRouteImport } from './routes/household.recipes_.import'
 import { Route as HouseholdRecipesImportBridgeRouteImport } from './routes/household.recipes_.import-bridge'
 
 const IndexRoute = IndexRouteImport.update({
@@ -138,6 +139,11 @@ const HouseholdRecipesNewRoute = HouseholdRecipesNewRouteImport.update({
   path: '/new',
   getParentRoute: () => HouseholdRecipesRoute,
 } as any)
+const HouseholdRecipesImportRoute = HouseholdRecipesImportRouteImport.update({
+  id: '/household/recipes_/import',
+  path: '/household/recipes/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HouseholdRecipesImportBridgeRoute =
   HouseholdRecipesImportBridgeRouteImport.update({
     id: '/household/recipes_/import-bridge',
@@ -166,6 +172,7 @@ export interface FileRoutesByFullPath {
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
   '/household/recipes/new': typeof HouseholdRecipesNewRoute
+  '/household/recipes/import': typeof HouseholdRecipesImportRoute
   '/household/recipes/import-bridge': typeof HouseholdRecipesImportBridgeRoute
   '/household/recipes/': typeof HouseholdRecipesIndexRoute
 }
@@ -189,6 +196,7 @@ export interface FileRoutesByTo {
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
   '/household/recipes/new': typeof HouseholdRecipesNewRoute
+  '/household/recipes/import': typeof HouseholdRecipesImportRoute
   '/household/recipes/import-bridge': typeof HouseholdRecipesImportBridgeRoute
   '/household/recipes': typeof HouseholdRecipesIndexRoute
 }
@@ -214,6 +222,7 @@ export interface FileRoutesById {
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
   '/household/recipes/new': typeof HouseholdRecipesNewRoute
+  '/household/recipes_/import': typeof HouseholdRecipesImportRoute
   '/household/recipes_/import-bridge': typeof HouseholdRecipesImportBridgeRoute
   '/household/recipes/': typeof HouseholdRecipesIndexRoute
 }
@@ -240,6 +249,7 @@ export interface FileRouteTypes {
     | '/api/plan/week.ics'
     | '/household/recipes/$id'
     | '/household/recipes/new'
+    | '/household/recipes/import'
     | '/household/recipes/import-bridge'
     | '/household/recipes/'
   fileRoutesByTo: FileRoutesByTo
@@ -263,6 +273,7 @@ export interface FileRouteTypes {
     | '/api/plan/week.ics'
     | '/household/recipes/$id'
     | '/household/recipes/new'
+    | '/household/recipes/import'
     | '/household/recipes/import-bridge'
     | '/household/recipes'
   id:
@@ -287,6 +298,7 @@ export interface FileRouteTypes {
     | '/api/plan/week.ics'
     | '/household/recipes/$id'
     | '/household/recipes/new'
+    | '/household/recipes_/import'
     | '/household/recipes_/import-bridge'
     | '/household/recipes/'
   fileRoutesById: FileRoutesById
@@ -310,6 +322,7 @@ export interface RootRouteChildren {
   HouseholdsIndexRoute: typeof HouseholdsIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiPlanWeekDoticsRoute: typeof ApiPlanWeekDoticsRoute
+  HouseholdRecipesImportRoute: typeof HouseholdRecipesImportRoute
   HouseholdRecipesImportBridgeRoute: typeof HouseholdRecipesImportBridgeRoute
 }
 
@@ -462,6 +475,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HouseholdRecipesNewRouteImport
       parentRoute: typeof HouseholdRecipesRoute
     }
+    '/household/recipes_/import': {
+      id: '/household/recipes_/import'
+      path: '/household/recipes/import'
+      fullPath: '/household/recipes/import'
+      preLoaderRoute: typeof HouseholdRecipesImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/household/recipes_/import-bridge': {
       id: '/household/recipes_/import-bridge'
       path: '/household/recipes/import-bridge'
@@ -506,6 +526,7 @@ const rootRouteChildren: RootRouteChildren = {
   HouseholdsIndexRoute: HouseholdsIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiPlanWeekDoticsRoute: ApiPlanWeekDoticsRoute,
+  HouseholdRecipesImportRoute: HouseholdRecipesImportRoute,
   HouseholdRecipesImportBridgeRoute: HouseholdRecipesImportBridgeRoute,
 }
 export const routeTree = rootRouteImport

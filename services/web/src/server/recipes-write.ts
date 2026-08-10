@@ -610,11 +610,18 @@ async function writeChildren(trx: Kysely<DB>, id: string, record: RecipeRecord, 
     .execute();
 }
 
-// Fetch an imported hero now and store it in the bucket (draft path), so a
-// privately-saved import keeps its photo instead of waiting for publish. Keeps
-// `source_url` alongside `object_key` for provenance; publish prefers the bucket
-// bytes. Falls back to a URL-only pointer if the fetch fails (retried at publish).
-async function storePendingImageFromUrl(db: Kysely<DB>, recipeId: string, sourceUrl: string, alt: string | null): Promise<void> {
+/**
+ * Fetch an imported hero now and store it in the bucket (draft path), so a
+ * privately-saved import keeps its photo instead of waiting for publish. Keeps
+ * `source_url` alongside `object_key` for provenance; publish prefers the bucket
+ * bytes. Falls back to a URL-only pointer if the fetch fails (retried at publish).
+ *
+ * Exported for the batch import commit path (§11): it runs this as a bounded,
+ * **post-commit** pass rather than letting `persistRecipeDraft` do it inline, so
+ * a chunk of 25 never holds 25 row-locked transactions open across 25 outbound
+ * fetches. Same function either way — one image path, one SSRF guard, one cap.
+ */
+export async function storePendingImageFromUrl(db: Kysely<DB>, recipeId: string, sourceUrl: string, alt: string | null): Promise<void> {
   const fetched = await fetchImageFromUrl(sourceUrl);
   if (!fetched) {
     await storePendingImageSourceUrl(db, recipeId, sourceUrl, alt);
