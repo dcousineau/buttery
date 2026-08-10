@@ -20,6 +20,7 @@ Before edit files for big task:
 - Load skills before work in their domain: `local-dev` (dev stack), `buttery-design-system` + `docs/BRAND.md` (any UI), `accessibility-compliance` (new UI), `use-railway` (infra).
 - Bash calls: no `$VAR`, `$(...)`, `KEY=value` prefixes, no complex quoting — permission analyzer can't parse, each trigger approval prompt. Need them → Write `.sh`, then `bash file.sh`.
 - `git -C <dir> ...`, never `cd <dir> && git ...` (same approval-prompt reason).
+- Prefer native CSS over JS listeners. Shared behavior live in shared `ui/` component, not call site.
 
 ## Sensitive Areas
 
@@ -58,4 +59,5 @@ Before edit files for big task:
 - Right after `db:migrate:up`, run `db:codegen` so `src/db/types.ts` match schema.
 - Local stack one singleton process-compose project — never start second dev server. Load `local-dev` skill before boot, tear down, restart, or inspect it; skill own the how (CLI vs `pc_*` MCP tools, config-reload traps, log reading).
 - Anything DB-touching run under `railway run --service buttery -- <cmd>`. Never hardcode postgres host port — it regenerate.
+- New token or form state → update `docs/BRAND.md` + `.agents/skills/buttery-design-system/**`, then push `/design-sync`. Local bundle is source; leave no orphan remote file.
 - `*.db.test.ts` SKIP silent without database, so `pnpm test` stay green. Changed schema or server-fn behavior → also run `pnpm test:db`.
