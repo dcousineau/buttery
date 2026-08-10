@@ -12,6 +12,7 @@ export const GROUP_LABELS: Record<RailGroupId, string> = {
   maybe: "Maybe duplicates",
   in_box: "Already yours",
   public: "Already public",
+  issues: "Needs a fix",
   ready: "Ready to import",
 };
 
@@ -21,6 +22,7 @@ export const GROUP_LABELS_INLINE: Record<RailGroupId, string> = {
   maybe: "maybe duplicates",
   in_box: "already yours",
   public: "already public",
+  issues: "recipes that need a fix",
   ready: "ready to import",
 };
 

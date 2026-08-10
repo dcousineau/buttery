@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
+import { selectableRowVariants } from "#/components/ui/selectable-row";
 import { cn } from "#/lib/utils.ts";
 import { LocalImage } from "./LocalImage.tsx";
 import { useWindowedRows } from "./useWindowedRows.ts";
@@ -197,7 +198,7 @@ export function ImportListPane({
                 // Every row is the same height; the first one measured is what the window's
                 // arithmetic runs on from then on.
                 ref={offset === 0 ? measureRow : undefined}
-                className={cn("flex items-center gap-2.5 border-b border-border/60 px-4 py-2", active && "bg-accent shadow-[inset_4px_0_0_var(--secondary)]")}
+                className={cn("flex items-center gap-2.5 border-b border-border/60 px-4 py-2", selectableRowVariants({ selected: active }))}
               >
                 <Checkbox id={checkId} size="sm" checked={isChecked(item)} onChange={(event) => onToggle(item, event.target.checked)} aria-label={`${checkboxLabel} ${item.record.name}`} />
                 <button

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSourceGroups, MISSPELLING_THRESHOLD, NO_SOURCE_GROUP_KEY, splitPageReference, stringSimilarity, type GroupableCandidate } from "./source-groups.ts";
+import { buildSourceGroups, liveSourceGroups, MISSPELLING_THRESHOLD, NO_SOURCE_GROUP_KEY, splitPageReference, stringSimilarity, type GroupableCandidate } from "./source-groups.ts";
 
 /**
  * Bulk attribution grouping (plan §8) and the two string affordances §10.2 pulled off the
@@ -82,5 +82,22 @@ describe("buildSourceGroups", () => {
     expect(group.sourceText).toBe("Ottolenghi Simple pg 174"); // verbatim — this is what the sidecar keeps
     expect(group.titlePrefill).toBe("Ottolenghi Simple");
     expect(group.pageReference).toBe("pg 174");
+  });
+});
+
+describe("liveSourceGroups", () => {
+  it("drops the recipes that are no longer being written, and any group left empty", () => {
+    const groups = buildSourceGroups([candidate("a", "Nana"), candidate("b", "Nana"), candidate("c", "Mum")]);
+    const live = liveSourceGroups(groups, (clientId) => clientId === "b");
+    expect(live.map((group) => [group.key, group.clientIds])).toEqual([["Nana", ["b"]]]);
+  });
+
+  it("clears a misspelling hint that would point at a group no longer on screen", () => {
+    // "Looks like a spelling of X above" is a literal instruction to the reader; leaving it
+    // pointing at a card that is not there is worse than not hinting at all.
+    const groups = buildSourceGroups([candidate("a", "Gordon Ramsay"), candidate("b", "Gordon Ramsey")]);
+    expect(groups[1].similarTo).toBe("Gordon Ramsay");
+    expect(liveSourceGroups(groups, (clientId) => clientId === "b")[0].similarTo).toBeNull();
+    expect(liveSourceGroups(groups, () => true)[1].similarTo).toBe("Gordon Ramsay");
   });
 });

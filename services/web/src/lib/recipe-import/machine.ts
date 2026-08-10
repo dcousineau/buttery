@@ -1,7 +1,8 @@
 import type { ExtractedRecipe, ImportCandidate, ImportParseFailure, JsonObject } from "@buttery/recipe-extract/import";
-import type { AttributionChoice, RecipeRecordInput } from "#/server/recipes-write";
+import { recipeRecordProblems, type RecipeRecordInput } from "#/lib/recipe-record";
+import type { AttributionChoice } from "#/server/recipes-write";
 import { COMMIT_CHUNK_SIZE, type CommitItem, type CommitItemResult, type ExistingRef, type FinalizeOutcome, type ProbeItem, type ProbeVerdict, type VerdictKind } from "./contracts.ts";
-import { buildSourceGroups, type SourceGroup } from "./source-groups.ts";
+import { buildSourceGroups, liveSourceGroups, type SourceGroup } from "./source-groups.ts";
 import type { ImportWorkerErrorCode, ImportWorkerEvent, ParseResult } from "./worker-protocol.ts";
 
 /**
@@ -84,10 +85,21 @@ export interface ImportItem {
   override: boolean;
 }
 
-/** The five rail groups, top to bottom, exactly as the design orders them (§10.1). */
-export type RailGroupId = "sources" | "maybe" | "in_box" | "public" | "ready";
+/**
+ * The rail groups, top to bottom, exactly as the design orders them (§10.1).
+ *
+ * Two of the six are **cross-cutting** rather than verdict slices — `sources` ("who wrote
+ * this?") and `issues` ("the server will refuse this") — so one recipe can be listed in two
+ * groups and the counts do not sum to the item total (§10.3).
+ *
+ * `issues` sits immediately before `ready` because it is the last thing that can go wrong on
+ * the way in and the only one whose fix is *editing*, not choosing. Learning about a 1,120-
+ * character step on the done screen, after the import, with the editor gone, is not a report
+ * — it is a dead end.
+ */
+export type RailGroupId = "sources" | "maybe" | "in_box" | "public" | "issues" | "ready";
 
-export const RAIL_GROUP_IDS: readonly RailGroupId[] = ["sources", "maybe", "in_box", "public", "ready"];
+export const RAIL_GROUP_IDS: readonly RailGroupId[] = ["sources", "maybe", "in_box", "public", "issues", "ready"];
 
 // --- attribution --------------------------------------------------------
 
@@ -339,7 +351,7 @@ export function defaultAction(verdict: VerdictKind): ItemAction {
  * default, visible, and overridable — with copy of their own (`duplicateOfClientId`),
  * because "already in your box" would be a lie about a recipe that is only in this folder.
  */
-export function railGroupOf(verdict: VerdictKind): Exclude<RailGroupId, "sources"> {
+export function railGroupOf(verdict: VerdictKind): Exclude<RailGroupId, "sources" | "issues"> {
   switch (verdict) {
     case "maybe":
       return "maybe";
@@ -356,14 +368,49 @@ export function railGroupOf(verdict: VerdictKind): Exclude<RailGroupId, "sources
 /**
  * The items listed in a rail group.
  *
- * `sources` is **not** a verdict slice: it is every item whose attribution is still an open
- * question — no URL, so a source group has to answer for it. Those same items also appear in
- * their verdict group, which is exactly why the rail's counts do not sum to the total
- * (§10.3) and why the shipped rail has to say so.
+ * The four verdict groups are a partition. The two cross-cutting groups are questions, and
+ * both are asked **only about recipes that are actually going to be written** — an item the
+ * user is skipping raises neither, because nothing about it reaches the server.
+ *
+ * - `sources`: no URL, so a source group has to answer for its attribution. Skipping the
+ *   item withdraws the question; overriding it back to `import` re-asks it. This matters on
+ *   the second import of the same folder, where the honest answer is "nothing needs a
+ *   source" and the unfiltered version said "92".
+ * - `issues`: the lexicon would reject this record as it stands. `link` items write no
+ *   record at all (they only point at a recipe that already exists), so only `import` items
+ *   can raise it.
+ *
+ * A recipe can appear in both cross-cutting groups **and** its verdict group at once, which
+ * is why the rail's counts do not sum to the item total (§10.3) and why the rail says so.
  */
 export function itemsInGroup(state: ImportState, group: RailGroupId): ImportItem[] {
-  if (group === "sources") return state.items.filter((item) => !item.sourceUrl);
+  if (group === "sources") return state.items.filter((item) => !item.sourceUrl && item.action !== "skip");
+  if (group === "issues") return state.items.filter((item) => item.action === "import" && recipeRecordProblems(item.record).length > 0);
   return state.items.filter((item) => railGroupOf(item.verdict) === group);
+}
+
+/**
+ * The source groups still in play: those with at least one member whose attribution still
+ * matters. Both the commit gate and the cards on screen read from this, so a group nobody is
+ * importing from is neither shown nor counted against the user.
+ *
+ * **A group answered "Skip these" stays, whole.** That answer is *why* its recipes are
+ * skipped (`set_group_kind`), so dropping the group for having no live members would delete
+ * the card the moment it was answered — taking the count, the "44 left behind" line, and any
+ * way to change your mind with it. Its members are therefore treated as live here, and only
+ * here: they are still not listed under "Need a source" in the rail, because nothing is going
+ * to be written for them.
+ */
+export function sourceGroupsInPlay(state: ImportState): SourceGroup[] {
+  const skippedByTheirAnswer = new Set(state.groups.filter((group) => state.groupChoices[group.key]?.kind === "skip").flatMap((group) => group.clientIds));
+  const live = new Set(
+    state.items.filter((item) => !item.sourceUrl && (item.action !== "skip" || skippedByTheirAnswer.has(item.clientId))).map((item) => item.clientId),
+  );
+  return liveSourceGroups(state.groups, (clientId) => live.has(clientId));
+}
+
+function unansweredSourceGroups(state: ImportState): number {
+  return sourceGroupsInPlay(state).filter((group) => !isGroupAnswered(state.groupChoices[group.key])).length;
 }
 
 export interface RailCounts {
@@ -371,8 +418,9 @@ export interface RailCounts {
   maybe: number;
   in_box: number;
   public: number;
+  issues: number;
   ready: number;
-  /** Source groups still without an answer. Zero unlocks commit (§10.1). */
+  /** Source groups still in play and still without an answer. Zero unlocks commit (§10.1). */
   unansweredGroups: number;
 }
 
@@ -382,8 +430,9 @@ export function railCounts(state: ImportState): RailCounts {
     maybe: itemsInGroup(state, "maybe").length,
     in_box: itemsInGroup(state, "in_box").length,
     public: itemsInGroup(state, "public").length,
+    issues: itemsInGroup(state, "issues").length,
     ready: itemsInGroup(state, "ready").length,
-    unansweredGroups: state.groups.filter((group) => !isGroupAnswered(state.groupChoices[group.key])).length,
+    unansweredGroups: unansweredSourceGroups(state),
   };
 }
 
@@ -422,9 +471,14 @@ export function batchDuplicateOf(state: ImportState, item: ImportItem): ImportIt
  *
  * The genuinely empty order — an export whose every entry failed to parse — still reaches
  * `done`: `nextCommitChunk` returns null immediately and the hook finalizes.
+ *
+ * **"Needs a fix" does not block either.** The `issues` group is an offer, not a gate: a
+ * user who does not want to rewrite a 1,120-character step should be able to press the
+ * button and let those few land in "didn't make it" with the server's own reason, exactly as
+ * they did before the group existed. Blocking would hold 331 good recipes hostage to 10.
  */
 export function commitBlockedReason(state: ImportState): string | null {
-  const unanswered = state.groups.filter((group) => !isGroupAnswered(state.groupChoices[group.key])).length;
+  const unanswered = unansweredSourceGroups(state);
   if (unanswered > 0) return `${unanswered} ${unanswered === 1 ? "source needs" : "sources need"} an answer before anything can be imported.`;
   return null;
 }

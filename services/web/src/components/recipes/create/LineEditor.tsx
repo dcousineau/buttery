@@ -27,6 +27,8 @@ export function LineEditor({
   pasteHelp,
   addLabel,
   warn,
+  rowId,
+  rowProblem,
 }: {
   lines: string[];
   onChange: (lines: string[]) => void;
@@ -39,6 +41,18 @@ export function LineEditor({
   pasteHelp: React.ReactNode;
   addLabel: string;
   warn?: (line: string) => string | null;
+  /**
+   * DOM id for row `index`. Set by a caller that has to *send someone to a row* — the
+   * import review's "Needs a fix" group focuses and scrolls the exact step the lexicon
+   * rejected, and it cannot do that without an addressable element.
+   */
+  rowId?: (index: number) => string | undefined;
+  /**
+   * A hard problem with row `index` (as opposed to `warn`'s advisory hint about its
+   * contents). Rendered in the destructive colour and given precedence, because "this is
+   * 120 characters too long to save" and "couldn't read an amount" are not the same news.
+   */
+  rowProblem?: (index: number) => string | null;
 }) {
   const dragIndex = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
@@ -113,7 +127,9 @@ export function LineEditor({
       ) : (
         <div className="flex flex-col gap-2.5">
           {lines.map((line, i) => {
-            const hint = warn?.(line) ?? null;
+            const problem = rowProblem?.(i) ?? null;
+            const hint = problem ?? warn?.(line) ?? null;
+            const id = rowId?.(i);
             return (
               <div
                 key={i}
@@ -148,9 +164,9 @@ export function LineEditor({
                   )}
                   <div className="grid min-w-0 flex-1">
                     {multiline ? (
-                      <Textarea rows={2} value={line} onChange={(e) => setRow(i, e.target.value)} aria-invalid={hint ? true : undefined} />
+                      <Textarea id={id} rows={2} value={line} onChange={(e) => setRow(i, e.target.value)} aria-invalid={hint ? true : undefined} />
                     ) : (
-                      <Input value={line} onChange={(e) => setRow(i, e.target.value)} aria-invalid={hint ? true : undefined} />
+                      <Input id={id} value={line} onChange={(e) => setRow(i, e.target.value)} aria-invalid={hint ? true : undefined} />
                     )}
                   </div>
                   <Button variant="ghost" size="icon-sm" onClick={() => removeRow(i)} aria-label="Remove" className={cn(multiline && "mt-0.5")}>
@@ -158,7 +174,7 @@ export function LineEditor({
                   </Button>
                 </div>
                 {hint && (
-                  <p className="ml-6 flex items-center gap-1 text-[0.6875rem] font-medium text-muted-foreground">
+                  <p className={cn("ml-6 flex items-center gap-1 text-[0.6875rem] font-medium", problem ? "text-destructive" : "text-muted-foreground")}>
                     <span aria-hidden="true">⚠︎</span>
                     {hint}
                   </p>

@@ -20,11 +20,17 @@ export function InstructionsEditor({
   onChange,
   mode,
   onModeChange,
+  rowId,
+  rowProblem,
 }: {
   lines: string[];
   onChange: (l: string[]) => void;
   mode: EditorMode;
   onModeChange: (m: EditorMode) => void;
+  /** Pass-through to {@link LineEditor}: DOM ids so a caller can focus one row. */
+  rowId?: (index: number) => string | undefined;
+  /** Pass-through to {@link LineEditor}: a blocking problem with one row. */
+  rowProblem?: (index: number) => string | null;
 }) {
   return (
     <LineEditor
@@ -32,6 +38,8 @@ export function InstructionsEditor({
       onChange={onChange}
       mode={mode}
       onModeChange={onModeChange}
+      rowId={rowId}
+      rowProblem={rowProblem}
       numbered
       multiline
       countNoun="steps"

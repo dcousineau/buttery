@@ -50,7 +50,10 @@ export function CompareDialog({
 
   return (
     <Dialog open={item !== null} onOpenChange={(open) => (open ? undefined : onClose())}>
-      <DialogContent size="xl" className="max-h-[calc(100svh-4rem)] overflow-auto p-0">
+      {/* `gap-0` on top of `p-0`: the popup's default `gap-5` spaces a padded dialog's stacked
+          blocks, but this one is full-bleed — its own rules and borders do the separating, and
+          the inherited gap only pushes the header rule away from the columns under it. */}
+      <DialogContent size="xl" className="max-h-[calc(100svh-4rem)] gap-0 overflow-auto p-0">
         <div className="flex flex-none items-center gap-3 border-b-2 border-border bg-card px-5 py-3">
           <DialogTitle size="lg">Same recipe?</DialogTitle>
           <div className="ml-auto" />
@@ -59,7 +62,9 @@ export function CompareDialog({
           </Button>
         </div>
 
-        <DialogDescription className="sr-only">{item && existing ? describeDiff(summary, `${item.record.name} compared with your copy`) : "Loading the recipe in your box."}</DialogDescription>
+        <DialogDescription className="sr-only">
+          {item && existing ? describeDiff(summary, `${item.record.name} compared with your copy`) : "Loading the recipe in your box."}
+        </DialogDescription>
 
         {item ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-auto sm:flex-row">
@@ -73,7 +78,11 @@ export function CompareDialog({
               <div className="flex flex-col gap-2 p-4">
                 <div className="display-title text-[1.0625rem]">{existing?.name ?? (comparisons.loading ? "Loading…" : "Not available")}</div>
                 <div className="text-[0.8125rem] text-muted-foreground">
-                  {existing ? [existing.recipeYield, existing.hasImage ? "photo" : "no photo", `${existing.ingredients.length} ingredients`, `${existing.instructions.length} steps`].filter(Boolean).join(" · ") : ""}
+                  {existing
+                    ? [existing.recipeYield, existing.hasImage ? "photo" : "no photo", `${existing.ingredients.length} ingredients`, `${existing.instructions.length} steps`]
+                        .filter(Boolean)
+                        .join(" · ")
+                    : ""}
                 </div>
                 <Side rows={rows.ingredients} side="mine" />
                 <Side rows={rows.instructions} side="mine" />
@@ -88,7 +97,9 @@ export function CompareDialog({
               <div className="flex flex-col gap-2 p-4">
                 <div className="display-title text-[1.0625rem]">{item.record.name}</div>
                 <div className="text-[0.8125rem] text-muted-foreground">
-                  {[item.record.recipeYield, item.imageUrl ? "photo" : "no photo", `${item.record.ingredients.length} ingredients`, `${item.record.instructions.length} steps`].filter(Boolean).join(" · ")}
+                  {[item.record.recipeYield, item.imageUrl ? "photo" : "no photo", `${item.record.ingredients.length} ingredients`, `${item.record.instructions.length} steps`]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </div>
                 <Side rows={rows.ingredients} side="theirs" />
                 <Side rows={rows.instructions} side="theirs" />

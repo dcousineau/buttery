@@ -7,6 +7,7 @@ import {
   railCounts,
   RAIL_GROUP_IDS,
   selectedForCommit,
+  sourceGroupsInPlay,
   type ImportItem,
   type ItemAction,
 } from "#/lib/recipe-import/machine.ts";
@@ -17,18 +18,22 @@ import { CompareDialog } from "./CompareDialog.tsx";
 import { DuplicateQueuePane } from "./DuplicateQueuePane.tsx";
 import { GROUP_LABELS, GROUP_LABELS_INLINE, nextGroup, recipeCount } from "./groups.ts";
 import { ImportListPane } from "./ImportListPane.tsx";
+import { IssuesPane } from "./IssuesPane.tsx";
 import { RecipeEditorPane } from "./RecipeEditorPane.tsx";
 import { SourcesPane } from "./SourcesPane.tsx";
 import { useScreenHeading } from "./useScreenHeading.ts";
 
 /**
- * The review screen (plan §10.1): a rail of five groups on the left, one working pane on the
+ * The review screen (plan §10.1): a rail of six groups on the left, one working pane on the
  * right, and a single primary button that always says what happens next.
  *
  * **The rail's counts do not sum to the total, and that is correct** (§10.3): "Need a source"
- * is cross-cutting — a recipe with no link appears there *and* in its verdict group — because
- * attribution and duplication are independent questions about the same recipe. The rail says
- * so in as many words rather than quietly showing arithmetic that does not add up.
+ * and "Needs a fix" are cross-cutting — a recipe with no link, or with a step too long to
+ * store, appears there *and* in its verdict group — because attribution, duplication and
+ * validity are independent questions about the same recipe. Both cross-cutting groups are
+ * asked only about recipes that are actually being written, so a skipped one raises neither.
+ * The rail says so in as many words rather than quietly showing arithmetic that does not add
+ * up.
  *
  * Each group gets the pane its work needs, not a generic table: sources are answered per
  * *string*, maybe-duplicates one *recipe* at a time, and the three settled groups are lists
@@ -44,6 +49,9 @@ export function ImportReviewScreen({ session, onCommit }: { session: UseImportSe
   const blocked = commitBlockedReason(state);
   const group = state.activeGroup;
   const groupItems = itemsInGroup(state, group);
+  // Only the groups with a member still being written: answering for recipes nobody is
+  // importing is not a question, and neither the cards nor the commit gate should ask it.
+  const liveGroups = sourceGroupsInPlay(state);
   const activeItem = state.activeItemId ? (state.items[state.itemIndex[state.activeItemId]] ?? null) : null;
   const editingItem = state.editingItemId ? (state.items[state.itemIndex[state.editingItemId]] ?? null) : null;
   const compareItem = compareId ? (state.items[state.itemIndex[compareId]] ?? null) : null;
@@ -173,8 +181,8 @@ export function ImportReviewScreen({ session, onCommit }: { session: UseImportSe
         </ul>
 
         <div className="border-t border-border/60 px-3.5 py-3 text-xs/[1.5] text-muted-foreground">
-          Work top to bottom. Recipes that need a source can't be saved until you've sorted them. A recipe can appear in two groups, so these don't add up to{" "}
-          {state.items.length}.
+          Work top to bottom. Recipes that need a source can't be saved until you've sorted them. Only recipes you're actually importing are counted, and one can be in
+          more than one group — so these don't add up to {state.items.length}.
         </div>
 
         {state.failures.length > 0 || state.collapsedInBatch > 0 ? (
@@ -221,10 +229,17 @@ export function ImportReviewScreen({ session, onCommit }: { session: UseImportSe
         />
       ) : group === "sources" ? (
         <SourcesPane
-          groups={state.groups}
+          groups={liveGroups}
           choices={state.groupChoices}
           onKind={(groupKey, kind) => dispatch({ type: "set_group_kind", groupKey, kind })}
           onField={(groupKey, field, value) => dispatch({ type: "set_group_field", groupKey, field, value })}
+          footer={footer}
+        />
+      ) : group === "issues" ? (
+        <IssuesPane
+          items={groupItems}
+          onPatch={(clientId, patch) => dispatch({ type: "edit_record", clientId, patch })}
+          onSkip={(clientId) => dispatch({ type: "set_action", clientId, action: "skip" })}
           footer={footer}
         />
       ) : queueItem ? (

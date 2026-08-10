@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { RecipeRecordInput } from "#/server/recipes-write";
+import type { RecipeRecordInput } from "#/lib/recipe-record";
 import type { ImportItem } from "#/lib/recipe-import/machine.ts";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Badge } from "#/components/ui/badge";

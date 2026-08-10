@@ -16,7 +16,10 @@ const progressVariants = cva("w-full overflow-hidden rounded-full bg-muted", {
   },
 });
 
-const progressFillVariants = cva("h-full rounded-full", {
+// `w-0` is load-bearing: with no width utility the fill's at-rest width is the block
+// default — a full track — and a determinate bar's first inline `width` would have a
+// 100% start value to transition down from.
+const progressFillVariants = cva("h-full w-0 rounded-full", {
   variants: {
     variant: {
       default: "bg-primary",
@@ -74,6 +77,11 @@ function Progress({ value, max = 100, label, size, variant, className, ...props 
       {...props}
     >
       <div
+        // A fresh node per mode. Reusing one across the indeterminate → determinate handoff
+        // leaves the sliver's 33% as the width transition's start value, so the bar runs
+        // *backwards* to zero before it ever grows; a remounted fill starts at its at-rest 0%
+        // and the first determinate width is its initial style, which never transitions.
+        key={indeterminate ? "indeterminate" : "determinate"}
         data-slot="progress-fill"
         className={cn(
           progressFillVariants({ variant }),

@@ -161,6 +161,23 @@
   --shadow-pop-md: 4px 4px 0 var(--shadow-hard);
   --shadow-pop-lg: 6px 6px 0 var(--shadow-hard);
 
+  /*
+   * SELECTION MARKER — the butter bar down a selected row's leading edge.
+   *
+   * The row-shaped answer to "this is the one", paired with an `--accent` fill by
+   * `selectableRowVariants` (components/ui/selectable-row.tsx). A row cannot use the
+   * card/nav grammar (butter fill + ink border + pop-sm): it sits flush against its
+   * neighbours inside a scrollport, so a border would resize it and a hard offset
+   * would fall on the row below. Drawn INSET on purpose — selecting a row must not
+   * change its box, or the whole list nudges sideways as the selection moves.
+   *
+   * Butter (`--secondary`) is byte-identical in both themes, so the marker reads the
+   * same on cream and on toast while `--accent` carries the theme. It is deliberately
+   * NOT `--ring`: focus and selection are different states and can land on different
+   * rows, so they must never be the same mark.
+   */
+  --shadow-selected: inset 4px 0 0 var(--secondary);
+
   /* Registered as a theme animation (rather than a bare `.animate-*` class further
    * down this file) precisely so the `motion-safe:` / `motion-reduce:` variants
    * generate real utilities for it — the unlayered classes below can't be turned

@@ -19,9 +19,11 @@ import {
   railGroupOf,
   reduce,
   selectedForCommit,
+  sourceGroupsInPlay,
   type ImportEvent,
   type ImportState,
 } from "./machine.ts";
+import { recipeRecordProblems } from "#/lib/recipe-record";
 import { NO_SOURCE_GROUP_KEY } from "./source-groups.ts";
 import type { ImportWorkerEvent, ParsedItem } from "./worker-protocol.ts";
 
@@ -198,7 +200,7 @@ describe("verdicts and rail groups", () => {
     const counts = railCounts(state);
     expect(counts.ready).toBe(3);
     expect(counts.sources).toBe(2); // both URL-less items, also counted under `ready`
-    expect(counts.sources + counts.maybe + counts.in_box + counts.public + counts.ready).toBeGreaterThan(state.items.length);
+    expect(counts.sources + counts.maybe + counts.in_box + counts.public + counts.issues + counts.ready).toBeGreaterThan(state.items.length);
     // Two distinct strings: the book, and the synthetic "no source at all" group (§8.2).
     expect(state.groups.map((group) => group.key).sort()).toEqual([NO_SOURCE_GROUP_KEY, "Ottolenghi Simple pg 174"]);
     expect(counts.unansweredGroups).toBe(2);
@@ -222,6 +224,104 @@ describe("verdicts and rail groups", () => {
     expect(itemsInGroup(state, "in_box")[0].existing?.recipeId).toBe("r1");
     expect(itemsInGroup(state, "maybe")[0].matches).toHaveLength(1);
     expect(itemsInGroup(state, "in_box")[0].action).toBe("skip");
+  });
+});
+
+describe("the cross-cutting groups only ask about recipes being written", () => {
+  it("does not ask for a source for something already in the box, until you override it", () => {
+    // The second run of the same export: every row comes back `in_box`, skipped by default.
+    // The unfiltered version of this counted all of them under "Need a source" and demanded
+    // 28 attribution answers for recipes it was not going to write.
+    const mine = candidate({ sourceText: "Nana's book" });
+    const state = toReview([parsed(mine)], [{ clientId: mine.clientId, verdict: "in_box", existing: { recipeId: "r1", name: "Mine", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } }]);
+
+    expect(state.items[0].action).toBe("skip");
+    expect(itemsInGroup(state, "sources")).toHaveLength(0);
+    expect(railCounts(state).unansweredGroups).toBe(0);
+    expect(commitBlockedReason(state)).toBeNull();
+    // The group is still *known* — it just is not in play. Nothing was deleted.
+    expect(state.groups).toHaveLength(1);
+    expect(sourceGroupsInPlay(state)).toHaveLength(0);
+
+    // Choosing to bring in a second copy re-opens the question, live.
+    const overridden = reduce(state, { type: "set_override", clientId: mine.clientId, override: true });
+    expect(itemsInGroup(overridden, "sources")).toHaveLength(1);
+    expect(sourceGroupsInPlay(overridden)).toHaveLength(1);
+    expect(commitBlockedReason(overridden)).toBe("1 source needs an answer before anything can be imported.");
+  });
+
+  it("skipping a source group's last live member stops it blocking commit", () => {
+    const a = candidate({ sourceText: "from mum" });
+    const b = candidate({ sourceText: "from mum" });
+    const state = toReview([parsed(a), parsed(b)]);
+    expect(commitBlockedReason(state)).not.toBeNull();
+
+    const half = reduce(state, { type: "set_action", clientId: a.clientId, action: "skip" });
+    expect(itemsInGroup(half, "sources")).toHaveLength(1);
+    expect(commitBlockedReason(half)).not.toBeNull(); // b is still going in
+
+    const none = reduce(half, { type: "set_action", clientId: b.clientId, action: "skip" });
+    expect(itemsInGroup(none, "sources")).toHaveLength(0);
+    expect(sourceGroupsInPlay(none)).toHaveLength(0);
+    expect(commitBlockedReason(none)).toBeNull();
+  });
+
+  it("keeps a group answered “Skip these” on screen, whole, so it can be undone", () => {
+    // Its recipes are skipped *because of the answer*, so dropping the group for having no
+    // live members would delete the card the moment it was answered.
+    const state = toReview([parsed(candidate({ sourceText: "from mum" })), parsed(candidate({ sourceText: "from mum" }))]);
+    const key = state.groups[0].key;
+    const answered = reduce(state, { type: "set_group_kind", groupKey: key, kind: "skip" });
+
+    expect(itemsInGroup(answered, "sources")).toHaveLength(0); // nothing is being written
+    const inPlay = sourceGroupsInPlay(answered);
+    expect(inPlay).toHaveLength(1);
+    expect(inPlay[0].clientIds).toHaveLength(2); // and the card still says "2 recipes"
+    expect(commitBlockedReason(answered)).toBeNull();
+  });
+
+  it("lists a too-long field under `issues`, in its verdict group too, and drops it when fixed", () => {
+    const longStep = "x".repeat(1120);
+    const bad = candidate({ sourceUrl: "https://example.com/a", name: "Long one" });
+    bad.recipe.instructions = [longStep];
+    const state = toReview(
+      [parsed(bad, { sourceUrlKey: "example.com/a" })],
+      [{ clientId: bad.clientId, verdict: "maybe", candidates: [{ recipeId: "r2", name: "Close", addedAt: "2026-01-02T00:00:00Z", addedByHandle: null }] }],
+    );
+
+    // Cross-cutting: the same recipe is an open duplicate question AND unsaveable as it is.
+    expect(itemsInGroup(state, "maybe").map((item) => item.clientId)).toEqual([bad.clientId]);
+    expect(itemsInGroup(state, "issues").map((item) => item.clientId)).toEqual([bad.clientId]);
+    expect(railCounts(state).issues).toBe(1);
+    // The message is built from the schema's own numbers, not a second copy of the cap.
+    expect(recipeRecordProblems(state.items[0].record)).toEqual([
+      { path: "instructions.0", field: "instructions", index: 0, label: "Step 1", message: "This step is 1,120 characters; the limit is 1,000.", editable: true },
+    ]);
+
+    const fixed = reduce(state, { type: "edit_record", clientId: bad.clientId, patch: { instructions: ["Mix and bake."] } });
+    expect(itemsInGroup(fixed, "issues")).toHaveLength(0);
+    expect(railCounts(fixed).issues).toBe(0);
+    expect(itemsInGroup(fixed, "maybe")).toHaveLength(1); // still the same duplicate question
+
+    // Skipping is the other way out, and it never blocks commit either way.
+    const skipped = reduce(state, { type: "set_action", clientId: bad.clientId, action: "skip" });
+    expect(itemsInGroup(skipped, "issues")).toHaveLength(0);
+    expect(commitBlockedReason(state)).toBeNull();
+  });
+
+  it("never raises `issues` for a recipe it is only going to link", () => {
+    // A `public_exists` item writes no record of its own — it points at one that already
+    // exists — so the lexicon never judges what the export gave us.
+    const bad = candidate({ sourceUrl: "https://example.com/a" });
+    bad.recipe.instructions = ["y".repeat(1120)];
+    const state = toReview(
+      [parsed(bad, { sourceUrlKey: "example.com/a" })],
+      [{ clientId: bad.clientId, verdict: "public_exists", existing: { recipeId: "r9", name: "Theirs", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } }],
+    );
+
+    expect(state.items[0].action).toBe("link");
+    expect(itemsInGroup(state, "issues")).toHaveLength(0);
+    expect(itemsInGroup(state, "public")).toHaveLength(1);
   });
 });
 

@@ -4,6 +4,7 @@ import { BookOpenText, EyeOff, Lock, Plus, Star, UtensilsCrossed } from "lucide-
 import type { HouseholdRecipeRow } from "#/server/household-recipes";
 import { Button } from "#/components/ui/button";
 import { Select } from "#/components/ui/select";
+import { selectableRowVariants } from "#/components/ui/selectable-row";
 import { cn } from "#/lib/utils";
 import { SourceIcon } from "./SourceIcon";
 
@@ -140,10 +141,19 @@ function LedgerRow({ row, selected }: { row: HouseholdRecipeRow; selected: boole
       <Link
         to="/household/recipes/$id"
         params={{ id: row.recipeId }}
-        aria-current={selected ? "true" : undefined}
+        // The row *is* a link to the current page when it's the selected one, so "page"
+        // rather than a bare "true" — same state the butter marker paints.
+        aria-current={selected ? "page" : undefined}
+        // Focus is an outline drawn INSIDE the row, the same way the import list's rows do
+        // it. An outward ring is invisible here: rows are flush edge-to-edge in an
+        // `overflow-auto` pane, so the sides get clipped by the scrollport and the top and
+        // bottom get painted over by the neighbouring rows' dividers. (The `ring-3` +
+        // `-ring-offset-2` this replaces produced exactly that — a hairline at the bottom
+        // edge and nothing else.) Kept deliberately unlike the butter selection marker:
+        // focus and selection sit on different rows while arrowing through the box.
         className={cn(
-          "grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2.5 px-2.5 py-[7px] no-underline outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:-ring-offset-2",
-          selected ? "bg-accent" : "hover:bg-accent/40",
+          "grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2.5 px-2.5 py-[7px] no-underline focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-ring",
+          selectableRowVariants({ selected }),
         )}
       >
         {row.thumbUrl ? (

@@ -23,6 +23,22 @@ const STAGE_HINT: Record<StageProgress["stage"], string> = {
   probe: "Checking those keys against the recipes you already have.",
 };
 
+/**
+ * One bar for four stages only holds together if the bar is monotonic, so each determinate
+ * stage owns a slice of the same 0–100 span rather than its own 0–100. Without this, `parse`
+ * ends at 341 of 341 and `keys` starts at 0 of 341, and the bar visibly runs backwards twice
+ * on the way to a screen the user was told was a single wait.
+ */
+const STAGE_START: Record<StageProgress["stage"], number> = { read: 0, parse: 0, keys: 1 / 3, probe: 2 / 3 };
+const STAGE_SPAN = 1 / 3;
+
+/** Overall percent, or null while the folder walk has no total to divide by (indeterminate). */
+function overallPercent(progress: StageProgress): number | null {
+  if (progress.total === null) return null;
+  const within = progress.total > 0 ? Math.min(progress.done / progress.total, 1) : 1;
+  return (STAGE_START[progress.stage] + within * STAGE_SPAN) * 100;
+}
+
 function stageLine(progress: StageProgress, importerLabel: string): string {
   const { stage, done, total } = progress;
   if (stage === "read") return `Opening the ${importerLabel} folder…`;
@@ -55,16 +71,15 @@ export function ImportReadingScreen({
         <h1 ref={heading} tabIndex={-1} className="display-title m-0 text-[2rem]/[1.1] outline-none">
           Reading your recipe box…
         </h1>
-        <p className="m-0 text-sm text-muted-foreground">
-          {[fileName, fileCount > 0 ? `${fileCount} ${fileCount === 1 ? "file" : "files"}` : null].filter(Boolean).join(" · ")}
-        </p>
+        <p className="m-0 text-sm text-muted-foreground">{[fileName, fileCount > 0 ? `${fileCount} ${fileCount === 1 ? "file" : "files"}` : null].filter(Boolean).join(" · ")}</p>
 
-        {/* `aria-label` names the bar; `label` is its `aria-valuetext`, the human count. The
-            live region that actually announces progress is throttled elsewhere (§10.4) —
-            this bar is what a screen-reader user reads on demand, not what interrupts them. */}
+        {/* `aria-label` names the bar; `label` is its `aria-valuetext`, the human count — the
+            bar's own value is the overall percent, so the number a screen reader hears is the
+            per-stage count rather than "67%". The live region that actually announces progress
+            is throttled elsewhere (§10.4) — this bar is what a screen-reader user reads on
+            demand, not what interrupts them. */}
         <Progress
-          value={stage.total === null ? null : stage.done}
-          max={stage.total ?? 100}
+          value={overallPercent(stage)}
           label={line}
           aria-label="Reading your recipe box"
           variant="secondary"

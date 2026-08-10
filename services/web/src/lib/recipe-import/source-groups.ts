@@ -68,6 +68,30 @@ export interface SourceGroup {
 }
 
 /**
+ * The same groups, narrowed to the recipes that are still going to be written.
+ *
+ * `buildSourceGroups` runs at `parse_complete`, before any verdict exists, so it groups
+ * every URL-less candidate in the drop. By review time some of those are skipped — a
+ * re-import of the same folder skips nearly all of them — and an attribution question about
+ * a recipe nobody is saving is not a question. This drops those recipes from their group,
+ * and drops any group left with no one in it, so the count of unanswered groups (the commit
+ * gate) and the cards the user is shown are the same set.
+ *
+ * `similarTo` is cleared when the group it pointed at is gone: "looks like a misspelling of
+ * one above" is a literal instruction, and it must not point at a card that is not there.
+ */
+export function liveSourceGroups(groups: readonly SourceGroup[], isLive: (clientId: string) => boolean): SourceGroup[] {
+  const live: SourceGroup[] = [];
+  for (const group of groups) {
+    const clientIds = group.clientIds.filter(isLive);
+    if (!clientIds.length) continue;
+    live.push(clientIds.length === group.clientIds.length ? group : { ...group, clientIds });
+  }
+  const keys = new Set(live.map((group) => group.key));
+  return live.map((group) => (group.similarTo && !keys.has(group.similarTo) ? { ...group, similarTo: null } : group));
+}
+
+/**
  * Strip a trailing page reference from a source string (§8.1).
  *
  * Deliberately conservative: only a `pg`/`pgs`/`p`/`pp`/`page(s)` token followed by digits

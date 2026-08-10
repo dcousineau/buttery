@@ -27,9 +27,25 @@ const KIND_LABELS: { kind: AttributionKind; label: string }[] = [
 ];
 
 /** Chip-shaped radio. A real `<input type="radio">` under the paint: arrow keys, roving focus, and a name that groups it — all free. */
-function KindChip({ name, kind, checked, onSelect, children }: { name: string; kind: AttributionKind; checked: boolean; onSelect: (k: AttributionKind) => void; children: string }) {
+function KindChip({
+  name,
+  kind,
+  checked,
+  onSelect,
+  children,
+}: {
+  name: string;
+  kind: AttributionKind;
+  checked: boolean;
+  onSelect: (k: AttributionKind) => void;
+  children: string;
+}) {
   return (
-    <label className="cursor-(--cursor-interactive)">
+    // `relative` is not decoration: `sr-only` is `position: absolute`, so without a containing
+    // block here the hidden input is laid out against a positioned ancestor *outside* the
+    // scrolling card list — parked a card list's worth of pixels down the page and stretching
+    // the document by exactly that much, which is the blank screenful you can wheel into.
+    <label className="relative cursor-(--cursor-interactive)">
       <input type="radio" name={name} value={kind} checked={checked} onChange={() => onSelect(kind)} className="peer sr-only" />
       <span
         className={cn(
@@ -44,23 +60,33 @@ function KindChip({ name, kind, checked, onSelect, children }: { name: string; k
   );
 }
 
-function GroupFields({ choice, groupKey, idBase, onField }: { choice: GroupChoice; groupKey: string; idBase: string; onField: (field: Exclude<keyof GroupChoice, "kind">, value: string) => void }) {
+function GroupFields({
+  choice,
+  groupKey,
+  idBase,
+  onField,
+}: {
+  choice: GroupChoice;
+  groupKey: string;
+  idBase: string;
+  onField: (field: Exclude<keyof GroupChoice, "kind">, value: string) => void;
+}) {
   if (choice.kind === null || choice.kind === "skip") return null;
 
   const fields =
     choice.kind === "publication"
-      ? ([
+      ? [
           { key: "publicationTitle" as const, label: "Book title", value: choice.publicationTitle, required: true },
           // Both are lexicon-required for a publication and neither can be derived from the
           // other, so the author is asked for rather than inferred (§8.2).
           { key: "publicationAuthor" as const, label: "Author — required", value: choice.publicationAuthor, required: true },
-        ])
+        ]
       : choice.kind === "person"
-        ? ([{ key: "personName" as const, label: "Name", value: choice.personName, required: true }])
-        : ([
+        ? [{ key: "personName" as const, label: "Name", value: choice.personName, required: true }]
+        : [
             { key: "websiteName" as const, label: "Site name", value: choice.websiteName, required: false },
             { key: "websiteUrl" as const, label: "Link — required", value: choice.websiteUrl, required: true },
-          ]);
+          ];
 
   return (
     <div className="mt-2.5 flex flex-wrap gap-2">
@@ -111,8 +137,8 @@ export function SourcesPane({
       <div className="flex-none border-b-2 border-border px-5 py-3.5">
         <h2 className="display-title m-0 text-xl/[1.15]">Where did these come from?</h2>
         <p className="m-0 mt-1 max-w-[52rem] text-[0.8125rem] text-muted-foreground">
-          {recipeCount(covered)} name a cookbook or a person instead of a link, in {groups.length} distinct {groups.length === 1 ? "spelling" : "spellings"}. Answer once
-          per name and every recipe under it is set — Buttery never invents an author for you.
+          {recipeCount(covered)} name a cookbook or a person instead of a link, in {groups.length} distinct {groups.length === 1 ? "spelling" : "spellings"}. Answer once per name
+          and every recipe under it is set — Buttery never invents an author for you.
         </p>
       </div>
 
@@ -124,21 +150,27 @@ export function SourcesPane({
           const similar = group.similarTo ? byKey.get(group.similarTo) : null;
           const noSource = group.key === NO_SOURCE_GROUP_KEY;
 
+          // An answered card is not a finished one — the answer stays editable and still worth
+          // reading, so nothing here dims. The "answered" pill is the whole state signal, and it
+          // carries a word rather than only a colour (§10.4).
           return (
-            <fieldset
-              key={group.key}
-              className={cn("m-0 rounded-2xl border-2 border-border bg-card px-4 py-3.5", done ? "opacity-75" : "shadow-pop-md")}
-            >
-              <legend className="flex w-full flex-wrap items-center gap-2.5 px-1">
-                <span className="text-base font-semibold">{group.sourceText ?? "No source at all"}</span>
-                <Badge variant="outline" size="xs">
-                  {recipeCount(group.clientIds.length)}
-                </Badge>
-                {done ? (
-                  <Badge variant="secondary" size="xs">
-                    answered
+            <fieldset key={group.key} className="m-0 rounded-2xl border-2 border-border bg-card px-4 py-3.5 shadow-pop-md">
+              {/* The legend is left at its shrink-to-fit width so the browser's cut-out is
+                  exactly as wide as the text: a full-width legend erases the whole top border
+                  and leaves two corner stubs. The flex row lives in a span because `display`
+                  on the legend itself is what browsers disagree about. */}
+              <legend className="max-w-full px-1.5">
+                <span className="flex flex-wrap items-center gap-2.5">
+                  <span className="text-base font-semibold">{group.sourceText ?? "No source at all"}</span>
+                  <Badge variant="outline" size="xs">
+                    {recipeCount(group.clientIds.length)}
                   </Badge>
-                ) : null}
+                  {done ? (
+                    <Badge variant="secondary" size="xs">
+                      answered
+                    </Badge>
+                  ) : null}
+                </span>
               </legend>
 
               {/* Hints, never answers. The page-reference split prefills a title and says so;
@@ -153,7 +185,9 @@ export function SourcesPane({
                   Page reference “{group.pageReference}” is kept on the recipes either way — only the title is prefilled above.
                 </p>
               ) : null}
-              {similar ? <p className="m-0 mt-1 text-xs text-muted-foreground">Looks like a spelling of “{similar.sourceText}” above. Answer it however you like — nothing is merged.</p> : null}
+              {similar ? (
+                <p className="m-0 mt-1 text-xs text-muted-foreground">Looks like a spelling of “{similar.sourceText}” above. Answer it however you like — nothing is merged.</p>
+              ) : null}
 
               <div className="mt-2.5 flex flex-wrap gap-1.5">
                 {KIND_LABELS.map((entry) => (
@@ -167,9 +201,7 @@ export function SourcesPane({
                   attribution, and the difference is invisible on a 44-recipe group unless it
                   is said out loud (§8.1). */}
               {choice.kind === "skip" ? (
-                <p className="m-0 mt-2 text-[0.8125rem] text-muted-foreground">
-                  {recipeCount(group.clientIds.length)} left behind — a recipe with no attribution can't be saved.
-                </p>
+                <p className="m-0 mt-2 text-[0.8125rem] text-muted-foreground">{recipeCount(group.clientIds.length)} left behind — a recipe with no attribution can't be saved.</p>
               ) : null}
 
               <GroupFields choice={choice} groupKey={group.key} idBase={`${idBase}-${group.key}`} onField={(field, value) => onField(group.key, field, value)} />

@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration.js";
-import { $safeValidate } from "@buttery/lexicons/exchange/recipe/recipe";
 import type { Main as RecipeRecord } from "@buttery/lexicons/exchange/recipe/recipe";
+import { validateRecipeRecord } from "#/lib/recipe-record";
+import type { FieldIssue, RecipeRecordInput } from "#/lib/recipe-record";
 import { slugForToken } from "#/lib/recipe-vocab";
 
 dayjs.extend(duration);
@@ -23,10 +24,10 @@ dayjs.extend(duration);
 // (docs/plans/2026-08-09-paprika-import.md §2.4, §7.3). It validates, inserts and
 // writes the dedupe keys; it never checks for duplicates and never publishes.
 
-// The record the client sends — everything the author controls. $type and the
-// createdAt/updatedAt timestamps are stamped server-side; `embed` (the image
-// blob) is built server-side on publish, never sent over the wire.
-export type RecipeRecordInput = Omit<RecipeRecord, "$type" | "createdAt" | "updatedAt" | "embed">;
+// The record shape and the lexicon gate live in `#/lib/recipe-record` so the import review
+// screen can predict this module's verdict with the *same* schema instead of a second copy
+// of the length caps. Re-exported here because this module is still their public address.
+export type { FieldIssue, RecipeRecordInput };
 
 export interface RecipeImageInput {
   /** base64 (no data: prefix) of the image bytes; ≤1MB decoded. */
@@ -50,11 +51,6 @@ export interface SaveRecipeInput {
    * publish. Ignored when `image` (uploaded bytes) is present.
    */
   imageSourceUrl?: string | null;
-}
-
-export interface FieldIssue {
-  path: string;
-  message: string;
 }
 
 export type SaveRecipeResult =
@@ -313,15 +309,9 @@ export async function persistRecipeDraft(db: Kysely<DB>, ctx: Ctx, input: Persis
     createdAt: now,
     updatedAt: now,
   };
-  const validated = $safeValidate(full);
-  if (!validated.success) {
-    const issues: FieldIssue[] = validated.reason.issues.map((i) => ({
-      path: i.path.join("."),
-      message: i.message,
-    }));
-    return { status: "invalid", issues };
-  }
-  const record = validated.value as RecipeRecord;
+  const validated = validateRecipeRecord(full);
+  if (validated.status === "invalid") return { status: "invalid", issues: validated.issues };
+  const record = validated.record;
 
   // 2. Mint the stable ULID id, then write the local rows AND the dedupe keys
   //    in one transaction — a recipe must never exist without its keys, or it
@@ -436,10 +426,8 @@ async function runPublishExisting(db: Kysely<DB>, ctx: Ctx, recipeId: string): P
   if (!built) return { status: "invalid", issues: [{ path: "recipeId", message: "Draft not found." }] };
   if (built.uri) return { status: "ok", recipeId, published: true }; // already public
 
-  const validated = $safeValidate({ ...built.record, $type: "exchange.recipe.recipe" });
-  if (!validated.success) {
-    return { status: "invalid", issues: validated.reason.issues.map((i) => ({ path: i.path.join("."), message: i.message })) };
-  }
+  const validated = validateRecipeRecord({ ...built.record, $type: "exchange.recipe.recipe" });
+  if (validated.status === "invalid") return { status: "invalid", issues: validated.issues };
 
   // Dedupe against a published record for the same source URL (import → publish later).
   if (built.sourceUrl) {
@@ -464,7 +452,7 @@ async function runPublishExisting(db: Kysely<DB>, ctx: Ctx, recipeId: string): P
     return { status: "publish_disabled", recipeId };
   }
 
-  const scopeErr = await publishOrScopeError(db, ctx, recipeId, validated.value as RecipeRecord, built.pendingImage);
+  const scopeErr = await publishOrScopeError(db, ctx, recipeId, validated.record, built.pendingImage);
   if (scopeErr) return scopeErr;
   return { status: "ok", recipeId, published: true };
 }
