@@ -13,6 +13,12 @@
  * behalf (§8.2: never auto-invent attribution).
  */
 
+// The machine owns the *answer* (`GroupChoice`); this module owns the *question* (the
+// groups). The import is type-only and therefore erased, so naming the answer's shape here
+// costs no runtime edge back to `machine.ts` — and it means the field list below cannot
+// drift from the interface it enumerates.
+import type { AttributionKind, GroupChoice } from "./machine.ts";
+
 /**
  * The synthetic key for the recipes that name neither a link nor a source (§8.2).
  *
@@ -205,4 +211,46 @@ export function buildSourceGroups(candidates: readonly GroupableCandidate[]): So
   }
 
   return groups;
+}
+
+// --- copying an answer across the misspelling hint -----------------------
+
+/** A `GroupChoice`'s value fields — everything on the answer except the chip itself. */
+export type GroupChoiceField = Exclude<keyof GroupChoice, "kind">;
+
+/**
+ * The value fields each chip actually carries, in the order the card lays them out.
+ *
+ * `skip` carries none: the chip *is* the answer. This is the same set `isGroupAnswered` and
+ * `choiceToAttribution` read, which is what makes a copy of these fields a copy of the
+ * answer rather than a copy of the form.
+ */
+export const ANSWER_FIELDS_BY_KIND: Record<AttributionKind, readonly GroupChoiceField[]> = {
+  publication: ["publicationTitle", "publicationAuthor"],
+  person: ["personName"],
+  website: ["websiteName", "websiteUrl"],
+  skip: [],
+};
+
+/**
+ * The edits that reproduce one group's answer on another — what the misspelling hint's
+ * "Copy from that source" button plays back (§10.2).
+ *
+ * Returned as *edits* rather than as a `GroupChoice`, deliberately: the caller dispatches
+ * them through `set_group_kind` / `set_group_field`, the same two events a chip click and a
+ * keystroke send. There is no third way to write a group's answer, so the copy inherits
+ * everything those events do — notably that `set_group_kind` with `skip` also flips the
+ * group's recipes to `skip`, which a hand-built `GroupChoice` would silently miss.
+ *
+ * Only the fields the copied kind carries come across. Copying a book answer must not also
+ * overwrite the target's own verbatim `personName`/`websiteName` prefills for chips nobody
+ * picked — "take that group's answer" is not "become that group".
+ *
+ * `null` when there is nothing to copy (no chip picked yet). Note this is deliberately
+ * weaker than `isGroupAnswered`: whether the source is *complete* is the caller's gate — it
+ * is what decides the button is offered at all.
+ */
+export function copyAnswerEdits(source: GroupChoice | undefined): { kind: AttributionKind; fields: { field: GroupChoiceField; value: string }[] } | null {
+  if (!source || source.kind === null) return null;
+  return { kind: source.kind, fields: ANSWER_FIELDS_BY_KIND[source.kind].map((field) => ({ field, value: source[field] })) };
 }

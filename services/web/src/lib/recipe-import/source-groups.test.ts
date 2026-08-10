@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { buildSourceGroups, liveSourceGroups, MISSPELLING_THRESHOLD, NO_SOURCE_GROUP_KEY, splitPageReference, stringSimilarity, type GroupableCandidate } from "./source-groups.ts";
+import type { ImportCandidate } from "@buttery/recipe-extract/import";
+import { choiceToAttribution, initialState, isGroupAnswered, reduce, type GroupChoice, type ImportEvent, type ImportState } from "./machine.ts";
+import type { ParsedItem } from "./worker-protocol.ts";
+import {
+  buildSourceGroups,
+  copyAnswerEdits,
+  liveSourceGroups,
+  MISSPELLING_THRESHOLD,
+  NO_SOURCE_GROUP_KEY,
+  splitPageReference,
+  stringSimilarity,
+  type GroupableCandidate,
+} from "./source-groups.ts";
 
 /**
  * Bulk attribution grouping (plan §8) and the two string affordances §10.2 pulled off the
@@ -12,6 +24,48 @@ import { buildSourceGroups, liveSourceGroups, MISSPELLING_THRESHOLD, NO_SOURCE_G
 
 function candidate(clientId: string, sourceText: string | null, sourceUrl: string | null = null): GroupableCandidate {
   return { clientId, sourceText, sourceUrl };
+}
+
+function run(state: ImportState, ...events: ImportEvent[]): ImportState {
+  return events.reduce(reduce, state);
+}
+
+/** A review-phase state holding two near-identical source strings, one recipe each. */
+function twoSpellings(): ImportState {
+  const items: ParsedItem[] = ["Gordon Ramsay", "Godon Ramsey"].map((sourceText, index) => {
+    const recipe: ImportCandidate = {
+      kind: "candidate",
+      clientId: `c${index}`,
+      recipe: { name: `Recipe ${index}`, ingredients: ["1 egg"], instructions: ["Mix."] },
+      sourceUrl: null,
+      sourceText,
+      notes: null,
+      tags: [],
+      imageUrl: null,
+      localImagePath: null,
+      entryName: `Recipe ${index}.html`,
+      meta: {},
+    };
+    return { candidate: recipe, sourceUrlKey: null, contentFp: `sha256:${recipe.clientId}` };
+  });
+
+  return run(
+    initialState("fixture"),
+    { type: "drop_accepted", fileName: "My Recipes" },
+    { type: "session_opened", sessionId: "s1" },
+    { type: "parse_complete", result: { items, failures: [] } },
+    { type: "probe_complete", verdicts: items.map((item) => ({ clientId: item.candidate.clientId, verdict: "new" as const })) },
+  );
+}
+
+/** Exactly what the button dispatches: the copied answer, as chip-and-keystroke events. */
+function copyEvents(state: ImportState, fromKey: string, toKey: string): ImportEvent[] {
+  const edits = copyAnswerEdits(state.groupChoices[fromKey]);
+  if (!edits) return [];
+  return [
+    { type: "set_group_kind", groupKey: toKey, kind: edits.kind },
+    ...edits.fields.map((edit): ImportEvent => ({ type: "set_group_field", groupKey: toKey, field: edit.field, value: edit.value })),
+  ];
 }
 
 describe("splitPageReference", () => {
@@ -40,11 +94,7 @@ describe("stringSimilarity", () => {
 
 describe("buildSourceGroups", () => {
   it("groups on the exact string and never merges spellings", () => {
-    const groups = buildSourceGroups([
-      candidate("a", "Gordon Ramsay"),
-      candidate("b", "Gordon Ramsay"),
-      candidate("c", "Godon Ramsey"),
-    ]);
+    const groups = buildSourceGroups([candidate("a", "Gordon Ramsay"), candidate("b", "Gordon Ramsay"), candidate("c", "Godon Ramsey")]);
 
     expect(groups.map((group) => group.key)).toEqual(["Gordon Ramsay", "Godon Ramsey"]);
     expect(groups[0].clientIds).toEqual(["a", "b"]);
@@ -69,7 +119,14 @@ describe("buildSourceGroups", () => {
   });
 
   it("orders by recipe count so the biggest decision comes first", () => {
-    const groups = buildSourceGroups([candidate("a", "One"), candidate("b", "Two"), candidate("c", "Two"), candidate("d", "Three"), candidate("e", "Three"), candidate("f", "Three")]);
+    const groups = buildSourceGroups([
+      candidate("a", "One"),
+      candidate("b", "Two"),
+      candidate("c", "Two"),
+      candidate("d", "Three"),
+      candidate("e", "Three"),
+      candidate("f", "Three"),
+    ]);
     expect(groups.map((group) => [group.key, group.clientIds.length])).toEqual([
       ["Three", 3],
       ["Two", 2],
@@ -82,6 +139,87 @@ describe("buildSourceGroups", () => {
     expect(group.sourceText).toBe("Ottolenghi Simple pg 174"); // verbatim — this is what the sidecar keeps
     expect(group.titlePrefill).toBe("Ottolenghi Simple");
     expect(group.pageReference).toBe("pg 174");
+  });
+});
+
+/**
+ * "Copy from that source" (§10.2). The hint points at a group above; once *that* group is
+ * answered, the card offers to take the same answer.
+ *
+ * The rule these tests exist to hold: a copy is not a new way to write an answer. It is
+ * replayed as the very `set_group_kind` / `set_group_field` events a chip click and a
+ * keystroke send, so anything answering by hand does — including "Skip these" deciding the
+ * recipes' fate — a copy does too, for free and without a second code path to keep in sync.
+ */
+describe("copyAnswerEdits", () => {
+  const book: GroupChoice = {
+    kind: "publication",
+    publicationTitle: "Ramsay's Home Cooking",
+    publicationAuthor: "Gordon Ramsay",
+    // The other chips' prefills are the *target's* own text, and copying a book answer must
+    // not drag these across.
+    personName: "Gordon Ramsay",
+    websiteName: "Gordon Ramsay",
+    websiteUrl: "",
+  };
+
+  it("copies the chip and only the fields that chip carries", () => {
+    expect(copyAnswerEdits(book)).toEqual({
+      kind: "publication",
+      fields: [
+        { field: "publicationTitle", value: "Ramsay's Home Cooking" },
+        { field: "publicationAuthor", value: "Gordon Ramsay" },
+      ],
+    });
+    expect(copyAnswerEdits({ ...book, kind: "website", websiteUrl: "https://example.com/x" })).toEqual({
+      kind: "website",
+      fields: [
+        { field: "websiteName", value: "Gordon Ramsay" },
+        { field: "websiteUrl", value: "https://example.com/x" },
+      ],
+    });
+    // "Skip these" is answered by the chip alone.
+    expect(copyAnswerEdits({ ...book, kind: "skip" })).toEqual({ kind: "skip", fields: [] });
+  });
+
+  it("has nothing to copy from a group nobody has answered", () => {
+    expect(copyAnswerEdits({ ...book, kind: null })).toBeNull();
+    expect(copyAnswerEdits(undefined)).toBeNull();
+  });
+
+  it("leaves the copied-onto group reading exactly as the one it copied from", () => {
+    let state = twoSpellings();
+    const [source, target] = state.groups;
+    expect(target.similarTo).toBe(source.key); // the hint the button hangs off
+
+    state = run(
+      state,
+      { type: "set_group_kind", groupKey: source.key, kind: "publication" },
+      { type: "set_group_field", groupKey: source.key, field: "publicationTitle", value: "Ramsay's Home Cooking" },
+      { type: "set_group_field", groupKey: source.key, field: "publicationAuthor", value: "Gordon Ramsay" },
+    );
+    expect(isGroupAnswered(state.groupChoices[target.key])).toBe(false);
+
+    state = run(state, ...copyEvents(state, source.key, target.key));
+
+    expect(isGroupAnswered(state.groupChoices[target.key])).toBe(true);
+    expect(choiceToAttribution(state.groupChoices[target.key])).toEqual(choiceToAttribution(state.groupChoices[source.key]));
+    // The misspelling is still its own group with its own verbatim string — copying an
+    // answer is not merging (§8.2).
+    expect(state.groups.map((group) => group.key)).toEqual([source.key, target.key]);
+  });
+
+  it("carries the consequences of the answer, not just its text", () => {
+    // "Skip these" decides the recipes' fate rather than their attribution. Copying it has
+    // to leave this group's recipes behind too, which it does only because the copy goes
+    // out as `set_group_kind`.
+    let state = twoSpellings();
+    const [source, target] = state.groups;
+    state = run(state, { type: "set_group_kind", groupKey: source.key, kind: "skip" });
+    state = run(state, ...copyEvents(state, source.key, target.key));
+
+    const actions = state.items.filter((item) => target.clientIds.includes(item.clientId)).map((item) => item.action);
+    expect(actions).toEqual(["skip"]);
   });
 });
 

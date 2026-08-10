@@ -1,7 +1,8 @@
 import { useId } from "react";
 import { type AttributionKind, type GroupChoice, isGroupAnswered } from "#/lib/recipe-import/machine.ts";
-import { NO_SOURCE_GROUP_KEY, type SourceGroup } from "#/lib/recipe-import/source-groups.ts";
+import { copyAnswerEdits, NO_SOURCE_GROUP_KEY, type SourceGroup } from "#/lib/recipe-import/source-groups.ts";
 import { Badge } from "#/components/ui/badge";
+import { Button } from "#/components/ui/button";
 import { cn } from "#/lib/utils.ts";
 import { recipeCount } from "./groups.ts";
 
@@ -149,6 +150,10 @@ export function SourcesPane({
           const done = isGroupAnswered(choice);
           const similar = group.similarTo ? byKey.get(group.similarTo) : null;
           const noSource = group.key === NO_SOURCE_GROUP_KEY;
+          // The offer to copy exists only once the group being pointed at is *answered* —
+          // the same completeness test the commit gate uses, so the button never copies a
+          // half-typed book title and leaves this card looking answered when it is not.
+          const copyable = similar && isGroupAnswered(choices[similar.key]) ? similar : null;
 
           // An answered card is not a finished one — the answer stays editable and still worth
           // reading, so nothing here dims. The "answered" pill is the whole state signal, and it
@@ -186,7 +191,36 @@ export function SourcesPane({
                 </p>
               ) : null}
               {similar ? (
-                <p className="m-0 mt-1 text-xs text-muted-foreground">Looks like a spelling of “{similar.sourceText}” above. Answer it however you like — nothing is merged.</p>
+                <p className="m-0 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  <span>
+                    Looks like a spelling of “{similar.sourceText}” above.{" "}
+                    {copyable ? "Nothing is merged, but you can take the same answer:" : "Answer it however you like — nothing is merged."}
+                  </span>
+                  {/* Still not a merge and still not the tool answering for anyone (§8.2):
+                      the user asks for this answer by name. The two handlers below are the
+                      same ones the chips and the text inputs call, so a copy is
+                      indistinguishable from having typed it — including "Skip these", which
+                      leaves this group's recipes behind exactly as the copied card's are. */}
+                  {copyable ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      // The visible label reads off the sentence it sits in; out of context
+                      // ("Copy from that source", button) it names nothing, so the
+                      // accessible name says which source.
+                      aria-label={`Copy the answer from “${copyable.sourceText ?? "the group above"}”`}
+                      onClick={() => {
+                        const edits = copyAnswerEdits(choices[copyable.key]);
+                        if (!edits) return;
+                        onKind(group.key, edits.kind);
+                        for (const edit of edits.fields) onField(group.key, edit.field, edit.value);
+                      }}
+                    >
+                      Copy from that source
+                    </Button>
+                  ) : null}
+                </p>
               ) : null}
 
               <div className="mt-2.5 flex flex-wrap gap-1.5">
