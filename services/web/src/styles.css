@@ -38,6 +38,16 @@
   --accent: #ffe9a0;
   --accent-foreground: #2a1e12;
   --destructive: #c21807;
+  /*
+   * WARNING — the third form state, between "fine" and `--destructive`.
+   *
+   * Red means "this cannot be saved"; warning means "you may want to look, and it
+   * is fine if you don't". A deep toffee amber rather than raw butter, because a
+   * field's border and its message are both drawn in this colour and `--butter-deep`
+   * on cream is ~1.6:1 — invisible as text and below the 3:1 floor for a control
+   * outline. This reads ~4.9:1 on `--card` while still landing as yellow, not red.
+   */
+  --warning: #9a6400;
   --border: #2a1e12;
   --input: #2a1e12;
   --ring: #e2231a;
@@ -99,6 +109,9 @@
   --accent: #3d2b10;
   --accent-foreground: #fff4da;
   --destructive: #ff6242;
+  /* On toast the ceiling is the other way up: butter itself clears 12:1 on `--card`,
+   * so the warning state gets to be the brand yellow with nothing deepened. */
+  --warning: #ffd84d;
   --border: #4d3a22;
   --input: #4d3a22;
   --ring: #ffd84d;
@@ -133,6 +146,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -160,6 +174,29 @@
   --shadow-pop: 3px 3px 0 var(--shadow-hard);
   --shadow-pop-md: 4px 4px 0 var(--shadow-hard);
   --shadow-pop-lg: 6px 6px 0 var(--shadow-hard);
+
+  /*
+   * SELECTION MARKER — the butter bar down a selected row's leading edge.
+   *
+   * The row-shaped answer to "this is the one", paired with an `--accent` fill by
+   * `selectableRowVariants` (components/ui/selectable-row.tsx). A row cannot use the
+   * card/nav grammar (butter fill + ink border + pop-sm): it sits flush against its
+   * neighbours inside a scrollport, so a border would resize it and a hard offset
+   * would fall on the row below. Drawn INSET on purpose — selecting a row must not
+   * change its box, or the whole list nudges sideways as the selection moves.
+   *
+   * Butter (`--secondary`) is byte-identical in both themes, so the marker reads the
+   * same on cream and on toast while `--accent` carries the theme. It is deliberately
+   * NOT `--ring`: focus and selection are different states and can land on different
+   * rows, so they must never be the same mark.
+   */
+  --shadow-selected: inset 4px 0 0 var(--secondary);
+
+  /* Registered as a theme animation (rather than a bare `.animate-*` class further
+   * down this file) precisely so the `motion-safe:` / `motion-reduce:` variants
+   * generate real utilities for it — the unlayered classes below can't be turned
+   * off by a variant, because unlayered CSS outranks Tailwind's utility layer. */
+  --animate-progress-indeterminate: progress-indeterminate 1.4s ease-in-out infinite;
 
   /*
    * STACKING LAYERS — the app's whole z-index story, in one place.
@@ -363,6 +400,21 @@
 }
 .animate-cook-blob-b {
   animation: cook-blob-b 28s ease-in-out infinite;
+}
+
+/* Progress bar (`components/ui/progress.tsx`) in its indeterminate state: a
+ * third-width sliver sweeping the track while a total is still unknown. Bound to
+ * the `--animate-progress-indeterminate` theme key above, so the component can
+ * apply it as `motion-safe:animate-progress-indeterminate` and pair it with a
+ * `motion-reduce:` static full-width fill — a sliver parked at 33% would read as
+ * a real percentage. */
+@keyframes progress-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -2,8 +2,10 @@ import { useRef, useState } from "react";
 import { GripVertical, Plus, Trash2 } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
+import { FieldWarning } from "#/components/ui/field";
 import { Input } from "#/components/ui/input";
 import { Textarea } from "#/components/ui/textarea";
+import { useDragHandle } from "#/lib/hooks/use-drag-source";
 import { cn } from "#/lib/utils";
 
 export type EditorMode = "paste" | "rows";
@@ -12,8 +14,9 @@ export type EditorMode = "paste" | "rows";
  * Dual-mode ("Paste a list" ↔ "Rows") line editor shared by the ingredients and
  * instructions cards (plan §A5). Both serialize to a flat `string[]`. Pasting
  * multi-line text auto-flips to Rows so per-row soft warnings are visible. Rows
- * support drag-reorder + delete. `warn(line)` is an advisory hint (⚠︎), never a
- * blocker — save gating is attribution + lexicon validation only.
+ * support drag-reorder + delete. `warn(line)` is an advisory hint (⚠︎) in the amber
+ * warning state, never a blocker — save gating is attribution + lexicon validation
+ * only, and that gate is what `rowProblem` paints red.
  */
 export function LineEditor({
   lines,
@@ -27,6 +30,8 @@ export function LineEditor({
   pasteHelp,
   addLabel,
   warn,
+  rowId,
+  rowProblem,
 }: {
   lines: string[];
   onChange: (lines: string[]) => void;
@@ -39,9 +44,35 @@ export function LineEditor({
   pasteHelp: React.ReactNode;
   addLabel: string;
   warn?: (line: string) => string | null;
+  /**
+   * DOM id for row `index`. Set by a caller that has to *send someone to a row* — the
+   * import review's "Needs a fix" group focuses and scrolls the exact step the lexicon
+   * rejected, and it cannot do that without an addressable element.
+   */
+  rowId?: (index: number) => string | undefined;
+  /**
+   * A hard problem with row `index` (as opposed to `warn`'s advisory hint about its
+   * contents). Rendered in the destructive colour and given precedence — it suppresses
+   * the hint entirely — because "this is 120 characters too long to save" and "no amount
+   * read" are not the same news and must not wear the same paint.
+   */
+  rowProblem?: (index: number) => string | null;
 }) {
-  const dragIndex = useRef<number | null>(null);
-  const [dragOver, setDragOver] = useState<number | null>(null);
+  const rowsRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState<number | null>(null);
+  /**
+   * Where the dragged row would land, as an *insertion point* — 0…lines.length,
+   * counted between rows rather than on them. A drop target painted on a row
+   * cannot say whether the row lands above or below it; a line drawn in the gap
+   * can, so that is what the drag reads and what it draws.
+   */
+  const [dropAt, setDropAt] = useState<number | null>(null);
+  // Rows are draggable only while a grip is held. A row that is draggable all the
+  // time steals click-and-drag inside its own input — the browser starts the row
+  // drag instead of selecting text — and reordering is the handle's job anyway
+  // ("Drag the handle to reorder", below). One hook for every row is enough: only
+  // one grip can be under the pointer, so only the pressed row can start a drag.
+  const { armed, handleProps, disarm } = useDragHandle();
   const count = lines.filter((l) => l.trim()).length;
 
   function setRow(i: number, text: string) {
@@ -55,12 +86,30 @@ export function LineEditor({
   function addRow() {
     onChange([...lines, ""]);
   }
-  function reorder(from: number, to: number) {
+  /** `at` is an insertion point (see `dropAt`), not a row index. */
+  function moveRow(from: number, at: number) {
+    // Pulling the row out shifts everything below it up one, so an insertion
+    // point past the row's old home is one too high once it is gone.
+    const to = at > from ? at - 1 : at;
     if (from === to) return;
     const next = [...lines];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
     onChange(next);
+  }
+  /** The gap the pointer is nearest: the first row whose midpoint it is above, else the end. */
+  function insertionPointAt(clientY: number): number {
+    const rows = rowsRef.current?.querySelectorAll<HTMLElement>("[data-line-row]") ?? [];
+    for (const [i, row] of rows.entries()) {
+      const box = row.getBoundingClientRect();
+      if (clientY < box.top + box.height / 2) return i;
+    }
+    return rows.length;
+  }
+  function endDrag() {
+    setDragging(null);
+    setDropAt(null);
+    disarm();
   }
   // Switching to Rows compacts the text block: blank lines (e.g. paragraph
   // spacing in a pasted method) must never become empty rows.
@@ -111,31 +160,59 @@ export function LineEditor({
           <p className="bt-field-description m-0">{pasteHelp}</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-2.5">
+        <div
+          ref={rowsRef}
+          // Reordering listens at the list, not at each row: the 10px gaps between
+          // rows belong to no row, and a drag read row-by-row goes blind exactly
+          // where the drop line is drawn.
+          onDragOver={(e) => {
+            if (dragging === null) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            setDropAt(insertionPointAt(e.clientY));
+          }}
+          onDragLeave={(e) => {
+            // Only a departure from the list itself counts — crossing between two
+            // rows fires dragleave too, and hiding the line there would strobe it.
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropAt(null);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (dragging !== null && dropAt !== null) moveRow(dragging, dropAt);
+            endDrag();
+          }}
+          className="flex flex-col gap-2.5"
+        >
           {lines.map((line, i) => {
-            const hint = warn?.(line) ?? null;
+            const problem = rowProblem?.(i) ?? null;
+            // A problem hides the hint: the row already has one thing to say, and the
+            // louder one wins. Only one of the two states ever reaches the control.
+            const hint = problem ? null : (warn?.(line) ?? null);
+            const id = rowId?.(i);
             return (
               <div
                 key={i}
-                draggable
-                onDragStart={() => (dragIndex.current = i)}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragOver(i);
+                data-line-row=""
+                draggable={armed}
+                onDragStart={(e) => {
+                  e.dataTransfer.effectAllowed = "move";
+                  setDragging(i);
+                  setDropAt(i);
                 }}
-                onDrop={() => {
-                  if (dragIndex.current != null) reorder(dragIndex.current, i);
-                  dragIndex.current = null;
-                  setDragOver(null);
-                }}
-                onDragEnd={() => {
-                  dragIndex.current = null;
-                  setDragOver(null);
-                }}
-                className={cn("flex flex-col gap-1", dragOver === i && "opacity-60")}
+                onDragEnd={endDrag}
+                className={cn("relative flex flex-col gap-1", dragging === i && "opacity-40")}
               >
+                {/* The drop line, drawn in the gap above this row — and, for the last
+                    row, below it, the one landing place no gap above a row can express. */}
+                {dropAt === i && <DropLine className="-top-[6.5px]" />}
+                {dropAt === lines.length && i === lines.length - 1 && <DropLine className="-bottom-[6.5px]" />}
                 <div className={cn("flex gap-2", multiline ? "items-start" : "items-center")}>
-                  <GripVertical className={cn("size-4 shrink-0 cursor-grab text-muted-foreground", multiline && "mt-2.5")} aria-hidden="true" />
+                  {/* The grip is the whole drag affordance now, so it gets a padded box
+                      to grab rather than 16 square pixels of icon. The negative margin
+                      keeps the row drawn where it was. */}
+                  <span {...handleProps} aria-hidden="true" className={cn("-m-1 flex shrink-0 cursor-grab p-1 text-muted-foreground", multiline && "mt-1.5")}>
+                    <GripVertical className="size-4" />
+                  </span>
                   {numbered && (
                     <span
                       className={cn(
@@ -148,21 +225,34 @@ export function LineEditor({
                   )}
                   <div className="grid min-w-0 flex-1">
                     {multiline ? (
-                      <Textarea rows={2} value={line} onChange={(e) => setRow(i, e.target.value)} aria-invalid={hint ? true : undefined} />
+                      // A step row grows with its text: two rows is the floor, and a long
+                      // step is read in full rather than through a scrollbar. The paste
+                      // box above deliberately does not — it is a fixed window onto a
+                      // block someone may have pasted a whole cookbook into.
+                      <Textarea
+                        id={id}
+                        rows={2}
+                        autosize
+                        value={line}
+                        onChange={(e) => setRow(i, e.target.value)}
+                        aria-invalid={problem ? true : undefined}
+                        data-warning={hint ? true : undefined}
+                      />
                     ) : (
-                      <Input value={line} onChange={(e) => setRow(i, e.target.value)} aria-invalid={hint ? true : undefined} />
+                      <Input id={id} value={line} onChange={(e) => setRow(i, e.target.value)} aria-invalid={problem ? true : undefined} data-warning={hint ? true : undefined} />
                     )}
                   </div>
                   <Button variant="ghost" size="icon-sm" onClick={() => removeRow(i)} aria-label="Remove" className={cn(multiline && "mt-0.5")}>
                     <Trash2 className="size-3.5" aria-hidden="true" />
                   </Button>
                 </div>
-                {hint && (
-                  <p className="ml-6 flex items-center gap-1 text-[0.6875rem] font-medium text-muted-foreground">
+                {problem && (
+                  <p className="ml-6 flex items-center gap-1 text-[0.6875rem] font-medium text-destructive">
                     <span aria-hidden="true">⚠︎</span>
-                    {hint}
+                    {problem}
                   </p>
                 )}
+                <FieldWarning className="ml-6 text-[0.6875rem] font-medium">{hint}</FieldWarning>
               </div>
             );
           })}
@@ -175,6 +265,23 @@ export function LineEditor({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The line the dragged row will land on: 3px of `foreground`, sitting in the gap
+ * between two rows with a cap at each end so it reads as an insertion point and
+ * not as a border someone drew on a row. `pointer-events-none` is load-bearing —
+ * a drop line under the pointer would otherwise take the drop events the list is
+ * measuring, and the line would fight the cursor it is following.
+ */
+function DropLine({ className }: { className: string }) {
+  return (
+    <div aria-hidden="true" className={cn("pointer-events-none absolute inset-x-0 z-10 flex items-center", className)}>
+      <span className="size-[7px] shrink-0 rounded-full bg-foreground" />
+      <span className="h-[3px] flex-1 bg-foreground" />
+      <span className="size-[7px] shrink-0 rounded-full bg-foreground" />
     </div>
   );
 }

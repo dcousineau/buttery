@@ -8,6 +8,7 @@ import { PlanEntryPopover } from "./PlanEntryPopover";
 import type { PlanEntryActionIntent } from "./PlanEntryPopover";
 import { usePlanActions } from "./PlanActions";
 import { isOptimisticId } from "./optimistic";
+import { useTextSafeDrag } from "#/lib/hooks/use-drag-source";
 import { cn } from "#/lib/utils";
 
 /**
@@ -59,6 +60,10 @@ export function PlanEntryCard({ entry, date, slot, variant, isPast = false }: Pl
   const isDays = variant === "days";
   const cooked = entry.kind === "recipe" && entry.cookedAt !== null;
   const pending = isOptimisticId(entry.id);
+  // The whole card is the drag source, so any text control it ever grows (an
+  // inline note edit, say) would lose click-and-drag selection to the card drag.
+  // This stands the card down for a press that begins inside one.
+  const dragProps = useTextSafeDrag(!pending);
 
   /**
    * Escape and outside-press dismissal are the primitive's now; the only case it
@@ -95,7 +100,7 @@ export function PlanEntryCard({ entry, date, slot, variant, isPast = false }: Pl
         }}
         nativeButton={false}
         render={<div />}
-        draggable={!pending}
+        {...dragProps}
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = "move";
           event.dataTransfer.setData("text/plain", entry.id);

@@ -9,9 +9,12 @@
   "scripts": {
     "start": "node src/main.ts",
     "sync:once": "node src/main.ts --once",
+    "test": "vitest run",
+    "test:db": "railway run --service buttery -- vitest run --project db",
     "typecheck": "tsc6 --noEmit"
   },
   "dependencies": {
+    "@buttery/recipe-schemas": "workspace:*",
     "dayjs": "^1.11.21",
     "es-toolkit": "^1.50.0",
     "pg": "^8.22.0"
@@ -19,6 +22,7 @@
   "devDependencies": {
     "@types/node": "^26.2.0",
     "@types/pg": "^8.21.0",
-    "typescript": "npm:@typescript/typescript6@^6.0.2"
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.10"
   }
 }

@@ -11,7 +11,7 @@ const TIME_WORDS = /\b\d+\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)\b/i;
  */
 function warnStep(line: string): string | null {
   if (!line.trim()) return null;
-  if (TIME_WORDS.test(line) && !hasTime(line)) return "Add a clear time like “bake 25 min” to power cook-mode timers.";
+  if (TIME_WORDS.test(line) && !hasTime(line)) return "No clear time — optional, but “25 min” sets timers.";
   return null;
 }
 
@@ -20,11 +20,17 @@ export function InstructionsEditor({
   onChange,
   mode,
   onModeChange,
+  rowId,
+  rowProblem,
 }: {
   lines: string[];
   onChange: (l: string[]) => void;
   mode: EditorMode;
   onModeChange: (m: EditorMode) => void;
+  /** Pass-through to {@link LineEditor}: DOM ids so a caller can focus one row. */
+  rowId?: (index: number) => string | undefined;
+  /** Pass-through to {@link LineEditor}: a blocking problem with one row. */
+  rowProblem?: (index: number) => string | null;
 }) {
   return (
     <LineEditor
@@ -32,6 +38,8 @@ export function InstructionsEditor({
       onChange={onChange}
       mode={mode}
       onModeChange={onModeChange}
+      rowId={rowId}
+      rowProblem={rowProblem}
       numbered
       multiline
       countNoun="steps"

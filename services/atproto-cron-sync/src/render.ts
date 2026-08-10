@@ -4,6 +4,15 @@ import { compact, snakeCase, startCase, uniq } from "es-toolkit";
 // ESM resolver needs the explicit `.js` on the plugin subpath.
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration.js";
+// Dedupe key computation, shared verbatim with the web write path and the
+// backfill migration (paprika-import plan §6.1/§6.2). `./normalize` is a
+// concrete entry in the package's `exports` map pointing at a single
+// `index.ts`, so Node's ESM resolver takes it as-is — there is no directory to
+// need an explicit `.js`, and no deeper subpath (`…/normalize/fingerprint.js`)
+// is exported. `contentFingerprint` digests via `globalThis.crypto.subtle`, NOT
+// `node:crypto`: one implementation for browser, web server and cron means the
+// digests cannot drift (§6.6 requires them byte-identical).
+import { contentFingerprint, normalizeSourceUrl } from "@buttery/recipe-schemas/normalize";
 import type { RecipeRow } from "#/recipe.ts";
 import { log } from "#/log.ts";
 
@@ -351,6 +360,61 @@ const DEL_IMAGES = `delete from recipe_image where recipe_id = $1`;
 const DEL_KEYWORDS = `delete from recipe_keyword where recipe_id = $1`;
 const DEL_ATTRIBUTION = `delete from recipe_attribution where recipe_id = $1`;
 
+// --- dedupe keys (Buttery-only sidecar) ---------------------------------
+//
+// `recipe_meta` is a BUTTERY-ONLY sidecar and must never reach an atproto
+// record (plan §2.3). This service WRITES it, which is fine — the keys are
+// derived from the record we just projected, not the other way round. It must
+// never READ it: nothing in this file, and nothing downstream of it, may pull a
+// sidecar value into a record that gets published. There is no read path here
+// and there must never be one.
+//
+// Why this writer exists at all (§6.6, "writer 3"): the backfill migration
+// covers the public records that exist the day it runs. Every record synced or
+// re-rendered after that would arrive with no keys, and the import pipeline's
+// `public_exists` check would simply stop matching anything published after
+// ship — a silent absence of matches, not an error. Re-render also invalidates
+// what was there: the upsert above replaces `name` and every `recipe_ingredient`
+// row, so keys written earlier describe content that no longer exists. And
+// `DELETE_RENDERED_SQL` removes rows whose record turned invalid, cascading the
+// `recipe_meta` rows away — correct, and it means re-render is the only thing
+// that puts them back.
+//
+// Delete-then-insert rather than a bare upsert, so a key that goes AWAY (a
+// source URL removed from the record, or one that stops normalizing) leaves no
+// stale row behind. Scoped to `ns = 'dedupe'` so no other namespace is touched.
+// Runs on the same per-DID client as every other write here (the sweep gives
+// each DID a dedicated client precisely so its writes never interleave).
+const DEL_DEDUPE_META = `delete from recipe_meta where recipe_id = $1 and ns = 'dedupe'`;
+
+// `value` is jsonb, so each key is stored as a JSON string; the partial index
+// `recipe_meta_dedupe` indexes `(value #>> '{}')`, which is what the probe
+// searches on.
+const INSERT_DEDUPE_META = `
+insert into recipe_meta (recipe_id, ns, key, value, updated_at)
+values ($1, 'dedupe', $2, to_jsonb($3::text), now())
+on conflict (recipe_id, ns, key) do update set value = excluded.value, updated_at = now()
+`;
+
+/**
+ * Both dedupe keys for a projected recipe (§6.1, §6.2), from the same values
+ * that were just written to `recipe` / `recipe_ingredient` /
+ * `recipe_attribution`. Pure and exported so a test can run it against the web
+ * path's inputs and assert the digests are byte-identical.
+ *
+ * `source_url_key` comes from the `website` attribution only, matching the
+ * backfill migration's `kind = 'website'` filter — the other union members
+ * carry a URL that identifies a person or a show, not the recipe's source page.
+ */
+export async function dedupeKeys(p: Pick<RenderedRecipe, "name" | "ingredients" | "attribution">): Promise<Array<[key: string, value: string]>> {
+  const out: Array<[string, string]> = [];
+  const sourceUrlKey = p.attribution?.kind === "website" ? normalizeSourceUrl(p.attribution.url) : null;
+  // Null / unnormalizable source URL → no row at all (§6.1).
+  if (sourceUrlKey) out.push(["source_url_key", sourceUrlKey]);
+  out.push(["content_fp", await contentFingerprint(p.name, p.ingredients)]);
+  return out;
+}
+
 const UPSERT_SEARCH_SQL = `
 insert into recipe_search (recipe_id, search_tsv) values
   ($1,
@@ -469,6 +533,15 @@ export async function renderRecipe(client: PoolClient, row: RecipeRow): Promise<
       a.license,
       a.raw,
     ]);
+  }
+
+  // Dedupe sidecar (§6.6 writer 3). Replaced wholesale, for the same reason the
+  // children above are: this render just rewrote the name and every ingredient
+  // row the keys are derived from. See DEL_DEDUPE_META for why this writer is
+  // load-bearing and why nothing here may ever READ the sidecar.
+  await client.query(DEL_DEDUPE_META, [p.id]);
+  for (const [key, value] of await dedupeKeys(p)) {
+    await client.query(INSERT_DEDUPE_META, [p.id, key, value]);
   }
 
   // Weighted search document: A=name, B=facets+attribution, C=ingredients,

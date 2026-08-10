@@ -1,4 +1,4 @@
-<!-- @dsCard group="Components" viewport="700x300" name="Forms — Input, Label, Field" subtitle="Field composition, focus lift, invalid state" -->
+<!-- @dsCard group="Components" viewport="700x450" name="Forms — Input, Label, Field" subtitle="Field composition, focus lift, invalid and warning states" -->
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
 <style>body{padding:20px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}</style>
@@ -9,7 +9,7 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="../../_ds_bundle.js"></script>
 <script type="text/babel">
-const { FieldGroup, Field, FieldLabel, FieldDescription, Input, NativeSelect, Button } = window.ButteryDesignSystem_79cab4;
+const { FieldGroup, Field, FieldLabel, FieldDescription, FieldWarning, Input, NativeSelect, Button } = window.ButteryDesignSystem_79cab4;
 function Demo(){return (<div className="grid">
   <div>
     <FieldGroup>
@@ -21,6 +21,7 @@ function Demo(){return (<div className="grid">
   <div>
     <FieldGroup>
       <Field data-invalid={true}><FieldLabel htmlFor="c">Recipe id or AT-URI</FieldLabel><Input id="c" aria-invalid="true" defaultValue="not-a-recipe"/></Field>
+      <Field data-warning={true}><FieldLabel htmlFor="f">Amount</FieldLabel><Input id="f" data-warning="true" defaultValue="a splash of milk"/><FieldWarning>No amount read — “2 tbsp” helps shopping lists.</FieldWarning></Field>
       <Field><FieldLabel htmlFor="d">Role</FieldLabel><NativeSelect id="d"><option>Member</option><option>Owner</option></NativeSelect></Field>
       <Field><FieldLabel htmlFor="e">Disabled</FieldLabel><Input id="e" disabled placeholder="Unavailable"/></Field>
     </FieldGroup>

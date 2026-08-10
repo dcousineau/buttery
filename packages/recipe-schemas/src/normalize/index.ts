@@ -5,3 +5,5 @@
  */
 export { cleanText, firstString, toStringList, absoluteUrl, splitLines } from "./text.ts";
 export { toIsoDuration } from "./duration.ts";
+export { normalizeSourceUrl, HOST_SCOPED_TRACKING_PARAMS } from "./url.ts";
+export { normalizeLine, contentFingerprintInput, contentFingerprint } from "./fingerprint.ts";

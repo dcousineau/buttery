@@ -30,8 +30,15 @@ export function fromMicrodata({ root, url }: ParsedInput): ExtractedRecipe | nul
  * One microdata item → a plain object. Repeated properties become arrays (which
  * is exactly how JSON-LD carries them), and a nested `itemscope` becomes a
  * nested object — that's how `nutrition` arrives.
+ *
+ * Exported for the Paprika importer (§4.1 note 2), which needs the same walk but
+ * has to override a handful of properties the export encodes in ways the generic
+ * reader cannot see (instructions split across sibling `<p>`s, a rating in an
+ * attribute, an image path relative to the recipe file). It overrides those on
+ * the object this returns rather than growing a second walker — the plan's §2.4
+ * rule is one parser, not two.
  */
-function readItem(scope: HTMLElement): Record<string, unknown> {
+export function readItem(scope: HTMLElement): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const el of ownProperties(scope)) {
     const name = el.getAttribute("itemprop")?.trim();
@@ -74,8 +81,11 @@ function nearestScope(el: HTMLElement, stopAt: HTMLElement): HTMLElement | null 
  * `content` attribute wins everywhere (that's how `<div itemprop="totalTime"
  * content="PT45M">45 minutes</div>` works), then the element-specific attribute,
  * then the text.
+ *
+ * Exported alongside `readItem` for the same reason: an importer that overrides
+ * two properties still wants the spec's reading rule for the rest.
  */
-function elementValue(el: HTMLElement): string | undefined {
+export function elementValue(el: HTMLElement): string | undefined {
   const content = trimmed(el.getAttribute("content"));
   if (content) return content;
 

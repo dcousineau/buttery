@@ -158,3 +158,28 @@ export async function identify(did: string, properties: Record<string, string>):
     console.warn("[posthog] identify failed", err);
   }
 }
+
+/**
+ * Capture one server-side product event against the DID-keyed person.
+ *
+ * The server half of `#/lib/analytics` — same person key (the atproto DID), same
+ * production-only gate ({@link isEnabled}), so nothing is written from dev, test,
+ * or a staging build. Fire-and-forget and never throws: an analytics failure must
+ * not fail the user's write.
+ *
+ * Used for events the browser cannot honestly emit because only the server knows
+ * they happened exactly once — `recipe_import_completed` fires from
+ * `finalizeImportSession`, whose idempotency is what makes "one event per import
+ * session" true rather than aspirational (plan §13, §7.7).
+ *
+ * Properties must carry no recipe names, URLs, or ingredient text (§13).
+ */
+export async function captureServerEvent(did: string, event: string, properties: Record<string, unknown> = {}): Promise<void> {
+  const client = await getClient();
+  if (!client) return;
+  try {
+    client.capture({ distinctId: did, event, properties });
+  } catch (err) {
+    console.warn(`[posthog] capture ${event} failed`, err);
+  }
+}

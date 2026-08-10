@@ -5,6 +5,7 @@ import type { HouseholdRecipeRow } from "#/server/household-recipes";
 import { Button } from "#/components/ui/button";
 import { Select } from "#/components/ui/select";
 import { cn } from "#/lib/utils";
+import { RecipeSlat, RecipeSlatAction, RecipeSlatAside, RecipeSlatBody, RecipeSlatDetail, RecipeSlatList, RecipeSlatMeta, RecipeSlatTitle } from "./RecipeSlat";
 import { SourceIcon } from "./SourceIcon";
 
 export type SortKey = "recent" | "time" | "title";
@@ -121,11 +122,11 @@ export function RecipeLedger({
         ) : visible.length === 0 ? (
           <EmptyFilter />
         ) : (
-          <ul className="m-0 list-none p-0">
+          <RecipeSlatList>
             {visible.map((r) => (
               <LedgerRow key={r.recipeId} row={r} selected={r.recipeId === selectedId} />
             ))}
-          </ul>
+          </RecipeSlatList>
         )}
       </div>
     </div>
@@ -136,39 +137,36 @@ export function RecipeLedger({
 
 function LedgerRow({ row, selected }: { row: HouseholdRecipeRow; selected: boolean }) {
   return (
-    <li className="border-b-2 border-border/45">
-      <Link
-        to="/household/recipes/$id"
-        params={{ id: row.recipeId }}
-        aria-current={selected ? "true" : undefined}
-        className={cn(
-          "grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2.5 px-2.5 py-[7px] no-underline outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:-ring-offset-2",
-          selected ? "bg-accent" : "hover:bg-accent/40",
-        )}
+    <RecipeSlat selected={selected}>
+      <RecipeSlatAction
+        render={<Link to="/household/recipes/$id" params={{ id: row.recipeId }} />}
+        // The row *is* a link to the current page when it's the selected one, so "page"
+        // rather than a bare "true" — same state the butter marker paints.
+        aria-current={selected ? "page" : undefined}
       >
         {row.thumbUrl ? (
-          <img src={row.thumbUrl} alt="" className="size-11 rounded-sm border-2 border-border object-cover" loading="lazy" />
+          <img src={row.thumbUrl} alt="" className="size-11 flex-none rounded-sm border-2 border-border object-cover" loading="lazy" />
         ) : (
-          <div className="grid size-11 place-content-center rounded-sm border-2 border-border bg-muted">
+          <span className="grid size-11 flex-none place-content-center rounded-sm border-2 border-border bg-muted">
             <UtensilsCrossed className="size-4 text-muted-foreground" aria-hidden="true" />
-          </div>
+          </span>
         )}
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <div className="flex items-center gap-1 truncate text-[0.8125rem] font-bold leading-tight text-foreground">
+        <RecipeSlatBody>
+          <RecipeSlatTitle>
             <span className="truncate">{row.title}</span>
             {row.unpublished && <Lock className="size-3 shrink-0 text-muted-foreground" aria-label="Private — not published" />}
             {row.favorite && <Star className="size-3 shrink-0 fill-primary text-primary" aria-label="Favorited" />}
             {row.unavailable && <EyeOff className="size-3 shrink-0 text-muted-foreground" aria-label="Source no longer available" />}
-          </div>
-          <div className="flex items-center gap-1 truncate text-[0.6875rem] font-semibold text-muted-foreground">
+          </RecipeSlatTitle>
+          <RecipeSlatMeta className="flex items-center gap-1">
             <SourceIcon kind={row.sourceKind} className="size-[11px] shrink-0" />
             <span className="truncate">{row.sourceLabel}</span>
-          </div>
-          {row.keywords.length > 0 && <div className="truncate text-[0.6875rem] text-muted-foreground">{row.keywords.join(" · ")}</div>}
-        </div>
-        {row.totalTimeDisplay && <div className="text-[0.6875rem] font-bold whitespace-nowrap text-muted-foreground">{row.totalTimeDisplay}</div>}
-      </Link>
-    </li>
+          </RecipeSlatMeta>
+          {row.keywords.length > 0 && <RecipeSlatDetail>{row.keywords.join(" · ")}</RecipeSlatDetail>}
+        </RecipeSlatBody>
+        {row.totalTimeDisplay && <RecipeSlatAside>{row.totalTimeDisplay}</RecipeSlatAside>}
+      </RecipeSlatAction>
+    </RecipeSlat>
   );
 }
 
