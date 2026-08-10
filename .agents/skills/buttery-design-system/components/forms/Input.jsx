@@ -1,13 +1,24 @@
 import React from "react";
 
 /* Input, Select and Textarea all read the SHARED control-height scale, so they
- * line up with Button and Badge at the same `size`. */
+ * line up with Button and Badge at the same `size`.
+ *
+ * Three problem states, not two. `aria-invalid` is the blocking one: red, announced
+ * as invalid, "this will not save". `data-warning="true"` is the advisory one: amber,
+ * announced as nothing at all, "worth a look, and fine to ignore" — an ingredient
+ * amount we couldn't read, a step mentioning a time we couldn't parse. Painting those
+ * red teaches people to ignore red, which is the one thing red can't afford. A control
+ * carries at most one; if a call site sets both, invalid wins by construction (the
+ * `:not([aria-invalid=true])` guard) rather than by rule order. Warning sets no ARIA —
+ * `aria-invalid` on something that saves fine lies to a screen reader — so pair it with
+ * a `FieldWarning` for the words. */
 const CSS = `
 .bt-input,.bt-select{width:100%;min-width:0;border:2px solid var(--input);border-radius:var(--radius-lg);background:var(--card);color:var(--foreground);font-family:var(--font-sans);transition:box-shadow .12s ease,border-color .12s ease;outline:none}
 .bt-input::placeholder{color:var(--muted-foreground)}
 .bt-input:focus-visible,.bt-select:focus-visible,.bt-textarea:focus-visible{border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 50%,transparent),var(--shadow-pop)}
 .bt-input[disabled],.bt-select[disabled],.bt-textarea[disabled]{pointer-events:none;cursor:not-allowed;opacity:.5}
-.bt-input[aria-invalid=true],.bt-textarea[aria-invalid=true]{border-color:var(--destructive);box-shadow:0 0 0 3px color-mix(in oklab,var(--destructive) 20%,transparent)}
+.bt-input[aria-invalid=true],.bt-select[aria-invalid=true],.bt-textarea[aria-invalid=true]{border-color:var(--destructive);box-shadow:0 0 0 3px color-mix(in oklab,var(--destructive) 20%,transparent)}
+.bt-input[data-warning=true]:not([aria-invalid=true]),.bt-select[data-warning=true]:not([aria-invalid=true]),.bt-textarea[data-warning=true]:not([aria-invalid=true]){border-color:var(--warning);box-shadow:0 0 0 3px color-mix(in oklab,var(--warning) 25%,transparent)}
 .bt-ctl--xs{height:var(--control-h-xs);padding:0 var(--control-px-xs);font-size:var(--text-xs)}
 .bt-ctl--sm{height:var(--control-h-sm);padding:0 var(--control-px-sm);font-size:var(--text-sm)}
 .bt-ctl--default{height:var(--control-h);padding:0 var(--control-px);font-size:var(--text-sm)}

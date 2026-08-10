@@ -324,7 +324,8 @@ text-on-photo pattern. Contrast comes from solid fills and ink borders.
 
 Almost never. Sanctioned uses, all of them:
 `--muted` at 40–50% for footer/aside fills, `--destructive` at 10–30% for the
-destructive badge and danger-zone border, `border` at 60% for row dividers, and a
+destructive badge, danger-zone border and invalid-field ring, `--warning` at
+25% for the advisory-field ring, `border` at 60% for row dividers, and a
 **2px backdrop-blur behind the dialog scrim only** (`supports-backdrop-filter`).
 There is no glassmorphism, no frosted chrome, no translucent header.
 

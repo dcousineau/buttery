@@ -5,11 +5,15 @@ import { LineEditor, type EditorMode } from "./LineEditor";
  * Ingredients card body (plan §A5). Runs the amount/unit extractor per row and
  * hints — never blocks — when no quantity can be read, nudging structured input
  * that later powers shopping-list quantity math.
+ *
+ * The wording carries its own weight: "salt to taste" and "a splash of vinegar" are
+ * how people actually write recipes, so the hint has to name the upside without
+ * implying anything is wrong. Amber, not red (see Input's `data-warning`).
  */
 function warnIngredient(line: string): string | null {
   if (!line.trim()) return null;
   const { amount } = splitIngredient(line);
-  if (!amount.trim()) return "Couldn't read an amount — try “2 tbsp butter”.";
+  if (!amount.trim()) return "No amount read — optional, but “2 tbsp” helps lists.";
   return null;
 }
 

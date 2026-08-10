@@ -34,7 +34,9 @@ function FieldGroup({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-const fieldVariants = cva("group/field flex w-full gap-2 data-[invalid=true]:text-destructive", {
+/* `data-invalid` outranks `data-warning` by construction, not by class order: a field
+ * that cannot be saved is never described in the softer colour. */
+const fieldVariants = cva("group/field flex w-full gap-2 data-[warning=true]:not-data-[invalid=true]:text-warning data-[invalid=true]:text-destructive", {
   variants: {
     orientation: {
       vertical: "flex-col *:w-full [&>.sr-only]:w-auto",
@@ -146,4 +148,25 @@ function FieldError({
   );
 }
 
-export { Field, FieldLabel, FieldDescription, FieldError, FieldGroup, FieldLegend, FieldSeparator, FieldSet, FieldContent, FieldTitle };
+/**
+ * The advisory sibling of {@link FieldError}: amber, prefixed with a ⚠︎, and saying
+ * something the user is free to ignore ("No amount found — optional, but it helps
+ * shopping lists"). Pair it with `data-warning="true"` on the control itself.
+ *
+ * Deliberately NOT `role="alert"`. An error interrupts because the form is about to
+ * refuse; a warning is a note in the margin, and hijacking the live region for one
+ * trains people to tune out the region. It is announced when the user reaches it, like
+ * a description — so wire it up with `aria-describedby` when the hint matters enough,
+ * and leave it as plain text when it doesn't.
+ */
+function FieldWarning({ className, children, ...props }: React.ComponentProps<"div">) {
+  if (!children) return null;
+  return (
+    <div data-slot="field-warning" className={cn("flex items-center gap-1 text-sm font-normal text-warning", className)} {...props}>
+      <span aria-hidden="true">⚠︎</span>
+      {children}
+    </div>
+  );
+}
+
+export { Field, FieldLabel, FieldDescription, FieldError, FieldWarning, FieldGroup, FieldLegend, FieldSeparator, FieldSet, FieldContent, FieldTitle };

@@ -90,7 +90,8 @@ Rules for app code:
 | `secondary`                  | butter                | butter               | brand accent actions, active states |
 | `muted` / `muted-foreground` | deep cream / soft ink | deep brown / tan     | de-emphasis                         |
 | `accent`                     | butter-pale           | `#3D2B10`            | hovers                              |
-| `destructive`                | `#C21807`             | `#FF6242`            | dangerous actions                   |
+| `destructive`                | `#C21807`             | `#FF6242`            | dangerous actions, blocking errors  |
+| `warning`                    | toffee `#9A6400`      | butter               | advisory form state (see below)     |
 | `border`, `input`            | **ink**               | cream-text           | outlines everywhere                 |
 | `ring`                       | red                   | butter               | focus                               |
 | `sidebar-accent`             | butter                | butter               | active nav item                     |
@@ -170,6 +171,24 @@ Small checkbox radii are tighter than the global radius scale on purpose — 3px
 16px, 4px at 20px, 6px at 28px, 8px at 40px — because a rounded 16px square reads
 as a radio button. At small sizes the square corner _is_ what separates check from
 choose.
+
+### Form fields have three states, not two
+
+`aria-invalid` is **red and blocking**: the form will refuse this. `data-warning="true"`
+is **amber and advisory**: worth a look, and fine to ignore. Everything else is neutral.
+`Input`, `Textarea` and `Select` all key off both attributes, invalid always wins, and
+`FieldWarning` is the matching message (⚠︎, `--warning`, no `role="alert"` — a note in
+the margin doesn't get to interrupt).
+
+Reach for warning whenever the app is guessing on the user's behalf: an ingredient with
+no readable amount, a step that mentions a time we couldn't parse. Those recipes save
+perfectly well. Painting them red teaches people that red means nothing.
+
+Warning copy is **≤10 words**, names the upside rather than the mistake, and says the
+fix is optional — "No amount read — optional, but “2 tbsp” helps lists." Light mode uses
+a deep toffee `#9A6400` rather than butter, because butter on cream is ~1.6:1 and a
+warning you cannot see is worse than no warning; dark mode gets the brand butter, which
+clears 12:1 on toast.
 
 ## Gingham rules
 

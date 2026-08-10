@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { GripVertical, Plus, Trash2 } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
+import { FieldWarning } from "#/components/ui/field";
 import { Input } from "#/components/ui/input";
 import { Textarea } from "#/components/ui/textarea";
 import { cn } from "#/lib/utils";
@@ -12,8 +13,9 @@ export type EditorMode = "paste" | "rows";
  * Dual-mode ("Paste a list" ↔ "Rows") line editor shared by the ingredients and
  * instructions cards (plan §A5). Both serialize to a flat `string[]`. Pasting
  * multi-line text auto-flips to Rows so per-row soft warnings are visible. Rows
- * support drag-reorder + delete. `warn(line)` is an advisory hint (⚠︎), never a
- * blocker — save gating is attribution + lexicon validation only.
+ * support drag-reorder + delete. `warn(line)` is an advisory hint (⚠︎) in the amber
+ * warning state, never a blocker — save gating is attribution + lexicon validation
+ * only, and that gate is what `rowProblem` paints red.
  */
 export function LineEditor({
   lines,
@@ -49,8 +51,9 @@ export function LineEditor({
   rowId?: (index: number) => string | undefined;
   /**
    * A hard problem with row `index` (as opposed to `warn`'s advisory hint about its
-   * contents). Rendered in the destructive colour and given precedence, because "this is
-   * 120 characters too long to save" and "couldn't read an amount" are not the same news.
+   * contents). Rendered in the destructive colour and given precedence — it suppresses
+   * the hint entirely — because "this is 120 characters too long to save" and "no amount
+   * read" are not the same news and must not wear the same paint.
    */
   rowProblem?: (index: number) => string | null;
 }) {
@@ -128,7 +131,9 @@ export function LineEditor({
         <div className="flex flex-col gap-2.5">
           {lines.map((line, i) => {
             const problem = rowProblem?.(i) ?? null;
-            const hint = problem ?? warn?.(line) ?? null;
+            // A problem hides the hint: the row already has one thing to say, and the
+            // louder one wins. Only one of the two states ever reaches the control.
+            const hint = problem ? null : (warn?.(line) ?? null);
             const id = rowId?.(i);
             return (
               <div
@@ -164,21 +169,34 @@ export function LineEditor({
                   )}
                   <div className="grid min-w-0 flex-1">
                     {multiline ? (
-                      <Textarea id={id} rows={2} value={line} onChange={(e) => setRow(i, e.target.value)} aria-invalid={hint ? true : undefined} />
+                      // A step row grows with its text: two rows is the floor, and a long
+                      // step is read in full rather than through a scrollbar. The paste
+                      // box above deliberately does not — it is a fixed window onto a
+                      // block someone may have pasted a whole cookbook into.
+                      <Textarea
+                        id={id}
+                        rows={2}
+                        autosize
+                        value={line}
+                        onChange={(e) => setRow(i, e.target.value)}
+                        aria-invalid={problem ? true : undefined}
+                        data-warning={hint ? true : undefined}
+                      />
                     ) : (
-                      <Input id={id} value={line} onChange={(e) => setRow(i, e.target.value)} aria-invalid={hint ? true : undefined} />
+                      <Input id={id} value={line} onChange={(e) => setRow(i, e.target.value)} aria-invalid={problem ? true : undefined} data-warning={hint ? true : undefined} />
                     )}
                   </div>
                   <Button variant="ghost" size="icon-sm" onClick={() => removeRow(i)} aria-label="Remove" className={cn(multiline && "mt-0.5")}>
                     <Trash2 className="size-3.5" aria-hidden="true" />
                   </Button>
                 </div>
-                {hint && (
-                  <p className={cn("ml-6 flex items-center gap-1 text-[0.6875rem] font-medium", problem ? "text-destructive" : "text-muted-foreground")}>
+                {problem && (
+                  <p className="ml-6 flex items-center gap-1 text-[0.6875rem] font-medium text-destructive">
                     <span aria-hidden="true">⚠︎</span>
-                    {hint}
+                    {problem}
                   </p>
                 )}
+                <FieldWarning className="ml-6 text-[0.6875rem] font-medium">{hint}</FieldWarning>
               </div>
             );
           })}

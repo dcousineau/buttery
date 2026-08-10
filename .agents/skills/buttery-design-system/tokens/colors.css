@@ -31,6 +31,10 @@
   --accent: #ffe9a0;
   --accent-foreground: #2a1e12;
   --destructive: #c21807;
+  /* The advisory form state, one step short of destructive. Deep toffee, not
+   * butter: the border AND the message are both drawn in this color, and butter
+   * on cream is ~1.6:1. This reads ~4.9:1 on --card and still lands as yellow. */
+  --warning: #9a6400;
   --border: #2a1e12;
   --input: #2a1e12;
   --ring: #e2231a;
@@ -73,6 +77,9 @@
   --accent: #3d2b10;
   --accent-foreground: #fff4da;
   --destructive: #ff6242;
+  /* On toast the ceiling is the other way up — butter clears 12:1 on --card, so
+   * the warning state gets the brand yellow with nothing deepened. */
+  --warning: #ffd84d;
   --border: #4d3a22;
   --input: #4d3a22;
   --ring: #ffd84d;

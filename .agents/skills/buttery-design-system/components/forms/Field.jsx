@@ -8,9 +8,11 @@ const CSS = `
 .bt-field[data-orientation=vertical]>*{width:100%}
 .bt-field[data-orientation=horizontal]{flex-direction:row;align-items:center}
 .bt-field[data-invalid=true]{color:var(--destructive)}
+.bt-field[data-warning=true]:not([data-invalid=true]){color:var(--warning)}
 .bt-field-content{display:flex;flex:1;flex-direction:column;gap:.125rem;line-height:var(--leading-snug)}
 .bt-field-description{margin:.5rem 0 0;text-align:left;font-size:var(--text-sm);line-height:var(--leading-normal);font-weight:400;color:var(--muted-foreground)}
 .bt-field-error{font-size:var(--text-sm);font-weight:600;color:var(--destructive)}
+.bt-field-warning{display:flex;align-items:center;gap:.25rem;font-size:var(--text-sm);font-weight:600;color:var(--warning)}
 .bt-field-set{display:flex;flex-direction:column;gap:1rem;border:0;padding:0;margin:0}
 .bt-field-legend{margin-bottom:.375rem;font-weight:600;font-size:var(--text-sm);color:var(--foreground)}
 `;
@@ -72,6 +74,21 @@ export function FieldError({ className = "", children, ...rest }) {
   if (!children) return null;
   return (
     <div role="alert" data-slot="field-error" className={["bt-field-error", className].filter(Boolean).join(" ")} {...rest}>
+      {children}
+    </div>
+  );
+}
+
+/* The advisory sibling of FieldError: amber, prefixed with a ⚠︎, and saying something
+ * the user is free to ignore. Deliberately NOT role="alert" — an error interrupts
+ * because the form is about to refuse; a warning is a note in the margin, and hijacking
+ * the live region for one trains people to tune the region out. Pair it with
+ * `data-warning="true"` on the control itself. */
+export function FieldWarning({ className = "", children, ...rest }) {
+  if (!children) return null;
+  return (
+    <div data-slot="field-warning" className={["bt-field-warning", className].filter(Boolean).join(" ")} {...rest}>
+      <span aria-hidden="true">⚠︎</span>
       {children}
     </div>
   );

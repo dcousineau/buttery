@@ -19,8 +19,10 @@ const CHEVRON_LIGHT =
 const CHEVRON_DARK =
   "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff4da' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>\")";
 
+/* Red `aria-invalid` blocks, amber `data-warning="true"` advises — see Input for the
+ * full note on why the two must not look alike. */
 const selectVariants = cva(
-  "w-full min-w-0 appearance-none rounded-lg border-2 border-input bg-card bg-no-repeat transition-[box-shadow,border-color] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:shadow-pop disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20",
+  "w-full min-w-0 appearance-none rounded-lg border-2 border-input bg-card bg-no-repeat transition-[box-shadow,border-color] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:shadow-pop disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[warning=true]:not-aria-invalid:border-warning data-[warning=true]:not-aria-invalid:ring-3 data-[warning=true]:not-aria-invalid:ring-warning/25",
   {
     variants: {
       size: {

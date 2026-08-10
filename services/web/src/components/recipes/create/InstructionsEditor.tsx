@@ -11,7 +11,7 @@ const TIME_WORDS = /\b\d+\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)\b/i;
  */
 function warnStep(line: string): string | null {
   if (!line.trim()) return null;
-  if (TIME_WORDS.test(line) && !hasTime(line)) return "Add a clear time like “bake 25 min” to power cook-mode timers.";
+  if (TIME_WORDS.test(line) && !hasTime(line)) return "No clear time — optional, but “25 min” sets timers.";
   return null;
 }
 

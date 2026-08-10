@@ -38,6 +38,16 @@
   --accent: #ffe9a0;
   --accent-foreground: #2a1e12;
   --destructive: #c21807;
+  /*
+   * WARNING — the third form state, between "fine" and `--destructive`.
+   *
+   * Red means "this cannot be saved"; warning means "you may want to look, and it
+   * is fine if you don't". A deep toffee amber rather than raw butter, because a
+   * field's border and its message are both drawn in this colour and `--butter-deep`
+   * on cream is ~1.6:1 — invisible as text and below the 3:1 floor for a control
+   * outline. This reads ~4.9:1 on `--card` while still landing as yellow, not red.
+   */
+  --warning: #9a6400;
   --border: #2a1e12;
   --input: #2a1e12;
   --ring: #e2231a;
@@ -99,6 +109,9 @@
   --accent: #3d2b10;
   --accent-foreground: #fff4da;
   --destructive: #ff6242;
+  /* On toast the ceiling is the other way up: butter itself clears 12:1 on `--card`,
+   * so the warning state gets to be the brand yellow with nothing deepened. */
+  --warning: #ffd84d;
   --border: #4d3a22;
   --input: #4d3a22;
   --ring: #ffd84d;
@@ -133,6 +146,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
