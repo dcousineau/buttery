@@ -65,6 +65,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Type-aware lint needs the same generated code typecheck does: `src/generated`
+      # is gitignored, and without it every module that reaches a lexicon type is
+      # `error`-typed, so the `no-unsafe-*` family reports the missing types as if
+      # they were defects. ESLint never needed this because it never had types.
+      - name: Build lexicons
+        run: pnpm --filter @buttery/lexicons build
+
       - name: Run oxlint
         # `github` format emits ::error/::warning workflow commands directly, so
         # PR annotations need no problem matcher — same annotation channel
