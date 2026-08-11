@@ -57,9 +57,7 @@ interface LexValidator {
   safeValidate(input: unknown): LexResult;
 }
 
-const SHAPE: Record<string, LexValidator> | undefined = (
-  recipeRecordSchema.schema as unknown as { shape?: Record<string, LexValidator> }
-).shape;
+const SHAPE: Record<string, LexValidator> | undefined = (recipeRecordSchema.schema as unknown as { shape?: Record<string, LexValidator> }).shape;
 
 /**
  * Fields the author cannot be held responsible for, and why each one is excluded.
@@ -258,9 +256,7 @@ export function recipeRecordProblems(record: RecipeRecordInput): RecordProblem[]
  * `persistRecipeDraft` calls this, which is what makes `recipeRecordProblems` above a real
  * prediction rather than a parallel opinion.
  */
-export function validateRecipeRecord(
-  full: unknown,
-): { status: "ok"; record: RecipeRecord } | { status: "invalid"; issues: FieldIssue[] } {
+export function validateRecipeRecord(full: unknown): { status: "ok"; record: RecipeRecord } | { status: "invalid"; issues: FieldIssue[] } {
   const validated = $safeValidate(full);
   if (validated.success) return { status: "ok", record: validated.value as RecipeRecord };
   return {

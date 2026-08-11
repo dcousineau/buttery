@@ -20,9 +20,15 @@ import { useScreenHeading } from "./useScreenHeading.ts";
 /** Copy for each way a drop can be rejected (§10.3: the comp draws no error states). */
 const FAILURE_COPY: Record<string, { title: string; body: string }> = {
   too_large: { title: "That folder is too big", body: "Imports are capped at 200 MB — far more than a full recipe box. Try exporting again without the extras." },
-  too_many_entries: { title: "That folder holds too many files", body: "Imports are capped at 5,000 files. That is many times a full recipe box, so this is probably not an export folder." },
+  too_many_entries: {
+    title: "That folder holds too many files",
+    body: "Imports are capped at 5,000 files. That is many times a full recipe box, so this is probably not an export folder.",
+  },
   path_escape: { title: "We couldn't read that folder safely", body: "One of the file names in it points outside the folder, so nothing was read." },
-  not_recognized: { title: "That doesn't look like an export", body: "Nothing in the folder matched what this importer expects. Check that you picked the folder itself, not the file inside it." },
+  not_recognized: {
+    title: "That doesn't look like an export",
+    body: "Nothing in the folder matched what this importer expects. Check that you picked the folder itself, not the file inside it.",
+  },
   probe_failed: { title: "We couldn't check your box", body: "Your recipes were read fine, but checking them against what you already have failed. Nothing was saved." },
   session_failed: { title: "We couldn't start the import", body: "Nothing was read and nothing was saved. Try again in a moment." },
   unknown: { title: "Something went wrong reading that folder", body: "Nothing was saved. Try again, or pick the folder a second time." },

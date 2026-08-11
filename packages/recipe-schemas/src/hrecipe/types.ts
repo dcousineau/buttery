@@ -21,7 +21,19 @@
  * names each maps to live in `classes.ts`.
  */
 export type HRecipeProperty =
-  "name" | "summary" | "ingredient" | "instructions" | "yield" | "duration" | "prepTime" | "cookTime" | "photo" | "nutrition" | "author" | "published" | "category";
+  | "name"
+  | "summary"
+  | "ingredient"
+  | "instructions"
+  | "yield"
+  | "duration"
+  | "prepTime"
+  | "cookTime"
+  | "photo"
+  | "nutrition"
+  | "author"
+  | "published"
+  | "category";
 
 /** Raw property values collected from one h-recipe subtree, in document order. */
 export type RawHRecipe = Partial<Record<HRecipeProperty, string[]>>;

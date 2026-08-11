@@ -16,6 +16,13 @@
     "test": "vitest run",
     "typecheck": "tsc6 --noEmit"
   },
+  "devDependencies": {
+    "@buttery/lexicons": "workspace:*",
+    "@types/node": "^26.2.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.10",
+    "zod": "^4.4.3"
+  },
   "peerDependencies": {
     "zod": "^4.4.3"
   },
@@ -23,12 +30,5 @@
     "zod": {
       "optional": true
     }
-  },
-  "devDependencies": {
-    "@buttery/lexicons": "workspace:*",
-    "@types/node": "^26.2.0",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^4.1.10",
-    "zod": "^4.4.3"
   }
 }

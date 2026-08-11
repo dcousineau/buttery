@@ -1,7 +1,16 @@
 import type { ExtractedRecipe, ImportCandidate, ImportParseFailure, JsonObject } from "@buttery/recipe-extract/import";
 import { recipeRecordProblems, type RecipeRecordInput } from "#/lib/recipe-record";
 import type { AttributionChoice } from "#/server/recipes-write";
-import { COMMIT_CHUNK_SIZE, type CommitItem, type CommitItemResult, type ExistingRef, type FinalizeOutcome, type ProbeItem, type ProbeVerdict, type VerdictKind } from "./contracts.ts";
+import {
+  COMMIT_CHUNK_SIZE,
+  type CommitItem,
+  type CommitItemResult,
+  type ExistingRef,
+  type FinalizeOutcome,
+  type ProbeItem,
+  type ProbeVerdict,
+  type VerdictKind,
+} from "./contracts.ts";
 import { buildSourceGroups, liveSourceGroups, type SourceGroup } from "./source-groups.ts";
 import type { ImportWorkerErrorCode, ImportWorkerEvent, ParseResult } from "./worker-protocol.ts";
 
@@ -403,9 +412,7 @@ export function itemsInGroup(state: ImportState, group: RailGroupId): ImportItem
  */
 export function sourceGroupsInPlay(state: ImportState): SourceGroup[] {
   const skippedByTheirAnswer = new Set(state.groups.filter((group) => state.groupChoices[group.key]?.kind === "skip").flatMap((group) => group.clientIds));
-  const live = new Set(
-    state.items.filter((item) => !item.sourceUrl && (item.action !== "skip" || skippedByTheirAnswer.has(item.clientId))).map((item) => item.clientId),
-  );
+  const live = new Set(state.items.filter((item) => !item.sourceUrl && (item.action !== "skip" || skippedByTheirAnswer.has(item.clientId))).map((item) => item.clientId));
   return liveSourceGroups(state.groups, (clientId) => live.has(clientId));
 }
 
@@ -764,7 +771,9 @@ export function reduce(state: ImportState, event: ImportEvent): ImportState {
       if (event.kind === "skip" || current.kind === "skip") {
         const members = new Set(state.groups.find((group) => group.key === event.groupKey)?.clientIds ?? []);
         if (members.size > 0) {
-          const items = state.items.map((item) => (members.has(item.clientId) ? { ...item, action: event.kind === "skip" ? ("skip" as const) : defaultAction(item.verdict), override: false } : item));
+          const items = state.items.map((item) =>
+            members.has(item.clientId) ? { ...item, action: event.kind === "skip" ? ("skip" as const) : defaultAction(item.verdict), override: false } : item,
+          );
           return { ...state, items, groupChoices };
         }
       }
@@ -789,9 +798,7 @@ export function reduce(state: ImportState, event: ImportEvent): ImportState {
 
     case "set_group_actions": {
       const ids = new Set(itemsInGroup(state, event.group).map((item) => item.clientId));
-      const items = state.items.map((item) =>
-        ids.has(item.clientId) ? { ...item, action: event.action, override: event.action === "import" ? item.override : false } : item,
-      );
+      const items = state.items.map((item) => (ids.has(item.clientId) ? { ...item, action: event.action, override: event.action === "import" ? item.override : false } : item));
       return { ...state, items };
     }
 

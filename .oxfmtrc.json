@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": [
+    "dist",
+    "build",
+    ".docusaurus",
+    ".tanstack",
+    ".nitro",
+    ".output",
+    ".agents",
+    ".claude",
+    "pnpm-lock.yaml",
+    "**/routeTree.gen.ts",
+    "skills-lock.json",
+    "**/__fixtures__/**",
+    "docs/designs/**"
+  ]
+}

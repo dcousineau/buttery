@@ -993,7 +993,9 @@ export async function runCommitImportChunk(db: Kysely<DB>, did: string, househol
     db,
     householdId,
     session.id,
-    input.items.filter((item): item is Extract<CommitItem, { action: "skip" }> => item.action === "skip").map((item) => ({ clientId: item.clientId, reason: skipReasonOf(item.reason) })),
+    input.items
+      .filter((item): item is Extract<CommitItem, { action: "skip" }> => item.action === "skip")
+      .map((item) => ({ clientId: item.clientId, reason: skipReasonOf(item.reason) })),
   );
 
   const results: CommitItemResult[] = [];
@@ -1143,9 +1145,7 @@ async function commitOne(db: Kysely<DB>, did: string, householdId: string, sessi
     source_text: item.sourceText ?? null,
   };
 
-  return item.action === "link"
-    ? await commitLink(db, did, householdId, sessionId, item, provenance)
-    : await commitImport(db, did, householdId, sessionId, item, provenance);
+  return item.action === "link" ? await commitLink(db, did, householdId, sessionId, item, provenance) : await commitImport(db, did, householdId, sessionId, item, provenance);
 }
 
 /**
@@ -1528,10 +1528,7 @@ async function deriveSessionCounts(
       .selectFrom(SKIP_TABLE)
       .where("household_id", "=", householdId)
       .where("session_id", "=", sessionId)
-      .select([
-        sql<number>`count(*) filter (where reason = 'duplicate')::int`.as("duplicate"),
-        sql<number>`count(*) filter (where reason = 'user')::int`.as("user"),
-      ])
+      .select([sql<number>`count(*) filter (where reason = 'duplicate')::int`.as("duplicate"), sql<number>`count(*) filter (where reason = 'user')::int`.as("user")])
       .executeTakeFirst(),
   ]);
   return { imported: rows?.imported ?? 0, linked: rows?.linked ?? 0, skippedDuplicate: skips?.duplicate ?? 0, skippedUser: skips?.user ?? 0 };

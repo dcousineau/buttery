@@ -92,7 +92,18 @@ const GATED: readonly [name: string, call: () => Promise<unknown>][] = [
       imports.finalizeImportSession({
         data: {
           sessionId: "s1",
-          outcome: { total: 0, imported: 0, linked: 0, skippedDuplicate: 0, skippedUser: 0, failed: 0, overriddenDuplicate: 0, editedBeforeCommit: 0, parseFailures: 0, distinctSourceStringsClassified: 0 },
+          outcome: {
+            total: 0,
+            imported: 0,
+            linked: 0,
+            skippedDuplicate: 0,
+            skippedUser: 0,
+            failed: 0,
+            overriddenDuplicate: 0,
+            editedBeforeCommit: 0,
+            parseFailures: 0,
+            distinctSourceStringsClassified: 0,
+          },
         },
       }),
   ],

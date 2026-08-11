@@ -10,13 +10,13 @@ Everything in §1.1 is built. §1.2 and §17 are untouched, as intended.
 
 Commits:
 
-| Commit    | What                                                             |
-| --------- | ---------------------------------------------------------------- |
-| `a839da6` | dedupe key helpers, importer seam, meta tables, ESLint boundary   |
-| `28e1d82` | Paprika importer, `persistRecipeDraft`, dedupe backfill           |
-| `8320295` | import pipeline (§7) and review UI (§9–§11)                       |
-| `caa9a0a` | entry point in `AddRecipeChooser`, this build log                 |
-| (below)   | the verification pass and the defects it found                    |
+| Commit    | What                                                            |
+| --------- | --------------------------------------------------------------- |
+| `a839da6` | dedupe key helpers, importer seam, meta tables, ESLint boundary |
+| `28e1d82` | Paprika importer, `persistRecipeDraft`, dedupe backfill         |
+| `8320295` | import pipeline (§7) and review UI (§9–§11)                     |
+| `caa9a0a` | entry point in `AddRecipeChooser`, this build log               |
+| (below)   | the verification pass and the defects it found                  |
 
 Test state at time of writing:
 
@@ -38,7 +38,7 @@ One note for anyone auditing the dev database afterwards: a `link` writes the im
 onto an **already-public** recipe, so "count the recipes tagged with an import session that
 have a `uri`" is not a test of §7.4 and will legitimately return non-zero. The `public_exists`
 link path is exactly what puts them there. To check §7.4, look at recipes the session
-*created* — every one of them has `uri = null` and `visibility = 'private'`.
+_created_ — every one of them has `uri = null` and `visibility = 'private'`.
 
 ---
 
@@ -46,15 +46,15 @@ link path is exactly what puts them there. To check §7.4, look at recipes the s
 
 ### Foundations (`a839da6`)
 
-| File                                                       | What                                                        |
-| ---------------------------------------------------------- | ----------------------------------------------------------- |
-| `packages/recipe-schemas/src/normalize/url.ts`             | `normalizeSourceUrl` — §6.1's eight steps                    |
-| `packages/recipe-schemas/src/normalize/fingerprint.ts`     | `contentFingerprint`, `contentFingerprintInput` (§6.2)       |
-| `packages/recipe-extract/src/import/types.ts`              | `RecipeImporter` / `ImportCandidate` / `EntrySource` (§2.5)  |
-| `packages/recipe-extract/src/import/entry-source.ts`       | directory + in-memory sources, size and path-escape guards   |
-| `…/migrations/…_create_recipe_meta_and_import_session.ts`  | the three sidecar tables (§5.1–§5.3)                         |
-| `eslint.config.js`                                         | the §2.5 boundary rule + its single exemption                |
-| `services/web/src/components/ui/progress.tsx`              | the `Progress` primitive (§10.2 D26)                         |
+| File                                                      | What                                                        |
+| --------------------------------------------------------- | ----------------------------------------------------------- |
+| `packages/recipe-schemas/src/normalize/url.ts`            | `normalizeSourceUrl` — §6.1's eight steps                   |
+| `packages/recipe-schemas/src/normalize/fingerprint.ts`    | `contentFingerprint`, `contentFingerprintInput` (§6.2)      |
+| `packages/recipe-extract/src/import/types.ts`             | `RecipeImporter` / `ImportCandidate` / `EntrySource` (§2.5) |
+| `packages/recipe-extract/src/import/entry-source.ts`      | directory + in-memory sources, size and path-escape guards  |
+| `…/migrations/…_create_recipe_meta_and_import_session.ts` | the three sidecar tables (§5.1–§5.3)                        |
+| `eslint.config.js`                                        | the §2.5 boundary rule + its single exemption               |
+| `services/web/src/components/ui/progress.tsx`             | the `Progress` primitive (§10.2 D26)                        |
 
 `contentFingerprint` uses `globalThis.crypto.subtle` in every environment rather than
 WebCrypto in the browser and `node:crypto` on the server. §14 asks for the two to be
@@ -175,18 +175,18 @@ rows. Both guards now share one terminal-status set.
 
 **A literal NUL byte made a source file binary to git.** `source-groups.ts` wrote `"\0…"` as a
 raw 0x00, so the whole file showed up as `Bin 0 -> 7725 bytes` and was invisible in diffs and
-review. It is a ` ` escape now — same runtime value, ordinary text file.
+review. It is a `�` escape now — same runtime value, ordinary text file.
 
 Test gaps closed at the same time: an ESLint-API test that pins the §2.5 boundary rule itself
 (it fired, but nothing kept it firing — a flat-config reorder would have disabled D30 silently
-with `pnpm lint` green), 13 DB tests for `saveRecipe` (which had *zero*, making §16.14's "its
+with `pnpm lint` green), 13 DB tests for `saveRecipe` (which had _zero_, making §16.14's "its
 tests pass untouched" vacuous), 17 tests proving every server function actually calls
 `assertMember` before touching the database, and an opt-in corpus test that walks the real
 341-recipe export when it is present and skips cleanly when it is not.
 
 Two criteria could not be met as written and are documented rather than forced:
 
-- **§16.22** wants a fixture importer *registered* without editing shipped modules, but the id
+- **§16.22** wants a fixture importer _registered_ without editing shipped modules, but the id
   list feeds both the client registry's exhaustiveness check and the server's Zod enum, so
   registration necessarily touches two files. The substance of the criterion is already true —
   a fixture importer can be driven through parse → probe → commit with no shipped-module edits,
@@ -226,18 +226,18 @@ Two criteria could not be met as written and are documented rather than forced:
 
 7. **Validation now happens after the public-duplicate check** in `saveRecipe`, because
    `$safeValidate` moved inside `persistRecipeDraft`. One observable consequence: a
-   submission that is *both* lexicon-invalid *and* a duplicate of a public record now returns
+   submission that is _both_ lexicon-invalid _and_ a duplicate of a public record now returns
    `duplicate` where it returned `invalid`. Every other input returns what it did before.
 
 8. **Windowing is hand-written.** §9 requires virtualization and D3 forbids a new dependency,
    so the review list uses a ~130-line hook over a measured fixed row height. Arrow/Home/End
-   navigation has to scroll a row into view *and* mount it in the same render, which is the
+   navigation has to scroll a row into view _and_ mount it in the same render, which is the
    part naive windowing breaks.
 
 9. **`action: "skip"` carries a reason.** §7.2's item shape has none, but §10.2/D24 requires
    the done screen to separate "already yours" from "you skipped", and `dupe_in_batch` — two
    copies inside one drop, neither in the box — is invisible to the server, so it cannot infer
-   the label. The *counts* are still derived from rows; only the label comes from the client,
+   the label. The _counts_ are still derived from rows; only the label comes from the client,
    and an unrecognized one degrades to `"user"` rather than failing the other 24 items.
 
 10. **`client_id` is a fifth reserved sidecar key.** §12.5 names four. The idempotency ledger
@@ -257,7 +257,7 @@ Two of §3's ground-truth numbers are off against the actual export:
 
 And one acceptance criterion cannot be met as written:
 
-- **§16.22** asks that a fixture importer be *registered* without editing shipped modules.
+- **§16.22** asks that a fixture importer be _registered_ without editing shipped modules.
   Registration is by definition two edits — an id in `#/lib/recipe-import-ids` and a line in
   `importers.ts` — so no seam can satisfy it. The substance it is reaching for is already
   true and is what the boundary test asserts: a fixture importer can be **driven** end to end

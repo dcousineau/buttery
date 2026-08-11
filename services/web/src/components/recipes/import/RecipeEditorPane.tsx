@@ -66,7 +66,9 @@ export function RecipeEditorPane({
         {flagged ? (
           <Alert variant="destructive">
             <AlertTitle>This might already be in your box</AlertTitle>
-            <AlertDescription>{item.existing ? `${item.existing.name} · added ${new Date(item.existing.addedAt).toLocaleDateString()}` : "A recipe in your box has a matching key."}</AlertDescription>
+            <AlertDescription>
+              {item.existing ? `${item.existing.name} · added ${new Date(item.existing.addedAt).toLocaleDateString()}` : "A recipe in your box has a matching key."}
+            </AlertDescription>
             {item.existing ? (
               <AlertAction>
                 <Button variant="outline" size="sm" onClick={onOpenCompare}>

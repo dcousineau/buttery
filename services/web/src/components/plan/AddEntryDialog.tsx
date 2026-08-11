@@ -30,7 +30,8 @@ import { cn } from "#/lib/utils";
 
 /** What the route is asking the dialog to do. Null ⇒ closed. */
 export type AddEntryRequest =
-  { kind: "add"; date: PlanDate; slot: MealSlot; existingCount: number; isToday: boolean } | { kind: "edit-note"; date: PlanDate; slot: MealSlot; entryId: string; body: string };
+  | { kind: "add"; date: PlanDate; slot: MealSlot; existingCount: number; isToday: boolean }
+  | { kind: "edit-note"; date: PlanDate; slot: MealSlot; entryId: string; body: string };
 
 interface AddEntryDialogProps {
   request: AddEntryRequest | null;

@@ -89,7 +89,12 @@ export function ImportReviewScreen({ session, onCommit }: { session: UseImportSe
           {primaryReason}
         </span>
       ) : null}
-      <Button variant="secondary" disabled={primaryDisabled} aria-describedby={primaryReason ? primaryReasonId : undefined} onClick={() => (atBottom ? onCommit() : dispatch({ type: "select_group", group: next }))}>
+      <Button
+        variant="secondary"
+        disabled={primaryDisabled}
+        aria-describedby={primaryReason ? primaryReasonId : undefined}
+        onClick={() => (atBottom ? onCommit() : dispatch({ type: "select_group", group: next }))}
+      >
         {primaryLabel}
       </Button>
     </>
@@ -181,8 +186,8 @@ export function ImportReviewScreen({ session, onCommit }: { session: UseImportSe
         </ul>
 
         <div className="border-t border-border/60 px-3.5 py-3 text-xs/[1.5] text-muted-foreground">
-          Work top to bottom. Recipes that need a source can't be saved until you've sorted them. Only recipes you're actually importing are counted, and one can be in
-          more than one group — so these don't add up to {state.items.length}.
+          Work top to bottom. Recipes that need a source can't be saved until you've sorted them. Only recipes you're actually importing are counted, and one can be in more than
+          one group — so these don't add up to {state.items.length}.
         </div>
 
         {state.failures.length > 0 || state.collapsedInBatch > 0 ? (

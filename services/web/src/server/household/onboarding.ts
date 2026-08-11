@@ -54,7 +54,9 @@ export interface HouseholdMemberView {
  *   the caller's pending bound invites (empty array → empty state).
  */
 export type OnboardingVerdict =
-  { kind: "active"; householdId: string; name: string } | { kind: "pick"; households: HouseholdSummary[] } | { kind: "onboard"; pendingInvites: PendingInvite[] };
+  | { kind: "active"; householdId: string; name: string }
+  | { kind: "pick"; households: HouseholdSummary[] }
+  | { kind: "onboard"; pendingInvites: PendingInvite[] };
 
 /** Coerce a free-text DB role to the ranked `Role` union (unknown → member). */
 function asRole(role: string): Role {

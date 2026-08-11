@@ -32,7 +32,9 @@ export function ImportDoneScreen({ state, importerLabel, householdName, onRestar
   const outcome = finalizeOutcome(state);
   const failures = failedItems(state);
 
-  const byReason = [...failures.reduce((map, failure) => map.set(failure.message, [...(map.get(failure.message) ?? []), failure]), new Map<string, typeof failures>())].sort((a, b) => b[1].length - a[1].length);
+  const byReason = [...failures.reduce((map, failure) => map.set(failure.message, [...(map.get(failure.message) ?? []), failure]), new Map<string, typeof failures>())].sort(
+    (a, b) => b[1].length - a[1].length,
+  );
 
   const added = outcome.imported + outcome.linked;
   // Nothing written, and nothing lost either — the "already yours" case, which is what a

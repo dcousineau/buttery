@@ -24,7 +24,7 @@ const NSID = "exchange.recipe.defs";
 const SEED: Record<VocabDimension, { prefix: string; suffixes: string[] }> = {
   cuisine: {
     prefix: "cuisine",
-    // prettier-ignore
+    // oxfmt-ignore
     suffixes: ["African", "American", "Australian", "Brazilian", "British", "Caribbean", "Chinese", "Creole", "European", "French", "German", "Greek", "Indian", "Indonesian", "Italian", "Japanese", "Korean", "Lebanese", "Mediterranean", "Mexican", "MiddleEastern", "Moroccan", "Peruvian", "Polish", "Portuguese", "Russian", "Southern", "Spanish", "TexMex", "Texan", "Thai", "Turkish", "Vietnamese"],
   },
   category: {

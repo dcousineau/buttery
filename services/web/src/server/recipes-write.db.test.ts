@@ -222,7 +222,10 @@ describeDb("saveRecipe — the private save", () => {
   });
 
   it("rejects a URL-less record with no attribution at all, before touching the recipe table", async () => {
-    const before = await db!.selectFrom("recipe").select(sql<number>`count(*)::int`.as("n")).executeTakeFirstOrThrow();
+    const before = await db!
+      .selectFrom("recipe")
+      .select(sql<number>`count(*)::int`.as("n"))
+      .executeTakeFirstOrThrow();
 
     const result = await save({ record: validRecord(), visibility: "private", publish: false });
 
@@ -230,7 +233,10 @@ describeDb("saveRecipe — the private save", () => {
     if (result.status !== "invalid") return;
     expect(result.issues).toEqual([{ path: "attribution", message: "Choose where this recipe came from." }]);
 
-    const after = await db!.selectFrom("recipe").select(sql<number>`count(*)::int`.as("n")).executeTakeFirstOrThrow();
+    const after = await db!
+      .selectFrom("recipe")
+      .select(sql<number>`count(*)::int`.as("n"))
+      .executeTakeFirstOrThrow();
     expect(after.n).toBe(before.n);
   });
 });

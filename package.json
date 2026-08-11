@@ -2,14 +2,6 @@
   "name": "buttery",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.20.0",
-  "devEngines": {
-    "runtime": {
-      "name": "node",
-      "version": "^26",
-      "onFail": "error"
-    }
-  },
   "scripts": {
     "dev": "bash scripts/dev/up.sh",
     "dev:attach": "process-compose attach",
@@ -23,12 +15,9 @@
     "test": "pnpm -r test",
     "test:db": "pnpm --filter @buttery/web test:db",
     "lint": "eslint .",
-    "format": "prettier --write .",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
     "prepare": "husky"
-  },
-  "lint-staged": {
-    "*.{js,jsx,ts,tsx,json,md,yaml,yml,css}": "prettier --write --ignore-unknown",
-    "*.{js,jsx,ts,tsx}": "eslint --fix"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -38,9 +27,21 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "husky": "^9.1.7",
     "lint-staged": "^17.3.0",
-    "prettier": "^3.9.6",
+    "oxfmt": "^0.63.0",
     "railway": "^3.8.1",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.66.0"
-  }
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,json,md,yaml,yml,css}": "oxfmt",
+    "*.{js,jsx,ts,tsx}": "eslint --fix"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "^26",
+      "onFail": "error"
+    }
+  },
+  "packageManager": "pnpm@11.20.0"
 }

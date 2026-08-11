@@ -31,9 +31,7 @@ describe("recipeRecordProblems", () => {
     // `$safeValidate` says "instructions.0" and stops. A user fixing one card at a time,
     // re-checking, and being handed a new surprise each round is the failure this walk exists
     // to prevent.
-    const problems = recipeRecordProblems(
-      record({ name: "n".repeat(300), ingredients: ["fine", "i".repeat(600)], instructions: ["s".repeat(1100), "s".repeat(1200)] }),
-    );
+    const problems = recipeRecordProblems(record({ name: "n".repeat(300), ingredients: ["fine", "i".repeat(600)], instructions: ["s".repeat(1100), "s".repeat(1200)] }));
     expect(problems.map((problem) => problem.path)).toEqual(["name", "ingredients.1", "instructions.0", "instructions.1"]);
     expect(problems.map((problem) => problem.label)).toEqual(["Recipe name", "Ingredient 2", "Step 1", "Step 2"]);
     expect(problems[0].message).toBe("The recipe name is 300 characters; the limit is 255.");

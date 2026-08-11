@@ -78,11 +78,7 @@ export function DuplicateQueuePane({
 
   const rows = useMemo(() => {
     if (!existing) return [];
-    return [
-      ...metaRows(item, existing),
-      ...diffLines(existing.ingredients, item.record.ingredients),
-      ...diffLines(existing.instructions, item.record.instructions),
-    ];
+    return [...metaRows(item, existing), ...diffLines(existing.ingredients, item.record.ingredients), ...diffLines(existing.instructions, item.record.instructions)];
   }, [existing, item]);
 
   const differing = rows.filter((row) => row.status !== "same");
@@ -103,7 +99,14 @@ export function DuplicateQueuePane({
             </span>
             <span className="ml-auto">{total - position} left</span>
           </div>
-          <Progress value={position} max={total} label={`${position} of ${total} looked at`} aria-label="Duplicates looked at" variant="secondary" className="h-3 rounded-lg border-2 border-border bg-background" />
+          <Progress
+            value={position}
+            max={total}
+            label={`${position} of ${total} looked at`}
+            aria-label="Duplicates looked at"
+            variant="secondary"
+            className="h-3 rounded-lg border-2 border-border bg-background"
+          />
         </div>
       </div>
 

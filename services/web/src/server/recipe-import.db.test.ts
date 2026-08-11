@@ -780,10 +780,12 @@ describeDb("commitImportChunk (§7.2)", () => {
     // longer match the chunk's. Content identity cannot answer "did I already
     // commit this item?"; `(session_id, client_id)` can.
     const meta = await import("./recipe-meta");
-    await db!.updateTable("recipe").set({ name: `Edited ${RUN} (mine)` }).where("id", "=", recipeId).execute();
-    await meta.setManyRecipeMeta(db!, [
-      { recipeId, ns: "dedupe", entries: { source_url_key: `edited.example/${RUN}`, content_fp: `sha256:edited-${RUN}` } },
-    ]);
+    await db!
+      .updateTable("recipe")
+      .set({ name: `Edited ${RUN} (mine)` })
+      .where("id", "=", recipeId)
+      .execute();
+    await meta.setManyRecipeMeta(db!, [{ recipeId, ns: "dedupe", entries: { source_url_key: `edited.example/${RUN}`, content_fp: `sha256:edited-${RUN}` } }]);
 
     const second = track(await imp.runCommitImportChunk(db!, DID, HH, { sessionId, items }));
     expect(second[0]).toEqual({ clientId: "e", status: "imported", recipeId });
@@ -810,9 +812,9 @@ describeDb("commitImportChunk (§7.2)", () => {
     const sessionId = await openSession();
     await imp.runFinalizeImportSession(db!, DID, HH, { sessionId, outcome: outcome() });
 
-    await expect(
-      imp.runCommitImportChunk(db!, DID, HH, { sessionId, items: [importItem({ clientId: "late", record: draft(`Late ${RUN}`) })] }),
-    ).rejects.toThrow(/already finished/i);
+    await expect(imp.runCommitImportChunk(db!, DID, HH, { sessionId, items: [importItem({ clientId: "late", record: draft(`Late ${RUN}`) })] })).rejects.toThrow(
+      /already finished/i,
+    );
     // …and it did not half-commit on the way to refusing.
     expect(await recipesNamed(`Late ${RUN}`)).toBe(0);
   });
@@ -821,9 +823,9 @@ describeDb("commitImportChunk (§7.2)", () => {
     const sessionId = await openSession();
     await imp.runFailImportSession(db!, DID, HH, { sessionId, stage: "commit", message: "died" });
 
-    await expect(
-      imp.runCommitImportChunk(db!, DID, HH, { sessionId, items: [importItem({ clientId: "zombie", record: draft(`Zombie ${RUN}`) })] }),
-    ).rejects.toThrow(/already finished/i);
+    await expect(imp.runCommitImportChunk(db!, DID, HH, { sessionId, items: [importItem({ clientId: "zombie", record: draft(`Zombie ${RUN}`) })] })).rejects.toThrow(
+      /already finished/i,
+    );
     expect(await recipesNamed(`Zombie ${RUN}`)).toBe(0);
   });
 
@@ -847,7 +849,19 @@ describeDb("the commit wire schema is loose enough to fail ONE item (§7.5, §16
       sessionId: `s-${RUN}`,
       items: [
         { action: "link", clientId: "bad", entryName: "b.html", existingRecipeId: "", notes: null, sourceText: null, meta: {} },
-        { action: "import", clientId: "good", entryName: "g.html", record: draft("Fine"), sourceUrl: null, attribution: null, imageSourceUrl: null, notes: null, tags: [], sourceText: null, meta: {} },
+        {
+          action: "import",
+          clientId: "good",
+          entryName: "g.html",
+          record: draft("Fine"),
+          sourceUrl: null,
+          attribution: null,
+          imageSourceUrl: null,
+          notes: null,
+          tags: [],
+          sourceText: null,
+          meta: {},
+        },
       ],
     });
     expect(parsed.items).toHaveLength(2);

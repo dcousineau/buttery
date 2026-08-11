@@ -233,7 +233,10 @@ describe("the cross-cutting groups only ask about recipes being written", () => 
     // The unfiltered version of this counted all of them under "Need a source" and demanded
     // 28 attribution answers for recipes it was not going to write.
     const mine = candidate({ sourceText: "Nana's book" });
-    const state = toReview([parsed(mine)], [{ clientId: mine.clientId, verdict: "in_box", existing: { recipeId: "r1", name: "Mine", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } }]);
+    const state = toReview(
+      [parsed(mine)],
+      [{ clientId: mine.clientId, verdict: "in_box", existing: { recipeId: "r1", name: "Mine", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } }],
+    );
 
     expect(state.items[0].action).toBe("skip");
     expect(itemsInGroup(state, "sources")).toHaveLength(0);
@@ -332,7 +335,11 @@ describe("attribution gating (§8, §10.1)", () => {
     expect(commitBlockedReason(state)).toBe("1 source needs an answer before anything can be imported.");
 
     const key = state.groups[0].key;
-    const partial = run(state, { type: "set_group_kind", groupKey: key, kind: "publication" }, { type: "set_group_field", groupKey: key, field: "publicationTitle", value: "Ramsay in 10" });
+    const partial = run(
+      state,
+      { type: "set_group_kind", groupKey: key, kind: "publication" },
+      { type: "set_group_field", groupKey: key, field: "publicationTitle", value: "Ramsay in 10" },
+    );
     // Publication needs BOTH title and author — the lexicon requires both and the server
     // silently drops a half-filled one, so the client refuses to send it.
     expect(commitBlockedReason(partial)).not.toBeNull();
@@ -372,7 +379,11 @@ describe("attribution gating (§8, §10.1)", () => {
   it("`skip` leaves the group's recipes behind rather than importing them unattributed (§8.1)", () => {
     // The server refuses a record with no lexicon-valid attribution, so "leave it
     // unattributed" is not a thing the client can send — the chip means `skipped:user`.
-    const state = toReview([parsed(candidate({ sourceText: "from mum" })), parsed(candidate({ sourceText: "from mum" })), parsed(candidate({ sourceUrl: "https://example.com/a" }))]);
+    const state = toReview([
+      parsed(candidate({ sourceText: "from mum" })),
+      parsed(candidate({ sourceText: "from mum" })),
+      parsed(candidate({ sourceUrl: "https://example.com/a" })),
+    ]);
     const key = state.groups[0].key;
 
     const answered = reduce(state, { type: "set_group_kind", groupKey: key, kind: "skip" });
@@ -451,10 +462,13 @@ describe("per-item decisions", () => {
   it("bulk group actions only touch that group", () => {
     const a = candidate();
     const b = candidate();
-    const state = toReview([parsed(a), parsed(b)], [
-      { clientId: a.clientId, verdict: "new" },
-      { clientId: b.clientId, verdict: "public_exists", existing: { recipeId: "r1", name: "P", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } },
-    ]);
+    const state = toReview(
+      [parsed(a), parsed(b)],
+      [
+        { clientId: a.clientId, verdict: "new" },
+        { clientId: b.clientId, verdict: "public_exists", existing: { recipeId: "r1", name: "P", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } },
+      ],
+    );
 
     const skipped = reduce(state, { type: "set_group_actions", group: "public", action: "skip" });
     expect(skipped.items.find((item) => item.clientId === a.clientId)?.action).toBe("import");
@@ -548,12 +562,15 @@ describe("outcome (§7.7)", () => {
     const c = candidate({ sourceUrl: "https://example.com/c" });
     const d = candidate({ sourceUrl: "https://example.com/d" });
 
-    let state = toReview([parsed(a), parsed(b), parsed(c), parsed(d)], [
-      { clientId: a.clientId, verdict: "new" },
-      { clientId: b.clientId, verdict: "public_exists", existing: { recipeId: "r1", name: "P", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } },
-      { clientId: c.clientId, verdict: "new" },
-      { clientId: d.clientId, verdict: "in_box", existing: { recipeId: "r2", name: "M", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } },
-    ]);
+    let state = toReview(
+      [parsed(a), parsed(b), parsed(c), parsed(d)],
+      [
+        { clientId: a.clientId, verdict: "new" },
+        { clientId: b.clientId, verdict: "public_exists", existing: { recipeId: "r1", name: "P", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } },
+        { clientId: c.clientId, verdict: "new" },
+        { clientId: d.clientId, verdict: "in_box", existing: { recipeId: "r2", name: "M", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } },
+      ],
+    );
     state = { ...state, failures: [{ kind: "failure", clientId: "f1", entryName: "Broken.html", message: "no title" }] };
     state = reduce(state, { type: "commit_start" });
     state = reduce(state, {
@@ -586,11 +603,14 @@ describe("outcome (§7.7)", () => {
     const dropped = candidate({ sourceUrl: "https://example.com/dropped" });
     const maybe = candidate({ sourceUrl: "https://example.com/maybe" });
 
-    let state = toReview([parsed(mine), parsed(dropped), parsed(maybe)], [
-      { clientId: mine.clientId, verdict: "in_box", existing: { recipeId: "r1", name: "Mine", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } },
-      { clientId: dropped.clientId, verdict: "new" },
-      { clientId: maybe.clientId, verdict: "maybe", candidates: [{ recipeId: "r2", name: "Close", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null }] },
-    ]);
+    let state = toReview(
+      [parsed(mine), parsed(dropped), parsed(maybe)],
+      [
+        { clientId: mine.clientId, verdict: "in_box", existing: { recipeId: "r1", name: "Mine", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } },
+        { clientId: dropped.clientId, verdict: "new" },
+        { clientId: maybe.clientId, verdict: "maybe", candidates: [{ recipeId: "r2", name: "Close", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null }] },
+      ],
+    );
 
     // The user unticks a `new` row, and decides a `maybe` is a dupe at the queue. Both are
     // decisions the user made; only the `in_box` row was skipped by the machine.
@@ -612,7 +632,11 @@ describe("re-importing an export that is already in the box (§16.12)", () => {
     const candidates = Array.from({ length: count }, (_, i) => candidate({ sourceUrl: `https://example.com/${i}` }));
     return toReview(
       candidates.map((c) => parsed(c, { sourceUrlKey: `example.com/${c.clientId}` })),
-      candidates.map((c) => ({ clientId: c.clientId, verdict: "in_box" as const, existing: { recipeId: `r-${c.clientId}`, name: c.recipe.name ?? "", addedAt: "2026-01-01T00:00:00Z", addedByHandle: "@dan" } })),
+      candidates.map((c) => ({
+        clientId: c.clientId,
+        verdict: "in_box" as const,
+        existing: { recipeId: `r-${c.clientId}`, name: c.recipe.name ?? "", addedAt: "2026-01-01T00:00:00Z", addedByHandle: "@dan" },
+      })),
     );
   }
 
@@ -656,7 +680,11 @@ describe("re-importing an export that is already in the box (§16.12)", () => {
     let state = toReview(
       [...dupes, ...mine].map((c) => parsed(c)),
       [
-        ...dupes.map((c) => ({ clientId: c.clientId, verdict: "in_box" as const, existing: { recipeId: `r-${c.clientId}`, name: "", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null } })),
+        ...dupes.map((c) => ({
+          clientId: c.clientId,
+          verdict: "in_box" as const,
+          existing: { recipeId: `r-${c.clientId}`, name: "", addedAt: "2026-01-01T00:00:00Z", addedByHandle: null },
+        })),
         ...mine.map((c) => ({ clientId: c.clientId, verdict: "new" as const })),
       ],
     );
@@ -670,7 +698,10 @@ describe("re-importing an export that is already in the box (§16.12)", () => {
 
     state = run(
       state,
-      { type: "chunk_complete", results: chunk.items.map((item) => ({ clientId: item.clientId, status: "skipped" as const, reason: item.action === "skip" ? item.reason! : "user" })) },
+      {
+        type: "chunk_complete",
+        results: chunk.items.map((item) => ({ clientId: item.clientId, status: "skipped" as const, reason: item.action === "skip" ? item.reason! : "user" })),
+      },
       { type: "finalized" },
     );
 

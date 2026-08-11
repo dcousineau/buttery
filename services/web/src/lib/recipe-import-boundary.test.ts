@@ -96,7 +96,7 @@ describe("the recipe-import boundary rule is live (§2.5 / D30, §16.19)", () =>
    * they are the forms the bare-subpath pattern does not cover.
    */
   it.each([
-    ['the bare subpath', 'import { parsePaprikaRecipe } from "@buttery/recipe-extract/paprika";'],
+    ["the bare subpath", 'import { parsePaprikaRecipe } from "@buttery/recipe-extract/paprika";'],
     ["a deep source path", 'import { parsePaprikaRecipe } from "../../../../packages/recipe-extract/src/paprika/recipe.ts";'],
     ["a bare relative module", 'import { parsePaprikaRecipe } from "./paprika";'],
     ["a relative file", 'import { parsePaprikaRecipe } from "../paprika.ts";'],
