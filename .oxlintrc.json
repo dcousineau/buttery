@@ -1,12 +1,16 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "react"],
-  // Every enabled rule is listed explicitly below — the set `eslint.config.js` used
-  // to enable, carried over by `@oxlint/migrate`. `correctness` is off because
-  // switching it on silently adds rules nobody has reviewed; turn categories on
-  // deliberately, not as a side effect of the migration.
+  // `typescript`, `unicorn` and `oxc` are oxlint's default plugins, but naming any
+  // plugin replaces that default set, so they have to be repeated to add `react`.
+  "plugins": ["typescript", "react", "unicorn", "oxc"],
+  // Categories carry the config. `correctness` is "code that is outright wrong or
+  // useless" and, with `options.typeAware` below, it enables the type-aware
+  // correctness rules too (`no-floating-promises`, `no-base-to-string`, …). Only
+  // rules outside it — or ones needing options or a different severity — are listed
+  // in `rules`, so this file stays a record of decisions rather than a transcript
+  // of defaults.
   "categories": {
-    "correctness": "off"
+    "correctness": "error"
   },
   "env": {
     "builtin": true
@@ -24,57 +28,16 @@
     "packages/lexicons/src/generated/**"
   ],
   "rules": {
-    "constructor-super": "error",
-    "for-direction": "error",
-    "getter-return": "error",
-    "no-async-promise-executor": "error",
+    // ── Core rules outside `correctness` ─────────────────────────────────────
     "no-case-declarations": "error",
-    "no-class-assign": "error",
-    "no-compare-neg-zero": "error",
-    "no-cond-assign": "error",
-    "no-const-assign": "error",
-    "no-constant-binary-expression": "error",
-    "no-constant-condition": "error",
-    "no-control-regex": "error",
-    "no-debugger": "error",
-    "no-delete-var": "error",
-    "no-dupe-class-members": "error",
-    "no-dupe-else-if": "error",
-    "no-dupe-keys": "error",
-    "no-duplicate-case": "error",
     "no-empty": "error",
-    "no-empty-character-class": "error",
-    "no-empty-pattern": "error",
-    "no-empty-static-block": "error",
-    "no-ex-assign": "error",
-    "no-extra-boolean-cast": "error",
     "no-fallthrough": "error",
-    "no-func-assign": "error",
-    "no-global-assign": "error",
-    "no-import-assign": "error",
-    "no-invalid-regexp": "error",
-    "no-irregular-whitespace": "error",
-    "no-loss-of-precision": "error",
-    "no-misleading-character-class": "error",
-    "no-new-native-nonconstructor": "error",
-    "no-nonoctal-decimal-escape": "error",
-    "no-obj-calls": "error",
     "no-prototype-builtins": "error",
-    "no-redeclare": "error",
-    "no-regex-spaces": "error",
-    "no-self-assign": "error",
-    "no-setter-return": "error",
-    "no-shadow-restricted-names": "error",
-    "no-sparse-arrays": "error",
-    "no-this-before-super": "error",
-    "no-unassigned-vars": "error",
-    "no-unexpected-multiline": "error",
-    "no-unreachable": "error",
-    "no-unsafe-finally": "error",
-    "no-unsafe-negation": "error",
-    "no-unsafe-optional-chaining": "error",
-    "no-unused-labels": "error",
-    "no-unused-private-class-members": "error",
+    "no-var": "error",
+    "prefer-const": "error",
+    "prefer-rest-params": "error",
+    "prefer-spread": "error",
+    "preserve-caught-error": "error",
     // Allow intentional throwaways: `_`-prefixed vars/args (convention) and
     // rest-sibling strips like `const { drop, ...rest } = obj` (common way to
     // omit a key). Everything else still flags as unused.
@@ -86,53 +49,45 @@
         "ignoreRestSiblings": true
       }
     ],
-    "no-useless-backreference": "error",
-    "no-useless-catch": "error",
-    "no-useless-escape": "error",
-    "no-with": "error",
-    "preserve-caught-error": "error",
-    "require-yield": "error",
-    "use-isnan": "error",
-    "valid-typeof": "error",
-    "no-array-constructor": "error",
-    "no-unused-expressions": "error",
+
+    // ── React ────────────────────────────────────────────────────────────────
+    // Neither hooks rule is in a category: `rules-of-hooks` sits in the
+    // `react-hooks` namespace outside them, and `react-compiler` is `nursery`.
     "react/rules-of-hooks": "error",
     "react/exhaustive-deps": "warn",
     // oxlint ships the react-hooks React Compiler checks (set-state-in-effect,
     // purity, immutability, …) as one experimental rule instead of the sixteen
     // `react-hooks/*` rules the ESLint plugin's recommended config enabled, so this
-    // single line is what carries that coverage across the migration.
+    // single line is what carries that coverage.
     "react/react-compiler": "error",
+
+    // ── TypeScript rules outside `correctness` ───────────────────────────────
+    // Mostly `restriction`: bans on escape hatches we have decided not to take.
     "typescript/ban-ts-comment": "error",
-    "typescript/no-duplicate-enum-values": "error",
     "typescript/no-empty-object-type": "error",
     "typescript/no-explicit-any": "error",
-    "typescript/no-extra-non-null-assertion": "error",
-    "typescript/no-misused-new": "error",
     "typescript/no-namespace": "error",
-    "typescript/no-non-null-asserted-optional-chain": "error",
     "typescript/no-require-imports": "error",
-    "typescript/no-this-alias": "error",
     "typescript/no-unnecessary-type-constraint": "error",
-    "typescript/no-unsafe-declaration-merging": "error",
     "typescript/no-unsafe-function-type": "error",
-    "typescript/no-wrapper-object-types": "error",
-    "typescript/prefer-as-const": "error",
-    "typescript/prefer-namespace-keyword": "error",
-    "typescript/triple-slash-reference": "error",
 
-    // ── Type-aware rules (`options.typeAware`, oxlint-tsgolint) ──────────────
+    // ── Type-aware rules outside `correctness` (`options.typeAware`) ─────────
     // typescript-eslint's `recommended-type-checked` set, which the ESLint config
     // never ran: it needed a second full type-check pass, and typescript-eslint
-    // could not use TS 7. tsgolint types the whole repo in ~0.6s, so the set is on
-    // at error and the code is clean against it.
-    "typescript/await-thenable": "error",
-    "typescript/no-array-delete": "error",
-    "typescript/no-base-to-string": "error",
-    "typescript/no-duplicate-type-constituents": "error",
-    "typescript/no-floating-promises": "error",
-    "typescript/no-for-in-array": "error",
-    "typescript/no-implied-eval": "error",
+    // could not use TS 7. tsgolint types the whole repo in ~0.6s, so the rest of
+    // the set is on at error and the code is clean against it.
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-enum-comparison": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/require-await": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/unbound-method": "error",
+    "typescript/use-unknown-in-catch-callback-variable": "error",
     // `checksVoidReturn.attributes` off: `onClick={async () => …}` is the React
     // idiom for an async handler, and React does not consume the returned promise
     // either way. Every other void-return check (arguments, properties, returns,
@@ -145,16 +100,6 @@
         }
       }
     ],
-    "typescript/no-misused-spread": "error",
-    "typescript/no-redundant-type-constituents": "error",
-    "typescript/no-unnecessary-type-assertion": "error",
-    "typescript/no-unsafe-argument": "error",
-    "typescript/no-unsafe-assignment": "error",
-    "typescript/no-unsafe-call": "error",
-    "typescript/no-unsafe-enum-comparison": "error",
-    "typescript/no-unsafe-member-access": "error",
-    "typescript/no-unsafe-return": "error",
-    "typescript/no-unsafe-unary-minus": "error",
     // `throw redirect({ to: … })` is how TanStack Router navigates out of a loader
     // or server fn — a control-flow signal the framework catches, not an error.
     // Allowing the `Redirect` type keeps the rule's real job (throwing strings,
@@ -170,43 +115,12 @@
           }
         ]
       }
-    ],
-    "typescript/prefer-promise-reject-errors": "error",
-    "typescript/require-await": "error",
-    "typescript/restrict-plus-operands": "error",
-    "typescript/restrict-template-expressions": "error",
-    "typescript/unbound-method": "error",
-    "typescript/use-unknown-in-catch-callback-variable": "error"
+    ]
   },
   "options": {
     "typeAware": true
   },
   "overrides": [
-    {
-      "files": ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"],
-      "rules": {
-        "constructor-super": "off",
-        "getter-return": "off",
-        "no-class-assign": "off",
-        "no-const-assign": "off",
-        "no-dupe-class-members": "off",
-        "no-dupe-keys": "off",
-        "no-func-assign": "off",
-        "no-import-assign": "off",
-        "no-new-native-nonconstructor": "off",
-        "no-obj-calls": "off",
-        "no-redeclare": "off",
-        "no-setter-return": "off",
-        "no-this-before-super": "off",
-        "no-unreachable": "off",
-        "no-unsafe-negation": "off",
-        "no-var": "error",
-        "no-with": "off",
-        "prefer-const": "error",
-        "prefer-rest-params": "error",
-        "prefer-spread": "error"
-      }
-    },
     // Plain JS with no tsconfig covering it — the dev-stack scripts, the
     // bookmarklet loader (authored as buildless browser JS on purpose). Every
     // expression in them is `any`/error-typed for want of declarations, so the
@@ -296,6 +210,12 @@
           }
         ],
         "jsx-a11y/no-redundant-roles": "error",
+        // Off: the flagged sites are the correct ARIA pattern here, not a shortcut.
+        // `CardTitle` is a styled `<div>` given `role="heading" aria-level={n}` so a
+        // card can sit at any depth; the progress bar, cook dock and `sr-only` live
+        // regions cannot be `<progress>`/`<dialog>`/`<output>` without inheriting
+        // native styling and behavior those components deliberately do not have.
+        "jsx-a11y/prefer-tag-over-role": "off",
         "jsx-a11y/no-static-element-interactions": [
           "error",
           {

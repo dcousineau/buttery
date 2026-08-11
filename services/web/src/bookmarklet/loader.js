@@ -17,6 +17,7 @@
  * Authored as plain browser JS (no build step, no imports) so it runs as-is.
  */
 /* oxlint-disable no-undef -- runs in the hostile page's browser, not our bundle. */
+/* oxlint-disable no-var -- no build step, so this ships as authored; `var` is the widest-support declaration. */
 (function () {
   "use strict";
 
