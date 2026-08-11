@@ -32,6 +32,7 @@ import { Route as HouseholdRecipesIdRouteImport } from './routes/household.recip
 import { Route as HouseholdRecipesNewRouteImport } from './routes/household.recipes.new'
 import { Route as HouseholdRecipesImportRouteImport } from './routes/household.recipes_.import'
 import { Route as HouseholdRecipesImportBridgeRouteImport } from './routes/household.recipes_.import-bridge'
+import { Route as RecipesIdOgDotpngRouteImport } from './routes/recipes.$id_.og[.]png'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -150,6 +151,11 @@ const HouseholdRecipesImportBridgeRoute =
     path: '/household/recipes/import-bridge',
     getParentRoute: () => rootRouteImport,
   } as any)
+const RecipesIdOgDotpngRoute = RecipesIdOgDotpngRouteImport.update({
+  id: '/recipes/$id_/og.png',
+  path: '/recipes/$id/og.png',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -174,6 +180,7 @@ export interface FileRoutesByFullPath {
   '/household/recipes/new': typeof HouseholdRecipesNewRoute
   '/household/recipes/import': typeof HouseholdRecipesImportRoute
   '/household/recipes/import-bridge': typeof HouseholdRecipesImportBridgeRoute
+  '/recipes/$id/og.png': typeof RecipesIdOgDotpngRoute
   '/household/recipes/': typeof HouseholdRecipesIndexRoute
 }
 export interface FileRoutesByTo {
@@ -198,6 +205,7 @@ export interface FileRoutesByTo {
   '/household/recipes/new': typeof HouseholdRecipesNewRoute
   '/household/recipes/import': typeof HouseholdRecipesImportRoute
   '/household/recipes/import-bridge': typeof HouseholdRecipesImportBridgeRoute
+  '/recipes/$id/og.png': typeof RecipesIdOgDotpngRoute
   '/household/recipes': typeof HouseholdRecipesIndexRoute
 }
 export interface FileRoutesById {
@@ -224,6 +232,7 @@ export interface FileRoutesById {
   '/household/recipes/new': typeof HouseholdRecipesNewRoute
   '/household/recipes_/import': typeof HouseholdRecipesImportRoute
   '/household/recipes_/import-bridge': typeof HouseholdRecipesImportBridgeRoute
+  '/recipes/$id_/og.png': typeof RecipesIdOgDotpngRoute
   '/household/recipes/': typeof HouseholdRecipesIndexRoute
 }
 export interface FileRouteTypes {
@@ -251,6 +260,7 @@ export interface FileRouteTypes {
     | '/household/recipes/new'
     | '/household/recipes/import'
     | '/household/recipes/import-bridge'
+    | '/recipes/$id/og.png'
     | '/household/recipes/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -275,6 +285,7 @@ export interface FileRouteTypes {
     | '/household/recipes/new'
     | '/household/recipes/import'
     | '/household/recipes/import-bridge'
+    | '/recipes/$id/og.png'
     | '/household/recipes'
   id:
     | '__root__'
@@ -300,6 +311,7 @@ export interface FileRouteTypes {
     | '/household/recipes/new'
     | '/household/recipes_/import'
     | '/household/recipes_/import-bridge'
+    | '/recipes/$id_/og.png'
     | '/household/recipes/'
   fileRoutesById: FileRoutesById
 }
@@ -324,6 +336,7 @@ export interface RootRouteChildren {
   ApiPlanWeekDoticsRoute: typeof ApiPlanWeekDoticsRoute
   HouseholdRecipesImportRoute: typeof HouseholdRecipesImportRoute
   HouseholdRecipesImportBridgeRoute: typeof HouseholdRecipesImportBridgeRoute
+  RecipesIdOgDotpngRoute: typeof RecipesIdOgDotpngRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -489,6 +502,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HouseholdRecipesImportBridgeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/recipes/$id_/og.png': {
+      id: '/recipes/$id_/og.png'
+      path: '/recipes/$id/og.png'
+      fullPath: '/recipes/$id/og.png'
+      preLoaderRoute: typeof RecipesIdOgDotpngRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -528,6 +548,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPlanWeekDoticsRoute: ApiPlanWeekDoticsRoute,
   HouseholdRecipesImportRoute: HouseholdRecipesImportRoute,
   HouseholdRecipesImportBridgeRoute: HouseholdRecipesImportBridgeRoute,
+  RecipesIdOgDotpngRoute: RecipesIdOgDotpngRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

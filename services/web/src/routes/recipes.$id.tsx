@@ -5,6 +5,10 @@ import type { SchemaOrgRecipe } from "@buttery/recipe-schemas/schema-org";
 import { getRecipe } from "../server/recipes";
 import { formatDuration, formatPublished } from "../lib/format";
 import { parseServes } from "../lib/recipe-scale";
+import { seo } from "#/lib/seo";
+// Client-safe model only — never `#/server/og/recipe-og`, which drags satori,
+// resvg's native binding and ~400 KB of fonts along with it.
+import { recipeOgModel, recipeOgVersion } from "#/lib/og/recipe-card-model";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
@@ -17,7 +21,22 @@ export const Route = createFileRoute("/recipes/$id")({
   head: ({ loaderData }) => ({
     meta: loaderData
       ? [
-          { title: `${loaderData.name} · Buttery` },
+          ...seo({
+            title: `${loaderData.name} · Buttery`,
+            description: loaderData.description ?? fallbackDescription(loaderData),
+            // Rendered per recipe by `recipes.$id_.og[.]png.ts`. Root-relative
+            // here; `seo()` absolutizes it, which OG scrapers insist on.
+            //
+            // The `?v=` token is a hash of the very model the renderer draws
+            // from, so the URL changes exactly when the picture does. That is
+            // what lets the image route answer `immutable` with a one-year TTL:
+            // a CDN, and every scraper's own cache, can hold the card forever
+            // and an edited recipe still shows up as a brand new URL.
+            image: `/recipes/${encodeURIComponent(loaderData.id)}/og.png?v=${recipeOgVersion(recipeOgModel(loaderData))}`,
+            imageAlt: `${loaderData.name} — recipe card`,
+            // A single authored thing rather than a section of the site.
+            type: "article",
+          }),
           // Canonical AT-URI — points parsers at the source record in atproto,
           // independent of this web render. content is the recipe's own at:// URI.
           ...(loaderData.uri ? [{ name: "at:canonical", content: loaderData.uri }] : []),
@@ -26,6 +45,13 @@ export const Route = createFileRoute("/recipes/$id")({
   }),
   component: RecipePage,
 });
+
+/** Plenty of imported recipes carry no description. Say something true and
+ * specific rather than letting the share preview fall back to the site blurb. */
+function fallbackDescription(recipe: RecipeDetailData): string {
+  const source = recipe.attribution?.displayName ?? recipe.attribution?.publisher ?? recipe.publishedBy;
+  return source ? `${recipe.name}, from ${source} — a recipe on Buttery.` : `${recipe.name} — a recipe on Buttery.`;
+}
 
 function RecipePage() {
   const recipe = Route.useLoaderData();
