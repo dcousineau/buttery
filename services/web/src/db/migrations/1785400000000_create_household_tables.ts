@@ -31,7 +31,7 @@ import { type Kysely, sql } from "kysely";
 // Column default: `now()`.
 const now = sql`now()`;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function up(db: Kysely<any>): Promise<void> {
   // --- household --------------------------------------------------------
   await db.schema
@@ -107,7 +107,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   await db.schema.alterTable("session").addColumn("active_household_id", "text").execute();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function down(db: Kysely<any>): Promise<void> {
   // Reverse order. Indexes drop implicitly with their tables.
   await db.schema.alterTable("session").dropColumn("active_household_id").execute();

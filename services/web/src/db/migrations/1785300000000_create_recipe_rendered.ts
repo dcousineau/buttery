@@ -35,7 +35,7 @@ import { snakeCase, startCase } from "es-toolkit";
 
 const now = sql`now()`;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function up(db: Kysely<any>): Promise<void> {
   // Fuzzy / substring matching on recipe names (search complement to tsvector).
   await sql`create extension if not exists pg_trgm`.execute(db);
@@ -228,7 +228,7 @@ const VOCAB: Record<string, { prefix: string; suffixes: string[] }> = {
   },
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 async function seedVocab(db: Kysely<any>): Promise<void> {
   // slug: snakeCase("GlutenFree") → "gluten_free"; label: startCase → "Gluten Free".
   const vocabRows: { dimension: string; slug: string; label: string }[] = [];
@@ -244,7 +244,7 @@ async function seedVocab(db: Kysely<any>): Promise<void> {
   await db.insertInto("recipe_vocab_alias").values(aliasRows).execute();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function down(db: Kysely<any>): Promise<void> {
   await db.schema.dropTable("recipe_vocab_alias").ifExists().execute();
   await db.schema.dropTable("recipe_vocab").ifExists().execute();

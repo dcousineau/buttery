@@ -42,7 +42,7 @@ export function BookmarkletInstallDialog({ open, onOpenChange }: { open: boolean
               the link text as the bookmark name; overriding it drops the title.
               a11y rules disabled: this is a drag target (drag to bookmarks bar),
               not a navigable link or a button — there is no keyboard/click action. */}
-          {/* eslint-disable-next-line jsx-a11y/anchor-is-valid, jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+          {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid, jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
           <a
             ref={setAnchorHref}
             onClick={(e) => e.preventDefault()}

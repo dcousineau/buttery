@@ -31,7 +31,7 @@ export interface FreshInYourBoxProps {
   /** The viewer's "@handle" (prefixed, as the server returns it), or null. */
   viewerHandle: string | null;
   /** Opens the route's add-a-recipe chooser. This section opens nothing itself. */
-  onAddRecipe(): void;
+  onAddRecipe: () => void;
   className?: string;
 }
 

@@ -35,11 +35,11 @@ export type AddEntryRequest =
 
 interface AddEntryDialogProps {
   request: AddEntryRequest | null;
-  onClose(): void;
+  onClose: () => void;
   /** Recipes in the order the box lists them — the order they land in the slot. */
-  onSubmitRecipes(rows: HouseholdRecipeRow[]): void;
+  onSubmitRecipes: (rows: HouseholdRecipeRow[]) => void;
   /** Add or update, depending on the request the dialog was opened with. */
-  onSubmitNote(body: string): void;
+  onSubmitNote: (body: string) => void;
 }
 
 /**

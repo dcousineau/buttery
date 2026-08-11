@@ -16,6 +16,6 @@
     "@atproto/lex": "^0.3.5"
   },
   "devDependencies": {
-    "@typescript/native": "npm:typescript@^7.0.2"
+    "typescript": "^7.0.2"
   }
 }

@@ -29,12 +29,12 @@ function member(overrides: Partial<MemberRow> & Pick<MemberRow, "household_id" |
 
 /** A loader over an in-memory row set, applying the same liveness predicate. */
 function makeLoader(rows: MemberRow[]): MembershipLoader {
-  return async (did, householdId) => {
+  return (did, householdId) => {
     const row = rows.find((r) => r.household_id === householdId && r.did === did && r.deleted_at === null && !r.tombstoned && !r.household_deleted);
-    if (!row) return undefined;
+    if (!row) return Promise.resolve(undefined);
     // Strip the test-only `household_deleted` flag; return a clean Membership.
     const { household_deleted: _ignored, ...membership } = row;
-    return membership;
+    return Promise.resolve(membership);
   };
 }
 

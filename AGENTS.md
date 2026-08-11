@@ -34,6 +34,7 @@ Before edit files for big task:
 - `src/server/` = server business logic (`createServerFn` + its pure domain modules), first-class as routes. `src/lib/` = shared client-safe utils. No dump server logic in `lib/`.
 - UI use semantic tokens only (`bg-primary`, `text-muted-foreground`). Never raw hex or `bg-[var(--butter)]`.
 - All frontend WCAG A minimum, lean AA (keyboard, focus, labels, reduced motion, touch targets). Strict AA contrast ratios not required.
+- Lint = `oxlint`, format = `oxfmt`. No ESLint, no Prettier.
 - New system CLIs go in `[tools]` in `mise.toml` — not homebrew, not npm globals. Fresh clones need `mise trust`.
 - `package.json` is the only place tool versions live: node in `devEngines.runtime`, pnpm in `packageManager`. mise and `actions/setup-node` both read them. Never re-pin either in `mise.toml`, and treat `.nvmrc` as vestigial (nothing reads it).
 
@@ -43,7 +44,7 @@ Before edit files for big task:
 - One shared Kysely instance, `getDb()` in `src/lib/db.ts`; better-auth use it too. Prefer query-builder primitives over raw `sql`. In server fns, `import` dynamic inside handler so `pg` stay out of client bundles.
 - srvx host prod, NOT nitro vite plugin — nitro-nightly output self-fetch and break.
 - No Twitter/X-specific meta, ever. Standards-based `og:*` only; every platform read OG. `og:url`/canonical emitted globally in `__root.tsx`, not from `seo()`.
-- `typescript` (TS 6 alias, for typescript-eslint) and `@typescript/native` (TS 7, for `pnpm typecheck`) coexist on purpose. Collapse to plain TS 7.1 once [typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940) land.
+- TS 7 remove `baseUrl` (TS5102) — `services/docs` inline `@docusaurus/tsconfig` instead of extend it, because child config no can unset inherited option.
 
 ## Runtime Gotchas
 
@@ -51,6 +52,7 @@ Before edit files for big task:
 - `pnpm install`/`add` fail in sandbox — run sandbox-disabled, with `CI=true`, plus `--no-frozen-lockfile` after edit package.json.
 - Global element CSS MUST live in `@layer base` — unlayered rules beat Tailwind utilities. `cursor: pointer` counter-rule for Tailwind v4 preflight live there too; no remove it.
 - Browse dev at `http://127.0.0.1:3000`, never `localhost` — atproto forbid `.localhost` in web client_ids, so OAuth and session cookies bind to loopback.
+- Type-aware oxlint need built lexicons. Fresh clone or CI: `pnpm --filter @buttery/lexicons build` before `pnpm lint`, else `src/generated` missing → every lexicon import `error`-typed → hundreds of phantom `no-unsafe-*`.
 - Recipe ids ARE atproto rkeys (`-`, `.`, `_`, `:`, `~`, up to 512 chars). Never shape-validate them; regex reject real ids. DB existence only truth.
 
 ## Workflow Rules

@@ -21,7 +21,7 @@ import { type Kysely, sql } from "kysely";
 // Column default: `now()`.
 const now = sql`now()`;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function up(db: Kysely<any>): Promise<void> {
   // one row per tracked DID
   await db.schema
@@ -79,7 +79,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .execute();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function down(db: Kysely<any>): Promise<void> {
   // Indexes drop implicitly with their tables.
   await db.schema.dropTable("atproto_sync_run").ifExists().execute();

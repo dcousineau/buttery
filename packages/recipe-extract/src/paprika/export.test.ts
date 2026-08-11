@@ -113,7 +113,13 @@ describe("walkPaprikaExport — laziness (§4.2)", () => {
   it("reads a recipe's bytes only when its entry is consumed", async () => {
     const base = source(["r/index.html", "r/Recipes/A.html", "r/Recipes/B.html", "r/Recipes/C.html"]);
     const reads: string[] = [];
-    const spied: EntrySource = { ...base, text: async (path) => (reads.push(path), base.text(path)) };
+    const spied: EntrySource = {
+      ...base,
+      text: async (path) => {
+        reads.push(path);
+        return base.text(path);
+      },
+    };
 
     const iterator = walkPaprikaExport(spied)[Symbol.asyncIterator]();
     await iterator.next();

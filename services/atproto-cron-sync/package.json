@@ -11,7 +11,7 @@
     "sync:once": "node src/main.ts --once",
     "test": "vitest run",
     "test:db": "railway run --service buttery -- vitest run --project db",
-    "typecheck": "tsc6 --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@buttery/recipe-schemas": "workspace:*",
@@ -22,7 +22,7 @@
   "devDependencies": {
     "@types/node": "^26.2.0",
     "@types/pg": "^8.21.0",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
 }

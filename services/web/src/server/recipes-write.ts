@@ -107,12 +107,12 @@ function attributionFromChoice(choice: AttributionChoice): RecipeRecord["attribu
       const author = trim(choice.author);
       // Both are lexicon-required. Never fabricate one from the other (§8.2).
       if (!title || !author) return null;
-      return { $type: "exchange.recipe.defs#attributionPublication", title, author } as RecipeRecord["attribution"];
+      return { $type: "exchange.recipe.defs#attributionPublication", title, author };
     }
     case "person": {
       const name = trim(choice.name);
       if (!name) return null;
-      return { $type: "exchange.recipe.defs#attributionPerson", name } as RecipeRecord["attribution"];
+      return { $type: "exchange.recipe.defs#attributionPerson", name };
     }
     case "website": {
       const url = trim(choice.url);
@@ -215,7 +215,7 @@ export const publishRecipe = createServerFn({ method: "POST" })
 
 // --- implementation ------------------------------------------------------
 
-import type { Kysely } from "kysely";
+import type { Kysely, Sql } from "kysely";
 import type { DB } from "#/db/types";
 
 interface Ctx {
@@ -527,9 +527,7 @@ async function insertLocalRecipe(db: Kysely<DB>, ctx: Ctx, id: string, record: R
 
 // Re-derive the child rows (ingredient/instruction/keyword/attribution/image/
 // search) for a recipe. Delete-then-insert so it works for update too.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function writeChildren(trx: Kysely<DB>, id: string, record: RecipeRecord, sqlTag: any): Promise<void> {
-  const sql = sqlTag;
+async function writeChildren(trx: Kysely<DB>, id: string, record: RecipeRecord, sql: Sql): Promise<void> {
   const ingredients = (record.ingredients ?? []).filter((s) => s.trim());
   const instructions = (record.instructions ?? []).filter((s) => s.trim());
   const keywords = [...new Set((record.keywords ?? []).filter((s) => s.trim()))];
@@ -706,7 +704,7 @@ async function publishLocalRecipe(db: Kysely<DB>, ctx: Ctx, recipeId: string, re
     imageBlobMeta = { cid: ref.ref?.$link ?? "", mime: ref.mimeType ?? imageMime, size: ref.size ?? imageBytes.byteLength };
     toPublish = {
       ...toPublish,
-      embed: { $type: "exchange.recipe.recipe#imagesEmbed", images: [{ alt: imageAlt ?? "", image: blob as never }] } as RecipeRecord["embed"],
+      embed: { $type: "exchange.recipe.recipe#imagesEmbed", images: [{ alt: imageAlt ?? "", image: blob }] },
     };
   }
 
@@ -809,9 +807,9 @@ async function buildRecordFromRow(
     prepTime: row.prep_time ?? undefined,
     cookTime: row.cook_time ?? undefined,
     totalTime: row.total_time ?? undefined,
-    cookingMethod: (tokenForSlug("cooking_method", row.cooking_method) ?? undefined) as RecipeRecord["cookingMethod"],
-    recipeCuisine: (tokenForSlug("cuisine", row.recipe_cuisine) ?? undefined) as RecipeRecord["recipeCuisine"],
-    recipeCategory: (tokenForSlug("category", row.recipe_category) ?? undefined) as RecipeRecord["recipeCategory"],
+    cookingMethod: tokenForSlug("cooking_method", row.cooking_method) ?? undefined,
+    recipeCuisine: tokenForSlug("cuisine", row.recipe_cuisine) ?? undefined,
+    recipeCategory: tokenForSlug("category", row.recipe_category) ?? undefined,
     suitableForDiet: row.suitable_for_diet?.length ? (row.suitable_for_diet.map((s) => tokenForSlug("diet", s)).filter(Boolean) as RecipeRecord["suitableForDiet"]) : undefined,
     attribution: (attribution?.raw as RecipeRecord["attribution"]) ?? undefined,
     nutrition:

@@ -58,7 +58,7 @@ export function clearPendingInvite(): void {
  * does not survive serialization — so displaying the message is the reliable,
  * typed-meaning-preserving branch. */
 export function errorMessage(err: unknown, fallback = "Something went wrong. Please try again."): string {
-  if (err && typeof err === "object" && "message" in err && typeof (err as { message: unknown }).message === "string") {
+  if (err && typeof err === "object" && "message" in err && typeof err.message === "string") {
     const msg = (err as { message: string }).message;
     return msg.length > 0 ? msg : fallback;
   }

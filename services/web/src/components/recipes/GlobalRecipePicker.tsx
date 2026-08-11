@@ -36,7 +36,7 @@ export function GlobalRecipePicker({ open, onOpenChange, onAdded }: { open: bool
   // Load recent-public on open; debounce subsequent typing.
   useEffect(() => {
     if (!open) return;
-    const t = setTimeout(() => runSearch(q), q ? 220 : 0);
+    const t = setTimeout(() => void runSearch(q), q ? 220 : 0);
     return () => clearTimeout(t);
   }, [open, q, runSearch]);
 
@@ -68,7 +68,7 @@ export function GlobalRecipePicker({ open, onOpenChange, onAdded }: { open: bool
         <div className="flex h-9 items-center gap-2 rounded-lg border-2 border-border bg-background px-3">
           <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <input
-            // eslint-disable-next-line jsx-a11y/no-autofocus -- modal search field; focusing on open is the expected affordance
+            // oxlint-disable-next-line jsx-a11y/no-autofocus -- modal search field; focusing on open is the expected affordance
             autoFocus
             type="search"
             value={q}

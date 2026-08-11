@@ -59,7 +59,7 @@ type ProgressProps = Omit<React.ComponentProps<"div">, "children"> &
 function Progress({ value, max = 100, label, size, variant, className, ...props }: ProgressProps) {
   const safeMax = Number.isFinite(max) && max > 0 ? max : 100;
   const indeterminate = value == null || !Number.isFinite(value);
-  const clamped = indeterminate ? null : Math.min(Math.max(value as number, 0), safeMax);
+  const clamped = indeterminate ? null : Math.min(Math.max(value, 0), safeMax);
   const percent = clamped === null ? 0 : (clamped / safeMax) * 100;
   // ARIA: an indeterminate bar omits `aria-valuenow` entirely — it must not claim 0.
   const valueText = label ?? (indeterminate ? "In progress" : `${Math.round(percent)}%`);

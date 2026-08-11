@@ -74,7 +74,7 @@ function Accordion({
     (value: string) => setOpen((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : type === "single" ? [value] : [...prev, value])),
     [type],
   );
-  const ctx = React.useMemo(() => ({ open, toggle, size: (size ?? "default") as AccordionSize }), [open, toggle, size]);
+  const ctx = React.useMemo(() => ({ open, toggle, size: size ?? "default" }), [open, toggle, size]);
   return (
     <div data-slot="accordion" className={cn(accordionVariants({ size }), className)} {...props}>
       <AccordionContext.Provider value={ctx}>{children}</AccordionContext.Provider>

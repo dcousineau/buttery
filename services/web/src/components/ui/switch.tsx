@@ -38,6 +38,7 @@ const knobVariants = cva("rounded-full bg-border transition-transform", {
 function Switch({ className, size = "default", ...props }: Omit<React.ComponentProps<"input">, "size" | "type"> & VariantProps<typeof trackVariants>) {
   return (
     <span data-slot="switch" className={cn("relative inline-flex shrink-0 align-middle", props.disabled && "opacity-50", className)}>
+      {/* oxlint-disable-next-line jsx-a11y/role-has-required-aria-props -- a native `input[type=checkbox]` maps its checked state to `aria-checked` for free, so `role="switch"` needs no explicit prop here (eslint-plugin-jsx-a11y exempts this pair; oxlint does not yet). */}
       <input type="checkbox" role="switch" className="peer absolute inset-0 size-full cursor-(--cursor-interactive) opacity-0 disabled:cursor-not-allowed" {...props} />
       <span className={cn(trackVariants({ size }))}>
         <span className={cn(knobVariants({ size }))} />

@@ -37,7 +37,7 @@ import { type Kysely, sql } from "kysely";
 
 const now = sql`now()`;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema
     .createTable("meal_plan_entry")
@@ -84,7 +84,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   await db.schema.createIndex("meal_plan_entry_recipe_id_idx").on("meal_plan_entry").column("recipe_id").execute();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function down(db: Kysely<any>): Promise<void> {
   await db.schema.dropTable("meal_plan_entry").ifExists().execute();
 }

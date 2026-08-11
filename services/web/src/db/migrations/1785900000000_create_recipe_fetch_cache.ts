@@ -20,7 +20,7 @@ import { type Kysely, sql } from "kysely";
 
 const now = sql`now()`;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema
     .createTable("recipe_fetch_cache")
@@ -42,7 +42,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   await db.schema.createIndex("recipe_fetch_cache_fetched_at_idx").on("recipe_fetch_cache").column("fetched_at").execute();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function down(db: Kysely<any>): Promise<void> {
   await db.schema.dropTable("recipe_fetch_cache").ifExists().execute();
 }

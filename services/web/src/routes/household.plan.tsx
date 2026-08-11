@@ -328,21 +328,21 @@ function PlanPage() {
 
   const actions: PlanActionsValue = {
     startCook,
-    openAdd(date, slot) {
+    openAdd: (date, slot) => {
       const day = week.days.find((candidate) => candidate.date === date);
       setAddRequest({ kind: "add", date, slot, existingCount: day?.slots[slot].length ?? 0, isToday: day?.isToday ?? false });
     },
-    openNoteEditor(entryId) {
+    openNoteEditor: (entryId) => {
       const found = findEntry(week, entryId);
       if (!found || found.entry.kind !== "note") return;
       setAddRequest({ kind: "edit-note", date: found.date, slot: found.slot, entryId, body: found.entry.body });
     },
-    openMove(entryId) {
+    openMove: (entryId) => {
       const found = findEntry(week, entryId);
       if (!found) return;
       setMoveRequest({ entryId, fromDate: found.date, fromSlot: found.slot });
     },
-    moveEntry(entryId, toDate, toSlot) {
+    moveEntry: (entryId, toDate, toSlot) => {
       const found = findEntry(week, entryId);
       // A drop onto the slot the card is already in is not a move — announcing
       // one would be a lie, and the server no-ops it anyway.
@@ -355,7 +355,7 @@ function PlanPage() {
         announce: `${label} moved to ${toSlot} on ${formatPlanDate(toDate)}`,
       });
     },
-    removeEntry(entryId) {
+    removeEntry: (entryId) => {
       const label = entryLabel(entryId);
       run({
         optimistic: (current) => withEntryRemoved(current, entryId),
@@ -364,14 +364,14 @@ function PlanPage() {
         announce: "Entry removed",
       });
     },
-    setCooked(entryId, cooked) {
+    setCooked: (entryId, cooked) => {
       run({
         optimistic: (current) => withEntryCooked(current, entryId, cooked),
         action: () => setMealPlanEntryCooked({ data: { entryId, cooked } }),
         toast: cooked ? "Marked cooked" : "Cooked mark cleared",
       });
     },
-    addBackToBox(entryId) {
+    addBackToBox: (entryId) => {
       const found = findEntry(week, entryId);
       if (!found || found.entry.kind !== "recipe") return;
       const { recipeId } = found.entry;

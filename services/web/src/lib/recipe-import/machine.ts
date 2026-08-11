@@ -311,7 +311,7 @@ export function importEventForWorkerMessage(message: ImportWorkerEvent): ImportE
  */
 function toRecordInput(recipe: ExtractedRecipe): RecipeRecordInput {
   const { imageUrl: _imageUrl, vocab: _vocab, name, text, ingredients, instructions, ...rest } = recipe;
-  return { ...rest, name: name ?? "", text: text ?? "", ingredients: ingredients ?? [], instructions: instructions ?? [] } as RecipeRecordInput;
+  return { ...rest, name: name ?? "", text: text ?? "", ingredients: ingredients ?? [], instructions: instructions ?? [] };
 }
 
 /** The key an item collapses on: the URL key when it has one, the fingerprint otherwise (§6.1). */

@@ -51,7 +51,9 @@ export const paprikaImporter: RecipeImporter = {
   // Phase 1 has exactly one acquisition shape: a dropped or picked directory. An
   // archive-backed source would be a different `EntrySource` here and would change nothing
   // below it (§4.2, §17).
-  open: async (input) => directoryEntrySource(input.files),
+  // Deferred, not `Promise.resolve(...)`: `directoryEntrySource` throws for an
+  // oversized drop, and `open` is contracted to reject rather than throw sync.
+  open: (input) => Promise.resolve().then(() => directoryEntrySource(input.files)),
   entries: (source) => walkPaprikaExport(source),
   parse: (entry) => parsePaprikaRecipe(entry.html, entry),
 };

@@ -48,10 +48,10 @@ export interface RecipeMiniCardNetworkProps {
   variant: "network";
   recipe: GlobalRecipeResult;
   /** The caller owns `addRecipeToHousehold` and the refetch that follows it. */
-  onSave(recipeId: string): void;
+  onSave: (recipeId: string) => void;
   /** Opens the caller's read-only preview. Handed the whole row: the dialog
    * titles itself from the card's copy while the detail fetch is in flight. */
-  onPreview(recipe: GlobalRecipeResult): void;
+  onPreview: (recipe: GlobalRecipeResult) => void;
   /** This card's save is in flight: the button reads "Saving…" and is inert. */
   saving?: boolean;
 }

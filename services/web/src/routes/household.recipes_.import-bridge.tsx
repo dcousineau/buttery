@@ -39,7 +39,7 @@ function ImportBridge() {
   useEffect(() => {
     const opener = window.opener as Window | null;
     if (!opener) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- terminal one-shot state (no opener == dead popup), not a render loop.
+      // oxlint-disable-next-line react/react-compiler -- terminal one-shot state (no opener == dead popup), not a render loop. (oxlint ships the react-hooks compiler checks, `set-state-in-effect` among them, as the single `react/react-compiler` rule.)
       setFailed(true);
       return;
     }
@@ -53,7 +53,7 @@ function ImportBridge() {
       try {
         const res = await submitImport({ data: payload });
         if (res.status === "ok" || res.status === "partial") {
-          navigate({ to: "/household/recipes/new", search: { import: res.importId } });
+          void navigate({ to: "/household/recipes/new", search: { import: res.importId } });
           return;
         }
         setFailed(true);
@@ -62,12 +62,14 @@ function ImportBridge() {
       }
     }
 
-    function onMessage(e: MessageEvent) {
+    function onMessage(e: MessageEvent<unknown>) {
       // Trust only the tab that opened us. Its origin is the (arbitrary) recipe
       // page, so we can't pin an origin — the opener identity is the guarantee.
       if (e.source !== opener) return;
-      if (!e.data || e.data.type !== PAYLOAD) return;
-      const p = e.data.payload as Payload | undefined;
+      // Shape is asserted, never assumed: the sender is an arbitrary web page.
+      const data = e.data as { type?: unknown; payload?: unknown } | null;
+      if (!data || data.type !== PAYLOAD) return;
+      const p = data.payload as Payload | undefined;
       if (!p || typeof p.url !== "string") return;
       void ingest(p);
     }

@@ -60,8 +60,11 @@ export class FilePlcDatabase extends MockDatabase {
       throw err;
     }
     const snapshot = JSON.parse(raw) as Snapshot;
-    if (snapshot.version !== 1) {
-      throw new Error(`Unsupported PLC snapshot version ${snapshot.version} at ${path}. Delete the file to start fresh.`);
+    // Widened deliberately: `Snapshot["version"]` is the literal `1`, so inside the
+    // guard it narrows to `never` and cannot be printed.
+    const version: number = snapshot.version;
+    if (version !== 1) {
+      throw new Error(`Unsupported PLC snapshot version ${version} at ${path}. Delete the file to start fresh.`);
     }
     for (const [did, ops] of Object.entries(snapshot.contents)) {
       db.contents[did] = ops.map((op) => ({

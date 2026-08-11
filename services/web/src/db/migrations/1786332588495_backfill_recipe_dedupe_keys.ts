@@ -76,7 +76,7 @@ export async function dedupeMetaRowsFor(input: DedupeBackfillInput): Promise<Ded
   return rows;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function up(db: Kysely<any>): Promise<void> {
   // Keyset cursor over `recipe.id` (a ULID, and the PK): stable under the
   // inserts this migration itself performs, unlike offset paging.
@@ -155,7 +155,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   console.log(`[backfill_recipe_dedupe_keys] ${recipes} recipes → ${metaRows} recipe_meta rows`);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function down(db: Kysely<any>): Promise<void> {
   // Only this migration's namespace. `recipe_meta` itself belongs to the
   // previous migration, and other namespaces (`llm.enhance`, …) are not ours to

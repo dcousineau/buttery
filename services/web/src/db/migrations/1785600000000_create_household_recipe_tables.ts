@@ -31,7 +31,7 @@ import { type Kysely, sql } from "kysely";
 
 const now = sql`now()`;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function up(db: Kysely<any>): Promise<void> {
   // --- household_recipe (the box) ---------------------------------------
   await db.schema
@@ -71,7 +71,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .execute();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function down(db: Kysely<any>): Promise<void> {
   // Reverse order. The note references the box, so it drops first.
   await db.schema.dropTable("household_recipe_note").ifExists().execute();

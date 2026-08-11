@@ -19,12 +19,12 @@ import { type Kysely } from "kysely";
  * the evolving `DB` interface (matches the existing migrations).
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema.alterTable("user").addColumn("pds", "text").execute();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function down(db: Kysely<any>): Promise<void> {
   await db.schema.alterTable("user").dropColumn("pds").execute();
 }

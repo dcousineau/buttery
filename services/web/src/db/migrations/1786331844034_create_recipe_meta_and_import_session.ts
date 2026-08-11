@@ -44,7 +44,7 @@ import { type Kysely, sql } from "kysely";
 
 const now = sql`now()`;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function up(db: Kysely<any>): Promise<void> {
   // --- recipe_meta (global; facts true of the recipe itself) -------------
   // Phase 1 writes exactly two keys: ('dedupe','source_url_key') and
@@ -143,7 +143,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   `.execute(db);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function down(db: Kysely<any>): Promise<void> {
   await db.schema.dropTable("recipe_import_session").ifExists().execute();
   await db.schema.dropTable("household_recipe_meta").ifExists().execute();

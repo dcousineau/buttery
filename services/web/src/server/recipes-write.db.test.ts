@@ -85,12 +85,14 @@ vi.mock("@tanstack/react-start", async (importOriginal) => {
     validator: (v: Validator) => builder(v),
     inputValidator: (v: Validator) => builder(v),
     middleware: () => builder(validator),
-    handler: (fn: (ctx: { data: unknown }) => unknown) => async (opts?: { data?: unknown }) => fn({ data: validator ? validator(opts?.data) : opts?.data }),
+    // Deferred so a throwing validator/handler rejects, exactly as the real
+    // (async) server fn does — several tests assert on the rejection.
+    handler: (fn: (ctx: { data: unknown }) => unknown) => (opts?: { data?: unknown }) => Promise.resolve().then(() => fn({ data: validator ? validator(opts?.data) : opts?.data })),
   });
   return { ...(await importOriginal<object>()), createServerFn: () => builder(null) };
 });
 
-vi.mock("./recipe-context", () => ({ activeContext: async () => ({ did: DID, householdId: HH }) }));
+vi.mock("./recipe-context", () => ({ activeContext: () => Promise.resolve({ did: DID, householdId: HH }) }));
 
 // Loaded lazily so a skipped run never imports the server modules at all.
 type RecipesWrite = typeof import("./recipes-write");
@@ -175,7 +177,7 @@ function validRecord(overrides: Partial<SaveRecipeInput["record"]> = {}): SaveRe
 
 /** Call the real handler, remembering any recipe it created so cleanup can find it. */
 async function save(input: SaveRecipeInput): Promise<SaveRecipeResult> {
-  const result = (await write.saveRecipe({ data: input })) as SaveRecipeResult;
+  const result = await write.saveRecipe({ data: input });
   if ("recipeId" in result) created.push(result.recipeId);
   return result;
 }

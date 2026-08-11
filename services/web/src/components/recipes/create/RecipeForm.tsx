@@ -118,7 +118,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
   useEffect(() => {
     if (!importId) return;
     let cancelled = false;
-    (async () => {
+    void (async () => {
       const payload = await getImportPrefill({ data: { id: importId } }).catch(() => null);
       if (cancelled || !payload) return;
       const r = payload.recipe;
@@ -175,9 +175,9 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
       prepTime: minutesToIso(prep),
       cookTime: minutesToIso(cook),
       recipeYield: recipeYield.trim() || undefined,
-      cookingMethod: (tokenForSlug("cooking_method", method) ?? undefined) as RecipeRecordInput["cookingMethod"],
-      recipeCuisine: (tokenForSlug("cuisine", cuisine) ?? undefined) as RecipeRecordInput["recipeCuisine"],
-      recipeCategory: (tokenForSlug("category", category) ?? undefined) as RecipeRecordInput["recipeCategory"],
+      cookingMethod: tokenForSlug("cooking_method", method) ?? undefined,
+      recipeCuisine: tokenForSlug("cuisine", cuisine) ?? undefined,
+      recipeCategory: tokenForSlug("category", category) ?? undefined,
       suitableForDiet: diet ? ([tokenForSlug("diet", diet)].filter(Boolean) as RecipeRecordInput["suitableForDiet"]) : undefined,
       nutrition,
       // For imports the server re-derives Website attribution from sourceUrl and
@@ -254,7 +254,8 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
     }
     const reader = new FileReader();
     reader.onload = () => {
-      const dataUrl = String(reader.result);
+      // `readAsDataURL` always resolves to a string; the union is for the other read modes.
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
       setImage({ kind: "bytes", dataBase64: dataUrl, mime: file.type, previewUrl: URL.createObjectURL(file), alt: name.trim() });
     };
     reader.readAsDataURL(file);
@@ -595,7 +596,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
         pending={pending === "publish"}
         onConfirm={() => {
           setConfirmPublish(false);
-          submit(true);
+          void submit(true);
         }}
       />
       <DuplicateDialog open={duplicateId != null} onOpenChange={(o) => !o && setDuplicateId(null)} existingRecipeId={duplicateId} />

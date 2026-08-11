@@ -65,11 +65,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run eslint
-        # Register a problem matcher that parses eslint's default (stylish)
-        # output into inline PR annotations — dependency-free, same annotation
-        # channel vitest's github-actions reporter uses. eslint's nonzero exit
-        # still fails the job.
-        run: |
-          echo "::add-matcher::.github/eslint-matcher.json"
-          pnpm lint
+      # Type-aware lint needs the same generated code typecheck does: `src/generated`
+      # is gitignored, and without it every module that reaches a lexicon type is
+      # `error`-typed, so the `no-unsafe-*` family reports the missing types as if
+      # they were defects. ESLint never needed this because it never had types.
+      - name: Build lexicons
+        run: pnpm --filter @buttery/lexicons build
+
+      - name: Run oxlint
+        # `github` format emits ::error/::warning workflow commands directly, so
+        # PR annotations need no problem matcher — same annotation channel
+        # vitest's github-actions reporter uses. oxlint's nonzero exit still
+        # fails the job; warn-level rules (react/exhaustive-deps) annotate
+        # without failing it, as they did under eslint.
+        run: pnpm lint --format github

@@ -29,14 +29,14 @@ import { useIsMobile } from "#/lib/hooks/use-mobile";
 interface ThisWeekPanelProps {
   week: PlanWeek;
   open: boolean;
-  onOpenChange(open: boolean): void;
+  onOpenChange: (open: boolean) => void;
   /** Opens the copy-week dialog (the route owns the dialog and the mutation). */
-  onCopyWeek(): void;
+  onCopyWeek: () => void;
   /** Plain success toast — no refetch (the `.ics` download changes nothing). */
-  onNotify(message: string): void;
+  onNotify: (message: string) => void;
   /** Success toast AND `router.invalidate()`: the grid re-buckets on a save. */
-  onPreferencesSaved(message: string): void;
-  onError(message: string): void;
+  onPreferencesSaved: (message: string) => void;
+  onError: (message: string) => void;
 }
 
 /** Card chrome, repeated three times — identical to the comp's inline style. */
@@ -94,7 +94,7 @@ export function ThisWeekPanel({ week, open, onOpenChange, ...handlers }: ThisWee
   );
 }
 
-function PanelBody({ week, onClose, onCopyWeek, onNotify, onPreferencesSaved, onError }: Omit<ThisWeekPanelProps, "open" | "onOpenChange"> & { onClose(): void }) {
+function PanelBody({ week, onClose, onCopyWeek, onNotify, onPreferencesSaved, onError }: Omit<ThisWeekPanelProps, "open" | "onOpenChange"> & { onClose: () => void }) {
   return (
     <>
       <div className="flex flex-none items-center justify-between gap-2">
@@ -211,7 +211,7 @@ function timezoneGroups(current: string): Array<{ area: string; zones: Array<{ v
   return [...groups].map(([area, zoneList]) => ({ area, zones: zoneList }));
 }
 
-function PreferencesCard({ week, onSaved, onError }: { week: PlanWeek; onSaved(message: string): void; onError(message: string): void }) {
+function PreferencesCard({ week, onSaved, onError }: { week: PlanWeek; onSaved: (message: string) => void; onError: (message: string) => void }) {
   // The loader is the source of truth, but it only catches up after the save's
   // `router.invalidate()` lands. `pending` holds what the user just chose so the
   // controls do not visibly snap back in between; a failed save clears it.

@@ -203,7 +203,7 @@ describeCorpus("the whole reference export parses (§16.2)", () => {
 
   it("parses every entry without throwing", async () => {
     const { walked } = await load();
-    const threw = walked.filter((w) => w.thrown != null).map((w) => `${w.entryName}: ${w.thrown}`);
+    const threw = walked.filter((w) => w.thrown != null).map((w) => `${w.entryName}: ${String(w.thrown)}`);
     expect(threw).toEqual([]);
   });
 

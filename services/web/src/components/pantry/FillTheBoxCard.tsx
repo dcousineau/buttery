@@ -49,7 +49,7 @@ export function FillTheBoxCard({ onNotify, className }: { onNotify?: (message: s
       // Reached the page (full or partial) → open the form prefilled by import id.
       if (res.status === "ok" || res.status === "partial") {
         setPhase(null);
-        navigate({ to: "/household/recipes/new", search: { import: res.importId } });
+        void navigate({ to: "/household/recipes/new", search: { import: res.importId } });
         return;
       }
       if (res.status === "rate_limited") return setPhase("rate_limited");
@@ -69,7 +69,7 @@ export function FillTheBoxCard({ onNotify, className }: { onNotify?: (message: s
   // stays locked to the source even though we couldn't read the page.
   function goManualFromFailure() {
     setPhase(null);
-    navigate({ to: "/household/recipes/new", search: { source: failUrl } });
+    void navigate({ to: "/household/recipes/new", search: { source: failUrl } });
   }
 
   function reportFailure() {

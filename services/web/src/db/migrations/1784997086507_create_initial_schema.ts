@@ -15,7 +15,7 @@ import { type Kysely, sql } from "kysely";
 // Column default: `CURRENT_TIMESTAMP`.
 const now = sql`CURRENT_TIMESTAMP`;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema
     .createTable("user")
@@ -91,7 +91,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   await db.schema.createIndex("verification_identifier_idx").on("verification").column("identifier").execute();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function down(db: Kysely<any>): Promise<void> {
   // Drop in reverse dependency order. Tables with FKs to "user" go first;
   // indexes drop implicitly with their tables.

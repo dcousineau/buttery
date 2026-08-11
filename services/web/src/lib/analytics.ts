@@ -31,8 +31,11 @@ import type { PostHog } from "posthog-js";
  */
 
 const enabledFlag = import.meta.env.VITE_PUBLIC_POSTHOG_ENABLED === "true";
-const token = import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN;
-const host = import.meta.env.VITE_PUBLIC_POSTHOG_HOST;
+// `?? ""` rather than leaving these `string | undefined`: empty is already the
+// OFF case for the gate below, and it keeps `POSTHOG_CLIENT_CONFIG` a plain
+// `{ apiKey: string; host: string }` on the enabled branch.
+const token = import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN ?? "";
+const host = import.meta.env.VITE_PUBLIC_POSTHOG_HOST ?? "";
 
 /** Whether this build may talk to PostHog at all. Constant-folded by Vite. */
 export const ANALYTICS_ENABLED: boolean = enabledFlag && Boolean(token) && Boolean(host);

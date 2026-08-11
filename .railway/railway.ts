@@ -1,4 +1,4 @@
-import { bucket, defineRailway, github, postgres, project, redis, ref, service } from "railway/iac";
+import { bucket, defineRailway, github, postgres, project, redis, ref, service, type VariableValue } from "railway/iac";
 
 export default defineRailway((ctx) => {
   const db = postgres("postgres");
@@ -68,6 +68,11 @@ export default defineRailway((ctx) => {
   // @todo If multiple environments are introduced, this should be dynamic.
   const publicOrigin = "https://buttery.recipes";
 
+  // The SDK types `ctx.shared` with an `any` index signature (it can't know a
+  // project's shared variables), so pin the type once here rather than letting
+  // `any` spread through the env maps below.
+  const posthogProjectToken = ctx.shared.POSTHOG_PROJECT_TOKEN as VariableValue;
+
   // GitHub-triggered deploys: pushes to the repo build & deploy automatically.
   //
   // Monorepo (pnpm workspace): Railway builds from the repo root — no
@@ -123,13 +128,13 @@ export default defineRailway((ctx) => {
       // (VITE_, see services/web/src/routes/__root.tsx) and read at RUNTIME by
       // posthog-node (below). Railway injects the resolved reference into both
       // the build and runtime environments, so the VITE_ inline works.
-      VITE_PUBLIC_POSTHOG_PROJECT_TOKEN: ctx.shared.POSTHOG_PROJECT_TOKEN,
+      VITE_PUBLIC_POSTHOG_PROJECT_TOKEN: posthogProjectToken,
       VITE_PUBLIC_POSTHOG_HOST: "https://event.buttery.recipes",
       // PostHog server config — read at RUNTIME by posthog-node to evaluate the
       // `invited` access flag server-side and identify people by handle (see
       // services/web/src/lib/posthog-server.ts). Server-to-server, so it talks to
       // PostHog's ingestion host directly, not the client reverse-proxy.
-      POSTHOG_PROJECT_TOKEN: ctx.shared.POSTHOG_PROJECT_TOKEN,
+      POSTHOG_PROJECT_TOKEN: posthogProjectToken,
       POSTHOG_HOST: "https://us.i.posthog.com",
       // Object storage (buttery-uploads bucket) — S3-compatible, virtual-hosted.
       BLOB_S3_ENDPOINT: ref(uploads, "ENDPOINT"),
