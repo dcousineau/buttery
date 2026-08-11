@@ -1,5 +1,4 @@
 import { parse, type HTMLElement } from "node-html-parser";
-import type { WireRecipe } from "@buttery/recipe-schemas/schema-org";
 import { schemaOrgToLexicon } from "@buttery/recipe-schemas/bridge";
 import { readItem } from "../parse/microdata.ts";
 import { normalizeEntryPath } from "../import/entry-source.ts";
@@ -75,7 +74,7 @@ function build(clientId: string, html: string, entry: ImportEntry): ImportCandid
 
   // `base` only ever resolves relative image URLs, and `image` is gone by now; passing the
   // source URL anyway keeps the call honest if the bridge grows another use for it.
-  const recipe = schemaOrgToLexicon(node as WireRecipe, sourceUrl ?? "");
+  const recipe = schemaOrgToLexicon(node, sourceUrl ?? "");
   if (image.imageUrl) recipe.imageUrl = image.imageUrl;
 
   // Same usability bar as `fromMicrodata`: a name plus some body. Below it we have a page,

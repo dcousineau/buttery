@@ -170,11 +170,14 @@ export function memoryEntrySource(entries: Map<string, string | Uint8Array>): En
     return bytes;
   }
 
-  // `async` for the same reason as `directoryEntrySource`: reject, never throw sync.
+  // Deferred through `Promise.resolve().then` for the same reason as
+  // `directoryEntrySource`: reject, never throw sync. Nothing here is actually
+  // async — the bytes are already in memory — so the promise is the contract
+  // (and the error channel), not a wait.
   return {
     paths: () => paths,
-    text: async (path) => decoder.decode(resolve(path)),
-    bytes: async (path) => resolve(path),
+    text: (path) => Promise.resolve().then(() => decoder.decode(resolve(path))),
+    bytes: (path) => Promise.resolve().then(() => resolve(path)),
     totalBytes: () => total,
   };
 }

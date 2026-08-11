@@ -27,7 +27,7 @@ export function AttributionCard({
 
   const type = state.type;
   const complete = attributionComplete(state);
-  const fields = type ? ATTRIBUTION_FIELDS[type as AttributionType] : [];
+  const fields = type ? ATTRIBUTION_FIELDS[type] : [];
 
   return (
     <div id="attribution-block" className="overflow-hidden rounded-xl border-2 border-destructive bg-card shadow-(--shadow-pop-md)">

@@ -40,7 +40,7 @@ export function schemaOrgToLexicon(node: WireRecipe, base: string): ExtractedRec
   if (nutrition) out.nutrition = nutrition;
 
   const diets = dietTokensFromSchemaOrg(c.suitableForDiet);
-  if (diets.length) out.suitableForDiet = diets as ExtractedRecipe["suitableForDiet"];
+  if (diets.length) out.suitableForDiet = diets;
 
   if (c.recipeCuisine || c.recipeCategory || c.cookingMethod) {
     out.vocab = { cuisine: c.recipeCuisine, category: c.recipeCategory, method: c.cookingMethod };

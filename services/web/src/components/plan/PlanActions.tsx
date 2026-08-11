@@ -26,24 +26,24 @@ import type { MealSlot, PlanDate } from "#/lib/plan/week";
  */
 export interface PlanActionsValue {
   /** Open the add dialog aimed at a slot. */
-  openAdd(date: PlanDate, slot: MealSlot): void;
+  openAdd: (date: PlanDate, slot: MealSlot) => void;
   /** Open the add dialog on its note tab, editing an existing note (§6.3). */
-  openNoteEditor(entryId: string): void;
+  openNoteEditor: (entryId: string) => void;
   /** Open the move dialog for an entry. */
-  openMove(entryId: string): void;
+  openMove: (entryId: string) => void;
   /** Move without the dialog — what a drop does. Same code path (§8.4). */
-  moveEntry(entryId: string, toDate: PlanDate, toSlot: MealSlot): void;
-  removeEntry(entryId: string): void;
-  setCooked(entryId: string, cooked: boolean): void;
+  moveEntry: (entryId: string, toDate: PlanDate, toSlot: MealSlot) => void;
+  removeEntry: (entryId: string) => void;
+  setCooked: (entryId: string, cooked: boolean) => void;
   /** Re-link a recipe that left the box, so the plan card stops saying "not in box". */
-  addBackToBox(entryId: string): void;
+  addBackToBox: (entryId: string) => void;
   /**
    * Put the apron on over the planner (§7.5). Cook mode is a fullscreen modal,
    * so it opens on top of the week rather than navigating to the recipe — the
    * plan is what someone is working from, and exiting the apron should hand it
    * back, not strand them on a recipe page they never asked to visit.
    */
-  startCook(recipeId: string): void;
+  startCook: (recipeId: string) => void;
 
   /**
    * Drag state. Native HTML5 DnD carries the entry id in `text/plain`, but
@@ -52,10 +52,10 @@ export interface PlanActionsValue {
    * the drag at all instead of lighting up for any stray text selection.
    */
   draggingId: string | null;
-  setDraggingId(id: string | null): void;
+  setDraggingId: (id: string | null) => void;
   /** The slot currently under the pointer, as `slotKey(date, slot)`. */
   dragOverSlot: string | null;
-  setDragOverSlot(key: string | null): void;
+  setDragOverSlot: (key: string | null) => void;
 }
 
 const PlanActionsContext = createContext<PlanActionsValue | null>(null);

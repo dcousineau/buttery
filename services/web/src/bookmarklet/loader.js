@@ -16,7 +16,7 @@
  *
  * Authored as plain browser JS (no build step, no imports) so it runs as-is.
  */
-/* eslint-disable no-undef -- runs in the hostile page's browser, not our bundle. */
+/* oxlint-disable no-undef -- runs in the hostile page's browser, not our bundle. */
 (function () {
   "use strict";
 

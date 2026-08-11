@@ -9,7 +9,7 @@ import { IMPORTER_IDS, type ImporterId } from "#/lib/recipe-import-ids";
  * Everything downstream of "here is a list of parsed candidates" speaks `RecipeImporter`
  * and `ImportCandidate` and never names an app: the route, the worker, the state machine,
  * every review component, and every server function reach an importer through
- * `requireImporter(id)` or consume `ImportCandidate` directly. An ESLint
+ * `requireImporter(id)` or consume `ImportCandidate` directly. An oxlint
  * `no-restricted-imports` block over those directories enforces it, with this file as the
  * single documented exemption, so a violation fails `pnpm lint` rather than review.
  *

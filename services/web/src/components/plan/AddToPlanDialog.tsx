@@ -111,7 +111,7 @@ function AddToPlanForm({ request, onClose, onAdded }: Omit<AddToPlanDialogProps,
           <div className="flex gap-2.5">
             <label className="flex flex-1 flex-col gap-1 text-xs font-semibold">
               Day
-              <Select size="sm" value={date ?? today} onChange={(event) => setDate(event.target.value as PlanDate)}>
+              <Select size="sm" value={date ?? today} onChange={(event) => setDate(event.target.value)}>
                 {dates.map((option, offset) => (
                   <option key={option} value={option}>
                     {dayLabel(option, offset)}

@@ -31,7 +31,7 @@ export const StepView = forwardRef<
   // Click-to-centre is a pointer affordance; keyboard users advance with the
   // arrow keys (CookPhase), so this needs no role/tabindex.
   return (
-    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- click-to-centre is a pointer-only enhancement; keyboard users advance with the arrow keys handled in CookPhase, so no per-step key listener is wanted here.
+    // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- click-to-centre is a pointer-only enhancement; keyboard users advance with the arrow keys handled in CookPhase, so no per-step key listener is wanted here.
     <li
       ref={ref}
       data-step-index={index}

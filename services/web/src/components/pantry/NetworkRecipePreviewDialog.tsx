@@ -43,14 +43,14 @@ type PreviewState = { status: "loading" } | { status: "ready"; detail: RecipeDet
 export interface NetworkRecipePreviewDialogProps {
   /** The card being previewed. `null` is the closed state — there is no second flag. */
   recipe: GlobalRecipeResult | null;
-  onOpenChange(open: boolean): void;
+  onOpenChange: (open: boolean) => void;
   /**
    * The route's own `saveToBox`: `addRecipeToHousehold`, then invalidate, then
    * toast. Resolves true when the recipe actually landed, which is the only
    * thing this dialog needs to know — on success the card behind it is about to
    * leave the section, so the preview closes with it.
    */
-  onSave(recipeId: string): Promise<boolean>;
+  onSave: (recipeId: string) => Promise<boolean>;
   /** This recipe's save is in flight. Owned by the route, shared with its card. */
   saving?: boolean;
 }

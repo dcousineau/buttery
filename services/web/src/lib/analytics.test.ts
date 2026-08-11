@@ -57,6 +57,8 @@ describe("no-op PostHog", () => {
   it("coerces to a string instead of throwing", () => {
     const posthog = createNoopPostHog();
 
-    expect(`${posthog}`).toBe("[posthog disabled]");
+    // The cast is the assertion: the runtime object defines `toString`, the
+    // `PostHog` type it stands in for does not.
+    expect(String(posthog as unknown as { toString: () => string })).toBe("[posthog disabled]");
   });
 });

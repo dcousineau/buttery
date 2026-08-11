@@ -49,8 +49,8 @@ class DatabaseReached extends Error {
 const getDb = vi.fn(() => {
   throw new DatabaseReached();
 });
-const assertMember = vi.fn(async (_did: string, _householdId: string) => ({}) as never);
-const activeContext = vi.fn(async () => ({ did: DID, householdId: HH }));
+const assertMember = vi.fn((_did: string, _householdId: string) => Promise.resolve({} as never));
+const activeContext = vi.fn(() => Promise.resolve({ did: DID, householdId: HH }));
 
 vi.mock("#/lib/db", () => ({ getDb }));
 vi.mock("./recipe-context", () => ({ activeContext }));
@@ -68,7 +68,9 @@ vi.mock("@tanstack/react-start", async (importOriginal) => {
     validator: (v: Validator) => builder(v),
     inputValidator: (v: Validator) => builder(v),
     middleware: () => builder(validator),
-    handler: (fn: (ctx: { data: unknown }) => unknown) => async (opts?: { data?: unknown }) => fn({ data: validator ? validator(opts?.data) : opts?.data }),
+    // Deferred so a throwing validator/handler rejects, exactly as the real
+    // (async) server fn does — several tests assert on the rejection.
+    handler: (fn: (ctx: { data: unknown }) => unknown) => (opts?: { data?: unknown }) => Promise.resolve().then(() => fn({ data: validator ? validator(opts?.data) : opts?.data })),
   });
   return { ...(await importOriginal<object>()), createServerFn: () => builder(null) };
 });
@@ -120,8 +122,8 @@ beforeEach(() => {
   getDb.mockImplementation(() => {
     throw new DatabaseReached();
   });
-  assertMember.mockImplementation(async () => ({}) as never);
-  activeContext.mockImplementation(async () => ({ did: DID, householdId: HH }));
+  assertMember.mockImplementation(() => Promise.resolve({} as never));
+  activeContext.mockImplementation(() => Promise.resolve({ did: DID, householdId: HH }));
 });
 
 describe.each(GATED)("%s", (_name, call) => {

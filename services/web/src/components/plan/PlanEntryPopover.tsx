@@ -48,7 +48,7 @@ interface PlanEntryPopoverProps {
   /** Grid cards get the 16.5rem popover, agenda cards the 17rem one. */
   variant: "grid" | "days";
   /** Close the popover and hand focus back to the card (or, after a remove, to the cell). */
-  onAction(intent: PlanEntryActionIntent): void;
+  onAction: (intent: PlanEntryActionIntent) => void;
 }
 
 interface MenuAction {

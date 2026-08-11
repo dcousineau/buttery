@@ -71,7 +71,7 @@ export function CookPhase({
   useEffect(() => {
     centerStep(focus, "auto");
     // Only on mount: focus-driven centring during interaction is handled by go()/click.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, []);
 
   // Scroll observer: pick the step nearest the container centre (rAF-throttled).

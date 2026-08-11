@@ -169,7 +169,7 @@ async function liveSlot(householdId: string, date: PlanDate, slot: MealSlot): Pr
     .orderBy("position")
     .orderBy("created_at")
     .execute();
-  return rows as SlotRow[];
+  return rows;
 }
 
 /** One row by id, live or soft-deleted. */
@@ -272,7 +272,7 @@ describe.skipIf(!db)(db ? "meal planner DB integration (§13)" : `meal planner D
           created_by_did: DID_A,
           recipe_id: R1,
           ...values,
-        } as never)
+        })
         .execute();
     }
 

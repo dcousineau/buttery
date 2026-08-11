@@ -897,7 +897,7 @@ function asJsonValue(value: unknown, seen: Set<object>, path: string): JsonValue
   const t = typeof value;
   if (t === "string" || t === "boolean") return value as JsonValue;
   if (t === "number") {
-    if (!Number.isFinite(value as number)) throw new Error(`${path} is not a finite number`);
+    if (!Number.isFinite(value)) throw new Error(`${path} is not a finite number`);
     return value as number;
   }
   if (t !== "object") throw new Error(`${path} is ${t === "undefined" ? "undefined" : t}, which is not JSON`);
@@ -1363,7 +1363,7 @@ async function applyTags(record: RecipeRecordInput, tags: readonly string[]): Pr
     for (const tag of clean) {
       const token = tokenForSlug("category", slugForLabel("category", tag));
       if (token) {
-        recipeCategory = token as RecipeRecordInput["recipeCategory"];
+        recipeCategory = token;
         break;
       }
     }

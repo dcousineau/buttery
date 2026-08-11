@@ -55,7 +55,7 @@ function MoveEntryForm({ request, dates, onClose, onMove }: Omit<MoveEntryDialog
         <div className="flex gap-2.5">
           <label className="flex flex-1 flex-col gap-1 text-xs font-semibold">
             Day
-            <Select size="sm" value={date} onChange={(event) => setDate(event.target.value as PlanDate)}>
+            <Select size="sm" value={date} onChange={(event) => setDate(event.target.value)}>
               {dates.map((option) => (
                 <option key={option} value={option}>
                   {shortDow(option)} · {formatPlanDate(option)}

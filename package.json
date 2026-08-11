@@ -14,27 +14,24 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "test:db": "pnpm --filter @buttery/web test:db",
-    "lint": "eslint .",
+    "lint": "oxlint",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "prepare": "husky"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@types/node": "^26.2.0",
-    "eslint": "^10.8.1",
-    "eslint-plugin-jsx-a11y": "^6.10.2",
-    "eslint-plugin-react-hooks": "^7.1.1",
     "husky": "^9.1.7",
     "lint-staged": "^17.3.0",
     "oxfmt": "^0.63.0",
+    "oxlint": "^1.78.0",
+    "oxlint-tsgolint": "^7.0.2001",
     "railway": "^3.8.1",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "typescript-eslint": "^8.66.0"
+    "typescript": "^7.0.2"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,md,yaml,yml,css}": "oxfmt",
-    "*.{js,jsx,ts,tsx}": "eslint --fix"
+    "*.{js,jsx,ts,tsx}": "oxlint --fix"
   },
   "devEngines": {
     "runtime": {

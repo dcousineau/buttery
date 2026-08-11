@@ -119,8 +119,10 @@ export function attributionToState(attr: Record<string, unknown> | null | undefi
   const type = entry[0];
   const values: Record<string, string> = {};
   for (const f of ATTRIBUTION_FIELDS[type]) {
+    // Every attribution field is a lexicon string. A non-string here means the
+    // record is malformed, and inventing `[object Object]` for it helps nobody.
     const v = attr[f.key];
-    if (v != null) values[f.key] = String(v);
+    if (typeof v === "string") values[f.key] = v;
   }
   return { type, values, license: typeof attr.license === "string" ? attr.license : "" };
 }

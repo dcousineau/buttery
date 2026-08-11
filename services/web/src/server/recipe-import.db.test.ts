@@ -17,8 +17,9 @@ vi.mock("#/lib/posthog-server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("#/lib/posthog-server")>();
   return {
     ...actual,
-    captureServerEvent: async (_did: string, event: string, properties: Record<string, unknown> = {}) => {
+    captureServerEvent: (_did: string, event: string, properties: Record<string, unknown> = {}) => {
       captured.push({ event, sessionId: properties.session_id, properties });
+      return Promise.resolve();
     },
   };
 });
@@ -731,7 +732,9 @@ describeDb("commitImportChunk (§7.2)", () => {
       sessionId,
       items: [{ action: "link", clientId: "l", entryName: "l.html", existingRecipeId: BOXED_PUBLIC, notes: null, sourceText: null, meta: {} }],
     });
-    expect(results[0]).toMatchObject({ status: "failed", message: expect.stringContaining("already in your box") });
+    const failure = results[0] as Extract<CommitItemResult, { status: "failed" }>;
+    expect(failure.status).toBe("failed");
+    expect(failure.message).toContain("already in your box");
   });
 
   it("is idempotent on replay: the same chunk twice leaves one of everything (§7.5)", async () => {

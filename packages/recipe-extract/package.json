@@ -14,7 +14,7 @@
   },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc6 --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@buttery/recipe-schemas": "workspace:*",
@@ -23,7 +23,7 @@
   "devDependencies": {
     "@buttery/lexicons": "workspace:*",
     "@types/node": "^26.2.0",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
 }

@@ -14,13 +14,13 @@ import { type Kysely, sql } from "kysely";
  * `Kysely<any>` is intentional: migrations are frozen in time.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema.alterTable("recipe_import_attempt").addColumn("parsed", "jsonb").execute();
   void sql;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line typescript/no-explicit-any
 export async function down(db: Kysely<any>): Promise<void> {
   await db.schema.alterTable("recipe_import_attempt").dropColumn("parsed").execute();
 }

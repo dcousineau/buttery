@@ -30,13 +30,13 @@ export interface NotInYourBoxYetProps {
   /** Already ordered and trimmed by the caller — rendered as given. */
   recipes: GlobalRecipeResult[];
   /** The route calls `addRecipeToHousehold` and owns the toast + invalidate. */
-  onSave(recipeId: string): void;
+  onSave: (recipeId: string) => void;
   /** Opens the route's read-only preview dialog for one card. */
-  onPreview(recipe: GlobalRecipeResult): void;
+  onPreview: (recipe: GlobalRecipeResult) => void;
   /** The one card whose save is in flight, or null. */
   savingRecipeId?: string | null;
   /** Opens the route's browse-the-network surface (the global recipe picker). */
-  onSeeMore(): void;
+  onSeeMore: () => void;
   className?: string;
 }
 

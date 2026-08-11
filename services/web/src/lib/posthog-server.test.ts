@@ -27,7 +27,7 @@ let fetchSpy: ReturnType<typeof vi.fn>;
 const savedEnv = { ...process.env };
 
 beforeEach(() => {
-  fetchSpy = vi.fn(async () => new Response(JSON.stringify({ status: 1 }), { status: 200, headers: { "content-type": "application/json" } }));
+  fetchSpy = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ status: 1 }), { status: 200, headers: { "content-type": "application/json" } })));
   vi.stubGlobal("fetch", fetchSpy);
 });
 

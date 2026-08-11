@@ -85,24 +85,31 @@ function genId(): string {
   return `t${now().toString(36)}-${idCounter}`;
 }
 
+/**
+ * Every member is an arrow-function *property*, not a method: the store is one
+ * closure with no `this`, and its members are pulled off the object and passed
+ * around bare (`useSyncExternalStore(timerStore.subscribe, ...)`, the `useTimers`
+ * re-export below). Method syntax would type those detached references as
+ * `this`-bearing methods — which is exactly what `unbound-method` reports.
+ */
 export interface TimerStore {
-  subscribe(cb: () => void): () => void;
-  getSnapshot(): Snapshot;
-  getServerSnapshot(): Snapshot;
-  hydrate(): void;
+  subscribe: (cb: () => void) => () => void;
+  getSnapshot: () => Snapshot;
+  getServerSnapshot: () => Snapshot;
+  hydrate: () => void;
   /** Unlock audio + request notification permission from a gesture (e.g. the
    * "Start cooking" click) so a later-firing timer sounds without a fresh tap. */
-  arm(): void;
-  add(input: AddTimerInput): string;
-  pause(id: string): void;
-  resume(id: string): void;
-  ack(id: string): void;
-  dismiss(id: string): void;
-  addMinute(id: string): void;
-  reset(id: string): void;
-  setMuted(muted: boolean): void;
+  arm: () => void;
+  add: (input: AddTimerInput) => string;
+  pause: (id: string) => void;
+  resume: (id: string) => void;
+  ack: (id: string) => void;
+  dismiss: (id: string) => void;
+  addMinute: (id: string) => void;
+  reset: (id: string) => void;
+  setMuted: (muted: boolean) => void;
   /** Test-only: clear all state + persisted key. */
-  _reset(): void;
+  _reset: () => void;
 }
 
 export function createTimerStore(delivery: AlarmDelivery = new ForegroundAlarmDelivery()): TimerStore {
@@ -257,21 +264,17 @@ export function createTimerStore(delivery: AlarmDelivery = new ForegroundAlarmDe
   }
 
   return {
-    subscribe(cb) {
+    subscribe: (cb) => {
       listeners.add(cb);
       return () => listeners.delete(cb);
     },
-    getSnapshot() {
-      return snapshot;
-    },
-    getServerSnapshot() {
-      return EMPTY_SNAPSHOT;
-    },
+    getSnapshot: () => snapshot,
+    getServerSnapshot: () => EMPTY_SNAPSHOT,
     hydrate,
-    arm() {
+    arm: () => {
       delivery.arm();
     },
-    add(input) {
+    add: (input) => {
       const id = genId();
       const totalMs = Math.max(1000, Math.round(input.seconds * 1000));
       const timer: Timer = {
@@ -290,10 +293,10 @@ export function createTimerStore(delivery: AlarmDelivery = new ForegroundAlarmDe
       afterChange();
       return id;
     },
-    pause(id) {
+    pause: (id) => {
       update(id, (timer) => (timer.status === "running" ? { ...timer, status: "paused", pausedRemainingMs: remainingMs(timer), endsAt: undefined } : timer));
     },
-    resume(id) {
+    resume: (id) => {
       update(id, (timer) => {
         if (timer.status !== "paused") return timer;
         const resumed: Timer = { ...timer, status: "running", endsAt: now() + (timer.pausedRemainingMs ?? 0), pausedRemainingMs: undefined };
@@ -301,15 +304,15 @@ export function createTimerStore(delivery: AlarmDelivery = new ForegroundAlarmDe
         return resumed;
       });
     },
-    ack(id) {
+    ack: (id) => {
       delivery.cancelAlarm(id);
       update(id, (timer) => (timer.status === "alarming" ? null : timer));
     },
-    dismiss(id) {
+    dismiss: (id) => {
       delivery.cancelAlarm(id);
       update(id, () => null);
     },
-    addMinute(id) {
+    addMinute: (id) => {
       update(id, (timer) => {
         if (timer.status === "running") return { ...timer, endsAt: (timer.endsAt ?? now()) + 60_000 };
         if (timer.status === "paused") return { ...timer, pausedRemainingMs: (timer.pausedRemainingMs ?? 0) + 60_000 };
@@ -320,7 +323,7 @@ export function createTimerStore(delivery: AlarmDelivery = new ForegroundAlarmDe
         return rearmed;
       });
     },
-    reset(id) {
+    reset: (id) => {
       update(id, (timer) => {
         delivery.cancelAlarm(id);
         const rearmed: Timer = { ...timer, status: "running", endsAt: now() + timer.totalMs, pausedRemainingMs: undefined, firedAt: undefined };
@@ -328,12 +331,12 @@ export function createTimerStore(delivery: AlarmDelivery = new ForegroundAlarmDe
         return rearmed;
       });
     },
-    setMuted(next) {
+    setMuted: (next) => {
       muted = next;
       delivery.setMuted(next);
       publish();
     },
-    _reset() {
+    _reset: () => {
       if (intervalId != null) {
         clearInterval(intervalId);
         intervalId = null;

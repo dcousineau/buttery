@@ -1,0 +1,369 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react"],
+  // Every enabled rule is listed explicitly below — the set `eslint.config.js` used
+  // to enable, carried over by `@oxlint/migrate`. `correctness` is off because
+  // switching it on silently adds rules nobody has reviewed; turn categories on
+  // deliberately, not as a side effect of the migration.
+  "categories": {
+    "correctness": "off"
+  },
+  "env": {
+    "builtin": true
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/build/**",
+    "**/.docusaurus/**",
+    "**/.tanstack/**",
+    "**/.nitro/**",
+    "**/.output/**",
+    ".agents/**",
+    ".claude/**",
+    "services/web/src/routeTree.gen.ts",
+    "packages/lexicons/src/generated/**"
+  ],
+  "rules": {
+    "constructor-super": "error",
+    "for-direction": "error",
+    "getter-return": "error",
+    "no-async-promise-executor": "error",
+    "no-case-declarations": "error",
+    "no-class-assign": "error",
+    "no-compare-neg-zero": "error",
+    "no-cond-assign": "error",
+    "no-const-assign": "error",
+    "no-constant-binary-expression": "error",
+    "no-constant-condition": "error",
+    "no-control-regex": "error",
+    "no-debugger": "error",
+    "no-delete-var": "error",
+    "no-dupe-class-members": "error",
+    "no-dupe-else-if": "error",
+    "no-dupe-keys": "error",
+    "no-duplicate-case": "error",
+    "no-empty": "error",
+    "no-empty-character-class": "error",
+    "no-empty-pattern": "error",
+    "no-empty-static-block": "error",
+    "no-ex-assign": "error",
+    "no-extra-boolean-cast": "error",
+    "no-fallthrough": "error",
+    "no-func-assign": "error",
+    "no-global-assign": "error",
+    "no-import-assign": "error",
+    "no-invalid-regexp": "error",
+    "no-irregular-whitespace": "error",
+    "no-loss-of-precision": "error",
+    "no-misleading-character-class": "error",
+    "no-new-native-nonconstructor": "error",
+    "no-nonoctal-decimal-escape": "error",
+    "no-obj-calls": "error",
+    "no-prototype-builtins": "error",
+    "no-redeclare": "error",
+    "no-regex-spaces": "error",
+    "no-self-assign": "error",
+    "no-setter-return": "error",
+    "no-shadow-restricted-names": "error",
+    "no-sparse-arrays": "error",
+    "no-this-before-super": "error",
+    "no-unassigned-vars": "error",
+    "no-unexpected-multiline": "error",
+    "no-unreachable": "error",
+    "no-unsafe-finally": "error",
+    "no-unsafe-negation": "error",
+    "no-unsafe-optional-chaining": "error",
+    "no-unused-labels": "error",
+    "no-unused-private-class-members": "error",
+    // Allow intentional throwaways: `_`-prefixed vars/args (convention) and
+    // rest-sibling strips like `const { drop, ...rest } = obj` (common way to
+    // omit a key). Everything else still flags as unused.
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "ignoreRestSiblings": true
+      }
+    ],
+    "no-useless-backreference": "error",
+    "no-useless-catch": "error",
+    "no-useless-escape": "error",
+    "no-with": "error",
+    "preserve-caught-error": "error",
+    "require-yield": "error",
+    "use-isnan": "error",
+    "valid-typeof": "error",
+    "no-array-constructor": "error",
+    "no-unused-expressions": "error",
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "warn",
+    // oxlint ships the react-hooks React Compiler checks (set-state-in-effect,
+    // purity, immutability, …) as one experimental rule instead of the sixteen
+    // `react-hooks/*` rules the ESLint plugin's recommended config enabled, so this
+    // single line is what carries that coverage across the migration.
+    "react/react-compiler": "error",
+    "typescript/ban-ts-comment": "error",
+    "typescript/no-duplicate-enum-values": "error",
+    "typescript/no-empty-object-type": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-extra-non-null-assertion": "error",
+    "typescript/no-misused-new": "error",
+    "typescript/no-namespace": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error",
+    "typescript/no-require-imports": "error",
+    "typescript/no-this-alias": "error",
+    "typescript/no-unnecessary-type-constraint": "error",
+    "typescript/no-unsafe-declaration-merging": "error",
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/no-wrapper-object-types": "error",
+    "typescript/prefer-as-const": "error",
+    "typescript/prefer-namespace-keyword": "error",
+    "typescript/triple-slash-reference": "error",
+
+    // ── Type-aware rules (`options.typeAware`, oxlint-tsgolint) ──────────────
+    // typescript-eslint's `recommended-type-checked` set, which the ESLint config
+    // never ran: it needed a second full type-check pass, and typescript-eslint
+    // could not use TS 7. tsgolint types the whole repo in ~0.6s, so the set is on
+    // at error and the code is clean against it.
+    "typescript/await-thenable": "error",
+    "typescript/no-array-delete": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/no-duplicate-type-constituents": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-for-in-array": "error",
+    "typescript/no-implied-eval": "error",
+    // `checksVoidReturn.attributes` off: `onClick={async () => …}` is the React
+    // idiom for an async handler, and React does not consume the returned promise
+    // either way. Every other void-return check (arguments, properties, returns,
+    // inherited methods) stays on, as does the conditional check.
+    "typescript/no-misused-promises": [
+      "error",
+      {
+        "checksVoidReturn": {
+          "attributes": false
+        }
+      }
+    ],
+    "typescript/no-misused-spread": "error",
+    "typescript/no-redundant-type-constituents": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-enum-comparison": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/no-unsafe-unary-minus": "error",
+    // `throw redirect({ to: … })` is how TanStack Router navigates out of a loader
+    // or server fn — a control-flow signal the framework catches, not an error.
+    // Allowing the `Redirect` type keeps the rule's real job (throwing strings,
+    // objects, `any`) intact.
+    "typescript/only-throw-error": [
+      "error",
+      {
+        "allow": [
+          {
+            "from": "package",
+            "package": "@tanstack/router-core",
+            "name": "Redirect"
+          }
+        ]
+      }
+    ],
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/require-await": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/unbound-method": "error",
+    "typescript/use-unknown-in-catch-callback-variable": "error"
+  },
+  "options": {
+    "typeAware": true
+  },
+  "overrides": [
+    {
+      "files": ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"],
+      "rules": {
+        "constructor-super": "off",
+        "getter-return": "off",
+        "no-class-assign": "off",
+        "no-const-assign": "off",
+        "no-dupe-class-members": "off",
+        "no-dupe-keys": "off",
+        "no-func-assign": "off",
+        "no-import-assign": "off",
+        "no-new-native-nonconstructor": "off",
+        "no-obj-calls": "off",
+        "no-redeclare": "off",
+        "no-setter-return": "off",
+        "no-this-before-super": "off",
+        "no-unreachable": "off",
+        "no-unsafe-negation": "off",
+        "no-var": "error",
+        "no-with": "off",
+        "prefer-const": "error",
+        "prefer-rest-params": "error",
+        "prefer-spread": "error"
+      }
+    },
+    // Plain JS with no tsconfig covering it — the dev-stack scripts, the
+    // bookmarklet loader (authored as buildless browser JS on purpose). Every
+    // expression in them is `any`/error-typed for want of declarations, so the
+    // `no-unsafe-*` family reports the absence of types rather than a defect.
+    // Everything else, type-aware included, still applies to them.
+    {
+      "files": ["**/*.js", "**/*.mjs", "**/*.cjs"],
+      "rules": {
+        "typescript/no-unsafe-argument": "off",
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-member-access": "off",
+        "typescript/no-unsafe-return": "off"
+      }
+    },
+    {
+      "files": ["**/*.{jsx,tsx}"],
+      "rules": {
+        "jsx-a11y/alt-text": "error",
+        "jsx-a11y/anchor-ambiguous-text": "off",
+        // Base UI's `render={<a/>}` / `render={<label/>}` indirection (our standard
+        // primitive idiom — see AGENTS.md "Design system") hides the anchor content
+        // and label→control association from static analysis, so `anchor-has-content`
+        // and `label-has-associated-control` fire false positives on correct code.
+        // The rest of jsx-a11y stays on.
+        "jsx-a11y/anchor-has-content": "off",
+        "jsx-a11y/anchor-is-valid": "error",
+        "jsx-a11y/aria-activedescendant-has-tabindex": "error",
+        "jsx-a11y/aria-props": "error",
+        "jsx-a11y/aria-proptypes": "error",
+        "jsx-a11y/aria-role": "error",
+        "jsx-a11y/aria-unsupported-elements": "error",
+        "jsx-a11y/autocomplete-valid": "error",
+        "jsx-a11y/click-events-have-key-events": "error",
+        "jsx-a11y/control-has-associated-label": "off",
+        "jsx-a11y/heading-has-content": "error",
+        "jsx-a11y/html-has-lang": "error",
+        "jsx-a11y/iframe-has-title": "error",
+        "jsx-a11y/img-redundant-alt": "error",
+        "jsx-a11y/interactive-supports-focus": [
+          "error",
+          {
+            "tabbable": ["button", "checkbox", "link", "searchbox", "spinbutton", "switch", "textbox"]
+          }
+        ],
+        "jsx-a11y/label-has-associated-control": "off",
+        "jsx-a11y/media-has-caption": "error",
+        "jsx-a11y/mouse-events-have-key-events": "error",
+        "jsx-a11y/no-access-key": "error",
+        "jsx-a11y/no-autofocus": "error",
+        "jsx-a11y/no-distracting-elements": "error",
+        "jsx-a11y/no-interactive-element-to-noninteractive-role": [
+          "error",
+          {
+            "tr": ["none", "presentation"],
+            "canvas": ["img"]
+          }
+        ],
+        "jsx-a11y/no-noninteractive-element-interactions": [
+          "error",
+          {
+            "handlers": ["onClick", "onError", "onLoad", "onMouseDown", "onMouseUp", "onKeyPress", "onKeyDown", "onKeyUp"],
+            "alert": ["onKeyUp", "onKeyDown", "onKeyPress"],
+            "body": ["onError", "onLoad"],
+            "dialog": ["onKeyUp", "onKeyDown", "onKeyPress"],
+            "iframe": ["onError", "onLoad"],
+            "img": ["onError", "onLoad"]
+          }
+        ],
+        "jsx-a11y/no-noninteractive-element-to-interactive-role": [
+          "error",
+          {
+            "ul": ["listbox", "menu", "menubar", "radiogroup", "tablist", "tree", "treegrid"],
+            "ol": ["listbox", "menu", "menubar", "radiogroup", "tablist", "tree", "treegrid"],
+            "li": ["menuitem", "menuitemradio", "menuitemcheckbox", "option", "row", "tab", "treeitem"],
+            "table": ["grid"],
+            "td": ["gridcell"],
+            "fieldset": ["radiogroup", "presentation"]
+          }
+        ],
+        "jsx-a11y/no-noninteractive-tabindex": [
+          "error",
+          {
+            "tags": [],
+            "roles": ["tabpanel"],
+            "allowExpressionValues": true
+          }
+        ],
+        "jsx-a11y/no-redundant-roles": "error",
+        "jsx-a11y/no-static-element-interactions": [
+          "error",
+          {
+            "allowExpressionValues": true,
+            "handlers": ["onClick", "onMouseDown", "onMouseUp", "onKeyPress", "onKeyDown", "onKeyUp"]
+          }
+        ],
+        "jsx-a11y/role-has-required-aria-props": "error",
+        "jsx-a11y/role-supports-aria-props": "error",
+        "jsx-a11y/scope": "error",
+        "jsx-a11y/tabindex-no-positive": "error"
+      },
+      "plugins": ["jsx-a11y"]
+    },
+    // Recipe-import boundary (paprika-import plan §2.5 / D30, acceptance §16.19).
+    //
+    // The importer is disposable; the pipeline is not. Everything downstream of
+    // "here is a list of parsed candidates" — dedupe, probe/commit/comparison,
+    // attribution, the review flow, the session row, telemetry — is generic and
+    // consumes `ImportCandidate` from `@buttery/recipe-extract/import`. Adding
+    // Mela or AnyList must mean writing a new importer module, not refactoring
+    // these ones, and the only thing that keeps that true is that no pipeline
+    // module can name Paprika. Review will not catch this on a Friday.
+    //
+    // `services/web/src/lib/recipe-import-boundary.test.ts` pins that this block
+    // still matches the paths it claims to — overrides are last-match-wins, so a
+    // reordered or mistyped glob would disable the rule with every file still
+    // passing lint.
+    {
+      "files": [
+        "services/web/src/server/recipe-import*",
+        "services/web/src/server/recipe-import/**",
+        "services/web/src/lib/recipe-import/**",
+        "services/web/src/components/recipes/import/**",
+        "packages/recipe-extract/src/import/**"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@buttery/recipe-extract/paprika",
+                  "@buttery/recipe-extract/paprika/**",
+                  "**/recipe-extract/paprika*",
+                  "**/recipe-extract/paprika*/**",
+                  "**/recipe-extract/src/paprika*",
+                  "**/recipe-extract/src/paprika*/**",
+                  "**/paprika",
+                  "**/paprika.*",
+                  "**/paprika/**"
+                ],
+                "message": "The importer is replaceable; the pipeline is not (plan §2.5 / D30). No module in the import pipeline may name Paprika — consume `ImportCandidate` from `@buttery/recipe-extract/import` and reach the importer through the registry, `services/web/src/lib/recipe-import/importers.ts`, which is the sole legal importer of Paprika code. Adding an importer must be a new module, not a refactor of this one. See docs/plans/2026-08-09-paprika-import.md §2.5 and acceptance criterion §16.19."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    // The one exemption: the importer registry maps importer id → `RecipeImporter`
+    // and is the only place the string `paprika` is allowed to appear (§2.5). It
+    // must stay after the block above — last match wins.
+    {
+      "files": ["services/web/src/lib/recipe-import/importers.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
+}

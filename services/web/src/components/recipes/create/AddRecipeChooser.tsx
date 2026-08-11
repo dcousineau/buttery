@@ -39,12 +39,12 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
 
   function goManual() {
     onOpenChange(false);
-    navigate({ to: "/household/recipes/new" });
+    void navigate({ to: "/household/recipes/new" });
   }
 
   function goLibrary() {
     onOpenChange(false);
-    navigate({ to: "/household/recipes/import" });
+    void navigate({ to: "/household/recipes/import" });
   }
 
   async function goImport() {
@@ -59,7 +59,7 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
       if (res.status === "ok" || res.status === "partial") {
         setPhase(null);
         onOpenChange(false);
-        navigate({ to: "/household/recipes/new", search: { import: res.importId } });
+        void navigate({ to: "/household/recipes/new", search: { import: res.importId } });
         return;
       }
       if (res.status === "rate_limited") return setPhase("rate_limited");
@@ -80,7 +80,7 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
   function goManualFromFailure() {
     setPhase(null);
     onOpenChange(false);
-    navigate({ to: "/household/recipes/new", search: { source: failUrl } });
+    void navigate({ to: "/household/recipes/new", search: { source: failUrl } });
   }
 
   function reportFailure() {

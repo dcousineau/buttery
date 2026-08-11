@@ -258,7 +258,7 @@ export function recipeRecordProblems(record: RecipeRecordInput): RecordProblem[]
  */
 export function validateRecipeRecord(full: unknown): { status: "ok"; record: RecipeRecord } | { status: "invalid"; issues: FieldIssue[] } {
   const validated = $safeValidate(full);
-  if (validated.success) return { status: "ok", record: validated.value as RecipeRecord };
+  if (validated.success) return { status: "ok", record: validated.value };
   return {
     status: "invalid",
     issues: validated.reason.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),

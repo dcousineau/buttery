@@ -415,12 +415,12 @@ function NoteEditor({ recipeId, initialBody }: { recipeId: string; initialBody: 
     setBody(next);
     setStatus("idle");
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => save(next), 800);
+    timer.current = setTimeout(() => void save(next), 800);
   }
 
   function onBlur() {
     if (timer.current) clearTimeout(timer.current);
-    save(body);
+    void save(body);
   }
 
   useEffect(
