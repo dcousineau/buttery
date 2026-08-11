@@ -6,10 +6,10 @@
  * over there because the recipe page needs it to build the image URL, and
  * anything this file imports — satori, resvg, ~400 KB of fonts — must never
  * follow it into the browser):
- *   1. `recipeOgFingerprint` — a digest of the model plus the layout version,
- *      used as the HTTP ETag and the Redis cache key. Two recipes that look
- *      identical produce identical bytes; bumping `OG_LAYOUT_VERSION`
- *      invalidates every cached image at once.
+ *   1. `recipeOgFingerprint` — a digest of the model plus `OG_VERSION`, used as
+ *      the HTTP ETag and the Redis cache key. Two recipes that look identical
+ *      produce identical bytes; bumping `OG_VERSION` invalidates every cached
+ *      image at once.
  *   2. `renderRecipeOgPng` — Satori lays the tree out and emits SVG, resvg
  *      rasterises it. Both are pulled in with dynamic `import()` inside the
  *      function, matching the `src/server/*` convention, so the native resvg
@@ -23,7 +23,7 @@
  * docs/BRAND.md are restated as literals in `BRAND` below.
  */
 import { createHash } from "node:crypto";
-import { OG_LAYOUT_VERSION, clamp, recipeOgModel, recipeOgVersion } from "#/lib/og/recipe-card-model";
+import { OG_VERSION, clamp, recipeOgModel, recipeOgVersion } from "#/lib/og/recipe-card-model";
 import { ogFonts } from "./fonts";
 import type { RecipeOgModel } from "#/lib/og/recipe-card-model";
 
@@ -42,13 +42,13 @@ const BRAND = {
 } as const;
 
 /**
- * Stable short digest of the model + layout version. Used as the ETag and as the
+ * Stable short digest of the model + `OG_VERSION`. Used as the ETag and as the
  * Redis cache key, so it has to change whenever the *pixels* would: that means
- * the whole model (not just the id) and the layout version go into the hash.
+ * the whole model (not just the id) and the version constant go into the hash.
  * 16 hex chars is 64 bits — collision-proof enough for a cache of images.
  */
 export function recipeOgFingerprint(model: RecipeOgModel): string {
-  const payload = JSON.stringify({ v: OG_LAYOUT_VERSION, model });
+  const payload = JSON.stringify({ v: OG_VERSION, model });
   return createHash("sha256").update(payload).digest("hex").slice(0, 16);
 }
 

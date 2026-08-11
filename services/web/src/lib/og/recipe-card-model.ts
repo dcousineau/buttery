@@ -19,16 +19,17 @@ import { formatDuration } from "#/lib/format";
 import type { RecipeDetailData } from "#/server/recipes";
 
 /**
- * Bump whenever the *design* changes — a new field on the card, different chip
- * rules, a new layout.
+ * Bump this whenever a code change alters what the card looks like — a layout
+ * tweak, different chip rules, new fonts, a satori upgrade that moves text by a
+ * pixel. Recipe data busts its own cache (the token hashes the model), but code
+ * has no other way to say "the old picture is wrong".
  *
- * It feeds both the URL's `?v=` token and the server's ETag, so one edit here
- * retires every cached image everywhere: browser caches, the CDN, and Redis. That
- * matters more than usual because the image URL is served `immutable` (see
- * `routes/recipes.$id_.og[.]png.ts`) — without this, a layout fix would take a
- * year to reach anyone holding a cached card.
+ * That matters more than usual here: the image URL is served `immutable` for a
+ * year (see `routes/recipes.$id_.og[.]png.ts`), so without a bump a renderer fix
+ * never reaches a link that was shared last month. Bumping retires every cached
+ * image everywhere at once — browser caches, the CDN, and Redis.
  */
-export const OG_LAYOUT_VERSION = 1;
+export const OG_VERSION = 1;
 
 export interface RecipeOgModel {
   id: string;
@@ -203,14 +204,15 @@ export function recipeOgModel(recipe: RecipeDetailData): RecipeOgModel {
  * be served `immutable` with a one-year TTL, which is what makes a CDN (and every
  * scraper's own cache) hold it instead of revalidating. Edit the recipe and the
  * page emits a different URL, which is a cache miss by construction — no purge
- * step, nothing to forget.
+ * step, nothing to forget. `OG_VERSION` is hashed in alongside the model, so a
+ * bump does the same thing for a change in the drawing rather than the data.
  *
  * FNV-1a rather than SHA-256 because this half runs in the browser: it is eight
  * characters of cache-busting, not a security boundary. The server keeps its own
  * SHA-256 fingerprint for the ETag.
  */
 export function recipeOgVersion(model: RecipeOgModel): string {
-  const payload = `${OG_LAYOUT_VERSION}:${JSON.stringify(model)}`;
+  const payload = `${OG_VERSION}:${JSON.stringify(model)}`;
   let hash = 0x811c9dc5;
   for (let i = 0; i < payload.length; i++) {
     hash ^= payload.charCodeAt(i);
