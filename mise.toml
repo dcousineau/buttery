@@ -29,5 +29,18 @@ PC_PORT_NUM = "8099"
 description = "Install Railway skills into this project"
 run = "railway skills install"
 
+# Render the gitignored .mcp.json from .mcp.json.example, baking in the dev
+# DATABASE_URL from services/web/.env (see scripts/dev/render-mcp.mjs). No
+# `railway run` — local dev's Postgres is docker-compose-owned now, and the
+# script reads .env itself. No `sources`/`outputs`: what goes stale is the DB
+# URL inside an unchanged template, which an mtime check can't see. It renders
+# the example's placeholder unchanged for a clone that has never copied .env.
+[tasks."mcp:setup"]
+description = "Render .mcp.json from .mcp.json.example with the dev DATABASE_URL (services/web/.env)"
+run = "node scripts/dev/render-mcp.mjs"
+
 [hooks]
-postinstall = "mise run railway-skills"
+# `;` not `&&`: mcp:setup must render .mcp.json even where railway-skills fails
+# (cloud sessions have no Railway CLI / GitHub API), so the next session boots
+# with the MCP servers wired up regardless.
+postinstall = "mise run railway-skills; mise run mcp:setup"
