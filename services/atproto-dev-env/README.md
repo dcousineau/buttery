@@ -10,8 +10,8 @@ visible to `plc.directory`, `bsky.social`, or the relay.
 
 ## Run it
 
-Root `pnpm dev` starts it alongside the web app (so `railway dev up`, which runs
-`pnpm dev` for the buttery code service, brings it up too):
+Root `pnpm dev` starts it alongside the web app (process-compose runs both as
+part of the one dev stack):
 
 ```sh
 pnpm dev          # atproto dev-env + web
@@ -33,9 +33,8 @@ ATPROTO_PLC_URL=http://localhost:2582
 ATPROTO_PUBLISH_ENABLED=true
 ```
 
-Then run buttery (`railway run --service buttery -- pnpm dev`), sign in with the
-seed handle (default `chef.test`) + printed password, and publish a recipe — it
-lands in the local PDS.
+Then run buttery (`pnpm dev`), sign in with the seed handle (default `chef.test`)
+and its printed password, and publish a recipe — it lands in the local PDS.
 
 > **Persistent:** state lives in `.dev-data/atproto/` (gitignored) — the PDS
 > sqlite + blobstore, and a snapshot of the local PLC. The seed account keeps

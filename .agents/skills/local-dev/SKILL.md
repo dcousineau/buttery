@@ -6,7 +6,7 @@ user-invocable: true
 
 # Local dev stack
 
-Whole local app = **one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project**: `railway dev` containers, migrations, atproto dev-env, web server.
+Whole local app = **one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project**: docker-compose containers (postgres, redis), migrations, atproto dev-env, web server.
 
 Files — no search for them:
 
@@ -75,11 +75,11 @@ Two restarts have side effects:
 Only when truly need two app instances at once (e.g. compare branches). Stack keep 3000; second one need own port **and** matching URL vars, else atproto OAuth build redirects for wrong origin:
 
 ```bash
-railway run --service buttery -- env PORT=3100 BETTER_AUTH_URL=http://127.0.0.1:3100 VITE_APP_URL=http://127.0.0.1:3100 \
+env PORT=3100 BETTER_AUTH_URL=http://127.0.0.1:3100 VITE_APP_URL=http://127.0.0.1:3100 \
   pnpm --filter @buttery/web exec vite dev --port 3100
 ```
 
-- `env VAR=…` must prefix **child** command — Railway injected vars beat shell exports.
+- `env VAR=…` prefix overrides the same keys in `services/web/.env` — `process.loadEnvFile()` (vite.config.ts) never clobbers a var already in the environment.
 - Bypass `pnpm dev:web`, which hardcode `--port 3000`. Also skip lexicon build; run `pnpm --filter @buttery/lexicons build` first if `src/generated` stale.
 - Both servers share one database. Not isolated.
 - Not supervised — `pc_*` tools can't see or stop it. Kill by hand (`pkill -f "vite dev --port 3100"`).
@@ -109,16 +109,16 @@ pnpm -s --filter @buttery/atproto-dev-env records   # prints `DID did:plc:…`
 ## Cleanup
 
 ```bash
-pnpm dev:down          # stop the stack AND the railway dev containers
-process-compose down   # stop the stack only — containers keep running
-railway dev clean      # ALSO wipes the postgres volume; next `pnpm dev` re-migrates
+pnpm dev:down            # stop the stack AND the docker-compose containers
+process-compose down     # stop the stack only — containers keep running
+docker compose down -v   # ALSO wipes the postgres volume; next `pnpm dev` re-migrates
 ```
 
-`process-compose down` alone leave Postgres/Redis/Caddy up: detached docker containers, process-compose only tail their logs. Taking project down also kill MCP server on 8098.
+`process-compose down` alone leave Postgres/Redis up: detached docker containers, process-compose only tail their logs. Taking project down also kill MCP server on 8098.
 
 ## Gotchas
 
 - `curl` return `000` have TWO causes: stack down, or command sandbox blocking `localhost:3000`. Check `pc_project_state` BEFORE blaming sandbox — else you assert "sandbox" at dead server, walk it back later.
 - macOS `grep` treat curl'd SSR HTML as **binary** (one huge line, UTF-8 punctuation) and exit 1 silently — look exactly like real miss. Always `grep -a` on fetched HTML, else every content assertion lie.
 - Vite auto-bump 3000 → 3001 if port busy. `pc_process_ports` show real port; usual cause = second dev server someone forgot to kill.
-- `postgres`/`redis`/`railway-proxy` = **log tails over `docker compose`**, not containers. Tails carry `restart: always`, survive container restart/recreate; `web`/`atproto-dev-env` carry `restart: on_failure` + `max_restarts: 5`. So process stuck dead = real failure — read its log before restarting. Restarting tail never restart container (`docker restart <name>` for that).
+- `postgres`/`redis` = **log tails over `docker compose`**, not containers. Tails carry `restart: always`, survive container restart/recreate; `web`/`atproto-dev-env` carry `restart: on_failure` + `max_restarts: 5`. So process stuck dead = real failure — read its log before restarting. Restarting tail never restart container (`docker restart <name>` for that).

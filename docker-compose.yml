@@ -1,0 +1,76 @@
+# Local dev dependency containers — repo-owned, no Railway CLI or auth required.
+#
+# `pnpm dev` brings this up (see the `dev-containers` process in
+# process-compose.yaml) and `pnpm dev:down` tears it down. Railway is no longer
+# in the local loop at all; it stays only for deploys (.railway/railway.ts) and
+# the remote blob bucket (see services/web/.env.example → BLOB_S3_*).
+#
+# Images and the redis command mirror the compose file Railway used to generate
+# for `railway dev` (`railway dev up --dry-run`), so containers behave the same
+# locally as in the Railway environment. What is deliberately different:
+#
+#   * Fixed, repo-owned host ports (Railway assigned random ones per `up`, so
+#     nothing downstream could hardcode them; we own them now, so we can).
+#   * Throwaway local-only credentials (postgres / redis passwords below). These
+#     are NOT secrets — they are the same for every developer, exactly like the
+#     conventional `postgres:postgres`, and they never leave a laptop. No
+#     production value is copied here.
+#   * No caddy `railway-proxy`: its generated Caddyfile had zero routes, nothing
+#     in the stack routed through it, and its `*.railway.localhost` domain is
+#     rejected by the atproto OAuth client anyway (see oauth-node.ts).
+#
+# Host ports are the high 55432/56379 rather than the standard 5432/6379 so a
+# developer's own local Postgres/Redis (very likely on the defaults) does not
+# collide. services/web/.env points DATABASE_URL / REDIS_URL at these.
+
+services:
+  postgres:
+    # Same image Railway's generated compose used, so SSL setup and PG version
+    # match the deployed database. Pulled from ghcr.io (not Docker Hub).
+    image: ghcr.io/railwayapp-templates/postgres-ssl:18.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: butterydev
+      POSTGRES_DB: buttery
+      # The image stores data under a `pgdata` subdir of the mount point.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "55432:5432"
+    volumes:
+      - buttery_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `docker compose up --wait` (the dev-containers gate) blocks on this, so
+      # migrations never race a still-booting server.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d buttery"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    # Same image and same redis-server invocation as Railway's generated
+    # compose: the `lost+found` cleanup (a mounted volume can seed one, which
+    # redis refuses to start over), auth, and the `--save 60 1` snapshot policy.
+    # The one change is the data dir — Railway threaded it through a
+    # `RAILWAY_VOLUME_MOUNT_PATH` env var; we own the mount, so it is /data.
+    image: redis:8.2.1
+    restart: unless-stopped
+    command: >
+      sh -c "rm -rf /data/lost+found &&
+      exec docker-entrypoint.sh redis-server
+      --requirepass \"$$REDIS_PASSWORD\" --save 60 1 --dir /data"
+    environment:
+      REDIS_PASSWORD: butterydev
+    ports:
+      - "56379:6379"
+    volumes:
+      - buttery_redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  buttery_pgdata:
+  buttery_redis:

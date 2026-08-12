@@ -9,7 +9,7 @@ The monorepo has two services:
 
 ## Local development
 
-Requires [Docker](https://www.docker.com/) (for the local Postgres) and [mise](https://mise.jdx.dev/), which installs the Node and pnpm versions declared in `package.json` (`devEngines.runtime` and `packageManager`) plus the Railway CLI and process-compose versions pinned in `mise.toml`.
+Requires [Docker](https://www.docker.com/) (for the local Postgres and Redis) and [mise](https://mise.jdx.dev/), which installs the Node and pnpm versions declared in `package.json` (`devEngines.runtime` and `packageManager`) plus the Railway CLI and process-compose versions pinned in `mise.toml`. Local dev runs entirely on the repo's own `docker-compose.yml` — no Railway login or auth is needed to boot the stack (Railway stays for deploys and the remote blob bucket only).
 
 ```bash
 # Install mise (macOS/Linux). See https://mise.jdx.dev/installing-mise.html for other options.
@@ -20,11 +20,16 @@ mise install
 
 pnpm install
 
+# Configure the web service. Copy the template, then fill in BETTER_AUTH_SECRET
+# (openssl rand -base64 32). The DATABASE_URL / REDIS_URL defaults already match
+# docker-compose.yml, so nothing else is required for a first boot.
+cp services/web/.env.example services/web/.env
+
 # Boot the whole stack on http://127.0.0.1:3000
 pnpm dev
 ```
 
-`pnpm dev` supervises the whole stack — Railway dev containers, migrations, the atproto dev-env, and the web server — as one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project. In its TUI: arrow keys select a process, `F5` restarts it, `F10` quits.
+`pnpm dev` supervises the whole stack — the docker-compose containers (Postgres + Redis), migrations, the atproto dev-env, and the web server — as one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project. In its TUI: arrow keys select a process, `F5` restarts it, `F10` quits.
 
 Drive the same running stack from another terminal:
 
@@ -40,10 +45,10 @@ process-compose process restart web
 
 Agents should use the `pc_*` MCP tools instead — the running stack serves them from `localhost:8098`, registered as the `process-compose` server in `.mcp.json` (copy `.mcp.json.example` if you don't have one).
 
-Run a one-off command against the dev services:
+Run a one-off migration against the dev database (reads `DATABASE_URL` from `services/web/.env`, no Railway needed):
 
 ```bash
-railway run --service buttery -- pnpm --filter=@buttery/web db:migrate:up
+pnpm --filter=@buttery/web db:migrate:up
 ```
 
 Run the tests:

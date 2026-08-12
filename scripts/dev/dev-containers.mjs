@@ -4,84 +4,64 @@
 // from the type-checker. This file is plain JS run directly by Node, so
 // `no-undef` needs them declared here (flat config dropped `/* eslint-env */`).
 //
-// Bridge between `railway dev`'s docker containers and process-compose.
+// Bridge between the local dev containers (docker-compose.yml at the repo root)
+// and process-compose.
 //
-// `railway dev up` starts Postgres/Redis/Caddy as detached docker-compose
-// containers and exits. That gives process-compose nothing to supervise, so we
-// surface each container as its own process-compose service: one log tail per
-// container, plus readiness probes the app processes can wait on.
+// `docker compose up -d` starts Postgres/Redis as detached containers and
+// exits. That gives process-compose nothing to supervise, so we surface each
+// container as its own process-compose service: one log tail per container,
+// plus readiness probes the app processes can wait on.
 //
-// Everything here goes through `docker compose -f <generated file>` rather than
+// Everything here goes through `docker compose -f <compose file>` rather than
 // `docker <cmd> <container-name>`, for one specific reason: `docker logs -f`
 // dies the moment its container restarts — AND exits 0, so process-compose
 // records the tail as `Completed` rather than failed and leaves it dead. The
-// containers ship with `restart: on-failure`, so that happens on any crash, and
-// a dead `postgres`/`redis` tail takes its readiness probe with it — which is
-// what `web` gates on, so the web server can then never come back. `docker
+// containers ship with `restart: unless-stopped`, so that happens on any crash,
+// and a dead `postgres`/`redis` tail takes its readiness probe with it — which
+// is what `web` gates on, so the web server can then never come back. `docker
 // compose logs -f` follows the *service* and reattaches across both restarts
 // and full recreates.
 //
-// The compose file `railway dev up` generates is the source of truth for ports,
-// credentials, and container naming. It lives in machine-local state keyed by
-// checkout path (`~/.railway/config.json` → project id →
-// `~/.railway/develop/<project-id>/docker-compose.yml`), holds live production
-// credentials, and is NOT stable across clones — so it is resolved at runtime
-// here and must never be copied into the repo. It also cannot be relocated:
-// `railway-proxy` mounts `./Caddyfile` and `./certs` relative to it, and
-// `railway dev up -o <elsewhere>` writes the yaml without those siblings.
+// The compose file is committed at the repo root and carries only throwaway
+// local-only credentials on fixed, repo-owned ports — see its header. Nothing
+// here is machine-local or resolved at runtime anymore (the old `railway dev`
+// version had to hunt down a generated file in `~/.railway/develop/…`).
 //
 // Usage:
-//   node scripts/dev/railway-containers.mjs logs  <service>   # stream, stays attached
-//   node scripts/dev/railway-containers.mjs ready <service>   # exit 0 when serving
-//   node scripts/dev/railway-containers.mjs compose-file      # print the resolved path
+//   node scripts/dev/dev-containers.mjs logs  <service>   # stream, stays attached
+//   node scripts/dev/dev-containers.mjs ready <service>   # exit 0 when serving
+//   node scripts/dev/dev-containers.mjs compose-file      # print the resolved path
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { connect } from "node:net";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** How long `logs` waits for its container to appear before giving up. */
 const CONTAINER_WAIT_MS = 120_000;
 const POLL_INTERVAL_MS = 1_000;
 
+/** Repo root == two levels up from scripts/dev/. */
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
 function fail(message) {
-  console.error(`railway-containers: ${message}`);
+  console.error(`dev-containers: ${message}`);
   process.exit(1);
 }
 
-/**
- * Railway project id == docker-compose project name for `railway dev`.
- * Looked up by checkout path, with a scan fallback in case the CLI ever
- * normalizes the key differently than `process.cwd()` renders it.
- */
-function projectId() {
-  const configPath = join(homedir(), ".railway", "config.json");
-  let config;
-  try {
-    config = JSON.parse(readFileSync(configPath, "utf8"));
-  } catch (error) {
-    fail(`could not read ${configPath} (is the Railway CLI linked? run \`railway link\`): ${error.message}`);
-  }
-  const projects = config.projects ?? {};
-  const cwd = process.cwd();
-  const entry = projects[cwd] ?? Object.values(projects).find((p) => p?.projectPath === cwd);
-  if (!entry?.project) fail(`no linked Railway project for ${cwd} — run \`railway link\``);
-  return entry.project;
-}
-
-/** Path `railway dev up` writes its generated compose file to. */
+/** The committed compose file at the repo root. */
 function composePath() {
-  return join(homedir(), ".railway", "develop", projectId(), "docker-compose.yml");
+  return join(REPO_ROOT, "docker-compose.yml");
 }
 
 /**
- * Resolved compose file, or bail. Absence means `railway dev up` has not run in
- * this checkout yet — the file is generated, never committed.
+ * Resolved compose file, or bail. It is committed, so absence means a broken
+ * checkout rather than "run some setup command first".
  */
 function composeFile() {
   const path = composePath();
-  if (!existsSync(path)) fail(`no compose file at ${path} — run \`railway dev up\` first`);
+  if (!existsSync(path)) fail(`no compose file at ${path} — is the checkout intact?`);
   return path;
 }
 
@@ -106,15 +86,14 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Readiness per container. Postgres and Redis get real protocol-level checks so
- * dependents (migrations, the web server) don't race a still-booting server;
- * anything else is considered ready once the container is up.
+ * dependents (migrations, the web server) don't race a still-booting server.
  *
  * These run *inside* the container, so they say nothing about whether the app
  * can reach the server — see `hostPort` below.
  */
 const READY_CHECKS = {
   postgres: (file) => execInService(file, "postgres", ["pg_isready", "-q"]).status === 0,
-  // The Railway Redis image requires auth, so an unauthenticated PING answers
+  // The Redis image requires auth, so an unauthenticated PING answers
   // `NOAUTH Authentication required.` — which still proves the server is
   // listening and parsing commands. Either reply counts as ready.
   redis: (file) => /PONG|NOAUTH/.test(execInService(file, "redis", ["redis-cli", "ping"]).stdout ?? ""),
@@ -127,15 +106,9 @@ const READY_CHECKS = {
 const SERVICE_PORTS = { postgres: 5432, redis: 6379 };
 
 /**
- * Host port `railway dev` published for a service, or null if it published
- * none.
- *
- * Worth checking because `railway dev up` only publishes a service whose
- * Railway service has a **public TCP proxy**; without one it generates the
- * compose entry with no `ports:` key at all, silently. `railway run` still
- * injects a `…@localhost:<port>` URL for it either way, so the container runs
- * and answers pings happily, and only the app notices — as an endless
- * `ECONNREFUSED` in `.dev-logs/web.log`.
+ * Host port the compose file published for a service, or null if it published
+ * none. The committed file always publishes both (fixed 55432 / 56379), so a
+ * null here means the container isn't up rather than a missing `ports:` key.
  */
 function hostPort(file, service) {
   const container = SERVICE_PORTS[service];
@@ -175,25 +148,11 @@ async function isReady(file, service) {
 async function streamLogs(file, service) {
   // `docker compose logs -f` against a service with no container exits straight
   // away instead of waiting, so gate on the container first. In practice the
-  // `railway-dev` one-shot has already completed by now; this covers the race.
+  // `dev-containers` one-shot has already completed by now; this covers the race.
   const deadline = Date.now() + CONTAINER_WAIT_MS;
   while (!isRunning(file, service)) {
-    if (Date.now() > deadline) fail(`container for \`${service}\` never appeared (is \`railway dev\` running?)`);
+    if (Date.now() > deadline) fail(`container for \`${service}\` never appeared (did \`docker compose up\` fail?)`);
     await sleep(POLL_INTERVAL_MS);
-  }
-
-  // The readiness probe fails on an unpublished port, but a red process in the
-  // TUI doesn't say why. Say it here, in the log pane for the service at fault.
-  if (service in SERVICE_PORTS && hostPort(file, service) === null) {
-    console.error(
-      `!! \`railway dev\` published no host port for \`${service}\` (container :${SERVICE_PORTS[service]}).\n` +
-        `!! Nothing on this machine can reach it, but \`railway run\` still hands the app a\n` +
-        `!! localhost URL for it — the app will hang or spin on ECONNREFUSED.\n` +
-        `!! \`railway dev\` only publishes a service that has a public TCP proxy on Railway.\n` +
-        `!! Give \`${service}\` one (Railway dashboard -> the service -> Settings -> Networking\n` +
-        `!! -> TCP Proxy, application port ${SERVICE_PORTS[service]}), then regenerate the compose\n` +
-        `!! file with \`pnpm dev:down && pnpm dev\` — it is written fresh on every \`up\`.`,
-    );
   }
 
   const child = spawn("docker", ["compose", "-f", file, "logs", "-f", "--no-log-prefix", "--tail", "100", service], {
@@ -208,17 +167,17 @@ async function streamLogs(file, service) {
 }
 
 const [command, service] = process.argv.slice(2);
-if (!command) fail("usage: railway-containers.mjs <logs|ready|compose-file> [service]");
+if (!command) fail("usage: dev-containers.mjs <logs|ready|compose-file> [service]");
 
 if (command === "compose-file") {
   console.log(composePath());
 } else if (command === "ready") {
-  if (!service) fail("usage: railway-containers.mjs ready <service>");
+  if (!service) fail("usage: dev-containers.mjs ready <service>");
   // A missing compose file means the containers aren't up — not ready, but not
   // worth a hard failure either: process-compose polls this on a loop.
   process.exit(existsSync(composePath()) && (await isReady(composePath(), service)) ? 0 : 1);
 } else if (command === "logs") {
-  if (!service) fail("usage: railway-containers.mjs logs <service>");
+  if (!service) fail("usage: dev-containers.mjs logs <service>");
   await streamLogs(composeFile(), service);
 } else {
   fail(`unknown command \`${command}\``);

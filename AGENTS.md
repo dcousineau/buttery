@@ -60,6 +60,6 @@ Before edit files for big task:
 - Migrations: `pnpm --filter @buttery/web db:migrate:new <snake_case_name>`, then edit generated file. **Never hand-name one** — kysely-ctl stamp `Date.now()`; hand-picked prefix drift ahead of clock, next generated file sort before applied one, Kysely reject as corrupted. Plan docs saying "prefix greater than X" wrong; run CLI.
 - Right after `db:migrate:up`, run `db:codegen` so `src/db/types.ts` match schema.
 - Local stack one singleton process-compose project — never start second dev server. Load `local-dev` skill before boot, tear down, restart, or inspect it; skill own the how (CLI vs `pc_*` MCP tools, config-reload traps, log reading).
-- Anything DB-touching run under `railway run --service buttery -- <cmd>`. Never hardcode postgres host port — it regenerate.
+- DB connection = `DATABASE_URL` in `services/web/.env`, fixed port from repo-root `docker-compose.yml` (55432). `db:migrate:*` load it via `kysely.config.ts`, the dev server via `vite.config.ts` — no wrapper. `pnpm test:db` and the atproto-cron-sync commands still wrap `railway run --service … --` (they don't self-load `.env`).
 - New token or form state → update `docs/BRAND.md` + `.agents/skills/buttery-design-system/**`, then push `/design-sync`. Local bundle is source; leave no orphan remote file.
 - `*.db.test.ts` SKIP silent without database, so `pnpm test` stay green. Changed schema or server-fn behavior → also run `pnpm test:db`.
