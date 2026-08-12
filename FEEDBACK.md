@@ -181,6 +181,31 @@ mise install --yes || echo "WARN: some tools failed to install (see above)"
 
 ### Proxy-blocked domains (candidates for the egress allowlist)
 
+#### Blocked in the browser (captured via Playwright)
+
+Method: loaded `/` and `/login` through the Playwright MCP and dumped the network
+log (`browser_network_requests` with `static: true`, filtered to non-loopback
+hosts). Every off-box request the app makes from the browser is listed here — the
+list is currently just the Google Fonts pair.
+
+- `fonts.googleapis.com` — **observed blocked.** `services/web/src/styles.css`
+  does `@import url("https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Rubik…")`,
+  and that request is reset by the proxy (`net::ERR_CONNECTION_RESET`, the only
+  failed request on both pages). This is the CSS with the `@font-face` rules.
+- `fonts.gstatic.com` — **needed with it.** The CSS above resolves its `src:
+url(...)` woff2 files from `fonts.gstatic.com`. It never showed up as a _failed_
+  request only because the `googleapis` CSS was reset before the browser could
+  parse it and fetch the fonts — unblock one without the other and the fonts still
+  won't load. Allowlist the two together.
+
+Impact is **cosmetic**: the page falls back to system fonts and otherwise renders
+and works. Allowlist the pair if pixel-accurate rendering / screenshots matter
+(and note the same two hosts back the server-side OG-image render —
+`services/web/src/server/og/…` and `public/og-image.svg` reference them too);
+otherwise it's safe to leave them blocked.
+
+#### Blocked during provisioning / MCP startup (not browser traffic)
+
 - `registry.npmjs.org` / `*.npmjs.org` — **still required.** The Playwright MCP is
   launched as `npx --yes @playwright/mcp@latest`, which fetches the MCP package
   from npm on first use in a fresh container. (The browser itself no longer needs
@@ -188,11 +213,6 @@ mise install --yes || echo "WARN: some tools failed to install (see above)"
 - `cdn.playwright.dev` and `*.azureedge.net` — **fallback only now.** Needed for a
   Playwright _browser_ download, which the pinned pre-baked Chromium avoids;
   keep them allowlisted only as a safety net if the pre-bake ever goes away.
-- `fonts.googleapis.com` / `fonts.gstatic.com` — **new, optional.** The app's home
-  page requests Google Fonts (Alfa Slab One, Rubik); the fetch is reset by the
-  proxy (`ERR_CONNECTION_RESET` in the browser console) and the page falls back to
-  system fonts. Cosmetic only — allowlist these if pixel-accurate rendering /
-  screenshots matter, otherwise safe to leave blocked.
 - `mcp.better-auth.com` — only if the `better-auth` MCP server is meant to work in
   cloud sessions (item 2). The allowlist has bare `better-auth.com`, which doesn't
   cover the subdomain; `*.better-auth.com` does.
