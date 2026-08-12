@@ -51,6 +51,27 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Cloud sessions pre-bake a Playwright Chromium at $PLAYWRIGHT_BROWSERS_PATH
+// (a stable `chromium` symlink over the versioned build) plus its system libs.
+// The Playwright MCP, launched via `npx @playwright/mcp@latest`, resolves the
+// browser revision its *bundled* playwright-core wants — which drifts ahead of
+// whatever the base image baked, so a bare `--browser chromium` would download
+// a second copy mid-session (slow, and needs cdn.playwright.dev egress). Point
+// it straight at the pre-baked binary instead: newer playwright-core drives an
+// older Chromium build fine over CDP, so this is version-independent and needs
+// no download. Returns null off cloud (e.g. macOS dev), where the symlink is
+// absent and Playwright's own managed browser is correct — so we inject nothing.
+function prebakedChromium() {
+  const candidates = [];
+  if (process.env.PLAYWRIGHT_BROWSERS_PATH) {
+    candidates.push(join(process.env.PLAYWRIGHT_BROWSERS_PATH, "chromium"));
+  }
+  candidates.push("/opt/pw-browsers/chromium");
+  // existsSync follows the symlink, so this is true only when the target binary
+  // is really there — a dangling link (browser removed) correctly reads false.
+  return candidates.find((path) => existsSync(path)) ?? null;
+}
+
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const examplePath = join(root, ".mcp.json.example");
 const targetPath = join(root, ".mcp.json");
@@ -110,6 +131,16 @@ if (databaseUrl) {
     "render-mcp: no DATABASE_URL (checked services/web/.env and the environment) — " +
       "keeping the example's placeholder. Copy services/web/.env.example to .env and re-run `mise run setup:mcp -- --force`.",
   );
+}
+
+// Cloud only: pin the Playwright MCP to the base image's pre-baked Chromium so
+// it doesn't download a matching build on first use (see prebakedChromium).
+// Idempotent and merge-safe: skipped if the args already carry an explicit
+// executable, so a hand-edited `.mcp.json` or a `--force` re-render is a no-op.
+const chromium = prebakedChromium();
+const playwright = config.mcpServers?.playwright;
+if (chromium && Array.isArray(playwright?.args) && !playwright.args.includes("--executable-path")) {
+  playwright.args = [...playwright.args, "--executable-path", chromium];
 }
 
 // Merge, don't clobber: keep any server this checkout added on its own.

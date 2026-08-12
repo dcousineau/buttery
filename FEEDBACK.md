@@ -3,156 +3,127 @@
 Running notes from working this branch in a Claude Code **cloud** session. Kept
 succinct; each item is a friction point plus a concrete fix suggestion.
 
-## Now working (previous friction, resolved this session)
+## Verified working this session
 
-Verified fixed since the last round — recorded so nobody re-investigates them:
+Full end-to-end check on this branch (x86_64 cloud session). Tools were resolved
+through the mise shims (see item 1 for why that prefix is still needed):
 
-- **Both container registries pull.** `redis:8.2.1` from **Docker Hub** now pulls
-  cleanly (the CloudFront blob 403 from session 1 is gone), and
-  `ghcr.io/railwayapp-templates/postgres-ssl:18.4` pulls too. The full
-  docker-compose stack boots (`dev-containers` reaches healthy). _(One caveat on
-  ghcr below.)_
-- **The pinned toolchain installs.** `mise install` brings up node@26.7.0,
-  pnpm@11.20.0, process-compose, and railway — including the aqua tools that used
-  to die on Sigstore attestation. No `*.sigstore.dev` failures in the proxy's
-  `recentRelayFailures` this session.
-- **Login-shell PATH is intact** (no literal `$PATH` token) and **`mise` is on
-  `PATH`** (`/usr/bin/mise`). The setup script's repo discovery + `mise trust` +
-  `mise install` now run against the repo (`mise ls` shows every tool present, no
-  `(missing)`).
-- **Docker daemon is up at session start** and **`gh` is preinstalled**
-  (2.45.0).
-- **`.env`-driven dev works.** `cp services/web/.env.example services/web/.env` +
-  a generated `BETTER_AUTH_SECRET` is all a boot needs; migrations apply and the
-  app reads its config with no `railway run`.
-
-End-to-end check this session (after the two fixes below):
-
-- **Postgres** — reachable on `55432`, PostgreSQL 18.4, all migrations applied
-  (full table set present).
+- **Toolchain + containers.** `mise install` brings up node@26.7.0, pnpm@11.20.0,
+  process-compose, and railway. Docker daemon is up at session start and `gh` is
+  preinstalled. Both registries pull cleanly — `redis:8.2.1` (Docker Hub) and
+  `ghcr.io/railwayapp-templates/postgres-ssl:18.4` (ghcr) — and the
+  docker-compose stack boots healthy. _(The earlier CloudFront 403 and flaky
+  ghcr 503 did not recur; dropped as transient.)_
+- **`.env`-driven boot.** The postinstall hook's `setup:env` + `setup:mcp` render
+  `services/web/.env` (with a generated `BETTER_AUTH_SECRET`) and `.mcp.json`
+  (with the dev `DATABASE_URL` baked in). No `railway run` needed.
+- **Postgres** — reachable on `55432`, PostgreSQL **18.4**, all migrations
+  applied (34 tables present).
 - **Redis** — reachable on `56379`, `PING`/`SET`/`GET` round-trip under the
   compose password.
-- **Web** — `pnpm dev` stack serves `http://127.0.0.1:3000/` (`<title>Buttery`),
-  `/login` 200, and the atproto sign-in handshake returns an
-  `oauth/authorize` URL. A live source edit (title string) was reflected in the
-  served HTML, confirming the edit → serve loop.
+- **Web** — the process-compose stack serves `http://127.0.0.1:3000/` (`200`,
+  `<title>Buttery`), `/login` `200`, and the atproto sign-in handshake returns an
+  `oauth/authorize` URL. A live title edit was reflected in the served HTML and
+  then reverted — the edit → serve loop is confirmed.
+- **`@resvg/resvg-js` on x86 (was a blocker).** `optimizeDeps: { exclude:
+["@resvg/resvg-js"] }` in `services/web/vite.config.ts` is applied; the web
+  process boots and serves `200` on x86_64. `resvg` stays a server-only lazy
+  `import()`, so the exclude is arch-agnostic (a no-op where the optimizer wasn't
+  choking). **Resolved.**
+- **Login-shell PATH (was the "secondary" half of item 1).** A login shell now
+  reports `node v26.7.0` and has `process-compose` on `PATH`
+  (`/etc/profile.d/zzz-mise.sh` is in place and sorts after the base image's
+  `nodejs.sh`). **Resolved for login/interactive shells** — see item 1 for the
+  non-login shells that still miss it.
+- **Playwright MCP drives the app.** After the config fix below, the `playwright`
+  MCP server loads the app in headless Chromium: navigated
+  `http://127.0.0.1:3000/`, got a full accessibility snapshot **and** a rendered
+  screenshot, page title `Buttery`. It uses the base image's **pre-baked**
+  Chromium (`/opt/pw-browsers/chromium`) with no mid-session download.
 
-## Still broken / needs a fix
+## Still needs an env / provisioning change
 
-### 1. The pinned toolchain is installed but is not the default on `PATH`
+### 1. Pinned toolchain is not on `PATH` for the agent's (non-login) tool shells
 
-`mise install` succeeds, yet `node`/`pnpm` still resolve to the base image's
-`/opt/node22` (Node **v22**), not the pinned **node@26.7.0**. Two independent
-causes, both confirmed:
+The login/interactive-shell fix landed (see above), but the shell the agent's
+tools actually run in — a **non-login** `bash -c …` — still gets it wrong.
+Confirmed this session:
 
-- **profile.d ordering.** The setup script writes `/etc/profile.d/mise.sh`, but
-  `/etc/profile.d/nodejs.sh` (`export PATH=/opt/node22/bin:$PATH`) sorts _after_
-  it alphabetically and re-prepends base Node ahead of the mise shims. So even a
-  login shell gets Node 22. **Tested fix:** name the snippet so it sorts last —
-  `/etc/profile.d/zzz-mise.sh` — and a `bash -lc 'node --version'` then reports
-  `v26.7.0`.
-- **Non-login / non-interactive shells never source `/etc/profile.d` at all.**
-  This is the shell the agent's tools (and any `bash -c …`) actually run in.
-  There the mise shims are absent from `PATH` _and_ the inherited `mise` shell
-  function is broken — it references `$__MISE_EXE`, which isn't exported into
-  these shells, so `mise <anything>` fails with `command not found`. Renaming the
-  profile snippet does **not** help here (`bash -c 'node --version'` stays
-  `v22`), because profile.d is skipped entirely.
+- In a tool shell, `node` resolves to `/opt/node22/bin/node` (**v22**), and
+  `process-compose` / `railway` are **not found** (they live only in the mise
+  shims dir, which isn't on this `PATH`).
+- The inherited `mise` **shell function** is broken here: it references
+  `$__MISE_EXE`, which is unset in these shells, so `mise <anything>` fails with
+  `command not found`. (The `/usr/bin/mise` binary exists but the function
+  shadows it.)
+- Non-login shells never source `/etc/profile.d`, so `zzz-mise.sh` — which fixes
+  login shells — cannot reach them.
 
-**Fix — do both:**
+**Fix (environment `PATH` setting, not the setup script).** The only lever that
+reaches non-login shells is the environment's own `PATH`. It can't interpolate,
+so hardcode the shims dir at the **front**:
 
-1. **Primary (reaches the agent/tool shells):** because non-login shells never
-   read profile.d, the only lever that fixes them is the environment's own
-   `PATH`. The env `PATH` setting can't interpolate, so hardcode the shims dir at
-   the **front**:
+```
+/root/.local/share/mise/shims
+```
 
-   ```
-   /root/.local/share/mise/shims
-   ```
+(In this image `HOME=/root` and `MISE_DATA_DIR` is unset, so the shims live
+there. Putting it ahead of `/opt/node22/bin` makes node@26 / pnpm win in every
+shell, and calling the real shim executables sidesteps the broken `mise`
+function entirely.) Until this is set, everything above works only when a command
+prepends the shims dir by hand.
 
-   (In this cloud image `HOME=/root` and `MISE_DATA_DIR` is unset, so the shims
-   live there; putting it ahead of `/opt/node22/bin` makes node@26/pnpm win in
-   every shell, and using the real shim executables sidesteps the broken `mise`
-   function entirely.)
-
-2. **Secondary (human TUI / login + interactive shells):** in the setup script,
-   name the profile snippet to sort last and also drop it into
-   `/etc/bash.bashrc` (interactive non-login shells don't read profile.d either).
-   See the drop-in script below.
-
-### 2. `ghcr.io` returns intermittent `503 Service Unavailable`
-
-Not a hard block (and not a proxy denial — nothing for ghcr in the proxy's
-`recentRelayFailures`), but flaky: pulling
-`ghcr.io/railwayapp-templates/postgres-ssl:18.4` failed with `503` on the
-manifest/blob HEAD/GET on several attempts and only succeeded on retry. Docker
-Hub (`redis`) pulled first try. **Fix idea:** have the setup script pre-pull the
-two dev images with a retry/backoff loop so the first `pnpm dev` doesn't race a
-flaky ghcr, or pre-bake them into the base image.
-
-### 3. `better-auth` MCP server is unusable in cloud sessions
+### 2. `better-auth` MCP server is unusable in cloud sessions
 
 `.mcp.json` points `better-auth` at `https://mcp.better-auth.com/mcp`. The proxy
-answers **403 on CONNECT** to `mcp.better-auth.com:443` (confirmed in
-`recentRelayFailures`), and the server also requires an interactive OAuth flow
-that a non-interactive cloud session can't complete. Net: this MCP server is
-always unavailable here. **Fix idea:** allowlist `mcp.better-auth.com` if it's
-meant to be reachable, and/or gate that entry out of the rendered `.mcp.json` for
-cloud sessions so it doesn't show up as a broken server.
+answers **403 on CONNECT** to `mcp.better-auth.com:443`, and the server also
+requires an interactive OAuth flow a non-interactive cloud session can't
+complete. Net: this server is always unavailable here. **Fix idea:** allowlist
+`mcp.better-auth.com` (the allowlist's bare `better-auth.com` doesn't cover the
+subdomain — `*.better-auth.com` does) if it's meant to be reachable, and/or gate
+this entry out of the rendered `.mcp.json` for cloud sessions so it doesn't show
+up as a broken server.
 
-### 4. Web dev server crashes on x86 — `@resvg/resvg-js` native module (app fix)
+## Playwright MCP — fixes applied on this branch
 
-Not a provisioning issue, but it fully blocks `pnpm dev`'s web process on this
-**x86_64** cloud env (this repo is developed on ARM macOS, so it likely never
-surfaces locally). Vite 8 / rolldown's **client** dependency optimizer tries to
-scan the native `@resvg/resvg-js` binding and fails:
+The `playwright` MCP server failed on first use with `Chromium distribution
+'chrome' is not found at /opt/google/chrome/chrome`. Two problems, both fixed in
+this branch so a fresh cloud session works without provisioning a browser:
 
-```
-[UNLOADABLE_DEPENDENCY] Could not load …/@resvg/resvg-js-linux-x64-gnu/resvgjs.linux-x64-gnu.node
- - stream did not contain valid UTF-8 in …/@resvg/resvg-js/js-binding.js
-```
+1. **Wrong browser channel.** `@playwright/mcp` defaults to the branded **chrome**
+   channel, which the image doesn't ship. Added `--browser chromium` to the
+   `playwright` server args in **`.mcp.json.example`** so it uses Chromium.
+2. **Version drift vs. the pre-baked browser.** `@playwright/mcp@latest` bundles a
+   `playwright-core` that wants a _newer_ Chromium build than the one the base
+   image pre-bakes (`/opt/pw-browsers/chromium` → build `1194` this session), so a
+   bare `--browser chromium` would download a second copy mid-session. Instead,
+   **`scripts/dev/render-mcp.mjs`** now injects `--executable-path
+/opt/pw-browsers/chromium` into the rendered `.mcp.json` **only when that
+   pre-baked binary exists** (guarded by `PLAYWRIGHT_BROWSERS_PATH` /
+   `/opt/pw-browsers`, so it's a no-op on macOS dev). Verified: the latest
+   `playwright-core` drives the older pre-baked Chromium over CDP fine, so this is
+   version-independent and needs **no download and no browser-CDN egress**.
 
-The `.node` file itself is a valid ELF and present on disk — the optimizer just
-shouldn't be bundling a native, server-only module. `resvg` is already a
-server-only lazy `import("@resvg/resvg-js")` (OG-image rendering), so excluding
-it from the client optimizer is correct and **arch-agnostic**:
-
-```ts
-// services/web/vite.config.ts
-optimizeDeps: { exclude: ["@resvg/resvg-js"] },
-```
-
-**Verified:** with that line the web process boots and serves 200 on every arch
-(the exclude is a no-op where the optimizer wasn't choking). **Now applied** on
-this branch (`services/web/vite.config.ts`) — it's the one code change needed for
-a working web server on x86. (`satori` is pure JS and doesn't need this.)
-
-### 5. Playwright MCP needs a browser (and the pinned Node) provisioned
-
-`.mcp.json.example` now carries a `playwright` server, launched as
-`mise exec -- npx --yes @playwright/mcp@latest --headless --isolated`. The
-`mise exec` wrapper is load-bearing: a bare `npx` resolves to the base image's
-Node 22 (item 1), and Playwright's own engines want the pinned node@26. Two
-provisioning needs follow:
-
-- **Chromium + its system libs.** Without them the first tool call spends
-  minutes downloading mid-session, or fails outright on missing shared objects.
-  The setup script below installs them up front with `--with-deps` (it already
-  runs as root, so apt is available).
-- **Egress.** `registry.npmjs.org` for the `npx` fetch and `cdn.playwright.dev`
-  for the browser bundle. See the allowlist section below.
+Also added `.playwright-mcp` to `.gitignore` (the MCP writes snapshots /
+screenshots / traces there).
 
 `--headless` is required (no display in a cloud session) and `--isolated` keeps
-the server off any persistent browser profile.
+the server off any persistent browser profile — both already present.
 
 ## Suggested cloud env setup script (drop-in replacement)
 
-Generic — no repo-specific or custom-task commands, only default `mise` plus
-system setup, so it works for any mise repo. Changes vs. the current script are
-the two PATH fixes for login/interactive shells (item 1, secondary) and the
-Playwright browser install (item 5). The **primary** PATH fix for the agent's
-non-login tool shells is the hardcoded `PATH` env entry above — a setup script
-alone can't reach those shells.
+The script **currently set** in the environment already lands the login-shell
+PATH fix (`/etc/profile.d/zzz-mise.sh` + `/etc/bash.bashrc`) — confirmed working
+this session. The only change vs. that script is to **drop the Playwright browser
+install**: the base image already ships Chromium _and_ its system libs (the
+pre-baked browser launched and rendered a screenshot this session), and the MCP
+is now pinned to that binary (above), so `playwright install --with-deps
+chromium` is redundant. If a future base image ever stops pre-baking the browser,
+the render's guard falls back to a bare `--browser chromium` (which then needs the
+Playwright CDN in the allowlist — see below).
+
+The **primary** PATH fix for the agent's non-login tool shells (item 1) is the
+hardcoded `PATH` env entry, which a setup script can't provide.
 
 ```bash
 #!/bin/bash
@@ -164,7 +135,7 @@ extrepo enable mise
 apt update
 apt install -y mise
 
-# Activate mise for future shells. Two changes vs. before:
+# Activate mise for future shells:
 #  * Sort AFTER the base image's PATH scripts (e.g. /etc/profile.d/nodejs.sh,
 #    which re-prepends /opt/node22/bin) so the mise shims win — hence zzz-*.
 #  * Also write /etc/bash.bashrc: interactive non-login shells read it but not
@@ -201,23 +172,27 @@ cd "$REPO_DIR"
 mise trust
 mise install --yes || echo "WARN: some tools failed to install (see above)"
 
-# Playwright MCP browser. `mise exec --` runs npx under the repo's pinned Node
-# (a bare npx would get the base image's Node 22 — item 1). `--with-deps` pulls
-# the shared libraries headless Chromium needs; we're root here, so apt works.
-# Doing it now keeps the MCP server from downloading a browser mid-session.
-mise exec -- npx --yes playwright@latest install --with-deps chromium \
-  || echo "WARN: playwright chromium install failed (the MCP server will retry the download on first use)"
+# NOTE: no `playwright install` here. The base image pre-bakes Chromium + its
+# system libs under $PLAYWRIGHT_BROWSERS_PATH (/opt/pw-browsers), and the
+# Playwright MCP is pinned to that binary by scripts/dev/render-mcp.mjs, so there
+# is nothing to download. Re-add `mise exec -- npx --yes playwright@latest install
+# --with-deps chromium` only if a future base image stops pre-baking the browser.
 ```
 
 ### Proxy-blocked domains (candidates for the egress allowlist)
 
-- `mcp.better-auth.com` — **confirmed 403 on CONNECT** (item 3). The allowlist
-  has bare `better-auth.com`, which doesn't cover the subdomain; `*.better-auth.com`
-  does. Only needed if the `better-auth` MCP server is meant to work in cloud
-  sessions.
-- `registry.npmjs.org` / `*.npmjs.org` — required by the `npx` in both the
-  Playwright MCP launch command and the setup script's browser install (item 5).
-- `cdn.playwright.dev` and `*.azureedge.net` — Playwright's browser bundles.
-  `cdn.playwright.dev` and `playwright.azureedge.net` are already allowlisted;
-  the wildcard covers the `playwright-akamai` / `playwright-verizon` mirror
-  hosts Playwright falls back to.
+- `registry.npmjs.org` / `*.npmjs.org` — **still required.** The Playwright MCP is
+  launched as `npx --yes @playwright/mcp@latest`, which fetches the MCP package
+  from npm on first use in a fresh container. (The browser itself no longer needs
+  egress — it's pre-baked.)
+- `cdn.playwright.dev` and `*.azureedge.net` — **fallback only now.** Needed for a
+  Playwright _browser_ download, which the pinned pre-baked Chromium avoids;
+  keep them allowlisted only as a safety net if the pre-bake ever goes away.
+- `fonts.googleapis.com` / `fonts.gstatic.com` — **new, optional.** The app's home
+  page requests Google Fonts (Alfa Slab One, Rubik); the fetch is reset by the
+  proxy (`ERR_CONNECTION_RESET` in the browser console) and the page falls back to
+  system fonts. Cosmetic only — allowlist these if pixel-accurate rendering /
+  screenshots matter, otherwise safe to leave blocked.
+- `mcp.better-auth.com` — only if the `better-auth` MCP server is meant to work in
+  cloud sessions (item 2). The allowlist has bare `better-auth.com`, which doesn't
+  cover the subdomain; `*.better-auth.com` does.

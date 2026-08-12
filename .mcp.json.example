@@ -27,7 +27,7 @@
     },
     "playwright": {
       "command": "mise",
-      "args": ["exec", "--", "npx", "--yes", "@playwright/mcp@latest", "--headless", "--isolated"]
+      "args": ["exec", "--", "npx", "--yes", "@playwright/mcp@latest", "--headless", "--isolated", "--browser", "chromium"]
     }
   }
 }
