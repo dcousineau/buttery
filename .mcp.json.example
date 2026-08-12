@@ -4,7 +4,7 @@
       "command": "docker",
       "args": ["run", "-i", "--rm", "--init", "--add-host=host.docker.internal:host-gateway", "-e", "DATABASE_URI", "crystaldba/postgres-mcp", "--access-mode=unrestricted"],
       "env": {
-        "DATABASE_URI": "SEE .env.example"
+        "DATABASE_URI": "RENDER ME — `mise run mcp:setup`"
       }
     },
     "mise": {
