@@ -10,6 +10,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
+# A fresh clone has no services/web/.env, and every process that touches the
+# database or the web server reads it. Create it from the example (no-op once it
+# exists) so the stack boots instead of dying inside `migrate` on an undefined
+# DATABASE_URL.
+node scripts/dev/bootstrap-env.mjs
+
 # process-compose writes per-process logs here and won't create the directory.
 mkdir -p .dev-logs
 

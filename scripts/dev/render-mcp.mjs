@@ -26,17 +26,26 @@
 //     reaches the Postgres published on the host by docker-compose.
 //
 // Without a DATABASE_URL from either source this still writes the file, keeping
-// whatever placeholder the example carries. That's the `mise install` case — a
-// fresh clone that has never copied `.env` gets a valid `.mcp.json` with every
-// other server wired up, and re-renders once `.env` exists.
+// whatever placeholder the example carries — a checkout with no `.env` at least
+// gets a valid `.mcp.json` with every other server wired up. In the normal
+// `mise install` path that can't happen: the postinstall hook runs `setup:env`
+// first, so `.env` exists by the time this reads it.
 //
 // Servers present in an existing `.mcp.json` but absent from the example are
 // preserved: `.mcp.json` is gitignored and personal, so a locally-added server
 // is not this script's to delete.
 //
+// Bootstrap-only by default: an existing `.mcp.json` is left alone and the
+// script exits 0. It runs on every `pnpm install` (the mise postinstall hook),
+// and that is a hook's job — make the missing file exist, not relitigate a file
+// the developer has since hand-edited. Pass `--force` to re-render on purpose,
+// which is what to reach for after the dev DATABASE_URL changes or after the
+// example gains a server.
+//
 // Usage:
 //   node scripts/dev/render-mcp.mjs        # reads services/web/.env
-//   mise run mcp:setup                     # the same, wired into mise
+//   mise run setup:mcp                     # the same, wired into mise
+//   mise run setup:mcp -- --force          # re-render an existing .mcp.json
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -51,6 +60,11 @@ function fail(message) {
   console.error(`render-mcp: ${message}`);
   process.exit(1);
 }
+
+// Bootstrap-only unless asked otherwise — see the header. Checked before
+// anything is read so the common case (file already there) is a clean no-op.
+const force = process.argv.includes("--force");
+if (existsSync(targetPath) && !force) process.exit(0);
 
 // Load services/web/.env into process.env the same way kysely.config.ts and
 // vite.config.ts do, so DATABASE_URL comes from the one source of truth. A
@@ -92,7 +106,10 @@ if (databaseUrl) {
   if (!postgres) fail(".mcp.json.example has no `postgres` server to point at the dev database");
   postgres.env = { ...postgres.env, DATABASE_URI: forDockerContainer(databaseUrl) };
 } else {
-  console.error("render-mcp: no DATABASE_URL (checked services/web/.env and the environment) — " + "keeping the example's placeholder. Copy services/web/.env.example to .env and re-run `mise run mcp:setup`.");
+  console.error(
+    "render-mcp: no DATABASE_URL (checked services/web/.env and the environment) — " +
+      "keeping the example's placeholder. Copy services/web/.env.example to .env and re-run `mise run setup:mcp -- --force`.",
+  );
 }
 
 // Merge, don't clobber: keep any server this checkout added on its own.

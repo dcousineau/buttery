@@ -123,17 +123,36 @@ optimizeDeps: { exclude: ["@resvg/resvg-js"] },
 ```
 
 **Verified:** with that line the web process boots and serves 200 on every arch
-(the exclude is a no-op where the optimizer wasn't choking). Not applied on this
-branch — this branch carries only FEEDBACK — but it's the one code change needed
-for a working web server on x86. (`satori` is pure JS and doesn't need this.)
+(the exclude is a no-op where the optimizer wasn't choking). **Now applied** on
+this branch (`services/web/vite.config.ts`) — it's the one code change needed for
+a working web server on x86. (`satori` is pure JS and doesn't need this.)
+
+### 5. Playwright MCP needs a browser (and the pinned Node) provisioned
+
+`.mcp.json.example` now carries a `playwright` server, launched as
+`mise exec -- npx --yes @playwright/mcp@latest --headless --isolated`. The
+`mise exec` wrapper is load-bearing: a bare `npx` resolves to the base image's
+Node 22 (item 1), and Playwright's own engines want the pinned node@26. Two
+provisioning needs follow:
+
+- **Chromium + its system libs.** Without them the first tool call spends
+  minutes downloading mid-session, or fails outright on missing shared objects.
+  The setup script below installs them up front with `--with-deps` (it already
+  runs as root, so apt is available).
+- **Egress.** `registry.npmjs.org` for the `npx` fetch and `cdn.playwright.dev`
+  for the browser bundle. See the allowlist section below.
+
+`--headless` is required (no display in a cloud session) and `--isolated` keeps
+the server off any persistent browser profile.
 
 ## Suggested cloud env setup script (drop-in replacement)
 
 Generic — no repo-specific or custom-task commands, only default `mise` plus
 system setup, so it works for any mise repo. Changes vs. the current script are
-the two PATH fixes for login/interactive shells (item 1, secondary). The
-**primary** PATH fix for the agent's non-login tool shells is the hardcoded
-`PATH` env entry above — a setup script alone can't reach those shells.
+the two PATH fixes for login/interactive shells (item 1, secondary) and the
+Playwright browser install (item 5). The **primary** PATH fix for the agent's
+non-login tool shells is the hardcoded `PATH` env entry above — a setup script
+alone can't reach those shells.
 
 ```bash
 #!/bin/bash
@@ -181,9 +200,24 @@ fi
 cd "$REPO_DIR"
 mise trust
 mise install --yes || echo "WARN: some tools failed to install (see above)"
+
+# Playwright MCP browser. `mise exec --` runs npx under the repo's pinned Node
+# (a bare npx would get the base image's Node 22 — item 1). `--with-deps` pulls
+# the shared libraries headless Chromium needs; we're root here, so apt works.
+# Doing it now keeps the MCP server from downloading a browser mid-session.
+mise exec -- npx --yes playwright@latest install --with-deps chromium \
+  || echo "WARN: playwright chromium install failed (the MCP server will retry the download on first use)"
 ```
 
 ### Proxy-blocked domains (candidates for the egress allowlist)
 
-- `mcp.better-auth.com` — **confirmed 403 on CONNECT** (item 3). Only needed if
-  the `better-auth` MCP server is meant to work in cloud sessions.
+- `mcp.better-auth.com` — **confirmed 403 on CONNECT** (item 3). The allowlist
+  has bare `better-auth.com`, which doesn't cover the subdomain; `*.better-auth.com`
+  does. Only needed if the `better-auth` MCP server is meant to work in cloud
+  sessions.
+- `registry.npmjs.org` / `*.npmjs.org` — required by the `npx` in both the
+  Playwright MCP launch command and the setup script's browser install (item 5).
+- `cdn.playwright.dev` and `*.azureedge.net` — Playwright's browser bundles.
+  `cdn.playwright.dev` and `playwright.azureedge.net` are already allowlisted;
+  the wildcard covers the `playwright-akamai` / `playwright-verizon` mirror
+  hosts Playwright falls back to.

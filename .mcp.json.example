@@ -4,7 +4,7 @@
       "command": "docker",
       "args": ["run", "-i", "--rm", "--init", "--add-host=host.docker.internal:host-gateway", "-e", "DATABASE_URI", "crystaldba/postgres-mcp", "--access-mode=unrestricted"],
       "env": {
-        "DATABASE_URI": "RENDER ME — `mise run mcp:setup`"
+        "DATABASE_URI": "RENDER ME — `mise run setup:mcp`"
       }
     },
     "mise": {
@@ -24,6 +24,10 @@
     "process-compose": {
       "type": "sse",
       "url": "http://localhost:8098/sse"
+    },
+    "playwright": {
+      "command": "mise",
+      "args": ["exec", "--", "npx", "--yes", "@playwright/mcp@latest", "--headless", "--isolated"]
     }
   }
 }

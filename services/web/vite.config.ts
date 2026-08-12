@@ -25,6 +25,12 @@ const config = defineConfig({
   // @buttery/lexicons ships raw generated TypeScript (no build step); force Vite
   // to transpile it for the SSR bundle instead of externalizing it from node_modules.
   ssr: { noExternal: ["@buttery/lexicons"] },
+  // resvg is a native binding, loaded server-side only via a lazy
+  // `import("@resvg/resvg-js")` for OG-image rendering. The client dependency
+  // optimizer has no business scanning it, and on linux-x64 it dies trying:
+  // `[UNLOADABLE_DEPENDENCY] … stream did not contain valid UTF-8`, which takes
+  // the whole dev server down. Never reproduces on ARM macOS, hence the note.
+  optimizeDeps: { exclude: ["@resvg/resvg-js"] },
   // Bind IPv4 explicitly: the atproto loopback OAuth client redirects the app
   // to 127.0.0.1, but plain `localhost` may resolve to ::1 only.
   server: { host: "127.0.0.1" },

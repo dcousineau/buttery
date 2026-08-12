@@ -29,18 +29,28 @@ PC_PORT_NUM = "8099"
 description = "Install Railway skills into this project"
 run = "railway skills install"
 
+# Create services/web/.env from the example (with a generated
+# BETTER_AUTH_SECRET) when it's missing. Runs before `setup:mcp` in the
+# postinstall hook so the render has a real DATABASE_URL to bake in rather than
+# the example's placeholder. No-op once .env exists — it never overwrites.
+[tasks."setup:env"]
+description = "Create services/web/.env from .env.example if it does not exist"
+run = "node scripts/dev/bootstrap-env.mjs"
+
 # Render the gitignored .mcp.json from .mcp.json.example, baking in the dev
 # DATABASE_URL from services/web/.env (see scripts/dev/render-mcp.mjs). No
 # `railway run` — local dev's Postgres is docker-compose-owned now, and the
-# script reads .env itself. No `sources`/`outputs`: what goes stale is the DB
-# URL inside an unchanged template, which an mtime check can't see. It renders
-# the example's placeholder unchanged for a clone that has never copied .env.
-[tasks."mcp:setup"]
+# script reads .env itself. Bootstrap-only: a no-op once .mcp.json exists, so
+# the hook can't stomp a hand-edited file. `-- --force` re-renders on purpose.
+# No `sources`/`outputs`: what goes stale is the DB URL inside an unchanged
+# template, which an mtime check can't see.
+[tasks."setup:mcp"]
 description = "Render .mcp.json from .mcp.json.example with the dev DATABASE_URL (services/web/.env)"
 run = "node scripts/dev/render-mcp.mjs"
 
 [hooks]
-# `;` not `&&`: mcp:setup must render .mcp.json even where railway-skills fails
-# (cloud sessions have no Railway CLI / GitHub API), so the next session boots
-# with the MCP servers wired up regardless.
-postinstall = "mise run railway-skills; mise run mcp:setup"
+# `;` not `&&`: the later steps must run even where railway-skills fails (cloud
+# sessions have no Railway CLI / GitHub API), so the next session boots with
+# .env and the MCP servers wired up regardless. setup:env precedes setup:mcp —
+# the render reads DATABASE_URL out of the file setup:env creates.
+postinstall = "mise run railway-skills; mise run setup:env; mise run setup:mcp"
