@@ -3,182 +3,187 @@
 Running notes from working this branch in a Claude Code **cloud** session. Kept
 succinct; each item is a friction point plus a concrete fix suggestion.
 
-## Environment friction hit this session
+## Now working (previous friction, resolved this session)
 
-- **Docker registry is partially blocked by the egress proxy.** Docker Hub and
-  ECR-public image blobs are served from CloudFront
-  (`production.cloudfront.docker.com`, `d2glxqk2uabbnd.cloudfront.net`), which
-  the proxy answers `403` to. `ghcr.io` works. Consequence: the Postgres image
-  (ghcr) pulls fine, but `redis:8.2.1` (Docker Hub) cannot be pulled, so the
-  **full stack cannot boot here** — only Postgres + migrations were bootable.
-  Fix idea: allowlist the Docker Hub / ECR CloudFront blob hosts, or pre-pull
-  the two dev images into the base image / a registry mirror for cloud sessions.
-- **Node 26 is not available out of the box.** `package.json` pins
-  `devEngines.runtime = ^26`, but the base image ships Node 20/21/22 only.
-  `mise use node@26` did install `node@26.7.0`, but see the mise notes below.
-  Fix idea: bake Node 26 into the cloud base image, or run `mise install` in a
-  SessionStart hook (today it fails — next bullet).
-- **`mise` is flaky in this environment.** `mise exec -- pnpm` panics; installing
-  `pnpm` via mise fails because artifact attestation needs
-  `tuf-repo-cdn.sigstore.dev` (proxy `403`) and the GitHub releases API is `403`
-  for this session. The `postinstall` hook `mise run railway-skills` also fails
-  (needs Railway CLI + GitHub). Workaround used: Node 26 from the mise install
-  dir on PATH + `pnpm` from `/opt/node22` (it runs fine under Node 26).
-- **The login shell PATH was broken** — it contained a literal `$PATH` token, so
-  `git`, `node`, `pnpm`, and coreutils were all missing until PATH was rebuilt
-  by hand. Worth fixing in the session bootstrap.
-- **Docker daemon was not running** at session start; had to launch `dockerd`
-  manually before any `docker` command worked.
-- **`pnpm install --config.runtime-on-fail=ignore` mutated `package.json`** — it
-  persisted `devEngines.runtime.onFail: "ignore"`. Had to revert. Prefer the
-  transient `--runtime-on-fail=ignore` flag; it should not write to the manifest.
-- **`gh` CLI is absent** (installed mid-session via `apt install -y gh` per the
-  user). A cloud session that opens PRs benefits from `gh` (or the GitHub MCP
-  tools) being present up front.
+Verified fixed since the last round — recorded so nobody re-investigates them:
 
-## Suggested AGENTS.md / setup docs improvements
+- **Both container registries pull.** `redis:8.2.1` from **Docker Hub** now pulls
+  cleanly (the CloudFront blob 403 from session 1 is gone), and
+  `ghcr.io/railwayapp-templates/postgres-ssl:18.4` pulls too. The full
+  docker-compose stack boots (`dev-containers` reaches healthy). _(One caveat on
+  ghcr below.)_
+- **The pinned toolchain installs.** `mise install` brings up node@26.7.0,
+  pnpm@11.20.0, process-compose, and railway — including the aqua tools that used
+  to die on Sigstore attestation. No `*.sigstore.dev` failures in the proxy's
+  `recentRelayFailures` this session.
+- **Login-shell PATH is intact** (no literal `$PATH` token) and **`mise` is on
+  `PATH`** (`/usr/bin/mise`). The setup script's repo discovery + `mise trust` +
+  `mise install` now run against the repo (`mise ls` shows every tool present, no
+  `(missing)`).
+- **Docker daemon is up at session start** and **`gh` is preinstalled**
+  (2.45.0).
+- **`.env`-driven dev works.** `cp services/web/.env.example services/web/.env` +
+  a generated `BETTER_AUTH_SECRET` is all a boot needs; migrations apply and the
+  app reads its config with no `railway run`.
 
-- **Document the `.env` bootstrap as step one of local dev.** Now that `pnpm dev`
-  no longer wraps the server in `railway run`, a fresh clone must:
-  `cp services/web/.env.example services/web/.env` and set `BETTER_AUTH_SECRET`
-  (`openssl rand -base64 32`). The `DATABASE_URL`/`REDIS_URL` defaults already
-  match `docker-compose.yml`, so no other value is needed for a first boot.
-  (Added to `README.md`; consider a SessionStart hook that copies the file if
-  missing so web sessions don't trip over a missing `.env`.)
-- **State the local-dev toolchain needs a running Docker daemon and registry
-  reachability.** GHCR must be reachable for Postgres; Docker Hub for Redis.
-- **A SessionStart hook could `mise install` (or verify Node 26 + pnpm)** so web
-  sessions land with the pinned toolchain instead of discovering it is missing.
+End-to-end check this session (after the two fixes below):
 
-## Session 2 — integrating `.mcp.json` generation, and the "new" mise cloud setup
+- **Postgres** — reachable on `55432`, PostgreSQL 18.4, all migrations applied
+  (full table set present).
+- **Redis** — reachable on `56379`, `PING`/`SET`/`GET` round-trip under the
+  compose password.
+- **Web** — `pnpm dev` stack serves `http://127.0.0.1:3000/` (`<title>Buttery`),
+  `/login` 200, and the atproto sign-in handshake returns an
+  `oauth/authorize` URL. A live source edit (title string) was reflected in the
+  served HTML, confirming the edit → serve loop.
 
-Context: pulled `chore/generate-mcp-json` (PR #27) into this branch and re-pointed
-its `.mcp.json` renderer at the docker-compose world (DATABASE_URL now lives in
-`services/web/.env`, not `railway run`; the postgres MCP runs inside a container,
-so the host is rewritten `localhost` → `host.docker.internal`). The cloud env
-setup script was updated between sessions to install mise automatically. It is
-better — `mise` itself is on `PATH` now, and the login-shell `$PATH` corruption
-from session 1 is gone — but mise still does **not** come up configured. Three
-concrete reasons, each with a fix:
+## Still broken / needs a fix
 
-- **The setup script never `cd`s into the repo, so `mise trust` + `mise install`
-  never run against it.** The script tries `cd "$HOME/workspace"` then
-  `cd ./workspace`, but in a cloud session `$HOME` is `/root` while the repo is
-  cloned to `/home/user/buttery` (and the setup script's own CWD is elsewhere).
-  Neither branch matches, so the `mise trust` / `mise install --yes` block is
-  skipped entirely. Observed fallout at session start: `mise ls` fails with
-  *"Config files in /home/user/buttery/mise.toml are not trusted"* and every
-  pinned tool shows `(missing)`. Fix: discover the repo dir instead of guessing
-  it (script below).
-- **`set -e` + `mise install --yes` aborts the whole script on the first tool
-  that can't be verified.** `pnpm` (and any aqua-backed tool) fails artifact
-  attestation because `tuf-repo-cdn.sigstore.dev` is proxy-blocked (403 on
-  CONNECT — confirmed in `$HTTPS_PROXY/__agentproxy/status`). Under `set -e`
-  that one failure kills setup before Node/pnpm finish and before any
-  post-install step runs. Fix: whitelist the sigstore/GitHub hosts (below), or
-  make the install non-fatal and skip attestation.
-- **mise is never *activated* in the shell, so installed tools aren't on `PATH`.**
-  `/etc/profile.d/` has activation scripts for node/nvm/rbenv/etc. but nothing
-  for mise, and neither `~/.bashrc` nor `~/.profile` calls `mise activate`. Even
-  after a successful `mise install`, `node`/`pnpm` resolve to the base image's
-  `/opt/node22`, not the pinned versions. Fix: drop a `mise.sh` in
-  `/etc/profile.d` that puts the mise shims on `PATH` (below).
+### 1. The pinned toolchain is installed but is not the default on `PATH`
 
-Net effect this session: `mise run mcp:setup` triggered a full `mise install`
-(node@26, railway, process-compose all installed fine — GitHub *release
-downloads* and attestation for those worked), but `pnpm@11.20.0` failed
-attestation and took the task down with it, so the render didn't run through
-mise. Rendering `.mcp.json` directly with `node scripts/dev/render-mcp.mjs`
-(the renderer only needs Node) worked every time. That's the reliable path for a
-cloud boot and is what the improved setup script uses.
+`mise install` succeeds, yet `node`/`pnpm` still resolve to the base image's
+`/opt/node22` (Node **v22**), not the pinned **node@26.7.0**. Two independent
+causes, both confirmed:
 
-### Proxy-blocked domains (candidates for the egress allowlist)
+- **profile.d ordering.** The setup script writes `/etc/profile.d/mise.sh`, but
+  `/etc/profile.d/nodejs.sh` (`export PATH=/opt/node22/bin:$PATH`) sorts _after_
+  it alphabetically and re-prepends base Node ahead of the mise shims. So even a
+  login shell gets Node 22. **Tested fix:** name the snippet so it sorts last —
+  `/etc/profile.d/zzz-mise.sh` — and a `bash -lc 'node --version'` then reports
+  `v26.7.0`.
+- **Non-login / non-interactive shells never source `/etc/profile.d` at all.**
+  This is the shell the agent's tools (and any `bash -c …`) actually run in.
+  There the mise shims are absent from `PATH` _and_ the inherited `mise` shell
+  function is broken — it references `$__MISE_EXE`, which isn't exported into
+  these shells, so `mise <anything>` fails with `command not found`. Renaming the
+  profile snippet does **not** help here (`bash -c 'node --version'` stays
+  `v22`), because profile.d is skipped entirely.
 
-Offered by the maintainer to whitelist (wildcards OK). Ordered by how much they
-hurt the mise/local-dev flow:
+**Fix — do both:**
 
-- `*.sigstore.dev` — **confirmed 403 on CONNECT** (`tuf-repo-cdn.sigstore.dev`
-  in the proxy's `recentRelayFailures`). This is the one that breaks `mise
-  install`: aqua tools (`pnpm`, `railway`, `process-compose`) verify GitHub
-  artifact attestations through Sigstore's TUF root here. Also covers
-  `fulcio.sigstore.dev` / `rekor.sigstore.dev` if attestation is kept on.
-- `github.com`, `objects.githubusercontent.com`, `codeload.github.com` — GitHub
-  release **asset** downloads. Flaky rather than hard-blocked: saw intermittent
-  `502 Bad Gateway` on `github.com/.../releases/download/...` (pnpm tarball),
-  while railway/process-compose tarballs pulled fine moments earlier.
-- `api.github.com` — mise version **resolution** (`/repos/<t>/releases`) returns
-  `403` with *"GitHub access to this repository is not enabled for this
-  session."* Note: this is the session's GitHub-scoping layer, not a plain
-  egress rule, so a host allowlist entry may not be enough on its own — but it's
-  the host mise hits for `@latest`/version listing.
-- Docker registry blob hosts (carried over from session 1, still relevant for
-  `redis:8.2.1` from Docker Hub): `production.cloudfront.docker.com`,
-  `d2glxqk2uabbnd.cloudfront.net`, `registry-1.docker.io`, `auth.docker.io`,
-  `production.cloudflare.docker.com`. `ghcr.io` already works (Postgres pulls).
+1. **Primary (reaches the agent/tool shells):** because non-login shells never
+   read profile.d, the only lever that fixes them is the environment's own
+   `PATH`. The env `PATH` setting can't interpolate, so hardcode the shims dir at
+   the **front**:
 
-### Suggested cloud env setup script (drop-in replacement)
+   ```
+   /root/.local/share/mise/shims
+   ```
 
-Fixes all three mise problems above: finds the repo wherever it was cloned,
-survives an un-verifiable tool, activates mise for every future shell, and
-renders `.mcp.json` so the *next* session boots with the MCP servers wired up.
+   (In this cloud image `HOME=/root` and `MISE_DATA_DIR` is unset, so the shims
+   live there; putting it ahead of `/opt/node22/bin` makes node@26/pnpm win in
+   every shell, and using the real shim executables sidesteps the broken `mise`
+   function entirely.)
+
+2. **Secondary (human TUI / login + interactive shells):** in the setup script,
+   name the profile snippet to sort last and also drop it into
+   `/etc/bash.bashrc` (interactive non-login shells don't read profile.d either).
+   See the drop-in script below.
+
+### 2. `ghcr.io` returns intermittent `503 Service Unavailable`
+
+Not a hard block (and not a proxy denial — nothing for ghcr in the proxy's
+`recentRelayFailures`), but flaky: pulling
+`ghcr.io/railwayapp-templates/postgres-ssl:18.4` failed with `503` on the
+manifest/blob HEAD/GET on several attempts and only succeeded on retry. Docker
+Hub (`redis`) pulled first try. **Fix idea:** have the setup script pre-pull the
+two dev images with a retry/backoff loop so the first `pnpm dev` doesn't race a
+flaky ghcr, or pre-bake them into the base image.
+
+### 3. `better-auth` MCP server is unusable in cloud sessions
+
+`.mcp.json` points `better-auth` at `https://mcp.better-auth.com/mcp`. The proxy
+answers **403 on CONNECT** to `mcp.better-auth.com:443` (confirmed in
+`recentRelayFailures`), and the server also requires an interactive OAuth flow
+that a non-interactive cloud session can't complete. Net: this MCP server is
+always unavailable here. **Fix idea:** allowlist `mcp.better-auth.com` if it's
+meant to be reachable, and/or gate that entry out of the rendered `.mcp.json` for
+cloud sessions so it doesn't show up as a broken server.
+
+### 4. Web dev server crashes on x86 — `@resvg/resvg-js` native module (app fix)
+
+Not a provisioning issue, but it fully blocks `pnpm dev`'s web process on this
+**x86_64** cloud env (this repo is developed on ARM macOS, so it likely never
+surfaces locally). Vite 8 / rolldown's **client** dependency optimizer tries to
+scan the native `@resvg/resvg-js` binding and fails:
+
+```
+[UNLOADABLE_DEPENDENCY] Could not load …/@resvg/resvg-js-linux-x64-gnu/resvgjs.linux-x64-gnu.node
+ - stream did not contain valid UTF-8 in …/@resvg/resvg-js/js-binding.js
+```
+
+The `.node` file itself is a valid ELF and present on disk — the optimizer just
+shouldn't be bundling a native, server-only module. `resvg` is already a
+server-only lazy `import("@resvg/resvg-js")` (OG-image rendering), so excluding
+it from the client optimizer is correct and **arch-agnostic**:
+
+```ts
+// services/web/vite.config.ts
+optimizeDeps: { exclude: ["@resvg/resvg-js"] },
+```
+
+**Verified:** with that line the web process boots and serves 200 on every arch
+(the exclude is a no-op where the optimizer wasn't choking). Not applied on this
+branch — this branch carries only FEEDBACK — but it's the one code change needed
+for a working web server on x86. (`satori` is pure JS and doesn't need this.)
+
+## Suggested cloud env setup script (drop-in replacement)
+
+Generic — no repo-specific or custom-task commands, only default `mise` plus
+system setup, so it works for any mise repo. Changes vs. the current script are
+the two PATH fixes for login/interactive shells (item 1, secondary). The
+**primary** PATH fix for the agent's non-login tool shells is the hardcoded
+`PATH` env entry above — a setup script alone can't reach those shells.
 
 ```bash
 #!/bin/bash
-set -uo pipefail   # NOT -e: a single un-verifiable tool must not abort setup
+set -uo pipefail
 
-echo "=== Installing mise ==="
 apt update
 apt install -y gh extrepo
 extrepo enable mise
 apt update
 apt install -y mise
 
-echo "=== Activating mise for all future shells ==="
-# The base image activates node/nvm/rbenv via /etc/profile.d but not mise, so
-# installed tools never reach PATH. Put the mise shims on PATH for every shell
-# (works in non-interactive shells too, unlike `mise activate`).
-cat > /etc/profile.d/mise.sh <<'EOF'
-export PATH="${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims:$PATH"
-command -v mise >/dev/null && eval "$(mise activate bash)"
-EOF
+# Activate mise for future shells. Two changes vs. before:
+#  * Sort AFTER the base image's PATH scripts (e.g. /etc/profile.d/nodejs.sh,
+#    which re-prepends /opt/node22/bin) so the mise shims win — hence zzz-*.
+#  * Also write /etc/bash.bashrc: interactive non-login shells read it but not
+#    /etc/profile.d. (Non-interactive `bash -c` shells read neither — those are
+#    covered by hardcoding the shims dir in the environment's PATH setting.)
+MISE_ACTIVATE='export PATH="${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims:$PATH"
+command -v mise >/dev/null && eval "$(mise activate bash)"'
+printf '%s\n' "$MISE_ACTIVATE" > /etc/profile.d/zzz-mise.sh
+printf '\n%s\n' "$MISE_ACTIVATE" >> /etc/bash.bashrc
 export PATH="${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims:$PATH"
 
-echo "=== Locating the cloned repo ==="
-# Claude Code on the web clones under /home/user (not $HOME, which is /root),
-# so the original `cd $HOME/workspace` never matched. Discover it instead.
+if command -v docker >/dev/null && ! docker info >/dev/null 2>&1; then
+  nohup dockerd >/var/log/dockerd.log 2>&1 &
+  for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+  docker info >/dev/null 2>&1 || echo "WARN: dockerd did not come up (see /var/log/dockerd.log)"
+fi
+
 REPO_DIR=""
-for c in "$PWD" "$HOME/workspace" ./workspace /home/user/* /home/*/*; do
+for c in "${CLAUDE_PROJECT_DIR:-}" "$PWD" "$HOME/workspace" ./workspace /home/user/* /workspace/*; do
+  [ -n "$c" ] || continue
   if [ -f "$c/mise.toml" ] || [ -f "$c/.mise.toml" ]; then REPO_DIR="$c"; break; fi
 done
-[ -z "$REPO_DIR" ] && REPO_DIR="$(dirname "$(find /home -maxdepth 3 -name mise.toml 2>/dev/null | head -n1)")"
-
-if [ -n "$REPO_DIR" ] && [ -d "$REPO_DIR" ]; then
-  cd "$REPO_DIR"
-  echo "=== Setting up project tools in $REPO_DIR ==="
-  mise trust
-
-  # Skip Sigstore/GitHub artifact attestation: tuf-repo-cdn.sigstore.dev is
-  # proxy-blocked, which otherwise fails `pnpm`/`railway`/`process-compose`.
-  # (Remove these two lines once *.sigstore.dev is on the egress allowlist.)
-  mise settings set aqua.slsa false  || true
-  mise settings set aqua.cosign false || true
-
-  mise install --yes || echo "WARN: some tools failed to install (see above)"
-
-  echo "=== Rendering .mcp.json for the next session ==="
-  # Only needs Node, so it works even if pnpm/railway didn't install. Renders
-  # the example's placeholder when services/web/.env is absent (the usual cloud
-  # case), wiring up every MCP server except the (host-only) postgres one.
-  node scripts/dev/render-mcp.mjs || echo "WARN: .mcp.json render skipped"
-else
-  echo "WARN: could not find the repo's mise.toml; skipped trust/install/render"
+if [ -z "$REPO_DIR" ]; then
+  found="$(find /home /workspace -maxdepth 3 -name mise.toml 2>/dev/null | head -n1)"
+  [ -n "$found" ] && REPO_DIR="$(dirname "$found")"
 fi
+
+if [ -z "$REPO_DIR" ] || [ ! -d "$REPO_DIR" ]; then
+  echo "WARN: no mise.toml found; skipped trust/install"
+  exit 0
+fi
+
+cd "$REPO_DIR"
+mise trust
+mise install --yes || echo "WARN: some tools failed to install (see above)"
 ```
 
-Two caveats on the above: (1) whitelisting `*.sigstore.dev` is the cleaner fix
-than the `aqua.slsa false` lines — it keeps attestation verification on for
-everyone; drop those two lines once the host is allowlisted. (2) The
-`node scripts/dev/render-mcp.mjs` step is what actually delivers on "MCP config
-available when Claude boots"; the repo's mise `postinstall` hook also renders it,
-but that runs inside `mise install` and dies with pnpm's attestation, so the
-explicit call is the dependable one.
+### Proxy-blocked domains (candidates for the egress allowlist)
+
+- `mcp.better-auth.com` — **confirmed 403 on CONNECT** (item 3). Only needed if
+  the `better-auth` MCP server is meant to work in cloud sessions.
