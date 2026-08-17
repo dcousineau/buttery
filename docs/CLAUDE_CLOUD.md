@@ -60,3 +60,70 @@ means `postgres`, `redis`, `web`, `atproto-dev-env` running and
 | atproto sign-in handshake | POST `{"handle":"chef.test"}` to `/api/auth/atproto/sign-in` → an `oauth/authorize` URL                                                                                          |
 | tests, types, lint        | `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format:check`                                                                                                                  |
 | DB-backed tests           | `pnpm --filter @buttery/web exec vitest run --project db` with `DATABASE_URL` from `services/web/.env` — **not** `pnpm test:db`, which wraps `railway run` and has no login here |
+
+## Environment setup script (humans only — do not run this)
+
+> **Agents: this is a reference, not a task.** It is what the container already
+> ran before the session started. Never execute it, and never re-run pieces of
+> it to "repair" a session — the targeted fixes above are the supported repair
+> path. This section exists so a human can paste it into the setup-script field
+> when spinning up a new cloud environment.
+
+```bash
+#!/bin/bash
+set -uo pipefail
+
+apt update
+apt install -y gh extrepo libnss3-tools
+extrepo enable mise
+apt update
+apt install -y mise
+
+MISE_ACTIVATE='export PATH="${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims:$PATH"
+command -v mise >/dev/null && eval "$(mise activate bash)"'
+printf '%s\n' "$MISE_ACTIVATE" > /etc/profile.d/zzz-mise.sh
+printf '\n%s\n' "$MISE_ACTIVATE" >> /etc/bash.bashrc
+export PATH="${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims:$PATH"
+
+if command -v docker >/dev/null && ! docker info >/dev/null 2>&1; then
+  nohup dockerd >/var/log/dockerd.log 2>&1 &
+  for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
+  docker info >/dev/null 2>&1 || echo "WARN: dockerd did not come up (see /var/log/dockerd.log)"
+fi
+
+if [ -f /root/.ccr/agent-proxy-ca.crt ] && command -v certutil >/dev/null; then
+  mkdir -p "$HOME/.pki/nssdb"
+  certutil -d "sql:$HOME/.pki/nssdb" -N --empty-password 2>/dev/null
+  certutil -d "sql:$HOME/.pki/nssdb" -A -t "C,," -n ccr-agent-proxy \
+    -i /root/.ccr/agent-proxy-ca.crt \
+    || echo "WARN: could not add the agent-proxy CA to the NSS store"
+fi
+
+REPO_DIR=""
+for c in "${CLAUDE_PROJECT_DIR:-}" "$PWD" "$HOME/workspace" ./workspace /home/user/* /workspace/*; do
+  [ -n "$c" ] || continue
+  if [ -f "$c/mise.toml" ] || [ -f "$c/.mise.toml" ]; then REPO_DIR="$c"; break; fi
+done
+if [ -z "$REPO_DIR" ]; then
+  found="$(find /home /workspace -maxdepth 3 -name mise.toml 2>/dev/null | head -n1)"
+  [ -n "$found" ] && REPO_DIR="$(dirname "$found")"
+fi
+
+if [ -z "$REPO_DIR" ] || [ ! -d "$REPO_DIR" ]; then
+  echo "WARN: no mise.toml found; skipped trust/install"
+  exit 0
+fi
+
+cd "$REPO_DIR"
+mise trust
+mise install --yes || echo "WARN: some tools failed to install (see above)"
+
+SHIMS="${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims"
+if [ -d "$SHIMS" ]; then
+  mkdir -p "$HOME/.local/bin"
+  for shim in "$SHIMS"/*; do
+    [ -x "$shim" ] || continue
+    ln -sf "$shim" "$HOME/.local/bin/$(basename "$shim")"
+  done
+fi
+```
