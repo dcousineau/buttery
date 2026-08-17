@@ -447,6 +447,108 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
     });
   });
 
+  // --- stable order (the bug: checking a box reshuffled the list) ---------
+
+  describe("read order is stable across writes", () => {
+    /**
+     * The regression these pin:
+     *
+     * `created_at` defaults to `now()`, which in Postgres is the TRANSACTION
+     * timestamp — so every row one `commitGroceryRows` call writes carries a
+     * byte-identical stamp. `ORDER BY created_at` alone leaves the whole batch
+     * tied, the planner is free to return ties in heap order, and an UPDATE
+     * rewrites the row to a new physical location. Checking a box is an UPDATE,
+     * so ticking one item reordered every other one. An `id` tiebreaker fixes it.
+     *
+     * Rows are seeded here rather than added through `commitGroceryRows` for two
+     * reasons. One transaction with an explicit multi-row insert guarantees the
+     * tie the bug needs, instead of hoping for it. And the ids are minted from
+     * timestamps a second apart, which makes the expected order a fact of the
+     * fixture: the repo's `ulid()` time-prefixes to the millisecond but fills the
+     * rest with plain randomness (it is NOT the spec's monotonic variant), so ids
+     * minted inside one millisecond sort randomly against each other and
+     * "insertion order" would otherwise be an assertion about the clock.
+     */
+    async function seedTiedRows(count = 8): Promise<string[]> {
+      const listId = ulid();
+      await db!.insertInto("grocery_list").values({ id: listId, household_id: HH_A }).execute();
+
+      const base = Date.now();
+      const ids = Array.from({ length: count }, (_, index) => ulid(base + index * 1000));
+      await db!.transaction().execute(async (trx) => {
+        await trx
+          .insertInto("grocery_item")
+          .values(
+            ids.map((id, index) => ({
+              id,
+              household_id: HH_A,
+              list_id: listId,
+              name_norm: `thing-${index}`,
+              display_name: `Thing ${index}`,
+              aisle: "produce",
+              created_by_did: DID_A,
+            })),
+          )
+          .execute();
+      });
+
+      // If the seed did not actually tie, the tests below prove nothing.
+      const stamps = await db!.selectFrom("grocery_item").select("created_at").where("household_id", "=", HH_A).execute();
+      expect(new Set(stamps.map((row) => String(row.created_at))).size).toBe(1);
+      return ids;
+    }
+
+    const readIds = async () => (await grocery.readGroceryList(db!, DID_A, HH_A)).items.map((item) => item.id);
+
+    it("returns tied rows in insertion order, and keeps it when one is checked off", async () => {
+      const ids = await seedTiedRows();
+      expect(await readIds()).toEqual(ids);
+
+      // A row in the middle — checking it is what used to fling it to the end.
+      await grocery.setGroceryItemChecked(db!, DID_A, HH_A, { itemId: ids[3], checked: true });
+      expect(await readIds()).toEqual(ids);
+
+      // Unchecking puts it back where it was, too.
+      await grocery.setGroceryItemChecked(db!, DID_A, HH_A, { itemId: ids[3], checked: false });
+      expect(await readIds()).toEqual(ids);
+    });
+
+    it("holds that order through repeated toggling, which moves rows between heap pages", async () => {
+      const ids = await seedTiedRows();
+
+      for (let pass = 0; pass < 15; pass += 1) {
+        for (const id of ids.slice(1, 4)) {
+          await grocery.setGroceryItemChecked(db!, DID_A, HH_A, { itemId: id, checked: true });
+          await grocery.setGroceryItemChecked(db!, DID_A, HH_A, { itemId: id, checked: false });
+        }
+      }
+
+      expect(await readIds()).toEqual(ids);
+    });
+
+    it("holds that order through an edit, which is the same UPDATE in a different shirt", async () => {
+      const ids = await seedTiedRows();
+      await grocery.editGroceryItem(db!, DID_A, HH_A, { itemId: ids[2], displayName: "Renamed" });
+      await grocery.editGroceryItem(db!, DID_A, HH_A, { itemId: ids[6], quantity: 3 });
+      expect(await readIds()).toEqual(ids);
+    });
+
+    /**
+     * `insertSources` writes every source of an item in ONE multi-row insert, so
+     * `added_at` ties exactly the same way `created_at` does and needs the same
+     * tiebreaker.
+     */
+    it("keeps an item's sources in a stable order across a write", async () => {
+      await addBothChickenRecipes();
+      const before = (await grocery.readGroceryList(db!, DID_A, HH_A)).items.find((item) => item.foodSlug === "en:chicken-breast")!;
+      expect(before.sources).toHaveLength(2);
+
+      await grocery.setGroceryItemChecked(db!, DID_A, HH_A, { itemId: before.id, checked: true });
+      const after = (await grocery.readGroceryList(db!, DID_A, HH_A)).items.find((item) => item.id === before.id)!;
+      expect(after.sources.map((source) => source.rawText)).toEqual(before.sources.map((source) => source.rawText));
+    });
+  });
+
   // --- manual items -------------------------------------------------------
 
   describe("manual items", () => {

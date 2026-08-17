@@ -41,6 +41,21 @@ import { seo } from "#/lib/seo";
  * padding insets the text.
  */
 
+/**
+ * The half of the remove copy that depends on where the row came from.
+ *
+ * "Remove" means "off the shopping list", never "out of the recipe" — the same
+ * distinction "Clear checked" draws, worded to match it. A hand-typed row came
+ * from no recipe, so it gets no clause rather than a reassurance about a recipe
+ * that does not exist.
+ */
+function recipeCaveat(item: GroceryItemRow): string {
+  const recipes = new Set(item.sources.map((source) => source.title).filter(Boolean));
+  if (recipes.size === 1) return " — the recipe it came from is untouched";
+  if (recipes.size > 1) return " — the recipes it came from are untouched";
+  return "";
+}
+
 export const Route = createFileRoute("/household/list")({
   loader: async () => {
     await requireActiveHousehold();
@@ -70,6 +85,16 @@ function GroceryListPage() {
   const [addRequest, setAddRequest] = useState<AddPreviewRequest | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  /**
+   * The row the trash button asked to remove, and whether its confirm is open.
+   *
+   * Two pieces of state rather than one nullable row: the dialog fades out over
+   * 150ms, and clearing the row on close would blank the copy — including the
+   * item's name — mid-animation. Keeping the row until the *next* remove is
+   * requested lets the dialog animate out still saying what it was about.
+   */
+  const [removeTarget, setRemoveTarget] = useState<GroceryItemRow | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   /**
    * D12's answer to "two people shopping at once": no sockets, just look again
@@ -168,7 +193,20 @@ function GroceryListPage() {
     });
   }
 
+  /**
+   * The trash button only *asks*. Removing is the one action on a row that
+   * cannot be undone by tapping again — checking off is reversible, an edit is
+   * re-editable — and it sits a thumb's width from the checkbox on a phone, so
+   * it goes through the same confirm "Clear checked" uses.
+   */
+  function askRemove(item: GroceryItemRow) {
+    setRemoveTarget(item);
+    setConfirmRemove(true);
+  }
+
+  /** The confirmed remove. Still optimistic — the confirm sits in front of it. */
   function removeItem(item: GroceryItemRow) {
+    setConfirmRemove(false);
     run({
       optimistic: (current) => withItemRemoved(current, item.id),
       action: () => removeGroceryItem({ data: { itemId: item.id } }),
@@ -269,7 +307,7 @@ function GroceryListPage() {
             edge and only the text is inset. */}
           <div className="flex min-h-0 flex-1 flex-col overflow-auto pb-8">
             <div className="mx-auto w-full max-w-3xl">
-              <GroceryList items={items} onToggle={toggleItem} onEdit={editItem} onRemove={removeItem} />
+              <GroceryList items={items} onToggle={toggleItem} onEdit={editItem} onRemove={askRemove} />
             </div>
           </div>
         </section>
@@ -297,6 +335,16 @@ function GroceryListPage() {
           void router.invalidate();
         }}
         onError={(message) => push({ variant: "destructive", title: message })}
+      />
+
+      <ConfirmDialog
+        open={confirmRemove}
+        onOpenChange={setConfirmRemove}
+        title={removeTarget ? `Remove ${removeTarget.displayName}?` : "Remove this item?"}
+        description={`This takes it off the list for everyone${removeTarget ? recipeCaveat(removeTarget) : ""}.`}
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => removeTarget && removeItem(removeTarget)}
       />
 
       <ConfirmDialog

@@ -644,7 +644,16 @@ export async function readGroceryList(db: Kysely<DB>, _did: string, householdId:
     .where("household_id", "=", householdId)
     .where("list_id", "=", list.id)
     .where(sql<boolean>`checked_at is null or checked_at > now() - make_interval(secs => ${CHECKED_TTL_SECONDS})`)
+    // `created_at` alone is NOT a total order here. It defaults to `now()`, which
+    // in Postgres is the *transaction* timestamp, so every row written by one
+    // `commitGroceryRows` transaction carries a byte-identical stamp — an 18-row
+    // add is 18 ties. With ties unbroken the planner is free to return them in
+    // heap order, and an UPDATE (checking a box is exactly that) rewrites the row
+    // to a new physical location, so ticking one item reshuffled the rest.
+    // `id` breaks it: an app-minted ULID is unique and time-prefixed, so it is
+    // both a total order and the insertion order the list means to show.
     .orderBy("created_at")
+    .orderBy("id")
     .execute();
 
   if (!items.length) return { listId: list.id, items: [], readAt, checkedTtlSeconds: CHECKED_TTL_SECONDS };
@@ -659,7 +668,12 @@ export async function readGroceryList(db: Kysely<DB>, _did: string, householdId:
         "in",
         items.map((item) => item.id),
       )
+      // Same tie as `created_at` above, for the same reason: `insertSources`
+      // writes every source of an item in ONE multi-row insert, so they all share
+      // one transaction timestamp. `s.id` is a ULID, so it orders them the way
+      // they were contributed.
       .orderBy("s.added_at")
+      .orderBy("s.id")
       .execute(),
     resolveHandles(
       db,
@@ -694,6 +708,11 @@ export async function readGroceryList(db: Kysely<DB>, _did: string, householdId:
 
   // Canonical aisle order, then insertion order inside an aisle. Sorting here
   // rather than in SQL keeps `aisles.ts` the single source of that order.
+  //
+  // `Array.prototype.sort` is stable, so "insertion order inside an aisle" is
+  // inherited wholesale from the query's ordering — which is why that ORDER BY
+  // has to be a total one. A stable sort over a non-deterministic input is still
+  // non-deterministic.
   rows.sort((a, b) => aisleOrder(a.aisle) - aisleOrder(b.aisle));
 
   return { listId: list.id, items: rows, readAt, checkedTtlSeconds: CHECKED_TTL_SECONDS };
