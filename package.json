@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bash scripts/dev/up.sh",
     "dev:attach": "process-compose attach",
-    "dev:down": "process-compose down; docker compose down",
+    "dev:down": "process-compose down",
     "dev:web": "pnpm --filter @buttery/web dev",
     "dev:docs": "pnpm --filter @buttery/docs start --port 3001 --host 127.0.0.1 --no-open",
     "atproto:dev-env": "pnpm --filter @buttery/atproto-dev-env start",

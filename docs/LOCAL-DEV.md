@@ -28,9 +28,8 @@ Editing the `mcp_server:` block needs a full project restart (`process-compose d
 
 | Process           | What it is                                                                                  |
 | ----------------- | ------------------------------------------------------------------------------------------- |
-| `dev-containers`  | One-shot `docker compose up -d --wait` — starts Postgres + Redis, waits for healthy, exits  |
-| `postgres`        | Log stream + `pg_isready` probe for the Postgres container                                  |
-| `redis`           | Log stream + `redis-cli ping` probe for the Redis container                                 |
+| `postgres`        | The Postgres container — attached `docker compose up`, probed with `pg_isready`             |
+| `redis`           | The Redis container — attached `docker compose up`, probed with `redis-cli ping`            |
 | `migrate`         | `db:migrate:up`, gated on Postgres reporting ready                                          |
 | `atproto-dev-env` | Isolated PDS + local PLC on `localhost:2583` / `:2582`, probed on `/xrpc/_health`           |
 | `web`             | TanStack Start dev server on port 3000, gated on migrations, Redis, and the atproto dev-env |
@@ -61,24 +60,24 @@ railway run --service atproto-cron-sync -- pnpm --filter=@buttery/atproto-cron-s
 
 Postgres and Redis are defined in a committed [`docker-compose.yml`](../docker-compose.yml) at the repo root — no Railway CLI, no auth, no per-clone generated file. `railway dev` used to write that compose file into machine-local state (`~/.railway/develop/<project-id>/…`) with live production credentials baked in; now the repo owns it outright, with fixed host ports and throwaway local-only credentials (see the compose file's header).
 
-`docker compose up -d --wait` isn't a supervisable process: it starts a detached container stack, blocks until both healthchecks pass, and exits 0. It's also idempotent, so re-running it against a live stack is a fast no-op. That makes it a natural one-shot gate — every other process depends on the `dev-containers` step _completing successfully_ rather than staying up, and `--wait` means "completed" already implies "healthy".
+There is no separate "start the containers" step. The `postgres` and `redis` processes each run `docker compose up <service>` **in the foreground**, so the process _is_ the container: process-compose starts it, streams its logs, restarts it, and stops it. Both invocations race to create the shared compose network on a cold boot; whichever loses logs a one-line `network buttery_default already exists` error and carries on.
 
-The containers themselves are then surfaced as two separate process-compose services, each tailing one container via [`scripts/dev/dev-containers.mjs`](../scripts/dev/dev-containers.mjs). That script also implements the readiness probes. Everything it does goes through `docker compose -f docker-compose.yml` rather than `docker logs`/`docker exec` against a container name, and that detail is load-bearing — see "Why the tails go through `docker compose`" below.
+That single-supervisor arrangement is why `docker-compose.yml` declares no `restart:` policy. With one, docker would try to resurrect a container that compose is simultaneously tearing down after the attached `up` returned.
 
 The ports are fixed and repo-owned: **Postgres on host `55432`, Redis on `56379`** (mapped to the containers' standard 5432/6379). They sit in the high range so a Postgres/Redis you already run on the defaults doesn't collide. `services/web/.env` points `DATABASE_URL`/`REDIS_URL` at them; because we own the ports now, hardcoding them in `.env` is correct rather than fragile (under `railway dev` they were reassigned on every `up`, so nothing downstream could pin them).
 
 Two consequences worth remembering:
 
-- **Stopping process-compose does not stop the databases.** The containers are detached and outlive it; only the log tails die. `pnpm dev:down` does both (`process-compose down` then `docker compose down`).
+- **The containers stop with the stack.** `pnpm dev:down` (just `process-compose down` now) takes them down too. The named volumes are untouched, so no data is lost — starting the stack again reuses them.
 - **`docker compose down -v` wipes the Postgres volume.** The next `pnpm dev` re-runs migrations automatically, which is why `migrate` is a boot step rather than a documented manual command.
 
-## Why the tails go through `docker compose`
+## Container lifecycle details
 
-`docker logs -f` **dies the moment its container restarts, and exits 0**. The containers ship with `restart: unless-stopped`, so this happens on any crash. Exit 0 means process-compose files the tail as `Completed` rather than failed and leaves it dead — and since `postgres` and `redis` carry the readiness probes `web` gates on (`condition: process_healthy`), a dead tail means the web server can never come back. The container is fine the whole time; only its supervisor thinks otherwise.
+**Readiness** is a real protocol check from inside the container — `pg_isready` and an authenticated `redis-cli ping` — so `process_healthy` means "answering queries", not "container started". Both run through `docker compose exec -T` rather than `docker exec <name>`: it avoids hardcoding the `buttery-postgres-1` naming convention, and `-T` is required because process-compose runs probes with a non-tty stdin, which plain `exec` refuses. Costs ~40ms per probe against a 2s period. The redis probe must match `PONG` rather than trust the exit code — an unauthenticated `redis-cli ping` answers `NOAUTH Authentication required.` and still exits 0.
 
-`docker compose logs -f <service>` follows the _service_ and reattaches across both container restarts and full recreates, so the tail (and therefore the probe) survives. The probes use `docker compose exec -T` for the same reason: it drops the `<project>-<service>-1` container-naming assumption. The extra overhead is ~40ms per probe, against a 2s period.
+**Restarts** are `restart: always`, and it has to be `always`: when a container dies, the attached `up` can return 0, which `on_failure` would file as a clean completion and leave the process dead — taking the readiness probe `web` gates on with it. With `always`, `docker kill buttery-redis-1` is back to `Ready` in a few seconds.
 
-Belt and braces on top of that, the three tails carry `availability: restart: always`. It has to be `always` — `on_failure` would ignore an exit 0.
+**Shutdown** of `redis` is the ordinary SIGTERM: it's `exec`d as PID 1, handles the signal itself, and exits 0 in about a second. `postgres` can't be stopped by a signal at all — its PID 1 is the image's `wrapper.sh`, which neither traps signals nor `exec`s postgres, so SIGTERM is swallowed and `docker compose stop` burns the full 10s grace period before SIGKILL (exit 137, and crash recovery on the next boot). The `postgres` process therefore carries an explicit `shutdown.command` that runs `pg_ctl stop -m fast` inside the container: clients are disconnected, open transactions roll back, the container exits 0 in well under a second, and the attached `up` ends on its own. Whole-stack teardown is ~0.5s. This is worth knowing if you stop the container by hand — `docker compose stop postgres` still takes the slow, unclean path.
 
 The app processes (`atproto-dev-env`, `web`) use `restart: on_failure` with `max_restarts: 5`, so a transient crash heals itself while a genuinely broken config still gives up instead of looping.
 
