@@ -8,5 +8,8 @@ Open Food Facts is a collaborative, open database of food products. The data is 
 - **[Documentation](https://openfoodfacts.github.io/openfoodfacts-server/)** — API reference, data model, and contributor docs.
 - **[Data](https://world.openfoodfacts.org/data)** — exports, dumps, and licensing terms.
 - **[Taxonomies](https://github.com/openfoodfacts/openfoodfacts-server/tree/main/taxonomies)** — the source files, including `food/ingredients.txt`.
+- **[Donate](https://world.openfoodfacts.org/donate-to-open-food-facts)** — they are a non-profit running on donations, and their data does real work in Buttery.
+
+The reader-facing version of this page is [Open Data → Open Food Facts](../../services/docs/docs/open-data/open-food-facts.md) on `docs.buttery.recipes`. This file is the internal note; that one is what we tell users. Keep them from drifting.
 
 This document is AIL-4 — drafted by Claude Opus 5, from my direction, and reviewed and edited by me before it landed.
