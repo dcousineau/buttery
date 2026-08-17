@@ -51,8 +51,8 @@ that fails: report the blocked host, don't route around it.
 ## Running and checking the stack
 
 `pnpm install`, then `process-compose up --detached` (`pnpm dev` blocks). Ready
-means `postgres`, `redis`, `web`, `atproto-dev-env` running and
-`dev-containers`, `migrate` completed. See the `local-dev` skill to drive it.
+means `postgres`, `redis`, `web`, `atproto-dev-env` running and `migrate`
+completed. See the `local-dev` skill to drive it.
 
 | Check                     | Command                                                                                                                                                                          |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

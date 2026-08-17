@@ -1,9 +1,17 @@
 # Local dev dependency containers — repo-owned, no Railway CLI or auth required.
 #
-# `pnpm dev` brings this up (see the `dev-containers` process in
-# process-compose.yaml) and `pnpm dev:down` tears it down. Railway is no longer
-# in the local loop at all; it stays only for deploys (.railway/railway.ts) and
-# the remote blob bucket (see services/web/.env.example → BLOB_S3_*).
+# These are not started by hand: the `postgres` and `redis` processes in
+# process-compose.yaml each run `docker compose up <service>` in the foreground,
+# so `pnpm dev` starts them and `pnpm dev:down` stops them. `docker compose …`
+# by hand still works for one-offs (`ps`, `exec`, `down -v`). Railway is no
+# longer in the local loop at all; it stays only for deploys
+# (.railway/railway.ts) and the remote blob bucket (see
+# services/web/.env.example → BLOB_S3_*).
+#
+# Neither service declares a `restart:` policy, deliberately: process-compose is
+# the supervisor (`restart: always` on both processes), and a docker-level
+# policy would race it — docker restarting a container that compose is in the
+# middle of tearing down after the attached `up` returned.
 #
 # Images and the redis command mirror the compose file Railway used to generate
 # for `railway dev` (`railway dev up --dry-run`), so containers behave the same
@@ -28,7 +36,14 @@ services:
     # Same image Railway's generated compose used, so SSL setup and PG version
     # match the deployed database. Pulled from ghcr.io (not Docker Hub).
     image: ghcr.io/railwayapp-templates/postgres-ssl:18.4
-    restart: unless-stopped
+    # NOTE: this container cannot be stopped by a signal. Its PID 1 is the
+    # image's `wrapper.sh`, which neither traps signals nor `exec`s postgres, so
+    # SIGTERM (and SIGINT, and any `stop_signal:` set here) is swallowed —
+    # `docker compose stop postgres` always burns the full 10s grace period and
+    # then SIGKILLs, leaving an unclean shutdown for the next boot to recover.
+    # process-compose therefore stops it with an explicit in-container
+    # `pg_ctl stop -m fast` instead; see `shutdown:` on the `postgres` process
+    # in process-compose.yaml. Worth knowing if you stop it by hand.
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: butterydev
@@ -40,8 +55,10 @@ services:
     volumes:
       - buttery_pgdata:/var/lib/postgresql/data
     healthcheck:
-      # `docker compose up --wait` (the dev-containers gate) blocks on this, so
-      # migrations never race a still-booting server.
+      # Not what the stack gates on — process-compose runs its own equivalent
+      # readiness probe (see process-compose.yaml), because it needs the result
+      # as an exit code per poll rather than as container status. This one keeps
+      # `docker compose ps`/`up --wait` honest for manual use.
       test: ["CMD-SHELL", "pg_isready -U postgres -d buttery"]
       interval: 5s
       timeout: 5s
@@ -54,7 +71,6 @@ services:
     # The one change is the data dir — Railway threaded it through a
     # `RAILWAY_VOLUME_MOUNT_PATH` env var; we own the mount, so it is /data.
     image: redis:8.2.1
-    restart: unless-stopped
     command: >
       sh -c "rm -rf /data/lost+found &&
       exec docker-entrypoint.sh redis-server
