@@ -1,4 +1,4 @@
-import { CircleAlert, Link2, PencilLine, Puzzle } from "lucide-react";
+import { Link2, PencilLine, Puzzle } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
 import { Spinner } from "#/components/ui/spinner";
@@ -54,15 +54,13 @@ export function FetchingDialog({
 
         {phase === "failed" && (
           <>
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 grid size-8 shrink-0 place-content-center rounded-md border-2 border-border bg-background text-destructive">
-                <CircleAlert className="size-4" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <DialogTitle>That page wouldn't open up</DialogTitle>
-                <DialogDescription className="mt-1">Some sites block anything that isn't a browser. The recipe is still gettable — here are the two ways in.</DialogDescription>
-                <p className="mt-2 mb-0 truncate text-xs font-semibold text-muted-foreground">{url}</p>
-              </div>
+            {/* No glyph beside the title: dialog titles across the app carry no
+              iconography, and a bordered box around a non-interactive alert
+              icon borrowed a control's construction. The copy says it. */}
+            <div className="min-w-0">
+              <DialogTitle>That page wouldn't open up</DialogTitle>
+              <DialogDescription className="mt-1">Some sites block anything that isn't a browser. The recipe is still gettable — here are the two ways in.</DialogDescription>
+              <p className="mt-2 mb-0 truncate text-xs font-semibold text-muted-foreground">{url}</p>
             </div>
 
             <div className="mt-4 flex flex-col gap-2">

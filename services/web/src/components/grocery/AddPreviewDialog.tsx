@@ -1,5 +1,6 @@
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Pencil, ShoppingBasket, UtensilsCrossed } from "lucide-react";
+import { cva } from "class-variance-authority";
+import { Check, Pencil, UtensilsCrossed } from "lucide-react";
 import { type GroceryPreview, type GroceryPreviewRow, commitGroceryAdd, previewGroceryAdd } from "#/server/grocery";
 import { AISLE_LABELS, aisleOrder } from "#/lib/grocery/aisles";
 import { Badge } from "#/components/ui/badge";
@@ -7,7 +8,9 @@ import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "#/components/ui/dialog";
 import { Input } from "#/components/ui/input";
+import { selectableRowVariants } from "#/components/ui/selectable-row";
 import { Spinner } from "#/components/ui/spinner";
+import { cn } from "#/lib/utils";
 import { baseQuantity, editableQuantity, editableUnitLabel, renderRowQuantity } from "./optimistic";
 
 /**
@@ -51,6 +54,15 @@ export interface AddPreviewDialogProps {
   onCommitted: (result: { added: number; merged: number }) => void;
   onError: (message: string) => void;
 }
+
+/**
+ * One candidate row, built the same way `GroceryRow` builds a real one: a flush
+ * bar with the ledger's `border-b-2 border-border/45` divider, no radius and no
+ * shadow. The preview is a picture of the list it is about to become, so it had
+ * better be shaped like it — and the sticker construction it used to wear said
+ * "press me" about a row whose only control is the checkbox inside it.
+ */
+const previewSlatVariants = cva("flex items-stretch border-b-2 border-border/45");
 
 /** A stable identity for one request, so a second open always refetches. */
 function requestKey(request: AddPreviewRequest): string {
@@ -150,15 +162,12 @@ function AddPreviewBody({ request, onClose, onCommitted, onError }: AddPreviewDi
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent size="lg">
-        <div className="flex items-start gap-[9px]">
-          <span className="flex size-[34px] flex-none items-center justify-center rounded-lg border-2 border-border bg-secondary text-secondary-foreground shadow-pop-sm">
-            <ShoppingBasket className="size-[17px]" aria-hidden="true" />
-          </span>
-          <span className="flex min-w-0 flex-col gap-px">
-            <DialogTitle>Add to your list?</DialogTitle>
-            <DialogDescription>{source}</DialogDescription>
-          </span>
-        </div>
+        {/* Title only, no glyph. Butter fill + ink border + a hard shadow is the
+          app's "you can press this" sticker, and hanging it on a decorative
+          basket taught that a dialog heading was a control. Dialogs across the
+          app now carry no title iconography at all. */}
+        <DialogTitle>Add to your shopping list</DialogTitle>
+        <DialogDescription>{source}</DialogDescription>
 
         {preview === null && !failed && (
           <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-muted-foreground">
@@ -185,8 +194,14 @@ function AddPreviewBody({ request, onClose, onCommitted, onError }: AddPreviewDi
 
         {rows.length > 0 && (
           <>
-            <div className="flex max-h-[22rem] flex-col gap-1.5 overflow-auto pr-0.5">
-              <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+            {/* Slats, like the list these rows are about to land on. Full-bleed
+              past the dialog's own padding for the same reason the list's rows
+              bleed past the page's: a bar that stops short of the edge reads as
+              a card again, and cards in a gapped stack are N objects to compare
+              rather than one column to scan. The container's top rule and the
+              last row's own divider close the scrollport at both ends. */}
+            <div className="-mx-6 max-h-[22rem] overflow-auto border-t-2 border-border/45">
+              <ul className="m-0 flex list-none flex-col p-0">
                 {rows.map((row) => (
                   <PreviewRow
                     key={row.key}
@@ -262,15 +277,15 @@ function PreviewRow({
 
   if (editing) {
     return (
-      <li className="flex items-stretch rounded-lg border-2 border-border bg-card shadow-pop-sm">
+      <li className={cn(previewSlatVariants(), "bg-accent/40")}>
         <PreviewRowEditor row={{ ...row, quantity }} displayName={displayName} onCancel={onCancelEdit} onSave={onSaveEdit} />
       </li>
     );
   }
 
   return (
-    <li className="flex items-stretch rounded-lg border-2 border-border bg-card shadow-pop-sm transition-all">
-      <label className="flex min-h-12 min-w-0 flex-1 cursor-(--cursor-interactive) items-center gap-3 py-2 pl-2.5">
+    <li className={cn(previewSlatVariants(), selectableRowVariants({ selected: false }))}>
+      <label className="flex min-h-12 min-w-0 flex-1 cursor-(--cursor-interactive) items-center gap-3 py-2 pl-6">
         <Checkbox checked={checked} onChange={onToggle} />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[0.8125rem] leading-snug">
@@ -292,7 +307,7 @@ function PreviewRow({
           </span>
         </span>
       </label>
-      <span className="flex flex-none items-center pr-1.5 pl-1">
+      <span className="flex flex-none items-center pr-4 pl-1">
         <Button variant="ghost" size="icon-sm" aria-label={`Edit ${displayName}`} onClick={onStartEdit}>
           <Pencil aria-hidden="true" />
         </Button>
@@ -335,7 +350,7 @@ function PreviewRowEditor({ row, displayName, onSave, onCancel }: { row: Grocery
 
   return (
     <form
-      className="flex min-w-0 flex-1 flex-wrap items-center gap-2 p-2"
+      className="flex min-w-0 flex-1 flex-wrap items-center gap-2 px-6 py-2"
       onSubmit={(event) => {
         event.preventDefault();
         submit();
