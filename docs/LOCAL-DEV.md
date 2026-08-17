@@ -26,14 +26,15 @@ Editing the `mcp_server:` block needs a full project restart (`process-compose d
 
 ## The processes
 
-| Process           | What it is                                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------------- |
-| `postgres`        | The Postgres container — attached `docker compose up`, probed with `pg_isready`             |
-| `redis`           | The Redis container — attached `docker compose up`, probed with `redis-cli ping`            |
-| `migrate`         | `db:migrate:up`, gated on Postgres reporting ready                                          |
-| `atproto-dev-env` | Isolated PDS + local PLC on `localhost:2583` / `:2582`, probed on `/xrpc/_health`           |
-| `web`             | TanStack Start dev server on port 3000, gated on migrations, Redis, and the atproto dev-env |
-| `docs`            | Docusaurus site on port 3001 — **opt-in**, boots `Disabled` (see below)                     |
+| Process             | What it is                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------- |
+| `postgres`          | The Postgres container — attached `docker compose up`, probed with `pg_isready`             |
+| `redis`             | The Redis container — attached `docker compose up`, probed with `redis-cli ping`            |
+| `migrate`           | `db:migrate:up`, gated on Postgres reporting ready                                          |
+| `atproto-dev-env`   | Isolated PDS + local PLC on `localhost:2583` / `:2582`, probed on `/xrpc/_health`           |
+| `web`               | TanStack Start dev server on port 3000, gated on migrations, Redis, and the atproto dev-env |
+| `atproto-cron-sync` | One atproto → Postgres sync sweep — **manual one-shot**, boots `Disabled`                   |
+| `docs`              | Docusaurus site on port 3001 — **opt-in**, boots `Disabled` (see below)                     |
 
 ### The opt-in `docs` process
 
@@ -50,11 +51,24 @@ The last two are worth distinguishing. The env var flips the `disabled` default,
 
 `vars:` + `{{ .X }}` templating does **not** work for this: templated values stay strings and `disabled` is a bool, so the config fails to parse. Plain `${VAR:-default}` expansion does.
 
-The cron sync service is deliberately absent — it's a periodic batch job, not part of the interactive app. Run it on demand:
+### The manual `atproto-cron-sync` one-shot
+
+The cron sync is a periodic batch job, not part of the interactive app, so it is defined but never boots: `disabled: true` plus `restart: "no"` make it a **manual one-shot** — `migrate`'s lifecycle with `docs`'s opt-in. Start it from the TUI, or:
 
 ```bash
-railway run --service atproto-cron-sync -- pnpm --filter=@buttery/atproto-cron-sync sync:once
+process-compose process start atproto-cron-sync   # against a running stack
+pnpm dev atproto-cron-sync                        # from cold: it, migrate, and the dev-env
 ```
+
+Each run is one idempotent sweep that ends `Completed`; start it again after every publish to pull the new record into the `recipe` tables.
+
+The process declares no environment of its own. **Which network gets swept is `services/atproto-cron-sync/.env`'s call** — the same file a shell run reads, so both do the same thing:
+
+```bash
+pnpm --filter=@buttery/atproto-cron-sync sync:once [--dry-run]
+```
+
+Its defaults are the real atmosphere (`plc.directory` + the public relay), which is what fills a dev database with real recipes. To sweep the local dev-env instead, set `ATPROTO_PLC_URL=http://localhost:2582` and `SYNC_PDS_URL=http://localhost:2583` in that file. `SYNC_PDS_URL` swaps the relay's `listReposByCollection` for that one PDS's `listRepos`, because dev-env ships no relay and its PDS refuses the former unauthenticated (`AuthMissing`).
 
 ## How the dev containers are wired in
 
@@ -64,7 +78,7 @@ There is no separate "start the containers" step. The `postgres` and `redis` pro
 
 That single-supervisor arrangement is why `docker-compose.yml` declares no `restart:` policy. With one, docker would try to resurrect a container that compose is simultaneously tearing down after the attached `up` returned.
 
-The ports are fixed and repo-owned: **Postgres on host `55432`, Redis on `56379`** (mapped to the containers' standard 5432/6379). They sit in the high range so a Postgres/Redis you already run on the defaults doesn't collide. `services/web/.env` points `DATABASE_URL`/`REDIS_URL` at them; because we own the ports now, hardcoding them in `.env` is correct rather than fragile (under `railway dev` they were reassigned on every `up`, so nothing downstream could pin them).
+The ports are fixed and repo-owned: **Postgres on host `55432`, Redis on `56379`** (mapped to the containers' standard 5432/6379). They sit in the high range so a Postgres/Redis you already run on the defaults doesn't collide. `services/web/.env` points `DATABASE_URL`/`REDIS_URL` at them; because we own the ports now, hardcoding them in `.env` is correct rather than fragile (under `railway dev` they were reassigned on every `up`, so nothing downstream could pin them). Each service keeps its own `.env` next to its `.env.example` — `services/web/.env` and `services/atproto-cron-sync/.env` today — and [`scripts/dev/bootstrap-env.mjs`](../scripts/dev/bootstrap-env.mjs) creates any that are missing on `pnpm dev` / `mise install`, never touching one that exists.
 
 Two consequences worth remembering:
 

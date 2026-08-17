@@ -63,14 +63,18 @@ See [docs/LOCAL-DEV.md](./docs/LOCAL-DEV.md) for what each process is and how th
 
 ## Backfill / sync
 
-The cron sync pulls recipe records from the atmosphere into Postgres. Run one sweep manually with the cron service's environment:
+The cron sync pulls recipe records into Postgres. It reads `services/atproto-cron-sync/.env` (created for you by `pnpm dev`), so no wrapper is needed — but the dev stack has to be up.
 
 ```bash
-# One sweep (writes to the DB)
-railway run --service atproto-cron-sync -- pnpm --filter=@buttery/atproto-cron-sync sync:once
+# One sweep of the real atmosphere into the local DB (writes)
+pnpm --filter=@buttery/atproto-cron-sync sync:once
 
 # Fetch + log without writing
-railway run --service atproto-cron-sync -- pnpm --filter=@buttery/atproto-cron-sync sync:once --dry-run
+pnpm --filter=@buttery/atproto-cron-sync sync:once --dry-run
+
+# One sweep of the LOCAL atproto dev-env instead — a disabled process-compose
+# one-shot; run it after publishing a recipe locally
+process-compose process start atproto-cron-sync
 ```
 
 ## License

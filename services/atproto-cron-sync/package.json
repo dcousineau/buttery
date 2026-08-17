@@ -10,7 +10,7 @@
     "start": "node src/main.ts",
     "sync:once": "node src/main.ts --once",
     "test": "vitest run",
-    "test:db": "railway run --service buttery -- vitest run --project db",
+    "test:db": "vitest run --project db",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
