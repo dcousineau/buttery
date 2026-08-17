@@ -50,6 +50,7 @@
     "kysely": "^0.29.4",
     "kysely-ctl": "^0.21.0",
     "lucide-react": "^1.30.0",
+    "parse-ingredient": "^2.2.0",
     "pg": "^8.22.0",
     "posthog-js": "^1.414.0",
     "posthog-node": "^5.48.1",
