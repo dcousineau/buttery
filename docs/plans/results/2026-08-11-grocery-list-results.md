@@ -1,0 +1,164 @@
+# Results: Grocery list build
+
+Execution log for the plan at [`../2026-08-11-grocery-list.md`](../2026-08-11-grocery-list.md).
+Built on `feat/grocery-list` as a sequence of phase commits, each verified before the next.
+This document records **what was actually built**, how it was verified, the deliberate
+deviations, the measured match rate, and the Open Food Facts commit the lexicon came from.
+
+## Headline
+
+|                               |                                                                                   |
+| ----------------------------- | --------------------------------------------------------------------------------- |
+| Open Food Facts source commit | `b48d721b5c196b0db607dab1f5ba031c123a8f2f` (`taxonomies/food/ingredients.txt`)    |
+| Lexicon                       | 4,356 foods · 6,337 index keys · **94.2 KB gzip** (budget 100 KB)                 |
+| Measured match rate           | **330/330 distinct ingredient lines, 100%** (target ≥ 90%) — see the caveat below |
+| Unit tests                    | 103 in `src/lib/grocery/`                                                         |
+| DB tests                      | 33 in `grocery.db.test.ts`, plus the calibration sweep                            |
+
+---
+
+## Phase 0 — internal resources doc
+
+`docs/resources/OPENFOODFACTS.md` landed with the plan commit itself, so no work was
+needed here.
+
+## Phase 1 — the lexicon pipeline
+
+`scripts/build-food-lexicon.ts` fetches the taxonomy at a pinned commit, parses its 5,592
+blocks, and resolves an aisle for every food by walking to its **nearest mapped ancestor**.
+That inheritance is what makes the hand-authored half small: `scripts/food-aisle-map.ts`
+assigns aisles to ~170 taxonomy nodes and the other ~4,200 foods fall out of the tree.
+
+`scripts/food-staples.ts` resolves staple and ignored the same way. Both are
+`Record<string, boolean>` rather than lists, so a deeper `false` carves an exception out of
+a broader `true` — `en:oil-and-fat` is a staple, `en:butter` beneath it is not.
+
+The generator **fails loudly** rather than degrading. A mapped id the taxonomy no longer
+has is an error, and so is an `EXTRA_FOODS` entry that shadows a node upstream has since
+grown. Both are what make a taxonomy refresh a reviewable diff instead of silent drift.
+
+### Deviations from §4.2
+
+1. **Foods store one canonical name, not the name list the plan sketched.** `index` already
+   holds every synonym as a normalized key, which is all the matcher needs, and the UI only
+   ever displays the canonical name. Carrying them twice pushed the file over its gzip
+   budget for no runtime gain.
+2. **§4.2's authorised prune was needed** — 333 single-name `other` leaves that nothing
+   inherits from were dropped. Those lines still parse and still consolidate; they fall
+   back to normalized-name identity.
+3. **`normalize.ts` is split out of `categorize.ts`.** The generator has to normalize index
+   keys with the exact function that looks them up, and it cannot import `categorize.ts`,
+   which imports the lexicon being written.
+4. **`scripts/food-synonyms.ts` is new** — the plan's §9 "synonym pass", given a file.
+   `EXTRA_SYNONYMS` attaches recipe-language names to real nodes (which keeps the Open Food
+   Facts id as the food identity D6 requires). `EXTRA_FOODS` is a **documented D6
+   exception**: five foods the taxonomy has no node for at all, under a `buttery:` prefix
+   that cannot collide with an upstream id. The taxonomy reads product labels, not recipes,
+   so it has `en:wheat-flour` and nothing anyone would type as "all-purpose flour", and no
+   node whatsoever for baking soda.
+5. **`scripts/tsconfig.json` is new.** Without a tsconfig covering the directory, type-aware
+   oxlint reports the absence of types as a wall of `no-unsafe-*` errors.
+
+## Phase 2 — the pure engine
+
+`parse.ts`, `units.ts`, `categorize.ts`, `merge.ts`, `aisles.ts`, `normalize.ts`. No DB, no
+React, 103 unit tests.
+
+Three things `parse-ingredient` could not do alone, each found by running it on real lines:
+
+- **Parentheticals are stripped before the library sees the line.** Left in place, the
+  `(14.5 oz)` in `1 (14.5 oz) can diced tomatoes` sits between the quantity and the unit,
+  and the parser reports one unitless thing called "can diced tomatoes".
+- **Size words are passed as `ignoreUOMs`.** `3 large eggs` parsed as three _larges_ would
+  never merge with `2 eggs` from the next recipe.
+- **Leading-modifier stripping is deliberately narrow.** Stripping `ground` from
+  `ground beef` merges it with beef permanently. Narrowing a name to its head noun is the
+  matcher's job, which does it only to _find_ a match and leaves the name intact.
+
+### Deviation: `merge_unit`
+
+`units.ts` reports a `mergeUnit` the plan did not have, and `grocery_item` carries a
+`merge_unit` column to match. D5 forbids merging across dimensions and keys the unique
+index on `unit_dim` alone, but that is not quite enough: `cup` and `tbsp` are both volume
+and both convert to millilitres, so summing them is honest, while `clove` and `can` are both
+`count` and convert to nothing. Without the extra column the plan's own index forces
+`2 cans tomatoes` and `3 tomatoes` into one row reading `5`. It only ever splits rows D5
+already wanted split; nothing that used to merge stops merging.
+
+### Two bugs the tests caught
+
+- The range accumulator read `quantityBase` _after_ updating it, so every ordinary merged
+  row grew a phantom upper bound and rendered `750 g – 1 kg`.
+- `rowKey` joined its parts with a literal NUL byte while `findByIdentity` looked for a
+  space, so `Salt, to taste` never found the salt row it was supposed to join.
+
+## Phase 3 — schema and server functions
+
+One migration creating all three tables, and `src/server/grocery.ts` following
+`server/meal-plan.ts` exactly: thin `createServerFn` wrappers that resolve DID and household
+from the session, gate through `assertMember`, and delegate to plain
+`(db, did, householdId, input)` functions.
+
+`assertBoxed` is the real gate on preview — `recipeId` **is** a client argument there, so
+without it any recipe id in the corpus could be read through that endpoint. The DB suite
+asserts a second household cannot preview a recipe it has not boxed, and exercises every
+read and write against a second household's id.
+
+`clearCheckedGroceryItems` is an addition to §7's list: the end-of-trip sweep, which the
+list UI needs and which nothing else provides.
+
+## Phase 6 — calibration
+
+The sweep lives at `src/lib/grocery/calibrate.db.test.ts` as a **test**, not a one-off
+script. The match rate moves whenever the aisle map, the synonym pass or the parser
+changes, and the only way it stays honest is if a regression fails a build. It writes
+`.dev-logs/grocery-calibration.md` — the rate, the cascade histogram, the aisle
+distribution, and every unmatched line as a worklist.
+
+The first run measured **79.4%** against 330 distinct lines. The report showed the reason
+was not vocabulary: the biggest source of misses was **trailing prep clauses** (`garlic,
+smashed`, `ripe tomatoes, cut into large chunks`, `feta, crumbled`). Normalization turns
+those commas into spaces, and step 3 only trims from the left.
+
+So step 4 became a search for the **longest contiguous token span that is a known food**,
+which asks the lexicon instead of a word list and subsumes the head-noun suffix matching it
+used to do. That took the rate to 97.9%.
+
+Scan direction mattered, and the sweep caught it: scanning right-to-left,
+`sweet Italian sausage, casings removed` matched `en:casing` before reaching `sausage` —
+exactly the silent wrong-merge the module exists to prevent. Leading modifiers are step 3's
+job, so by step 4 the food is to the **left** of the junk. After the fix, nothing in the
+corpus resolves into the `other` aisle at all.
+
+The last seven misses were genuine vocabulary gaps and went into the synonym pass.
+
+| run                 |       rate | change                                                                |
+| ------------------- | ---------: | --------------------------------------------------------------------- |
+| initial             |      79.4% | —                                                                     |
+| longest-span step 4 |      97.9% | reaches trailing prep clauses                                         |
+| left-to-right scan  |      97.9% | kills the `en:casing` wrong match                                     |
+| + 7 synonyms        | **100.0%** | flank steak, jalapeño, bucatini, ziti, guanciale, amchur, chili crisp |
+
+### The caveat on 100%
+
+28 of the 33 seeded recipes were **authored for this corpus** rather than imported from the
+wild, so the trailing zeros partly measure a corpus written by the same project that wrote
+the matcher. The 5 Paprika fixtures are genuinely third-party, and every tuning step above
+was driven by a real failure rather than by editing the corpus — but the number to trust is
+"comfortably past the 90% target", not "100%". **Re-run the sweep after a real bulk import**
+and expect it to fall; the report's unmatched-lines section is already the worklist for
+whatever it finds.
+
+`scripts/seed-dev-recipes.ts` is what makes the sweep reproducible: an idempotent dev-only
+seeder with deliberately clashing units across recipes (chicken breast in ounces, grams and
+pounds; butter in sticks, grams and tablespoons) so consolidation has something to merge.
+
+---
+
+## Open items
+
+- The corpus caveat above: re-measure after a real import.
+- `scripts/build-food-lexicon.ts` fetches from `raw.githubusercontent.com` at the pinned
+  commit. Bumping `SOURCE_COMMIT` and the regenerated `lexicon.json` must land together.
+
+This document is AIL-4 — drafted by an LLM from my direction, and reviewed before it landed.

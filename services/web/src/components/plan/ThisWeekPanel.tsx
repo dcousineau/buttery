@@ -6,7 +6,6 @@ import { weekdayName } from "#/lib/plan/labels";
 import { Button } from "#/components/ui/button";
 import { Select } from "#/components/ui/select";
 import { Sheet, SheetContent, SheetTitle } from "#/components/ui/sheet";
-import { Tooltip, TooltipContent, TooltipTrigger } from "#/components/ui/tooltip";
 import { useIsMobile } from "#/lib/hooks/use-mobile";
 
 /**
@@ -32,6 +31,9 @@ interface ThisWeekPanelProps {
   onOpenChange: (open: boolean) => void;
   /** Opens the copy-week dialog (the route owns the dialog and the mutation). */
   onCopyWeek: () => void;
+  /** Opens the add-to-list preview for the visible week. Same contract as
+   * `onCopyWeek`: the route owns the dialog and the mutation. */
+  onAddWeekToList: () => void;
   /** Plain success toast — no refetch (the `.ics` download changes nothing). */
   onNotify: (message: string) => void;
   /** Success toast AND `router.invalidate()`: the grid re-buckets on a save. */
@@ -94,7 +96,15 @@ export function ThisWeekPanel({ week, open, onOpenChange, ...handlers }: ThisWee
   );
 }
 
-function PanelBody({ week, onClose, onCopyWeek, onNotify, onPreferencesSaved, onError }: Omit<ThisWeekPanelProps, "open" | "onOpenChange"> & { onClose: () => void }) {
+function PanelBody({
+  week,
+  onClose,
+  onCopyWeek,
+  onAddWeekToList,
+  onNotify,
+  onPreferencesSaved,
+  onError,
+}: Omit<ThisWeekPanelProps, "open" | "onOpenChange"> & { onClose: () => void }) {
   return (
     <>
       <div className="flex flex-none items-center justify-between gap-2">
@@ -119,24 +129,16 @@ function PanelBody({ week, onClose, onCopyWeek, onNotify, onPreferencesSaved, on
         </Button>
 
         {/*
-          The shopping list is not built yet (§7 leaves it to a later project),
-          and a button that silently does nothing is worse than one that says so.
-          `focusableWhenDisabled` renders `aria-disabled` instead of the native
-          `disabled` attribute, so the control still takes focus and still fires
-          hover/focus — which is the only way its tooltip can ever be read. The
-          Base UI button suppresses the click either way.
+          Takes every recipe in the VISIBLE week, which is why the count comes
+          off `week` rather than being recomputed: the button promises exactly
+          what the grid beside it is showing. It opens the confirm-preview
+          (plan D9) rather than committing — a week is a lot of rows to add
+          without being shown them first.
         */}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button variant="outline" size="sm" disabled focusableWhenDisabled className="w-full justify-start aria-disabled:cursor-not-allowed aria-disabled:opacity-50" />
-            }
-          >
-            <ShoppingBasket data-icon="inline-start" aria-hidden="true" />
-            Add all {week.recipeEntryCount} to shopping list
-          </TooltipTrigger>
-          <TooltipContent side="left">Shopping list is coming soon — this will take every recipe in the visible week.</TooltipContent>
-        </Tooltip>
+        <Button variant="outline" size="sm" className="w-full justify-start" disabled={week.recipeEntryCount === 0} onClick={onAddWeekToList}>
+          <ShoppingBasket data-icon="inline-start" aria-hidden="true" />
+          Add all {week.recipeEntryCount} to shopping list
+        </Button>
 
         {/*
           A plain download link, not a fetch: the `.ics` route (§9.3) already

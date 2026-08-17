@@ -143,6 +143,26 @@ describe("presentation", () => {
     expect(rows[0].displayName).toBe(lexicon.foods[rows[0].foodSlug!].n);
   });
 
+  it("keeps the line's own words when the match came from a fallback step", () => {
+    // `egg noodles` resolves through `en:noodle` by throwing a word away, and
+    // that word was the useful one. A list that says "noodle" is worse.
+    const rows = rowsFor({ recipeId: "r1", lines: ["6 oz egg noodles"] });
+    expect(rows[0].foodSlug).toBeTruthy();
+    expect(rows[0].displayName).toBe("egg noodles");
+  });
+
+  it("trims a trailing prep clause off the displayed name", () => {
+    const rows = rowsFor({ recipeId: "r1", lines: ["1 lb mushrooms, stems discarded, caps thickly sliced"] });
+    expect(rows[0].displayName).toBe("mushrooms");
+  });
+
+  it("does NOT trim a LEADING modifier that happens to be comma-separated", () => {
+    // "boneless, skinless chicken breasts" must not render as "boneless".
+    const rows = rowsFor({ recipeId: "r1", lines: ["4 boneless, skinless chicken breasts"] });
+    expect(rows[0].foodSlug).toBe("en:chicken-breast");
+    expect(rows[0].displayName).toContain("chicken breast");
+  });
+
   it("falls back to the line's own words when nothing matched", () => {
     const rows = rowsFor({ recipeId: "r1", lines: ["2 cups flibbertigibbet paste"] });
     expect(rows[0].displayName).toBe("flibbertigibbet paste");

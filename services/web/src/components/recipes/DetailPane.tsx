@@ -9,6 +9,8 @@ import { Button } from "#/components/ui/button";
 import { Textarea } from "#/components/ui/textarea";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { AddToPlanDialog, type AddToPlanRequest } from "#/components/plan/AddToPlanDialog";
+import { AddPreviewDialog, type AddPreviewRequest } from "#/components/grocery/AddPreviewDialog";
+import { summarizeGroceryAdd } from "#/components/grocery/added-summary";
 import { SLOT_LABELS, formatPlanDate, shortDow } from "#/lib/plan/labels";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
 import { scaleIngredients } from "#/lib/recipe-scale";
@@ -29,8 +31,8 @@ import { RecipeTimerStrip } from "#/components/timers/RecipeTimerStrip";
  * The recipe detail pane (right column; full screen on mobile). Reads the shared
  * scale/units prefs and the picker/toast handles from the recipes shell. Favorite
  * and the shared note are server-persisted (optimistic UI); the scale/units
- * settings are ephemeral reading prefs. Apron / shopping / planner are stubbed
- * (toast, no persistence) — seams for projects 04/05/06 (plan §7).
+ * settings are ephemeral reading prefs. Shopping and planner both open a
+ * confirm dialog and persist; the apron is still stubbed (toast, no persistence).
  */
 export function DetailPane({
   recipe,
@@ -69,6 +71,7 @@ export function DetailPane({
   const [needsReauth, setNeedsReauth] = useState(false);
   const [reauthPending, setReauthPending] = useState(false);
   const [planRequest, setPlanRequest] = useState<AddToPlanRequest | null>(null);
+  const [listRequest, setListRequest] = useState<AddPreviewRequest | null>(null);
   // `handle` is an atproto-plugin column, absent from better-auth's base user type.
   const { data: session } = useHydratedSession() as { data: { user?: { handle?: string | null } } | null };
 
@@ -230,7 +233,13 @@ export function DetailPane({
             <Star data-icon="inline-start" aria-hidden="true" className={cn(favorite && "fill-current")} />
             {favorite ? "Favorited" : "Favorite"}
           </Button>
-          <Button variant="outline" onClick={() => pushToast("Added to the shopping list")}>
+          {/*
+            The scale the pane is CURRENTLY showing rides along (plan D4): if you
+            are reading this recipe at 2×, the list should get 2× of it. Nothing
+            is written back to the recipe — `factor` is a reading preference and
+            stays one.
+          */}
+          <Button variant="outline" onClick={() => setListRequest({ recipes: [{ recipeId: recipe.recipeId, scale: factor }], label: recipe.title })}>
             <ShoppingBasket data-icon="inline-start" aria-hidden="true" />
             Add to shopping list
           </Button>
@@ -381,6 +390,17 @@ export function DetailPane({
       />
 
       <AddToPlanDialog request={planRequest} onClose={() => setPlanRequest(null)} onAdded={onPlanned} />
+
+      <AddPreviewDialog
+        request={listRequest}
+        onClose={() => setListRequest(null)}
+        onCommitted={(result) => {
+          setListRequest(null);
+          posthog.capture("grocery_items_added", { recipe_id: recipe.recipeId, added: result.added, merged: result.merged, source: "recipe_detail" });
+          pushToast(summarizeGroceryAdd(result.added, result.merged));
+        }}
+        onError={(message) => pushToast(message)}
+      />
     </div>
   );
 }

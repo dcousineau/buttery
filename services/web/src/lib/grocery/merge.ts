@@ -26,7 +26,7 @@
  */
 
 import type { Aisle } from "./aisles";
-import { type Lexicon, categorizeWith } from "./categorize";
+import { type FoodMatch, type Lexicon, categorizeWith } from "./categorize";
 import { type ParseOptions, type ParsedIngredient, parseIngredientLine } from "./parse";
 import { type UnitDim, renderQuantity, resolveUnit, unitLabel } from "./units";
 
@@ -166,9 +166,8 @@ function addContribution(rows: Map<string, MergedRow>, lexicon: Lexicon, parsed:
     rows.set(key, {
       foodSlug: match.foodSlug,
       nameNorm: match.nameNorm,
-      // The canonical lexicon name when we have one, so five spellings of
-      // "scallion" read as one thing; otherwise the line's own words.
-      displayName: displayNameFor(lexicon, match.foodSlug, parsed.name),
+      // See `displayNameFor`.
+      displayName: displayNameFor(lexicon, match, parsed.name),
       aisle: match.aisle,
       unitDim: parsed.unitDim,
       unit: parsed.unit,
@@ -219,9 +218,51 @@ function maxBase(parsed: ParsedIngredient): number | null {
   return parsed.quantityMax * (unit.factor ?? 1);
 }
 
-function displayNameFor(lexicon: Lexicon, foodSlug: string | null, fallback: string): string {
-  const canonical = foodSlug ? lexicon.foods[foodSlug]?.n : undefined;
-  return canonical ?? fallback;
+/**
+ * What the row says.
+ *
+ * The lexicon's canonical name only wins when the line matched it **outright** —
+ * an exact or singularized hit, which is how five spellings of "scallion"
+ * converge on one row that reads one way.
+ *
+ * The fallback steps are a different story. Left-trim and span search find a
+ * food by throwing words away, and those words were often the useful ones:
+ * "egg noodles" resolves through `en:noodle` and "marinara sauce" through
+ * `en:sauce`, so preferring the canonical name puts `noodle` and `sauce` on a
+ * shopping list and expects you to remember which. The match is still what
+ * decides merging and the aisle; it just does not get to rename the line.
+ */
+function displayNameFor(lexicon: Lexicon, match: FoodMatch, fallback: string): string {
+  if (match.via !== "exact" && match.via !== "singular") return foodSegment(lexicon, match, fallback);
+  return (match.foodSlug ? lexicon.foods[match.foodSlug]?.n : undefined) ?? foodSegment(lexicon, match, fallback);
+}
+
+/**
+ * The comma-separated segment of the name that still names the same food.
+ *
+ * `parse.ts` strips the prep clauses it recognises, but recipes write things no
+ * word list can enumerate — "mushrooms, stems discarded, caps thickly sliced".
+ * Printing all of that on a list you read one-handed in a store is noise.
+ *
+ * Taking the FIRST segment is the obvious rule and it is wrong: recipes also
+ * comma-separate *leading* modifiers, so "boneless, skinless chicken breasts"
+ * would render as "boneless". Asking which segment still resolves to the food
+ * we already matched picks the right one either way — "mushrooms" from the
+ * first case, "skinless chicken breasts" from the second — and falls back to
+ * the whole name when no single segment carries it.
+ *
+ * Display only. Identity, aisle and merging all use the full name, and the
+ * verbatim line is snapshotted on the source row regardless.
+ */
+function foodSegment(lexicon: Lexicon, match: FoodMatch, name: string): string {
+  if (!match.foodSlug || !name.includes(",")) return name;
+
+  for (const raw of name.split(",")) {
+    const segment = raw.trim();
+    if (!segment) continue;
+    if (categorizeWith(lexicon, segment).foodSlug === match.foodSlug) return segment;
+  }
+  return name;
 }
 
 /**
