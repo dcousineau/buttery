@@ -18,6 +18,9 @@
     "db:migrate:down": "kysely migrate down",
     "db:migrate:new": "kysely migrate make",
     "db:migrate:list": "kysely migrate list",
+    "db:seed:make": "kysely seed make",
+    "db:seed:run": "kysely seed run",
+    "db:seed:list": "kysely seed list",
     "db:codegen": "kysely-codegen --out-file src/db/types.ts --exclude-pattern \"*.kysely_migration*\"",
     "typecheck": "pnpm --filter @buttery/lexicons build && tsc"
   },

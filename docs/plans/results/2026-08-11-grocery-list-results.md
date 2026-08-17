@@ -194,9 +194,13 @@ was driven by a real failure rather than by editing the corpus — but the numbe
 and expect it to fall; the report's unmatched-lines section is already the worklist for
 whatever it finds.
 
-`scripts/seed-dev-recipes.ts` is what makes the sweep reproducible: an idempotent dev-only
-seeder with deliberately clashing units across recipes (chicken breast in ounces, grams and
-pounds; butter in sticks, grams and tablespoons) so consolidation has something to merge.
+`services/web/src/db/seeds/1787000664088_dev_recipes.ts` is what makes the sweep
+reproducible: an idempotent dev-only seed with deliberately clashing units across recipes
+(chicken breast in ounces, grams and pounds; butter in sticks, grams and tablespoons) so
+consolidation has something to merge. Load it with
+`pnpm --filter @buttery/web db:seed:run` — manual only, never automatic. (It shipped as
+`scripts/seed-dev-recipes.ts` on the day this was written and moved to a kysely-ctl seed
+afterwards; the corpus is unchanged.)
 
 ---
 

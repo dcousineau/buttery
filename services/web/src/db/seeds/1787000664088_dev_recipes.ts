@@ -1,11 +1,29 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { Kysely } from "kysely";
+import { parsePaprikaRecipe } from "@buttery/recipe-extract/paprika";
+import type { DB } from "../types.ts";
+
 /**
  * Fill the LOCAL dev database with a realistic recipe corpus, so the grocery-list
  * feature has something honest to be exercised and calibrated against.
  *
- *   node scripts/seed-dev-recipes.ts
+ *   pnpm --filter @buttery/web db:seed:run
  *
- * Dev-only. It is never imported by the app, never runs in CI, and never touches
- * a database it was not pointed at by `services/web/.env`.
+ * ── SEEDS ARE MANUAL, ALWAYS ────────────────────────────────────────────────
+ *
+ * Nothing runs this on its own and nothing may be taught to. `process-compose`'s
+ * `migrate` process is `db:migrate:up` and stays that way; no mise hook, no
+ * `scripts/dev/up.sh` step, no postinstall reaches this file. A human types the
+ * command or the corpus does not exist. That is the whole contract: a seed that
+ * runs by itself is a fixture that shows up in a database somebody was using for
+ * something else.
+ *
+ * Note that kysely-ctl does NOT track seeds the way it tracks migrations — there
+ * is no `kysely_seed` table and `seed list` reports files, not applied state. So
+ * `seed run` re-runs every seed in the folder, every time. Idempotence is not a
+ * nicety here, it is the only thing that makes the command safe to type twice.
  *
  * ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
  *
@@ -32,35 +50,26 @@
  * nothing, and a corpus where every "2 cloves garlic" is spelled identically
  * would make the matcher look far better than it is.
  *
- * ── WHY IT DOES NOT CALL `parsePaprikaRecipe` ────────────────────────────────
+ * ── WHY IT CALLS `parsePaprikaRecipe` NOW ────────────────────────────────────
  *
- * It would like to. It cannot: this file runs under plain `node` type stripping,
- * and `@buttery/recipe-extract/paprika` reaches `export.ts` / `entry-source.ts`,
- * both of which declare TypeScript *parameter properties*
- * (`constructor(public readonly code: …)`). Strip-only mode rejects those with
- * ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX, and Node 26 has removed the
- * `--experimental-transform-types` escape hatch. So the fixtures go through the
- * two pieces the importer itself leans on for the fields we need — the shared
- * `readItem` + `schemaOrgToLexicon` crosswalk for ingredients (§4.1 note 2) and
- * a one-`<p>`-per-step read of `recipeInstructions` (§4.1 note 1) — which are
- * plain functions and load fine. Nothing here re-implements a parser; if the
- * package ever drops parameter properties, these ten lines collapse into one
- * `parsePaprikaRecipe` call.
+ * The script this replaced (`scripts/seed-dev-recipes.ts`) could not: it ran
+ * under plain `node` type stripping, and `@buttery/recipe-extract/paprika`
+ * reaches modules declaring TypeScript *parameter properties*, which strip-only
+ * mode rejects outright. So it hand-rolled the two behaviours it needed out of
+ * `readItem` + `schemaOrgToLexicon`. Seeds load through kysely-ctl's jiti loader,
+ * which transforms TypeScript rather than only stripping it, so the real
+ * importer entry point loads fine and the re-implementation is gone. The corpus
+ * is now parsed by exactly the code the app parses an upload with.
  *
- * ── WHY THE IMPORTS LOOK LIKE THAT ───────────────────────────────────────────
- *
- * `scripts/` is not a workspace package, so it has no `node_modules` of its own
- * and cannot resolve `kysely`, `pg` or `node-html-parser` by name. They are
- * reached through the package that DOES depend on them. Two of the three also
- * ship their types somewhere Node's runtime specifier cannot point at (`pg`
- * types live in `@types/pg`; node-html-parser's `.d.ts` does not pair with its
- * `.mjs`), which is why those two are a `import type` + `await import()` pair:
- * the type side and the runtime side genuinely need different specifiers, and
- * type-aware oxlint reports every one of them as `error`-typed otherwise.
+ * The `no-restricted-imports` boundary (`.oxlintrc.json`, paprika-import plan
+ * §2.5 / D30) is not violated by that import: it guards the import *pipeline*,
+ * and `recipe-import-boundary.test.ts` asserts in as many words that "a Paprika
+ * import from a module outside the pipeline" is allowed. A dev seed is not the
+ * pipeline and must never become a step in it.
  *
  * ── IDEMPOTENCE ──────────────────────────────────────────────────────────────
  *
- * Every row this script writes is keyed by a deterministic `seed-<slug>` recipe
+ * Every row this seed writes is keyed by a deterministic `seed-<slug>` recipe
  * id. It reads nothing else and it modifies nothing else — a recipe you imported
  * yourself is invisible to it.
  *
@@ -74,21 +83,13 @@
  * foreign keys, so those are replaced wholesale and the ordinals stay dense.
  */
 
-import type * as NodeHtmlParser from "../packages/recipe-extract/node_modules/node-html-parser/dist/index.d.ts";
-import type * as Pg from "../services/web/node_modules/@types/pg/index.d.ts";
-import { Kysely, PostgresDialect } from "../services/web/node_modules/kysely/dist/index.js";
-import { readItem } from "../packages/recipe-extract/src/parse/microdata.ts";
-import { schemaOrgToLexicon } from "../packages/recipe-schemas/src/bridge/index.ts";
-import type { DB } from "../services/web/src/db/types.ts";
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+/** Repo root, five levels up from `services/web/src/db/seeds/`. Resolved from
+ *  this module rather than `process.cwd()`, which is the package directory when
+ *  the CLI is driven through `pnpm --filter` and something else otherwise. */
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../../..");
 const FIXTURE_DIR = join(ROOT, "packages/recipe-extract/src/paprika/__fixtures__");
-const ENV_FILE = join(ROOT, "services/web/.env");
 
-/** Every recipe id this script owns starts with this. It is also the delete key,
+/** Every recipe id this seed owns starts with this. It is also the delete key,
  *  so it must never be a prefix a human-created recipe could plausibly carry.
  *  Recipe ids are atproto rkeys, where `-` is legal, so this is a valid id and
  *  not a shape the app has to special-case (see AGENTS.md). */
@@ -852,34 +853,27 @@ const SEED_RECIPES: readonly { slug: string; name: string; yield: string; minute
 // ---------------------------------------------------------------------------
 
 /**
- * Read every committed Paprika fixture into the same `SeedRecipe` shape.
+ * Read every committed Paprika fixture into the same `SeedRecipe` shape, through
+ * the real importer.
  *
- * See the header for why this is not one `parsePaprikaRecipe` call. The two
- * behaviours reproduced here are the ones the fixtures exist to pin down:
- * ingredients come from the shared schema.org crosswalk, and instructions are
- * read one step per `<p>` — Paprika writes ONE `recipeInstructions` container
- * holding N paragraphs, and the generic reader would return a single run-on
- * blob, which is the most damaging thing an importer can do to a recipe.
+ * `entryName` / `sourcePath` are what the importer keys sibling assets and the
+ * failure list by; here the fixture's own filename is the honest value for both.
+ * A fixture that fails to parse is a hard error rather than a skipped row — the
+ * five files exist to pin the crosswalk down, so a silent drop would turn the
+ * thing they guard into a corpus that quietly shrank.
  */
-async function fixtureRecipes(): Promise<SeedRecipe[]> {
-  const { parse } = (await import("../packages/recipe-extract/node_modules/node-html-parser/dist/index.mjs")) as typeof NodeHtmlParser;
-
+function fixtureRecipes(): SeedRecipe[] {
   const out: SeedRecipe[] = [];
   for (const file of readdirSync(FIXTURE_DIR)
     .filter((f) => f.endsWith(".html"))
     .sort()) {
-    const root = parse(readFileSync(join(FIXTURE_DIR, file), "utf8"));
-    // Same scoping rule the importer uses: prefer the Recipe itemscope, fall
-    // back to the whole document so a stripped-down export still reads.
-    const scope = root.querySelector('[itemtype*="Recipe" i]') ?? root;
-    const recipe = schemaOrgToLexicon(readItem(scope), "");
-    const instructions = scope
-      .querySelectorAll('[itemprop="recipeInstructions"] p')
-      .map((p) => p.text.replace(/\s+/g, " ").trim())
-      .filter(Boolean);
+    const html = readFileSync(join(FIXTURE_DIR, file), "utf8");
+    const parsed = parsePaprikaRecipe(html, { entryName: file, sourcePath: file, html });
+    if (parsed.kind === "failure") throw new Error(`fixture ${file} did not parse (${parsed.message}) — the importer or the fixture changed`);
 
+    const { recipe } = parsed;
     const ingredients = recipe.ingredients ?? [];
-    if (!recipe.name || ingredients.length === 0) throw new Error(`fixture ${file} produced no usable recipe — the crosswalk or the fixture changed`);
+    if (!recipe.name || ingredients.length === 0) throw new Error(`fixture ${file} produced no usable recipe — the importer or the fixture changed`);
 
     out.push({
       id: `${ID_PREFIX}paprika-${file.replace(/\.html$/, "")}`,
@@ -887,14 +881,14 @@ async function fixtureRecipes(): Promise<SeedRecipe[]> {
       recipeYield: recipe.recipeYield ?? null,
       totalTime: recipe.totalTime ?? recipe.cookTime ?? null,
       ingredients: [...ingredients],
-      instructions,
+      instructions: [...(recipe.instructions ?? [])],
     });
   }
   return out;
 }
 
 /** `PT1H30M` → 5400. Deliberately narrow: the only durations reaching it are the
- *  ones this script writes plus whatever the fixtures carry, and a wrong number
+ *  ones this seed writes plus whatever the fixtures carry, and a wrong number
  *  here would show a lie on the recipe card. Anything it does not recognize
  *  becomes null, which the schema already allows. */
 function durationSeconds(iso: string | null): number | null {
@@ -905,35 +899,18 @@ function durationSeconds(iso: string | null): number | null {
 }
 
 // ---------------------------------------------------------------------------
-// Database
+// The seed
 // ---------------------------------------------------------------------------
 
 /**
- * `services/web/.env` is the one place the dev connection string lives (see
- * AGENTS.md); the app loads it through Vite and the migrations through
- * `kysely.config.ts`, neither of which is available here. Absent file is not
- * fatal on its own — an exported `DATABASE_URL` is just as good — so the check
- * that matters is the one on the variable itself.
+ * kysely-ctl hands us a live `Kysely` built from `kysely.config.ts` — which is
+ * also where `services/web/.env` is loaded and where the pool is torn down
+ * afterwards (`destroyOnExit` defaults to true). So there is no connection code
+ * here at all, which is most of what the old script was.
  */
-function loadDatabaseUrl(): string {
-  try {
-    process.loadEnvFile(ENV_FILE);
-  } catch {
-    // Fall through to whatever the environment already carries.
-  }
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error(`No DATABASE_URL. Expected it in ${ENV_FILE} — run \`pnpm dev\` once to bootstrap the local stack.`);
-  return url;
-}
-
-async function connect(): Promise<Kysely<DB>> {
-  const { Pool } = ((await import("../services/web/node_modules/pg/lib/index.js")) as { default: typeof Pg }).default;
-  return new Kysely<DB>({ dialect: new PostgresDialect({ pool: new Pool({ connectionString: loadDatabaseUrl() }) }) });
-}
-
-async function main(): Promise<void> {
+export async function seed(db: Kysely<DB>): Promise<void> {
   const recipes: SeedRecipe[] = [
-    ...(await fixtureRecipes()),
+    ...fixtureRecipes(),
     ...SEED_RECIPES.map((r) => ({
       id: `${ID_PREFIX}${r.slug}`,
       name: r.name,
@@ -944,105 +921,100 @@ async function main(): Promise<void> {
     })),
   ];
 
-  const db = await connect();
-  try {
-    // Every household, not just the active one: a dev database usually has one,
-    // but anyone testing the household-switching paths has several and wants the
-    // corpus visible from all of them.
-    const households = await db.selectFrom("household").select(["id", "name", "created_by_did"]).where("deleted_at", "is", null).orderBy("created_at").execute();
+  // Every household, not just the active one: a dev database usually has one,
+  // but anyone testing the household-switching paths has several and wants the
+  // corpus visible from all of them.
+  const households = await db.selectFrom("household").select(["id", "name", "created_by_did"]).where("deleted_at", "is", null).orderBy("created_at").execute();
 
-    if (households.length === 0) {
-      // Not an error. A fresh dev database legitimately has no households — the
-      // first one is created by signing in — and failing here would look like a
-      // broken script rather than a missing step.
-      process.stdout.write(
-        "\nNo households found, so there is nowhere to put these recipes.\n\n" +
-          "  Sign in at http://127.0.0.1:3000/login as chef.test first (127.0.0.1, never\n" +
-          "  localhost — atproto forbids `.localhost` in web client_ids), then run this\n" +
-          "  script again.\n\n",
-      );
-      return;
-    }
+  if (households.length === 0) {
+    // Not an error. A fresh dev database legitimately has no households — the
+    // first one is created by signing in — and failing here would look like a
+    // broken seed rather than a missing step.
+    process.stdout.write(
+      "\nNo households found, so there is nowhere to put these recipes.\n\n" +
+        "  Sign in at http://127.0.0.1:3000/login as chef.test first (127.0.0.1, never\n" +
+        "  localhost — atproto forbids `.localhost` in web client_ids), then run\n" +
+        "  `pnpm --filter @buttery/web db:seed:run` again.\n\n",
+    );
+    return;
+  }
 
-    await pruneStaleSeedRecipes(db, new Set(recipes.map((r) => r.id)));
+  await pruneStaleSeedRecipes(db, new Set(recipes.map((r) => r.id)));
 
-    let ingredientCount = 0;
-    let instructionCount = 0;
-    let attachments = 0;
+  let ingredientCount = 0;
+  let instructionCount = 0;
+  let attachments = 0;
 
-    // One transaction for the whole corpus: a half-seeded database is harder to
-    // reason about than an unseeded one, and this is small enough that holding
-    // the transaction costs nothing.
-    await db.transaction().execute(async (trx) => {
-      for (const recipe of recipes) {
-        await trx
-          .insertInto("recipe")
-          .values({
-            id: recipe.id,
-            // 'local' and never 'sync': the cron reconciler owns 'sync' rows and
-            // would eventually notice these have no record behind them. 'local'
-            // rows it never touches. `private` + null `uri` is exactly how an
-            // unpublished, household-only recipe looks to the read path.
-            origin: "local",
-            visibility: "private",
+  // One transaction for the whole corpus: a half-seeded database is harder to
+  // reason about than an unseeded one, and this is small enough that holding
+  // the transaction costs nothing.
+  await db.transaction().execute(async (trx) => {
+    for (const recipe of recipes) {
+      await trx
+        .insertInto("recipe")
+        .values({
+          id: recipe.id,
+          // 'local' and never 'sync': the cron reconciler owns 'sync' rows and
+          // would eventually notice these have no record behind them. 'local'
+          // rows it never touches. `private` + null `uri` is exactly how an
+          // unpublished, household-only recipe looks to the read path.
+          origin: "local",
+          visibility: "private",
+          name: recipe.name,
+          recipe_yield: recipe.recipeYield,
+          total_time: recipe.totalTime,
+          total_time_seconds: durationSeconds(recipe.totalTime),
+        })
+        .onConflict((oc) =>
+          oc.column("id").doUpdateSet({
             name: recipe.name,
             recipe_yield: recipe.recipeYield,
             total_time: recipe.totalTime,
             total_time_seconds: durationSeconds(recipe.totalTime),
-          })
-          .onConflict((oc) =>
-            oc.column("id").doUpdateSet({
-              name: recipe.name,
-              recipe_yield: recipe.recipeYield,
-              total_time: recipe.totalTime,
-              total_time_seconds: durationSeconds(recipe.totalTime),
-            }),
-          )
-          .execute();
+          }),
+        )
+        .execute();
 
-        // Replace rather than upsert, so shortening a recipe cannot leave
-        // orphaned high ordinals behind. Neither table has an inbound FK, so
-        // this is safe in a way deleting the `recipe` row is not.
-        await trx.deleteFrom("recipe_ingredient").where("recipe_id", "=", recipe.id).execute();
-        await trx.deleteFrom("recipe_instruction").where("recipe_id", "=", recipe.id).execute();
+      // Replace rather than upsert, so shortening a recipe cannot leave
+      // orphaned high ordinals behind. Neither table has an inbound FK, so
+      // this is safe in a way deleting the `recipe` row is not.
+      await trx.deleteFrom("recipe_ingredient").where("recipe_id", "=", recipe.id).execute();
+      await trx.deleteFrom("recipe_instruction").where("recipe_id", "=", recipe.id).execute();
 
+      await trx
+        .insertInto("recipe_ingredient")
+        .values(recipe.ingredients.map((text, ordinal) => ({ recipe_id: recipe.id, ordinal, text })))
+        .execute();
+      ingredientCount += recipe.ingredients.length;
+
+      if (recipe.instructions.length > 0) {
         await trx
-          .insertInto("recipe_ingredient")
-          .values(recipe.ingredients.map((text, ordinal) => ({ recipe_id: recipe.id, ordinal, text })))
+          .insertInto("recipe_instruction")
+          .values(recipe.instructions.map((text, ordinal) => ({ recipe_id: recipe.id, ordinal, text })))
           .execute();
-        ingredientCount += recipe.ingredients.length;
-
-        if (recipe.instructions.length > 0) {
-          await trx
-            .insertInto("recipe_instruction")
-            .values(recipe.instructions.map((text, ordinal) => ({ recipe_id: recipe.id, ordinal, text })))
-            .execute();
-          instructionCount += recipe.instructions.length;
-        }
-
-        for (const household of households) {
-          // `added_by_did` is provenance and NOT NULL; the household's creator is
-          // the only did this script can honestly claim.
-          const res = await trx
-            .insertInto("household_recipe")
-            .values({ household_id: household.id, recipe_id: recipe.id, added_by_did: household.created_by_did })
-            .onConflict((oc) => oc.columns(["household_id", "recipe_id"]).doNothing())
-            .execute();
-          attachments += Number(res[0]?.numInsertedOrUpdatedRows ?? 0n);
-        }
+        instructionCount += recipe.instructions.length;
       }
-    });
 
-    process.stdout.write(
-      `\nSeeded ${recipes.length} recipes (${recipes.length - SEED_RECIPES.length} from Paprika fixtures, ${SEED_RECIPES.length} authored inline)\n` +
-        `  ${ingredientCount} ingredient lines\n` +
-        `  ${instructionCount} instruction steps\n` +
-        `  ${households.length} household(s): ${households.map((h) => h.name).join(", ")}\n` +
-        `  ${attachments} new household attachment(s) this run (the rest were already boxed)\n\n`,
-    );
-  } finally {
-    await db.destroy();
-  }
+      for (const household of households) {
+        // `added_by_did` is provenance and NOT NULL; the household's creator is
+        // the only did this seed can honestly claim.
+        const res = await trx
+          .insertInto("household_recipe")
+          .values({ household_id: household.id, recipe_id: recipe.id, added_by_did: household.created_by_did })
+          .onConflict((oc) => oc.columns(["household_id", "recipe_id"]).doNothing())
+          .execute();
+        attachments += Number(res[0]?.numInsertedOrUpdatedRows ?? 0n);
+      }
+    }
+  });
+
+  process.stdout.write(
+    `\nSeeded ${recipes.length} recipes (${recipes.length - SEED_RECIPES.length} from Paprika fixtures, ${SEED_RECIPES.length} authored inline)\n` +
+      `  ${ingredientCount} ingredient lines\n` +
+      `  ${instructionCount} instruction steps\n` +
+      `  ${households.length} household(s): ${households.map((h) => h.name).join(", ")}\n` +
+      `  ${attachments} new household attachment(s) this run (the rest were already boxed)\n\n`,
+  );
 }
 
 /**
@@ -1068,5 +1040,3 @@ async function pruneStaleSeedRecipes(db: Kysely<DB>, keep: Set<string>): Promise
     process.stdout.write(`Could not remove ${stale.length} stale seed recipe(s) (${err instanceof Error ? err.message : String(err)}); leaving them in place.\n`);
   }
 }
-
-await main();

@@ -52,7 +52,7 @@ let skipReason = "";
 
 function announceSkip(reason: string): void {
   skipReason = reason;
-  process.stderr.write(`\nSKIPPING grocery calibration — ${reason}.\nSeed the dev database (node scripts/seed-dev-recipes.ts) and re-run with DATABASE_URL set.\n\n`);
+  process.stderr.write(`\nSKIPPING grocery calibration — ${reason}.\nSeed the dev database (pnpm --filter @buttery/web db:seed:run) and re-run with DATABASE_URL set.\n\n`);
 }
 
 async function connectOrSkip(): Promise<Kysely<DB> | null> {
@@ -157,7 +157,9 @@ describe.skipIf(!db)(db ? "grocery lexicon calibration (§9)" : `grocery lexicon
     );
 
     if (swept.length < MIN_CORPUS) {
-      process.stderr.write(`\nGrocery calibration: only ${swept.length} lines in the corpus (need ${MIN_CORPUS} to assert). Seed with \`node scripts/seed-dev-recipes.ts\`.\n\n`);
+      process.stderr.write(
+        `\nGrocery calibration: only ${swept.length} lines in the corpus (need ${MIN_CORPUS} to assert). Seed with \`pnpm --filter @buttery/web db:seed:run\`.\n\n`,
+      );
       expect(swept.length).toBeGreaterThanOrEqual(0);
       return;
     }

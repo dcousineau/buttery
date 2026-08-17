@@ -79,11 +79,7 @@ for (const serviceDir of SERVICES) {
   }
 
   writeFileSync(envPath, filled);
-  console.log(
-    filled === example
-      ? `bootstrap-env: created ${label} from .env.example.`
-      : `bootstrap-env: created ${label} from .env.example with a generated BETTER_AUTH_SECRET.`,
-  );
+  console.log(filled === example ? `bootstrap-env: created ${label} from .env.example.` : `bootstrap-env: created ${label} from .env.example with a generated BETTER_AUTH_SECRET.`);
 }
 
 if (failed) process.exit(1);
