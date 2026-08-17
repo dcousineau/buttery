@@ -95,6 +95,46 @@ export interface AtprotoSyncRun {
   status: Generated<string>;
 }
 
+export interface GroceryItem {
+  aisle: string;
+  checked_at: Timestamp | null;
+  checked_by_did: string | null;
+  created_at: Generated<Timestamp>;
+  created_by_did: string;
+  display_name: string;
+  food_slug: string | null;
+  household_id: string;
+  id: string;
+  is_manual: Generated<boolean>;
+  list_id: string;
+  merge_unit: string | null;
+  name_norm: string;
+  quantity: Numeric | null;
+  quantity_max: Numeric | null;
+  unit: string | null;
+  unit_dim: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface GroceryItemSource {
+  added_at: Generated<Timestamp>;
+  added_by_did: string;
+  id: string;
+  item_id: string;
+  plan_entry_id: string | null;
+  quantity_base: Numeric | null;
+  raw_text: string;
+  recipe_id: string | null;
+  scale: Generated<Numeric>;
+}
+
+export interface GroceryList {
+  created_at: Generated<Timestamp>;
+  household_id: string;
+  id: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface Household {
   created_at: Generated<Timestamp>;
   created_by_did: string;
@@ -378,6 +418,9 @@ export interface DB {
   atproto_oauth_state: AtprotoOauthState;
   atproto_repo: AtprotoRepo;
   atproto_sync_run: AtprotoSyncRun;
+  grocery_item: GroceryItem;
+  grocery_item_source: GroceryItemSource;
+  grocery_list: GroceryList;
   household: Household;
   household_invite: HouseholdInvite;
   household_member: HouseholdMember;
