@@ -1,6 +1,6 @@
 # Local dev supervisor. One command (`pnpm dev`) boots the whole app: the
-# Railway dev containers, migrations, the atproto dev-env, and the web server —
-# each as its own restartable, individually-logged process.
+# docker-compose dev containers, migrations, the atproto dev-env, and the web
+# server — each as its own restartable, individually-logged process.
 #
 # The cron sync service is deliberately NOT here; run it on demand with
 # `railway run --service atproto-cron-sync -- pnpm --filter=@buttery/atproto-cron-sync sync:once`.
@@ -37,20 +37,21 @@ log_location: ./.dev-logs/process-compose.log
 
 processes:
   # ---------------------------------------------------------------------------
-  # Dependency containers (Postgres, Redis, Caddy) owned by `railway dev`.
+  # Dependency containers (Postgres, Redis), owned by the repo's docker-compose.
   # ---------------------------------------------------------------------------
 
-  # `railway dev up` is idempotent and detaches: it starts the docker-compose
-  # stack, prints the port/credential overview, and exits 0. So it runs as a
-  # one-shot gate rather than a supervised long-running process — everything
-  # that needs the containers waits on it completing.
-  railway-dev:
-    description: "Start the Railway dev containers (postgres, redis, caddy)"
-    command: "railway dev up --no-tui"
+  # `docker compose up -d --wait` is idempotent and detaches: it starts the
+  # containers, blocks until their healthchecks pass, and exits 0 (a no-op when
+  # they are already healthy). So it runs as a one-shot gate rather than a
+  # supervised long-running process — everything that needs the containers waits
+  # on it completing. `--wait` is what makes `migrate` safe to gate on it.
+  dev-containers:
+    description: "Start the local dev containers (postgres, redis)"
+    command: "docker compose up -d --wait"
     working_dir: "."
     availability:
       restart: "no"
-    log_location: ./.dev-logs/railway-dev.log
+    log_location: ./.dev-logs/dev-containers.log
     # `log_configuration` is per-process only (a top-level block is silently
     # ignored), so it's defined once here and aliased by every other process.
     log_configuration: &log_config
@@ -68,25 +69,25 @@ processes:
 
   # The containers outlive process-compose (they are detached), so each one is
   # surfaced here as its own log stream. Stopping process-compose stops the
-  # tails, not the databases — use `railway dev down` for that.
+  # tails, not the databases — use `docker compose down` for that.
   #
-  # All three carry `restart: always`, and it has to be `always`: a log tail
-  # that loses its container exits 0, so `on_failure` would read that as a clean
-  # completion and leave the process dead. For `postgres` and `redis` that also
-  # kills the readiness probe `web` depends on, so `web` could never come back.
-  # See the header of scripts/dev/railway-containers.mjs.
+  # Both carry `restart: always`, and it has to be `always`: a log tail that
+  # loses its container exits 0, so `on_failure` would read that as a clean
+  # completion and leave the process dead. That also kills the readiness probe
+  # `web` depends on, so `web` could never come back.
+  # See the header of scripts/dev/dev-containers.mjs.
   postgres:
-    description: "Postgres container logs (railway dev)"
-    command: "node scripts/dev/railway-containers.mjs logs postgres"
+    description: "Postgres container logs (docker compose)"
+    command: "node scripts/dev/dev-containers.mjs logs postgres"
     depends_on:
-      railway-dev:
+      dev-containers:
         condition: process_completed_successfully
     availability: &container_tail_availability
       restart: always
       backoff_seconds: 2
     readiness_probe:
       exec:
-        command: "node scripts/dev/railway-containers.mjs ready postgres"
+        command: "node scripts/dev/dev-containers.mjs ready postgres"
       initial_delay_seconds: 2
       period_seconds: 2
       failure_threshold: 30
@@ -94,29 +95,19 @@ processes:
     log_configuration: *log_config
 
   redis:
-    description: "Redis container logs (railway dev)"
-    command: "node scripts/dev/railway-containers.mjs logs redis"
+    description: "Redis container logs (docker compose)"
+    command: "node scripts/dev/dev-containers.mjs logs redis"
     depends_on:
-      railway-dev:
+      dev-containers:
         condition: process_completed_successfully
     availability: *container_tail_availability
     readiness_probe:
       exec:
-        command: "node scripts/dev/railway-containers.mjs ready redis"
+        command: "node scripts/dev/dev-containers.mjs ready redis"
       initial_delay_seconds: 2
       period_seconds: 2
       failure_threshold: 30
     log_location: ./.dev-logs/redis.log
-    log_configuration: *log_config
-
-  railway-proxy:
-    description: "Caddy proxy container logs (railway dev)"
-    command: "node scripts/dev/railway-containers.mjs logs railway-proxy"
-    depends_on:
-      railway-dev:
-        condition: process_completed_successfully
-    availability: *container_tail_availability
-    log_location: ./.dev-logs/railway-proxy.log
     log_configuration: *log_config
 
   # ---------------------------------------------------------------------------
@@ -124,11 +115,12 @@ processes:
   # ---------------------------------------------------------------------------
 
   # Schema catch-up on every boot. Cheap no-op when already current, and it
-  # means a fresh clone (or a post-`railway dev clean` empty volume) works
-  # without a documented extra step.
+  # means a fresh clone (or a post-`docker compose down -v` empty volume) works
+  # without a documented extra step. DATABASE_URL comes from services/web/.env,
+  # which kysely.config.ts loads itself (the CLI runs outside the dev server).
   migrate:
     description: "Apply pending Kysely migrations"
-    command: "railway run --service buttery -- pnpm --filter=@buttery/web db:migrate:up"
+    command: "pnpm --filter=@buttery/web db:migrate:up"
     depends_on:
       postgres:
         condition: process_healthy
@@ -164,14 +156,18 @@ processes:
 
   web:
     description: "TanStack Start dev server (http://127.0.0.1:3000)"
-    # `railway run` injects the PRODUCTION BETTER_AUTH_URL/VITE_APP_URL
-    # (https://buttery.recipes) and Railway's values beat services/web/.env, so
-    # they have to be re-overridden on the child command. Without this the app
-    # is not loopback: allowHttp goes false and the local atproto dev-env PDS is
-    # rejected with "Unsecure resource metadata URL (http:)", better-auth logs
-    # "Invalid origin: http://127.0.0.1:3000", and the OAuth client_id points at
-    # the production metadata document.
-    command: "railway run --service buttery -- env BETTER_AUTH_URL=http://127.0.0.1:3000 VITE_APP_URL=http://127.0.0.1:3000 pnpm dev:web"
+    # Server-side config (DATABASE_URL, REDIS_URL, BLOB_S3_*, the ATPROTO_*
+    # overrides, BETTER_AUTH_URL/VITE_APP_URL) comes from services/web/.env,
+    # which vite.config.ts loads into process.env for dev (see its header). That
+    # `.env` pins BETTER_AUTH_URL and VITE_APP_URL to http://127.0.0.1:3000 —
+    # load-bearing: if the app decides it is not loopback, allowHttp goes false
+    # and the local atproto dev-env PDS is rejected with "Unsecure resource
+    # metadata URL (http:)", better-auth logs "Invalid origin", and the OAuth
+    # client_id points at the production metadata document. This used to need a
+    # `railway run … env BETTER_AUTH_URL=… VITE_APP_URL=…` wrapper because
+    # `railway run` injected the PRODUCTION values (https://buttery.recipes) and
+    # they beat `.env`; with `railway run` gone, `.env` is authoritative.
+    command: "pnpm dev:web"
     depends_on:
       migrate:
         condition: process_completed_successfully
@@ -208,7 +204,7 @@ processes:
     # the containers so that `pnpm dev docs` doesn't leave a half-booted stack
     # behind when someone then starts `web` from the TUI.
     depends_on:
-      railway-dev:
+      dev-containers:
         condition: process_completed_successfully
     # `disabled` is a real bool, so the expansion has to yield a bare
     # `true`/`false` literal — hence the `:-` default rather than a `vars:`

@@ -2,7 +2,7 @@
 
 Confirm `exchange.recipe.recipe` publish worked **locally** (dev only, isolated from real network) with this service. Do **not** query real network. Buttery's own app never reads from this dev PDS.
 
-Prereq: dev-env must run — root `pnpm dev` (thus `railway dev up`) starts it alongside web app. Standalone: `pnpm --filter @buttery/atproto-dev-env start`.
+Prereq: dev-env must run — root `pnpm dev` starts it alongside web app (process-compose runs both). Standalone: `pnpm --filter @buttery/atproto-dev-env start`.
 State persists in `.dev-data/atproto/`, so seed account keeps one stable did:plc across restarts. Still resolve handle → did at runtime, no hardcode: did changes whenever that directory deleted, and `records` helper already prints it.
 
 ## The dev account — where its handle, password, and did come from
@@ -49,7 +49,7 @@ Preconditions: stack up, both `web` and `atproto-dev-env` `Ready`. Check with pr
 Session survives `atproto-dev-env` restart now that state persists — handoff once per `.dev-data/atproto/`, not per restart.
 
 Debugging: `Failed to resolve OAuth server metadata for resource:
-http://localhost:2583/` in browser means app did not classify itself as loopback, so `allowHttp` stayed off. Real cause shows under `[cause]` in `web` logs (`pc_process_logs_search {name:"web", query:"cause"}`, or grep `.dev-logs/web.log`), not in HTTP response — usually non-loopback `BETTER_AUTH_URL` (Railway injects production one, its values beat `.env`, why `process-compose.yaml` re-overrides on `web` child command). Check handshake without browser first:
+http://localhost:2583/` in browser means app did not classify itself as loopback, so `allowHttp` stayed off. Real cause shows under `[cause]` in `web` logs (`pc_process_logs_search {name:"web", query:"cause"}`, or grep `.dev-logs/web.log`), not in HTTP response — usually non-loopback `BETTER_AUTH_URL` — `services/web/.env` pins it to `http://127.0.0.1:3000` (`vite.config.ts` loads `.env` into process.env for dev; that pin is what keeps the server loopback now that `railway run` no longer injects the production value). Check handshake without browser first:
 
 ```sh
 curl -s -X POST http://127.0.0.1:3000/api/auth/atproto/sign-in \
