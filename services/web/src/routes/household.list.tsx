@@ -1,7 +1,6 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { startTransition, useCallback, useEffect, useOptimistic, useRef, useState } from "react";
 import { BookOpenText, CalendarRange, Check, Trash2 } from "lucide-react";
-import * as z from "zod";
 import { type GroceryItemRow, type GroceryListPayload, clearCheckedGroceryItems, getGroceryList, removeGroceryItem, toggleGroceryItem, updateGroceryItem } from "#/server/grocery";
 import { requireActiveHousehold } from "#/server/household/onboarding";
 import { todayIn } from "#/lib/plan/week";
@@ -16,36 +15,33 @@ import { Toast, ToastViewport, useToasts } from "#/components/ui/toast";
 import { seo } from "#/lib/seo";
 
 /**
- * The household shopping list (`/household/list?group=flat`).
+ * The household shopping list (`/household/list`).
  *
- * One running list per household (D1), grouped by aisle by default, read and
- * written the way the meal planner is: optimistic patch, `router.invalidate()`,
+ * One running list per household (D1), always grouped by aisle, read and written
+ * the way the meal planner is: optimistic patch, `router.invalidate()`,
  * refetch-on-focus, last-write-wins per item (D12). Two people in the same store
  * on two phones is the normal case, not the edge one.
  *
- * `group` follows the meal-planner D15 precedent exactly. It is URL state so a
- * shopper who prefers a flat list keeps it through a reload and the back button,
- * and it is deliberately **not** in `loaderDeps`: regrouping is a client-side
- * re-render of a payload we already have, and refetching the list to stop
- * drawing headings would be a network round trip for a layout change. Like the
- * planner's params it is `.catch()`-guarded, so `?group=banana` falls back to
- * the default rather than throwing a route error at someone who mistyped a URL.
+ * Grouping has no toggle and no search param. The plan gave D8 a flat-list
+ * escape hatch for when the lexicon files something in the wrong aisle; the
+ * layout switch turned out to cost more than the miscategorisations it hedged
+ * against, so grouping is unconditional and a wrong aisle is fixed by renaming
+ * the line.
  *
  * `/household/*` is an "app view" (see `AppShell`): `main` is pinned to the
  * viewport and this route owns its own scroll container, so the header bar and
  * the add field stay put while the aisles scroll under them — which is the only
  * layout that works with a basket in the other hand.
+ *
+ * Everything on the page shares one centred `max-w-3xl` column — the same width
+ * `MisePhase` gives the cook-mode checklist, the app's only other big list of
+ * things to tick off. Wider than that and a 3-word row leaves the checkbox and
+ * its trash button at opposite ends of a 1200px screen. The strips themselves
+ * stay full-bleed, so on a phone the rows run edge to edge and only their own
+ * padding insets the text.
  */
 
-const searchSchema = z.object({
-  /** `flat` turns aisle grouping OFF (plan D8). Absent ⇒ grouped. */
-  group: z.enum(["aisle", "flat"]).optional().catch(undefined),
-});
-
 export const Route = createFileRoute("/household/list")({
-  validateSearch: searchSchema,
-  // No `loaderDeps`: `group` is a pure client toggle over a payload we already
-  // hold. Listing it here would refetch the whole list to change a heading.
   loader: async () => {
     await requireActiveHousehold();
     return await getGroceryList();
@@ -56,8 +52,6 @@ export const Route = createFileRoute("/household/list")({
 
 function GroceryListPage() {
   const loaded = Route.useLoaderData();
-  const search = Route.useSearch();
-  const navigate = Route.useNavigate();
   const router = useRouter();
   const { toasts, push, dismiss, pauseAll, resumeAll } = useToasts(4000);
 
@@ -155,14 +149,6 @@ function GroceryListPage() {
 
   const items = visibleItems(list);
   const { remaining, checked } = listCounts(items);
-  const grouped = search.group !== "flat";
-
-  // `undefined` drops the param rather than writing `?group=aisle`, and `replace`
-  // keeps the back button pointed at where you came from rather than at the last
-  // time you flipped a layout switch.
-  function setGrouped(next: boolean) {
-    void navigate({ search: (prev) => ({ ...prev, group: next ? undefined : "flat" }), replace: true });
-  }
 
   function toggleItem(item: GroceryItemRow, isChecked: boolean) {
     run({
@@ -205,54 +191,61 @@ function GroceryListPage() {
     <>
       <div className="flex h-[calc(100svh-var(--header-height,4rem))] min-h-0 w-full">
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex flex-none flex-wrap items-center gap-x-2 gap-y-2 border-b-2 border-border bg-card px-3 py-2.5 md:gap-x-2.5 md:px-4">
-            <h1 className="display-title m-0 text-base leading-[1.1] md:text-[1.625rem]">Shopping list</h1>
-            <p className="m-0 text-xs font-semibold text-muted-foreground">
-              {items.length === 0 ? "Nothing on it yet" : `${remaining} to get${checked > 0 ? ` · ${checked} in the cart` : ""}`}
-            </p>
+          {/* The title and the actions are two wrap rows on a phone, not one:
+            `basis-full` hands the heading its own line so a four-word h1 and
+            three buttons stop fighting over 390px. From `sm` up they share a
+            line again and the actions ride the right edge. */}
+          <div className="flex flex-none border-b-2 border-border bg-card px-3 py-2.5 md:px-4">
+            <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-2.5 gap-y-2">
+              <div className="flex min-w-0 basis-full flex-wrap items-baseline gap-x-2 gap-y-0.5 sm:flex-1 sm:basis-auto">
+                <h1 className="display-title m-0 text-base leading-[1.1] md:text-[1.625rem]">Shopping list</h1>
+                <p className="m-0 text-xs font-semibold text-muted-foreground">
+                  {items.length === 0 ? "Nothing on it yet" : `${remaining} to get${checked > 0 ? ` · ${checked} in the cart` : ""}`}
+                </p>
+              </div>
 
-            <div className="ml-auto flex flex-wrap items-center gap-1.5 md:gap-2">
-              {/* D8's escape hatch, and the only correction the feature offers:
-                when the lexicon files something in the wrong aisle, you stop
-                grouping rather than argue with it row by row.
-
-                The label stays constant and `aria-pressed` carries the state —
-                a toggle whose name changes with its own state ("By aisle" ⇄
-                "Flat list") is announced as a different control each press. */}
-              <Button variant={grouped ? "secondary" : "outline"} size="sm" aria-pressed={grouped} onClick={() => setGrouped(!grouped)}>
-                Group by aisle
-              </Button>
-              {/* The list is a household's, not a week's (D1), so pulling a plan
+              <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto md:gap-2">
+                {/* The list is a household's, not a week's (D1), so pulling a plan
                 week in is an action the list itself offers — not something you
                 have to go back to the planner to do. The server snaps the date
                 to the household's own week start. */}
-              <Button variant="outline" size="sm" onClick={() => setAddRequest({ planWeek: todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone), label: "This week's plan" })}>
-                <CalendarRange data-icon="inline-start" aria-hidden="true" />
-                Add this week
-              </Button>
-              {/* D3's fourth source: several boxed recipes at once. Picking is a
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAddRequest({ planWeek: todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone), label: "This week's plan" })}
+                >
+                  <CalendarRange data-icon="inline-start" aria-hidden="true" />
+                  Add this week
+                </Button>
+                {/* D3's fourth source: several boxed recipes at once. Picking is a
                 separate step from confirming — the picker answers "which
                 recipes", the preview answers "which rows", and collapsing them
                 into one dialog would ask both questions before either has an
                 answer. */}
-              <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)}>
-                <BookOpenText data-icon="inline-start" aria-hidden="true" />
-                Add recipes
-              </Button>
-              {checked > 0 && (
-                <Button variant="outline" size="sm" onClick={() => setConfirmClear(true)}>
-                  <Trash2 data-icon="inline-start" aria-hidden="true" />
-                  Clear checked
+                <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)}>
+                  <BookOpenText data-icon="inline-start" aria-hidden="true" />
+                  Add recipes
                 </Button>
-              )}
+                {checked > 0 && (
+                  <Button variant="outline" size="sm" onClick={() => setConfirmClear(true)}>
+                    <Trash2 data-icon="inline-start" aria-hidden="true" />
+                    Clear checked
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Pinned above the scroll area: adding four things in a row is how
             this field actually gets used, and scrolling back to the top between
-            each one is not something a hand holding a basket wants to do. */}
-          <div className="flex-none border-b-2 border-border bg-card px-3 pb-2.5 md:px-4">
+            each one is not something a hand holding a basket wants to do.
+
+            It gets its own top padding: without one the field sat flush against
+            the header's bottom border and the two zones read as a single
+            overlapping block. */}
+          <div className="flex-none border-b-2 border-border bg-card px-3 py-2.5 md:px-4">
             <ManualItemInput
+              className="mx-auto w-full max-w-3xl"
               onAdded={(text, result) => {
                 // No optimistic row: the aisle, the parsed amount and whether it
                 // merged are the lexicon's answers, not the client's.
@@ -271,8 +264,13 @@ function GroceryListPage() {
             {announcement}
           </p>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-3 pt-3 pb-8 md:px-4">
-            <GroceryList items={items} grouped={grouped} onToggle={toggleItem} onEdit={editItem} onRemove={removeItem} />
+          {/* No horizontal padding on the scrollport: the rows are full-bleed
+            slats and own their own inset, so on a phone the divider runs edge to
+            edge and only the text is inset. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto pb-8">
+            <div className="mx-auto w-full max-w-3xl">
+              <GroceryList items={items} onToggle={toggleItem} onEdit={editItem} onRemove={removeItem} />
+            </div>
           </div>
         </section>
       </div>

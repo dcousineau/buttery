@@ -1,14 +1,32 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { cva } from "class-variance-authority";
 import { Check, Pencil, Trash2 } from "lucide-react";
 import type { GroceryItemRow } from "#/server/grocery";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
 import { Input } from "#/components/ui/input";
+import { selectableRowVariants } from "#/components/ui/selectable-row";
 import { cn } from "#/lib/utils";
 import { baseQuantity, editableQuantity, editableUnitLabel } from "./optimistic";
 
 /**
- * One line of the shopping list.
+ * One line of the shopping list — a **slat**, not a card.
+ *
+ * Same construction the recipe ledger uses (`RecipeSlat`): a flush, full-bleed
+ * bar with a hairline divider to its neighbours, no radius, no box, no shadow.
+ * Cards in a gapped stack read as N separate objects you compare; slats read as
+ * one ledger you scan, and scanning a list top to bottom is the entire job here.
+ * The row paint comes from `selectableRowVariants` — the domain-free half of
+ * that construction — rather than a fourth hand-rolled `hover:bg-accent/40`.
+ *
+ * It composes that primitive instead of importing `RecipeSlat` itself for the
+ * reason `RecipeSlat`'s own doc gives for living in `components/recipes/`: its
+ * slots are recipe-shaped (thumbnail, title with state icons, source line,
+ * trailing metadata), and its type scale is tuned for a 360px rail — 13px on the
+ * title line. A shopping list is read at arm's length in a store with a phone in
+ * one hand, so the title line stays at body size and the bar keeps a 3.5rem
+ * floor. Selection is not part of it either: no grocery row is ever "the current
+ * one", so `selected` stays false and only the hover half of the variant is used.
  *
  * Sized for the actual use: a phone held in one hand, in a store, tapped with a
  * thumb while the other arm holds a basket. The whole label — checkbox, amount,
@@ -22,11 +40,17 @@ import { baseQuantity, editableQuantity, editableUnitLabel } from "./optimistic"
  * and could not host the remove button anyway, since a `<button>` inside the
  * row's `<label>` would toggle the checkbox on its way to firing.
  *
- * Inline edit covers quantity and display name only. Aisle is not editable (plan
- * D8: the escape hatch is the flat-list toggle, not a per-row correction), and
+ * Inline edit covers quantity and display name only. Aisle is not editable, and
  * neither is the unit — it is the merge anchor the row was built on, so retyping
  * `lb` as `cups` would ask the engine for a conversion it refuses to make (D5).
  */
+
+/**
+ * The bar itself. `border-b-2 border-border/45` is the same ledger divider the
+ * recipe slat draws, and every row carries one — including the last of an aisle,
+ * where it becomes the rule the next aisle's sticky heading sits on.
+ */
+const grocerySlatVariants = cva("flex items-stretch border-b-2 border-border/45");
 
 export interface GroceryRowProps {
   item: GroceryItemRow;
@@ -52,10 +76,11 @@ export function GroceryRow({ item, onToggle, onEdit, onRemove }: GroceryRowProps
     <li
       data-checked={checked}
       className={cn(
-        "flex items-stretch rounded-lg border-2 border-border bg-card shadow-pop-sm transition-all",
+        grocerySlatVariants(),
+        selectableRowVariants({ selected: false }),
         // Dim in place. No line-through, no reordering — a checked row keeps its
         // spot so the aisle you are standing in still reads the same.
-        checked && "bg-muted/60 opacity-65 shadow-none",
+        checked && "bg-muted/40 opacity-65",
       )}
     >
       {editing ? (
@@ -69,7 +94,7 @@ export function GroceryRow({ item, onToggle, onEdit, onRemove }: GroceryRowProps
         />
       ) : (
         <>
-          <label className="flex min-h-[3.5rem] min-w-0 flex-1 cursor-(--cursor-interactive) items-center gap-3 py-2 pl-3">
+          <label className="flex min-h-[3.5rem] min-w-0 flex-1 cursor-(--cursor-interactive) items-center gap-3 py-2 pl-3 md:pl-4">
             <Checkbox size="lg" checked={checked} onChange={(event) => onToggle(event.target.checked)} />
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 leading-snug">
@@ -84,7 +109,7 @@ export function GroceryRow({ item, onToggle, onEdit, onRemove }: GroceryRowProps
             </span>
           </label>
 
-          <span className="flex flex-none items-center gap-0.5 pr-1.5 pl-1">
+          <span className="flex flex-none items-center gap-0.5 pr-1.5 pl-1 md:pr-2.5">
             <Button variant="ghost" size="icon-lg" aria-label={`Edit ${item.displayName}`} onClick={() => setEditing(true)}>
               <Pencil aria-hidden="true" />
             </Button>
@@ -144,7 +169,7 @@ function GroceryRowEditor({ item, onSave, onCancel }: { item: GroceryItemRow; on
 
   return (
     <form
-      className="flex min-w-0 flex-1 flex-wrap items-center gap-2 p-2"
+      className="flex min-w-0 flex-1 flex-wrap items-center gap-2 px-3 py-2 md:px-4"
       onSubmit={(event) => {
         event.preventDefault();
         submit();

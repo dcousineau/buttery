@@ -30,17 +30,18 @@ export function AisleGroup({ aisle, label, items, onToggle, onEdit, onRemove }: 
   const { remaining } = listCounts(items);
 
   return (
-    <section aria-labelledby={headingId} data-aisle={aisle} className="flex flex-col gap-1.5">
+    <section aria-labelledby={headingId} data-aisle={aisle} className="flex flex-col">
       <h2
         id={headingId}
-        className="sticky top-0 z-10 -mx-1 flex items-baseline gap-2 bg-background px-1 py-1.5 text-xs font-bold tracking-[0.08em] text-muted-foreground uppercase"
+        className="sticky top-0 z-10 flex items-baseline gap-2 bg-background px-3 pt-3 pb-1.5 text-xs font-bold tracking-[0.08em] text-muted-foreground uppercase md:px-4"
       >
         {label}
         {/* The count is what makes a sticky heading worth its pixels: "3 left"
           answers "am I done with this aisle?" without reading the rows. */}
         <span className="text-[0.6875rem] font-semibold tracking-normal normal-case">{remaining === 0 ? "all in the cart" : `${remaining} left`}</span>
       </h2>
-      <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+      {/* No gap: the rows are slats, so the divider is what separates them. */}
+      <ul className="m-0 flex list-none flex-col p-0">
         {items.map((item) => (
           <GroceryRow key={item.id} item={item} onToggle={(checked) => onToggle(item, checked)} onEdit={(patch) => onEdit(item, patch)} onRemove={() => onRemove(item)} />
         ))}
