@@ -1,0 +1,16 @@
+{
+  // Repo-root scripts are run straight through Node's type stripping
+  // (`node scripts/build-food-lexicon.ts`), so nothing here is ever emitted.
+  // This file exists so type-aware oxlint can see them: without a tsconfig
+  // covering the directory every import resolves to `error` and the
+  // `no-unsafe-*` family reports the absence of types rather than a defect —
+  // the same problem `.oxlintrc.json`'s `**/*.mjs` override works around for
+  // the buildless dev scripts, solved here by actually typing the files.
+  "extends": "../tsconfig.base.json",
+  "include": ["**/*.ts", "../services/web/src/lib/grocery/**/*.ts"],
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "resolveJsonModule": true
+  }
+}

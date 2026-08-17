@@ -26,6 +26,7 @@ Before edit files for big task:
 
 - Generated, never hand-edit: `src/routeTree.gen.ts`, `src/db/types.ts` (kysely-codegen), `src/lexicons/**` (from `lexicons/*.json` via `pnpm lex:build`).
 - Generated, never hand-edit: `services/web/public/fonts/**` + `services/web/src/fonts.css`, `services/docs/static/fonts/**` + `services/docs/src/css/fonts.css`. Brand webfont vendored local, no Google CDN. Change weight or refresh → edit + run `scripts/update-fonts.sh`.
+- Generated, never hand-edit: `services/web/src/lib/grocery/lexicon.json` (from Open Food Facts taxonomy via `node scripts/build-food-lexicon.ts`). Edit `scripts/food-aisle-map.ts`, `scripts/food-staples.ts`, `scripts/food-synonyms.ts` instead, then re-run script. Bump `SOURCE_COMMIT` in build script + regenerated JSON land same commit. ODbL derived data — `lexicon.LICENSE.md` beside it travel with it.
 - `src/db/migrations/` — never edit applied migration; always add new one.
 - `.railway/railway.ts` = infra source of truth. Edit it → `railway config plan` → `railway config apply`. Never hand-edit Railway dashboard state.
 - `lexicons/*.json` — vendored + hand-patched for strict lex-schema 0.2.2. Read `lexicons/PATCHES.md` before touch or re-pull; CID manifest not track patches.
