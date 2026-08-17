@@ -107,6 +107,51 @@ read and write against a second household's id.
 `clearCheckedGroceryItems` is an addition to §7's list: the end-of-trip sweep, which the
 list UI needs and which nothing else provides.
 
+## Phases 4 and 5 — the route, the components, the stubs
+
+`/household/list` follows `household.plan.tsx`: `useOptimistic` plus the
+"paint, send, reconcile" write helper, refetch-on-focus, its own toast viewport,
+and `?group=flat` as a pure client toggle kept out of `loaderDeps` (D15).
+
+D10's TTL is applied against the payload's `readAt` rather than a live clock, so
+a row checked mid-trip dims and stays put until reload. The optimistic patch
+stamps `max(Date.now(), readAt)` deliberately: a browser clock running behind the
+server would otherwise stamp a row _before_ the cutoff and make it vanish under
+the hand that just tapped it.
+
+`GroceryRow` is **not** `CheckboxRow`. The primitive bakes in the strike-through
+§8 forbids, and a remove button inside its `<label>` toggles the checkbox on the
+way to firing. The row is a label for checkbox+content with the icon actions as
+siblings — the practical maximum for "the whole row is the hit target".
+
+All five stubs are wired, plus the acknowledgements entry.
+
+### Deviation: where D3's multi-select lives
+
+The plan wanted multi-select of boxed recipes to "ride the existing recipe-index
+selection surfaces". Those are single-selection today — the ledger's `selected`
+is the current-page highlight — so honouring that literally meant rebuilding the
+primary recipes surface for a secondary feature. `RecipePickerDialog` lives on
+the list route instead, following `components/plan/AddEntryDialog.tsx`, which is
+the codebase's own precedent for picking N boxed recipes with `CheckboxRow`. All
+four D3 sources ship.
+
+### Two display fixes the browser found
+
+Neither would have failed a unit test, and both were visible within seconds of
+looking at a real list:
+
+1. **Preferring the lexicon's canonical name put `noodle` and `sauce` on a
+   shopping list.** Left-trim and span search reach a food by throwing words
+   away, and those words were the useful ones. The canonical name now wins only
+   on an outright (exact/singular) match; a fallback match keeps the recipe's
+   own wording.
+2. **Trimming prep clauses at the first comma turned `boneless, skinless chicken
+breasts` into `boneless`** — recipes comma-separate leading modifiers too.
+   The trim now asks which comma segment still resolves to the same food, which
+   picks `mushrooms` from `mushrooms, stems discarded, caps thickly sliced` and
+   `skinless chicken breasts` from the other shape.
+
 ## Phase 6 — calibration
 
 The sweep lives at `src/lib/grocery/calibrate.db.test.ts` as a **test**, not a one-off
@@ -154,6 +199,17 @@ seeder with deliberately clashing units across recipes (chicken breast in ounces
 pounds; butter in sticks, grams and tablespoons) so consolidation has something to merge.
 
 ---
+
+### Known limitations
+
+- **A generic head noun captures specific variants.** `marinara sauce` and
+  `pasta sauce` both resolve through `en:sauce` and therefore merge. This is
+  inherent to the head-noun matching the plan's cascade specifies, and the
+  display fix above at least keeps the row reading as whatever the first recipe
+  called it. A more specific lexicon entry is the fix for any pair that matters.
+- **The `frozen` aisle is nearly empty** (3 foods). The Open Food Facts taxonomy
+  classifies by what a food _is_, not how it is sold, so "frozen peas" lands in
+  produce. Fixing it properly means matching on the modifier, not the food.
 
 ## Open items
 
