@@ -66,7 +66,6 @@ export interface GroceryItemSourceRow {
 }
 
 export interface GroceryListPayload {
-  listId: string | null;
   items: GroceryItemRow[];
   /** Server time at read, so the client can apply the TTL without clock skew. */
   readAt: string;
@@ -409,15 +408,12 @@ export async function commitGroceryRows(db: Kysely<DB>, did: string, householdId
   const { sql } = await import("kysely");
 
   return db.transaction().execute(async (trx) => {
-    const listId = await ensureList(trx, householdId);
-
     // One read of the live rows, then every row in this commit decides against
     // it — a merge target found here is guaranteed live for the transaction.
     const liveRows = await trx
       .selectFrom("grocery_item")
       .select(["id", "food_slug", "name_norm", "unit_dim", "merge_unit", "quantity", "quantity_max", "unit"])
       .where("household_id", "=", householdId)
-      .where("list_id", "=", listId)
       .where("checked_at", "is", null)
       .forUpdate()
       .execute();
@@ -456,7 +452,6 @@ export async function commitGroceryRows(db: Kysely<DB>, did: string, householdId
         .values({
           id,
           household_id: householdId,
-          list_id: listId,
           food_slug: row.foodSlug,
           name_norm: row.nameNorm,
           display_name: row.displayName,
@@ -486,7 +481,6 @@ export async function commitGroceryRows(db: Kysely<DB>, did: string, householdId
       added += 1;
     }
 
-    await touchList(trx, listId, householdId);
     return { added, merged };
   });
 }
@@ -507,40 +501,6 @@ async function insertSources(db: Kysely<DB>, itemId: string, did: string, row: C
         added_by_did: did,
       })),
     )
-    .execute();
-}
-
-/**
- * The household's one live list, created on first use (plan D1). Racing adds
- * both try to insert; the unique index on `household_id` makes the loser's
- * insert a no-op and it re-reads the winner's row.
- */
-async function ensureList(db: Kysely<DB>, householdId: string): Promise<string> {
-  const { ulid } = await import("./household/ids");
-
-  const existing = await db.selectFrom("grocery_list").select("id").where("household_id", "=", householdId).executeTakeFirst();
-  if (existing) return existing.id;
-
-  const id = ulid();
-  const inserted = await db
-    .insertInto("grocery_list")
-    .values({ id, household_id: householdId })
-    .onConflict((oc) => oc.column("household_id").doNothing())
-    .returning("id")
-    .executeTakeFirst();
-  if (inserted) return inserted.id;
-
-  const raced = await db.selectFrom("grocery_list").select("id").where("household_id", "=", householdId).executeTakeFirstOrThrow();
-  return raced.id;
-}
-
-async function touchList(db: Kysely<DB>, listId: string, householdId: string): Promise<void> {
-  const { sql } = await import("kysely");
-  await db
-    .updateTable("grocery_list")
-    .set({ updated_at: sql`now()` })
-    .where("id", "=", listId)
-    .where("household_id", "=", householdId)
     .execute();
 }
 
@@ -634,15 +594,14 @@ export const getGroceryList = createServerFn({ method: "GET" }).handler(async ()
 export async function readGroceryList(db: Kysely<DB>, _did: string, householdId: string): Promise<GroceryListPayload> {
   const { sql } = await import("kysely");
 
-  const list = await db.selectFrom("grocery_list").select("id").where("household_id", "=", householdId).executeTakeFirst();
+  // No list row to look up first — a household with nothing on its list is one
+  // with no `grocery_item` rows, which the query below already reports.
   const readAt = new Date().toISOString();
-  if (!list) return { listId: null, items: [], readAt, checkedTtlSeconds: CHECKED_TTL_SECONDS };
 
   const items = await db
     .selectFrom("grocery_item")
     .select(["id", "food_slug", "display_name", "aisle", "quantity", "quantity_max", "unit", "unit_dim", "is_manual", "checked_at", "checked_by_did", "created_at"])
     .where("household_id", "=", householdId)
-    .where("list_id", "=", list.id)
     .where(sql<boolean>`checked_at is null or checked_at > now() - make_interval(secs => ${CHECKED_TTL_SECONDS})`)
     // `created_at` alone is NOT a total order here. It defaults to `now()`, which
     // in Postgres is the *transaction* timestamp, so every row written by one
@@ -656,7 +615,7 @@ export async function readGroceryList(db: Kysely<DB>, _did: string, householdId:
     .orderBy("id")
     .execute();
 
-  if (!items.length) return { listId: list.id, items: [], readAt, checkedTtlSeconds: CHECKED_TTL_SECONDS };
+  if (!items.length) return { items: [], readAt, checkedTtlSeconds: CHECKED_TTL_SECONDS };
 
   const [sources, handles] = await Promise.all([
     db
@@ -715,7 +674,7 @@ export async function readGroceryList(db: Kysely<DB>, _did: string, householdId:
   // non-deterministic.
   rows.sort((a, b) => aisleOrder(a.aisle) - aisleOrder(b.aisle));
 
-  return { listId: list.id, items: rows, readAt, checkedTtlSeconds: CHECKED_TTL_SECONDS };
+  return { items: rows, readAt, checkedTtlSeconds: CHECKED_TTL_SECONDS };
 }
 
 /**

@@ -91,7 +91,6 @@ async function reset(): Promise<void> {
     .where("item_id", "in", (qb) => qb.selectFrom("grocery_item").select("id").where("household_id", "in", HOUSEHOLDS))
     .execute();
   await db.deleteFrom("grocery_item").where("household_id", "in", HOUSEHOLDS).execute();
-  await db.deleteFrom("grocery_list").where("household_id", "in", HOUSEHOLDS).execute();
 }
 
 /** Live rows of a household's list, in insertion order. */
@@ -202,19 +201,11 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
   describe("CHECK constraints reject malformed rows", () => {
     /** Bypasses every app-side validator on purpose — these are the DB's job. */
     async function insertRaw(values: Record<string, unknown>) {
-      const listId = ulid();
-      await db!
-        .insertInto("grocery_list")
-        .values({ id: listId, household_id: HH_A })
-        .onConflict((oc) => oc.column("household_id").doNothing())
-        .execute();
-      const live = await db!.selectFrom("grocery_list").select("id").where("household_id", "=", HH_A).executeTakeFirstOrThrow();
       return db!
         .insertInto("grocery_item")
         .values({
           id: ulid(),
           household_id: HH_A,
-          list_id: live.id,
           name_norm: "thing",
           display_name: "Thing",
           aisle: "produce",
@@ -243,19 +234,25 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
 
   // --- one list per household --------------------------------------------
 
-  describe("one running list per household (D1)", () => {
-    it("creates the list on first commit and reuses it after", async () => {
-      await addBothChickenRecipes();
-      await addBothChickenRecipes();
-
-      const lists = await db!.selectFrom("grocery_list").select("id").where("household_id", "=", HH_A).execute();
-      expect(lists).toHaveLength(1);
+  describe("the household IS the list (D1)", () => {
+    it("reads an empty list for a household that has never added anything, and creates nothing", async () => {
+      // There is no `grocery_list` row to find or mint: a household with an
+      // empty list is one with no `grocery_item` rows. This used to short
+      // circuit on a missing list row; now the query simply comes back empty.
+      const payload = await grocery.readGroceryList(db!, DID_B, HH_B);
+      expect(payload.items).toEqual([]);
+      expect(await itemsOf(HH_B)).toHaveLength(0);
     });
 
-    it("refuses a second list row outright", async () => {
-      await db!.insertInto("grocery_list").values({ id: ulid(), household_id: HH_A }).execute();
-      const error = await expectRejects(() => db!.insertInto("grocery_list").values({ id: ulid(), household_id: HH_A }).execute());
-      expect(error.code).toBe("23505");
+    it("accumulates every add onto the one set of household rows", async () => {
+      await addBothChickenRecipes();
+      const first = await itemsOf(HH_A);
+      await addBothChickenRecipes();
+      const second = await itemsOf(HH_A);
+
+      // Same rows, re-totalled — a second add cannot fork a household's list,
+      // because there is nothing for it to fork into.
+      expect(second.map((row) => row.id)).toEqual(first.map((row) => row.id));
     });
   });
 
@@ -335,7 +332,6 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
     it("refuses a second LIVE row for the same identity", async () => {
       await addBothChickenRecipes();
       const chicken = (await itemsOf(HH_A)).find((item) => item.food_slug === "en:chicken-breast")!;
-      const list = await db!.selectFrom("grocery_list").select("id").where("household_id", "=", HH_A).executeTakeFirstOrThrow();
 
       const error = await expectRejects(() =>
         db!
@@ -343,7 +339,6 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
           .values({
             id: ulid(),
             household_id: HH_A,
-            list_id: list.id,
             food_slug: chicken.food_slug,
             name_norm: chicken.name_norm,
             display_name: "Chicken again",
@@ -377,7 +372,6 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
 
     it("keeps two different unit dimensions of the same food as two live rows (D5)", async () => {
       await addBothChickenRecipes();
-      const list = await db!.selectFrom("grocery_list").select("id").where("household_id", "=", HH_A).executeTakeFirstOrThrow();
 
       // Same food, `count` instead of `mass` — legal, and a separate row.
       await expect(
@@ -386,7 +380,6 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
           .values({
             id: ulid(),
             household_id: HH_A,
-            list_id: list.id,
             food_slug: "en:chicken-breast",
             name_norm: "chicken breast",
             display_name: "2 chicken breasts",
@@ -470,9 +463,6 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
      * "insertion order" would otherwise be an assertion about the clock.
      */
     async function seedTiedRows(count = 8): Promise<string[]> {
-      const listId = ulid();
-      await db!.insertInto("grocery_list").values({ id: listId, household_id: HH_A }).execute();
-
       const base = Date.now();
       const ids = Array.from({ length: count }, (_, index) => ulid(base + index * 1000));
       await db!.transaction().execute(async (trx) => {
@@ -482,7 +472,6 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
             ids.map((id, index) => ({
               id,
               household_id: HH_A,
-              list_id: listId,
               name_norm: `thing-${index}`,
               display_name: `Thing ${index}`,
               aisle: "produce",
@@ -632,7 +621,6 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
       const a = await grocery.readGroceryList(db!, DID_A, HH_A);
       const b = await grocery.readGroceryList(db!, DID_B, HH_B);
 
-      expect(a.listId).not.toBe(b.listId);
       const aChicken = a.items.find((item) => item.foodSlug === "en:chicken-breast")!;
       const bChicken = b.items.find((item) => item.foodSlug === "en:chicken-breast")!;
       // A has 1 lb + 8 oz; B has only 1 lb. Neither can see the other's total.

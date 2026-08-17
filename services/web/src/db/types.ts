@@ -106,7 +106,6 @@ export interface GroceryItem {
   household_id: string;
   id: string;
   is_manual: Generated<boolean>;
-  list_id: string;
   merge_unit: string | null;
   name_norm: string;
   quantity: Numeric | null;
@@ -126,13 +125,6 @@ export interface GroceryItemSource {
   raw_text: string;
   recipe_id: string | null;
   scale: Generated<Numeric>;
-}
-
-export interface GroceryList {
-  created_at: Generated<Timestamp>;
-  household_id: string;
-  id: string;
-  updated_at: Generated<Timestamp>;
 }
 
 export interface Household {
@@ -420,7 +412,6 @@ export interface DB {
   atproto_sync_run: AtprotoSyncRun;
   grocery_item: GroceryItem;
   grocery_item_source: GroceryItemSource;
-  grocery_list: GroceryList;
   household: Household;
   household_invite: HouseholdInvite;
   household_member: HouseholdMember;

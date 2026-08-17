@@ -36,7 +36,7 @@ function item(id: string, overrides: Partial<GroceryItemRow> = {}): GroceryItemR
 }
 
 function makeList(items: GroceryItemRow[]): GroceryListPayload {
-  return { listId: "list-1", items, readAt: READ_AT, checkedTtlSeconds: TTL };
+  return { items, readAt: READ_AT, checkedTtlSeconds: TTL };
 }
 
 /** An offset from `READ_AT`, in minutes. */

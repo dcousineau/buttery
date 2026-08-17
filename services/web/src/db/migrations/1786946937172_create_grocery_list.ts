@@ -3,9 +3,19 @@ import { type Kysely, sql } from "kysely";
 /**
  * The consolidated household grocery list (grocery-list plan §6).
  *
- * Three tables, one logical unit, one migration: a list, its items, and the
- * contributions that produced each item. They are created together because none
- * of them means anything alone and the FKs run straight through.
+ * Two tables, one logical unit, one migration: the household's items and the
+ * contributions that produced each one. They are created together because
+ * neither means anything alone and the FK runs straight through.
+ *
+ * ── Why there is no `grocery_list` table ────────────────────────────────────
+ *
+ * There is exactly one running list per household (plan D1) — not per week, not
+ * named, not ephemeral. A table whose every row is `(id, household_id)` in
+ * one-to-one correspondence with `household` stores nothing that
+ * `grocery_item.household_id` does not already say. It bought a `list_id` FK, a
+ * uniqueness index to enforce the one-to-one, a create-on-first-use dance with a
+ * race to lose, and an `updated_at` nobody read. `household_id` IS the list
+ * identity, so every index and every WHERE keys on it directly.
  *
  * ── Why quantities live here and not on `recipe_ingredient` ──────────────────
  *
@@ -64,28 +74,13 @@ const UNIT_DIMS = sql`unit_dim is null or unit_dim in ('volume','mass','count')`
 
 // oxlint-disable-next-line typescript/no-explicit-any
 export async function up(db: Kysely<any>): Promise<void> {
-  // --- grocery_list -------------------------------------------------------
-  // Exactly one running list per household (plan D1). Not per-week, not named,
-  // not ephemeral — adding a source merges into the live list. The unique index
-  // on `household_id` is what makes "the list" a well-defined phrase.
-  await db.schema
-    .createTable("grocery_list")
-    .addColumn("id", "text", (col) => col.primaryKey()) // app-minted ULID (server/household/ids.ts)
-    .addColumn("household_id", "text", (col) => col.notNull().references("household.id").onDelete("cascade"))
-    .addColumn("created_at", "timestamptz", (col) => col.notNull().defaultTo(now))
-    .addColumn("updated_at", "timestamptz", (col) => col.notNull().defaultTo(now))
-    .execute();
-
-  await db.schema.createIndex("grocery_list_household_key").on("grocery_list").column("household_id").unique().execute();
-
   // --- grocery_item -------------------------------------------------------
   await db.schema
     .createTable("grocery_item")
     .addColumn("id", "text", (col) => col.primaryKey()) // app-minted ULID
-    // `household_id` is carried alongside `list_id` so every write can re-assert
-    // it in its WHERE without a join, the same way `meal_plan_entry` does.
+    // The household IS the list (see the header). Every write re-asserts this in
+    // its WHERE without a join, the same way `meal_plan_entry` does.
     .addColumn("household_id", "text", (col) => col.notNull().references("household.id").onDelete("cascade"))
-    .addColumn("list_id", "text", (col) => col.notNull().references("grocery_list.id").onDelete("cascade"))
     .addColumn("food_slug", "text") // Open Food Facts id; null when unmatched
     .addColumn("name_norm", "text", (col) => col.notNull()) // identity fallback + display key
     .addColumn("display_name", "text", (col) => col.notNull()) // what the user sees; editable
@@ -110,13 +105,14 @@ export async function up(db: Kysely<any>): Promise<void> {
   // because this is a partial unique index over expressions.
   await sql`
     create unique index grocery_item_live_identity_key
-      on grocery_item (list_id, coalesce(food_slug, name_norm), coalesce(unit_dim, ''), coalesce(merge_unit, ''))
+      on grocery_item (household_id, coalesce(food_slug, name_norm), coalesce(unit_dim, ''), coalesce(merge_unit, ''))
       where checked_at is null
   `.execute(db);
 
   // The list read is a single scan of one household's live-or-recently-checked
-  // rows in canonical aisle order.
-  await db.schema.createIndex("grocery_item_list_idx").on("grocery_item").columns(["household_id", "list_id", "aisle"]).execute();
+  // rows in canonical aisle order. Named for what it now keys on: there is no
+  // list to be an index "on".
+  await db.schema.createIndex("grocery_item_household_aisle_idx").on("grocery_item").columns(["household_id", "aisle"]).execute();
 
   // --- grocery_item_source ------------------------------------------------
   // One row per contributing ingredient line. `recipe_id` is nullable and set
@@ -144,5 +140,4 @@ export async function up(db: Kysely<any>): Promise<void> {
 export async function down(db: Kysely<any>): Promise<void> {
   await db.schema.dropTable("grocery_item_source").ifExists().execute();
   await db.schema.dropTable("grocery_item").ifExists().execute();
-  await db.schema.dropTable("grocery_list").ifExists().execute();
 }

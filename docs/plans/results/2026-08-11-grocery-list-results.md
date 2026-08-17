@@ -107,6 +107,21 @@ read and write against a second household's id.
 `clearCheckedGroceryItems` is an addition to §7's list: the end-of-trip sweep, which the
 list UI needs and which nothing else provides.
 
+### Deviation: there is no `grocery_list` table
+
+§6 specced three tables. Two shipped. There is exactly one running list per household
+(D1), so a table whose every row is `(id, household_id)` in one-to-one correspondence with
+`household` stored nothing `grocery_item.household_id` did not already say. It bought a
+`list_id` FK, a uniqueness index to enforce the one-to-one, a create-on-first-use dance
+with a race to lose, and an `updated_at` nobody read. `household_id` **is** the list
+identity, so the live-identity index and every WHERE key on it directly.
+
+Removed by editing the original migration rather than adding a drop, and rebuilding the
+dev volume from scratch. `AGENTS.md` says never to edit an applied migration — that rule
+protects migrations that have run somewhere real, and this one exists only on an unmerged
+branch, so shipping a create-then-drop pair would have left a table in history that never
+usefully existed. Anyone with the old schema locally needs `docker compose down -v`.
+
 ## Phases 4 and 5 — the route, the components, the stubs
 
 `/household/list` follows `household.plan.tsx`: `useOptimistic` plus the
