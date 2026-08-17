@@ -33,6 +33,14 @@ function AcknowledgementsPage() {
           <LegalLink href="https://creativecommons.org/publicdomain/zero/1.0/">CC0 1.0 (public domain)</LegalLink>. CC0 requires <strong>no</strong> attribution; we credit the
           source here voluntarily, with thanks.
         </li>
+        <li>
+          <strong>Food lexicon</strong> — the shopping list decides what an ingredient is and which aisle it belongs in using a lexicon generated from the{" "}
+          <LegalLink href="https://world.openfoodfacts.org/">Open Food Facts</LegalLink> ingredients taxonomy, published under the{" "}
+          <LegalLink href="https://opendatacommons.org/licenses/odbl/1-0/">Open Database License (ODbL) 1.0</LegalLink>. Our lexicon is a <strong>derived database</strong> under
+          that license — it reuses their food identifiers, English names and hierarchy, and adds our own aisle assignments on top — and is offered under the ODbL in turn. The
+          generated file ships with its own notice recording the exact source revision. Open Food Facts is a collaborative project, and the shopping list would not work without the
+          years of volunteer work behind that taxonomy.
+        </li>
       </ul>
 
       <h2>The foundations</h2>

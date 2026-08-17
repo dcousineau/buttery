@@ -4,6 +4,7 @@ import * as z from "zod";
 import type { DB } from "#/db/types";
 import { AISLES, type Aisle, aisleOrder, toAisle } from "#/lib/grocery/aisles";
 import type { MergedRow } from "#/lib/grocery/merge";
+import type { UnitDim } from "#/lib/grocery/units";
 // `units.ts` is pure, tiny and carries no lexicon, so it is a static import
 // while `categorize.ts` and `merge.ts` stay dynamic to keep the JSON lazy.
 import { renderQuantity } from "#/lib/grocery/units";
@@ -85,7 +86,13 @@ export interface GroceryPreviewRow {
   quantityMax: number | null;
   quantityDisplay: string | null;
   unit: string | null;
-  unitDim: string;
+  /**
+   * Not `string`: a preview row is handed straight back to `commitGroceryAdd`,
+   * whose validator only accepts the three real dimensions. Widening this to
+   * `string` makes that round trip fail to typecheck, which is exactly what
+   * `grocery.db.test.ts` caught.
+   */
+  unitDim: UnitDim;
   mergeUnit: string | null;
   /** Shown but unchecked by default (plan D9). */
   isStaple: boolean;
