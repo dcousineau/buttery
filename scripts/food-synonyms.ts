@@ -41,7 +41,6 @@ export const EXTRA_SYNONYMS: Record<string, string[]> = {
   "en:aubergine": ["eggplant", "eggplants"],
   "en:chickpea": ["garbanzo bean", "garbanzo beans", "chick peas"],
   "en:coriander-seed": ["ground coriander"],
-  "en:chili-pepper": ["chile", "chiles", "chilli", "red pepper flakes", "crushed red pepper"],
   "en:tomato-puree": ["tomato paste", "tomato concentrate"],
   "en:peeled-tomatoes": ["crushed tomatoes", "diced tomatoes", "chopped tomatoes", "tinned tomatoes", "canned tomatoes"],
   "en:broth": ["chicken broth", "vegetable broth", "beef broth", "chicken stock", "vegetable stock", "beef stock"],
@@ -70,6 +69,12 @@ export const EXTRA_SYNONYMS: Record<string, string[]> = {
   "en:peanut-butter": ["creamy peanut butter", "crunchy peanut butter"],
   "en:egg": ["large egg", "large eggs", "eggs"],
   "en:milk": ["whole milk", "skim milk", "2% milk"],
+
+  // Closing the gaps the calibration sweep surfaced against the real corpus.
+  "en:beef-steak": ["flank steak", "skirt steak", "sirloin steak", "steak"],
+  "en:chili-pepper": ["chile", "chiles", "chilli", "red pepper flakes", "crushed red pepper", "jalapeno", "jalapenos", "serrano", "poblano", "habanero"],
+  "en:pasta": ["bucatini", "ziti", "rigatoni", "penne", "fusilli", "orecchiette", "linguine", "tagliatelle"],
+  "en:bacon": ["guanciale", "pancetta", "lardons"],
 };
 
 /**
@@ -86,6 +91,15 @@ export const EXTRA_FOODS: Record<string, { names: string[]; aisle: Aisle; staple
     names: ["cooking spray", "nonstick cooking spray", "non-stick spray"],
     aisle: "pantry",
     staple: true,
+  },
+  "buttery:amchur": {
+    names: ["amchur", "amchoor", "dried mango powder", "mango powder"],
+    aisle: "spices",
+    staple: true,
+  },
+  "buttery:chili-crisp": {
+    names: ["chili crisp", "chile crisp", "chilli crisp"],
+    aisle: "pantry",
   },
   "buttery:half-and-half": {
     names: ["half and half", "half-and-half"],

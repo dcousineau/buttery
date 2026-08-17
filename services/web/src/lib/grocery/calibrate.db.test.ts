@@ -1,4 +1,6 @@
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import { describe, expect, it } from "vitest";
@@ -30,7 +32,12 @@ import { parseIngredientLine } from "./parse";
  * a build artifact.
  */
 
-const REPORT = ".dev-logs/grocery-calibration.md";
+/**
+ * Resolved from this module rather than `process.cwd()`: vitest runs with the
+ * package as its working directory, so a repo-root-relative path silently wrote
+ * nothing and the report looked like it had never run.
+ */
+const REPORT = join(dirname(fileURLToPath(import.meta.url)), "../../../../../.dev-logs/grocery-calibration.md");
 
 /** Plan §9: "Target ≥ 90% of lines resolving to a `food_slug`." */
 const TARGET_MATCH_RATE = 0.9;
@@ -132,6 +139,7 @@ function writeReport(swept: Swept[], rate: number): void {
   ];
 
   try {
+    mkdirSync(dirname(REPORT), { recursive: true });
     writeFileSync(REPORT, lines.join("\n"));
   } catch {
     // The report is a convenience, not the test. A missing .dev-logs directory

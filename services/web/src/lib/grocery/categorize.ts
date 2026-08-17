@@ -10,7 +10,8 @@
  * 1. Normalized exact lookup.
  * 2. Naive singularization, retry.
  * 3. Left-trim modifiers — drop leading tokens one at a time and retry.
- * 4. Head-noun suffix match — the longest lexicon name that ends the phrase.
+ * 4. Longest contiguous token span that is a known food (subsumes head-noun
+ *    suffix matching, and reaches trailing prep clauses left-trim cannot).
  * 5. Fuzzy, dice coefficient over bigrams, at a **deliberately high threshold**.
  * 6. Miss.
  *
@@ -91,14 +92,13 @@ export function setLexicon(lexicon: Lexicon): void {
   loading = Promise.resolve(lexicon);
 }
 
-/** Suffix and fuzzy passes need the index keys as an array; build it once. */
+/** The fuzzy pass needs the index keys bucketed by first letter; build once. */
 const keyCache = new WeakMap<Lexicon, { keys: string[]; byFirstLetter: Map<string, string[]> }>();
 
 function indexKeys(lexicon: Lexicon): { keys: string[]; byFirstLetter: Map<string, string[]> } {
   const hit = keyCache.get(lexicon);
   if (hit) return hit;
 
-  // Longest first, so the suffix pass finds `chicken breast` before `breast`.
   const keys = Object.keys(lexicon.index).sort((a, b) => b.length - a.length);
   const byFirstLetter = new Map<string, string[]>();
   for (const key of keys) {
@@ -160,24 +160,37 @@ export function categorizeWith(lexicon: Lexicon, rawName: string): FoodMatch {
     if (hit) return resolve(lexicon, hit, nameNorm, "trimmed");
   }
 
-  const { keys, byFirstLetter } = indexKeys(lexicon);
+  const { byFirstLetter } = indexKeys(lexicon);
 
-  // 4. head-noun suffix: the longest lexicon name that ends this phrase.
+  // 4. Longest contiguous token span that is a known food.
   //
-  //    Step 3 already covers most suffixes, since trimming leading tokens and
-  //    looking each remainder up *is* a longest-suffix search. What it cannot
-  //    reach is a lexicon entry whose own name is plural, because step 3 works
-  //    on the singularized phrase: `canned peeled tomatoes` singularizes to
-  //    `… peeled tomato`, and the entry is `peeled tomatoes`. So this pass runs
-  //    over the ORIGINAL normalized name as well as the singularized one.
+  //    Step 3 trims from the left, which reaches a head noun buried under
+  //    modifiers. What it cannot reach is anything with words AFTER the food,
+  //    and calibration against the real corpus showed that is the single
+  //    biggest source of misses: `garlic, smashed`, `ripe tomatoes, cut into
+  //    large chunks`, `feta, crumbled`. Normalization has already turned those
+  //    commas into spaces by the time we get here, so the trailing clause looks
+  //    exactly like more of the name.
   //
-  //    The leading space in the test is what keeps the suffix on a word
-  //    boundary — without it `bean` would match inside `soybean`.
-  for (const key of keys) {
-    for (const phrase of key.length < nameNorm.length ? [nameNorm, singular] : [singular]) {
-      if (key.length >= phrase.length) continue;
-      if (phrase.endsWith(` ${key}`)) {
-        const hit = lexicon.index[key];
+  //    Enumerating every prep participle in `parse.ts` would be a losing game —
+  //    recipes write "stems discarded, caps thickly sliced". Searching spans
+  //    instead asks the lexicon rather than a word list, and it subsumes the
+  //    head-noun suffix case the plan specified.
+  //
+  //    Longest length first, and within a length LEFT to right. Longest-first is
+  //    what makes `boneless skinless chicken thighs cut into pieces` find
+  //    `chicken thigh` at length 2 rather than falling back to `thigh`.
+  //    Left-to-right is what keeps a prep word from winning: scanning from the
+  //    right, `sweet Italian sausage, casings removed` matched `en:casing`
+  //    before it ever reached `sausage`. Leading modifiers are step 3's job, so
+  //    by the time we are here the food is to the LEFT of the junk.
+  for (const phrase of nameNorm === singular ? [singular] : [singular, nameNorm]) {
+    const tokens = phrase.split(" ");
+    if (tokens.length < 2) continue;
+    for (let length = tokens.length - 1; length >= 1; length--) {
+      for (let start = 0; start + length <= tokens.length; start++) {
+        const span = tokens.slice(start, start + length).join(" ");
+        const hit = lexicon.index[span] ?? lexicon.index[singularizePhrase(span)];
         if (hit) return resolve(lexicon, hit, nameNorm, "suffix");
       }
     }
