@@ -9,50 +9,41 @@ The repo-side pieces are already committed: `optimizeDeps.exclude` for the
 native resvg binding ([`services/web/vite.config.ts`](../services/web/vite.config.ts)),
 and the Playwright MCP's browser wiring
 ([`.mcp.json.example`](../.mcp.json.example) +
-[`scripts/dev/render-mcp.mjs`](../scripts/dev/render-mcp.mjs)). What remains
-lives in the environment console: a **`PATH`** entry, the **setup script**, and
-the **domain allowlist**.
+[`scripts/dev/render-mcp.mjs`](../scripts/dev/render-mcp.mjs)), and the brand
+faces are self-hosted so nothing fetches type from a CDN. What remains lives in
+the environment console: the **setup script** and the **domain allowlist**.
 
-## 1. `PATH` must start with the mise shims
+## 1. Getting the pinned toolchain onto the agent's `PATH`
 
-**This is the one thing that still hard-blocks a session.** The base image ships
-Node 22 at `/opt/node22/bin`; `package.json` declares `devEngines.runtime` `^26`
-with `onFail: error`, so under the base image's Node every `pnpm install` dies:
+The base image ships Node 22 at `/opt/node22/bin`; `package.json` declares
+`devEngines.runtime` `^26` with `onFail: error`, so under the base image's Node
+every `pnpm install` dies:
 
 ```
 [ERROR] This project requires Node.js ^26. Your current Node.js is v22.22.2
 ```
 
-The setup script's `/etc/profile.d/zzz-mise.sh` + `/etc/bash.bashrc` fix login
-and interactive shells — verified, a login shell reports `v26.7.0`. But the
-shell the agent's tools actually run in is **non-login and non-interactive**
-(`bash -c …`), and it reads neither file. There:
+`/etc/profile.d/zzz-mise.sh` + `/etc/bash.bashrc` fix login and interactive
+shells, but the shell the agent's tools actually run in is **non-login and
+non-interactive** (`bash -c …`) and reads neither file. There, `node` resolves
+to v22, `process-compose` / `railway` aren't found at all, and the inherited
+`mise` shell function is broken (it references `$__MISE_EXE`, unset in these
+shells, so `mise <anything>` reports `command not found` even though
+`/usr/bin/mise` exists).
 
-- `node` resolves to `/opt/node22/bin/node` (v22), and `process-compose` /
-  `railway` aren't found at all — they exist only in the shims dir.
-- The inherited `mise` **shell function** is broken: it references
-  `$__MISE_EXE`, unset in these shells, so `mise <anything>` fails with
-  `command not found` even though `/usr/bin/mise` exists.
-
-The only lever that reaches those shells is the environment's own `PATH`. It
-can't interpolate, so hardcode the shims directory at the **front**:
-
-```
-/root/.local/share/mise/shims
-```
-
-In this image `HOME=/root` and `MISE_DATA_DIR` is unset, so that's where mise
-puts them. Ahead of `/opt/node22/bin` it makes node@26 and pnpm@11 win in every
-shell, and calling the real shim executables sidesteps the broken `mise`
-function. Until it's set, every command in a cloud session has to be wrapped in
-`bash -lc '…'` — including `git commit`, which runs lint-staged through the
-husky hook and fails the same way.
+The fix is the **shim symlinks** block in the setup script below. `$HOME/.local/bin`
+is already first on the `PATH` these shells inherit, so linking each mise shim
+into it puts node@26 ahead of `/opt/node22/bin` everywhere — including
+`bash -c`, which is what a `PATH` environment entry would otherwise be needed
+for. Verified: a plain `bash -c 'node --version'` in the repo reports `v26.7.0`
+and `pnpm install` succeeds with no wrapper. Outside a mise project the shims
+fall through to the system Node, so nothing else on the box changes.
 
 ## 2. Setup script
 
 Generic — default `mise` plus system setup, no repo-specific commands, so it
-works for any mise repo. The one change from the script currently set in the
-environment is the browser trust store block.
+works for any mise repo. Two blocks differ from the script currently set in the
+environment: the shim symlinks (section 1) and the browser trust store.
 
 ```bash
 #!/bin/bash
@@ -114,6 +105,21 @@ cd "$REPO_DIR"
 mise trust
 mise install --yes || echo "WARN: some tools failed to install (see above)"
 
+# Reach the agent's non-login `bash -c` tool shells, which read no profile at
+# all. $HOME/.local/bin is already first on the PATH they inherit, so linking
+# every mise shim into it makes the pinned node/pnpm/etc win there without any
+# environment PATH setting. Runs after `mise install` so the shims exist. Shims
+# fall through to the system tool outside a mise project, so this is safe
+# box-wide. Re-run the script after adding a tool to pick up its new shim.
+SHIMS="${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims"
+if [ -d "$SHIMS" ]; then
+  mkdir -p "$HOME/.local/bin"
+  for shim in "$SHIMS"/*; do
+    [ -x "$shim" ] || continue
+    ln -sf "$shim" "$HOME/.local/bin/$(basename "$shim")"
+  done
+fi
+
 # NOTE: no `playwright install` here. The base image pre-bakes Chromium and its
 # system libs under $PLAYWRIGHT_BROWSERS_PATH (/opt/pw-browsers), and
 # scripts/dev/render-mcp.mjs pins the MCP to that binary — nothing to download.
@@ -127,27 +133,20 @@ mise install --yes || echo "WARN: some tools failed to install (see above)"
 
 ## 3. Domain allowlist
 
-### Blocked in the browser
+### In the browser: nothing
 
-Captured by loading `/` and `/login` through the Playwright MCP and dumping the
-network log for non-loopback hosts. The Google Fonts pair is the **only**
-off-box request the app makes from the browser:
+Loading `/` and `/login` through the Playwright MCP and dumping the network log
+for non-loopback hosts now returns an empty list — the app makes **no** off-box
+request from the browser, and no request fails.
 
-- **`fonts.googleapis.com`** — `services/web/src/styles.css` (and the docs
-  site's `custom.css`) `@import`s the Alfa Slab One + Rubik stylesheet. In the
-  browser that request is reset (`net::ERR_CONNECTION_RESET`) — the one failed
-  request on both pages. The proxy logs no policy denial for it, and the same
-  URL fetches 200 from `curl`, so the failure is browser-path-specific.
-- **`fonts.gstatic.com`** — needed alongside it. The stylesheet resolves its
-  `src: url(…)` woff2 files there. It never surfaces as a _failed_ request only
-  because the CSS is reset before the browser can parse it; unblocking one
-  without the other still leaves the fonts unloaded.
-
-Impact is **cosmetic**: the page falls back to system faces and otherwise
-renders and works. Allowlist the pair if screenshots need to be pixel-accurate.
-Nothing server-side depends on the CDN — the OG card renderer vendors both
-families as bytes (`services/web/src/server/og/fonts/`, deliberately, because
-Satori can't read woff2), so OG images rasterize with correct type either way.
+It used to make one. `styles.css` and the docs site's `custom.css` `@import`ed
+the Alfa Slab One + Rubik stylesheet from `fonts.googleapis.com`, and in the
+browser that request was reset (`net::ERR_CONNECTION_RESET`) even though the
+same URL fetched 200 from `curl` and the proxy logged no policy denial for it —
+so pages rendered in fallback system faces. Both faces are now
+[self-hosted](../scripts/update-fonts.sh) out of `/fonts/`, which closes that
+gap wherever the CDN is blocked, and drops a third-party request per visitor
+everywhere else. Neither Google Fonts host needs to be allowlisted.
 
 ### Blocked during provisioning / MCP startup
 

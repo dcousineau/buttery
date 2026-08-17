@@ -25,6 +25,7 @@ Before edit files for big task:
 ## Sensitive Areas
 
 - Generated, never hand-edit: `src/routeTree.gen.ts`, `src/db/types.ts` (kysely-codegen), `src/lexicons/**` (from `lexicons/*.json` via `pnpm lex:build`).
+- Generated, never hand-edit: `services/web/public/fonts/**` + `services/web/src/fonts.css`, `services/docs/static/fonts/**` + `services/docs/src/css/fonts.css`. Brand webfont vendored local, no Google CDN. Change weight or refresh → edit + run `scripts/update-fonts.sh`.
 - `src/db/migrations/` — never edit applied migration; always add new one.
 - `.railway/railway.ts` = infra source of truth. Edit it → `railway config plan` → `railway config apply`. Never hand-edit Railway dashboard state.
 - `lexicons/*.json` — vendored + hand-patched for strict lex-schema 0.2.2. Read `lexicons/PATCHES.md` before touch or re-pull; CID manifest not track patches.
@@ -50,7 +51,8 @@ Before edit files for big task:
 
 - Claude Code command sandbox block dev DB host and `localhost:3000`. Anything that connect (`db:migrate:up/down/list`, `db:codegen`, DB tests) must run via `!` in prompt or sandbox-disabled. `db:migrate:new` connect to nothing — always run direct. Verify pages via Chrome MCP, not `curl`.
 - `pnpm install`/`add` fail in sandbox — run sandbox-disabled, with `CI=true`, plus `--no-frozen-lockfile` after edit package.json.
-- Cloud session (Claude Code on web): read `docs/CLAUDE.md` first. It hold env `PATH` fix, setup script, domain allowlist, how Playwright MCP find browser, and why webfont no load in browser there.
+- Cloud session (Claude Code on web): read `docs/CLAUDE.md` first — setup script, domain allowlist, how Playwright MCP find browser.
+- Cloud session, `node --version` say v22 (not v26) → setup script no finish. Fix self, no wait: `ln -sf "$HOME/.local/share/mise/shims"/* "$HOME/.local/bin/"` (that dir already first on PATH). Stopgap = wrap command in `bash -lc '…'`. Same break hit `git commit` (husky hook).
 - Node older than 26 → pnpm refuse install (`devEngines.runtime`). Fix = `mise install`, no bypass. Bypass need it anyway: use transient `--runtime-on-fail=ignore`. NEVER `--config.runtime-on-fail=ignore` — that one write `onFail: "ignore"` into package.json.
 - Global element CSS MUST live in `@layer base` — unlayered rules beat Tailwind utilities. `cursor: pointer` counter-rule for Tailwind v4 preflight live there too; no remove it.
 - Browse dev at `http://127.0.0.1:3000`, never `localhost` — atproto forbid `.localhost` in web client_ids, so OAuth and session cookies bind to loopback.
