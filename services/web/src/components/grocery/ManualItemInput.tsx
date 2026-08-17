@@ -74,9 +74,21 @@ export function ManualItemInput({ onAdded, onError, className }: ManualItemInput
         disabled={pending}
         maxLength={200}
       />
-      <Button type="submit" size="lg" disabled={pending || text.trim() === ""}>
+      {/*
+        Icon-only on a phone. The field is the point of this row and the label
+        was eating width it needed; a `+` next to a text box that says "Add an
+        item" is not ambiguous.
+
+        The label stays in the DOM rather than becoming an `aria-label`, so the
+        button's accessible name is the same string at every width and screen
+        readers never hear a different control on a narrower screen. `sr-only`
+        takes it out of flow, so the flex `gap` collapses with it and the
+        `max-md:px-2.5` override lands the button on a square 36px — matching
+        the `h-9` field beside it without hand-setting a height.
+      */}
+      <Button type="submit" size="lg" className="max-md:px-2.5" disabled={pending || text.trim() === ""}>
         <Plus data-icon="inline-start" aria-hidden="true" />
-        {pending ? "Adding…" : "Add"}
+        <span className="sr-only md:not-sr-only">{pending ? "Adding…" : "Add"}</span>
       </Button>
     </form>
   );
