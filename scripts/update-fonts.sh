@@ -6,7 +6,7 @@
 #
 # Why vendored: an `@import url("https://fonts.googleapis.com/…")` is a hard
 # runtime dependency on a CDN that is blocked in some networks (Claude Code cloud
-# sessions among them — see docs/CLAUDE.md), and it leaks a request per visitor
+# sessions among them — see docs/CLAUDE_CLOUD.md), and it leaks a request per visitor
 # to a third party. The server-side OG renderer already vendors the same two
 # families as TTF for the same reason (services/web/src/server/og/fonts/).
 #
