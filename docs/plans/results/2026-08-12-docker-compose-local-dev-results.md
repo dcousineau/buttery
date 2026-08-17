@@ -80,8 +80,10 @@ Postgres image is on ghcr and pulled fine — hence the real Postgres boot +
 migration above — but `redis:8.2.1` (Docker Hub) could not be pulled, so Redis
 and everything gated on it (the `web` server) were not booted in this
 environment. This is an environment limitation, not a stack defect; see
-`FEEDBACK.md`. On a machine with normal Docker Hub access, `pnpm dev` should
-bring the whole stack up.
+[docs/CLAUDE.md](../../CLAUDE.md). On a machine with normal Docker Hub access,
+`pnpm dev` should bring the whole stack up. _(Since resolved: both registries
+pull in cloud sessions and the full stack — Redis and `web` included — has been
+booted and verified there.)_
 
 ## Follow-ups / notes
 
