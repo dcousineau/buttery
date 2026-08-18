@@ -15,9 +15,9 @@
   },
   "dependencies": {
     "@buttery/recipe-schemas": "workspace:*",
-    "dayjs": "^1.11.21",
+    "dayjs": "^1.11.22",
     "es-toolkit": "^1.50.0",
-    "pg": "^8.22.0"
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
