@@ -1,10 +1,11 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { startTransition, useCallback, useEffect, useOptimistic, useRef, useState } from "react";
-import { BookOpenText, CalendarRange, Check, EllipsisVertical, Trash2 } from "lucide-react";
+import { BookOpenText, CalendarRange, Check, EllipsisVertical, ListX, Trash2 } from "lucide-react";
 import {
   type GroceryItemRow,
   type GroceryListPayload,
-  clearCheckedGroceryItems,
+  clearAllGroceryItems,
+  clearPurchasedGroceryItems,
   deleteAllGroceryItems,
   getGroceryList,
   removeGroceryItem,
@@ -94,7 +95,8 @@ function GroceryListPage() {
   const [announcement, setAnnouncement] = useState("");
   const [addRequest, setAddRequest] = useState<AddPreviewRequest | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmClearPurchased, setConfirmClearPurchased] = useState(false);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   /**
    * The row the trash button asked to remove, and whether its confirm is open.
@@ -226,30 +228,41 @@ function GroceryListPage() {
     });
   }
 
-  function clearChecked() {
-    setConfirmClear(false);
+  /**
+   * The end-of-trip sweep: what is in the cart comes off the list.
+   *
+   * A soft delete on the server — the rows are kept as history — which is
+   * invisible from here: a swept row is as gone from the list either way, so the
+   * optimistic patch is the same one a real delete would use.
+   */
+  function clearPurchased() {
+    setConfirmClearPurchased(false);
     run({
       optimistic: withCheckedCleared,
-      action: () => clearCheckedGroceryItems(),
+      action: () => clearPurchasedGroceryItems(),
       toast: checked === 1 ? "1 item cleared" : `${checked} items cleared`,
-      announce: "Checked items cleared",
+      announce: "Purchased items cleared",
     });
   }
 
-  /**
-   * The other sweep: the list goes back to empty, checked or not.
-   *
-   * Deliberately a separate action rather than "clear checked" with a wider
-   * `where` — on the day you check nothing off, the two would delete the same
-   * rows and mean entirely different things, and the confirm has to be able to
-   * say which one you asked for.
-   */
+  /** The same sweep, widened: the list goes back to empty, checked or not. */
+  function clearAll() {
+    setConfirmClearAll(false);
+    run({
+      optimistic: withAllCleared,
+      action: () => clearAllGroceryItems(),
+      toast: items.length === 1 ? "1 item cleared" : `${items.length} items cleared`,
+      announce: "The list was cleared",
+    });
+  }
+
+  /** The one that actually deletes — swept rows included. */
   function deleteAll() {
     setConfirmDeleteAll(false);
     run({
       optimistic: withAllCleared,
       action: () => deleteAllGroceryItems(),
-      toast: items.length === 1 ? "1 item deleted" : `${items.length} items deleted`,
+      toast: "List deleted",
       announce: "The whole list was deleted",
     });
   }
@@ -293,35 +306,43 @@ function GroceryListPage() {
                   <BookOpenText data-icon="inline-start" aria-hidden="true" />
                   Add recipes
                 </Button>
-                {/* Both sweeps live behind one triple-dot: they are rare, they
-                are destructive, and neither deserves a permanent button beside
-                the two you press every week. The menu appears only when there is
-                something on the list for it to act on. */}
-                {items.length > 0 && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button variant="outline" size="icon-sm" aria-label="List actions" title="List actions">
-                          <EllipsisVertical aria-hidden="true" />
-                        </Button>
-                      }
-                    />
-                    <DropdownMenuContent align="end" className="min-w-52">
-                      {/* Disabled rather than hidden when nothing is checked: a
-                      menu whose contents move around between openings is a menu
-                      you have to read every time. */}
-                      <DropdownMenuItem disabled={checked === 0} onClick={() => setConfirmClear(true)}>
-                        <Check aria-hidden="true" />
-                        {checked > 0 ? `Clear checked (${checked})` : "Clear checked"}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="destructive" onClick={() => setConfirmDeleteAll(true)}>
-                        <Trash2 aria-hidden="true" />
-                        Delete everything
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
+                {/* Every way of emptying the list lives behind one triple-dot:
+                they are rare, they are irreversible from the UI, and none of
+                them deserves a permanent button beside the two you press every
+                week.
+
+                The trigger is always here — a control that comes and goes is one
+                you have to hunt for — and so is every item in it. Items disable
+                rather than disappear for the same reason: a menu whose contents
+                move around between openings is a menu you have to read every
+                time. On an empty list all three are simply inert. */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button variant="outline" size="icon-sm" aria-label="List actions" title="List actions">
+                        <EllipsisVertical aria-hidden="true" />
+                      </Button>
+                    }
+                  />
+                  <DropdownMenuContent align="end" className="min-w-52">
+                    <DropdownMenuItem disabled={checked === 0} onClick={() => setConfirmClearPurchased(true)}>
+                      <Check aria-hidden="true" />
+                      {checked > 0 ? `Clear purchased (${checked})` : "Clear purchased"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={items.length === 0} onClick={() => setConfirmClearAll(true)}>
+                      <ListX aria-hidden="true" />
+                      Clear all
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {/* The only one that is not a sweep. It gets the destructive
+                    styling the other two deliberately do not: they keep what
+                    they take. */}
+                    <DropdownMenuItem variant="destructive" disabled={items.length === 0} onClick={() => setConfirmDeleteAll(true)}>
+                      <Trash2 aria-hidden="true" />
+                      Delete everything
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </div>
@@ -400,20 +421,28 @@ function GroceryListPage() {
       />
 
       <ConfirmDialog
-        open={confirmClear}
-        onOpenChange={setConfirmClear}
-        title="Clear the checked items?"
-        description={`${checked === 1 ? "One item is" : `${checked} items are`} in the cart. Clearing removes them from the list for everyone — the recipes they came from are untouched.`}
-        confirmLabel="Clear checked"
-        destructive
-        onConfirm={clearChecked}
+        open={confirmClearPurchased}
+        onOpenChange={setConfirmClearPurchased}
+        title="Clear the purchased items?"
+        description={`${checked === 1 ? "One item is" : `${checked} items are`} in the cart. Clearing takes them off the list for everyone and keeps them as history — the recipes they came from are untouched.`}
+        confirmLabel="Clear purchased"
+        onConfirm={clearPurchased}
+      />
+
+      <ConfirmDialog
+        open={confirmClearAll}
+        onOpenChange={setConfirmClearAll}
+        title="Clear the whole list?"
+        description={`${items.length === 1 ? "The one item on the list comes off" : `All ${items.length} items come off`} — checked or not, for everyone. They are kept as history rather than deleted, and the recipes they came from are untouched.`}
+        confirmLabel="Clear all"
+        onConfirm={clearAll}
       />
 
       <ConfirmDialog
         open={confirmDeleteAll}
         onOpenChange={setConfirmDeleteAll}
         title="Delete everything on the list?"
-        description={`${items.length === 1 ? "The one item on the list goes" : `All ${items.length} items go`} — checked or not, for everyone. The recipes they came from are untouched, so you can add them back.`}
+        description={`${items.length === 1 ? "The one item on the list goes" : `All ${items.length} items go`}, along with anything already cleared — this is the one that does not keep them. The recipes they came from are untouched, so you can add them back.`}
         confirmLabel="Delete everything"
         destructive
         onConfirm={deleteAll}

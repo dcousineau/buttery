@@ -250,14 +250,33 @@ thing rather than from the plan:
 - **No iconography in dialog titles**, and the preview dialog's rows are slats
   too — the yellow chip treatment is for pressable things only.
 - **There is no `grocery_list` table** (see the deviation above).
-- **Both sweeps live behind one triple-dot menu.** "Clear checked" was a header
-  button that appeared only when something was checked; it is now one of two
-  items in a `DropdownMenu`, beside a new "Delete everything" backed by
-  `deleteAllGroceryItems`. They are separate server functions rather than one
-  with a wider `where`: on a day nothing is checked the two would delete the same
-  rows and still mean different things, and each confirm has to be able to say
-  which one you asked for. The menu is disabled-not-hidden for "clear checked"
-  when nothing is checked, and the whole trigger is absent on an empty list.
+- **Every way of emptying the list lives behind one triple-dot menu.** "Clear
+  checked" was a header button that appeared only when something was checked. The
+  menu now holds three items — **Clear purchased**, **Clear all** and **Delete
+  everything** — and both the trigger and every item are always present, disabled
+  rather than hidden, so nothing moves around between openings. They are three
+  server functions rather than one with a widening `where`: on a day nothing is
+  checked the first two touch the same rows and still mean different things, and
+  each confirm has to be able to say which one you asked for.
+- **The two "clear" sweeps are soft.** `grocery_item.cleared_at` was added and the
+  live-identity index now reads `where checked_at is null and cleared_at is null`.
+  Clearing takes a row off the list and keeps it, which is what the schema header
+  already promised about checked rows and what `clearCheckedItems` was quietly
+  breaking by deleting them. Clearing also frees the identity, so a food added
+  again after a sweep starts a fresh row instead of re-totalling the swept one.
+  "Delete everything" is the only real DELETE and the only thing that reclaims a
+  cleared row. There is no un-clear in the UI yet — the rows are kept for history,
+  not for undo.
+- **A cross-household leak in `readGroceryList`, found by a test written for
+  something else.** The D10 TTL predicate is a raw `sql` fragment, and Kysely
+  splices those into the `WHERE` verbatim, so the clause compiled to
+  `household_id = $1 and checked_at is null or checked_at > cutoff`. `and` binds
+  tighter than `or`, so the second branch carried no household predicate and the
+  read returned **every** household's rows that had been checked off within the
+  last hour. Parenthesising the fragment fixes it. Nothing caught it because no
+  isolation test checked a row off before reading; one does now. Every other raw
+  fragment in a `where` across the codebase was audited — they are all single
+  predicates with no top-level `or`.
 
 ## Open items
 

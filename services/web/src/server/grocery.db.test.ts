@@ -98,7 +98,7 @@ async function itemsOf(householdId: string) {
   if (!db) return [];
   return db
     .selectFrom("grocery_item")
-    .select(["id", "food_slug", "name_norm", "display_name", "aisle", "quantity", "unit", "unit_dim", "merge_unit", "checked_at", "is_manual"])
+    .select(["id", "food_slug", "name_norm", "display_name", "aisle", "quantity", "unit", "unit_dim", "merge_unit", "checked_at", "cleared_at", "is_manual"])
     .where("household_id", "=", householdId)
     .orderBy("created_at")
     .execute();
@@ -590,23 +590,85 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
       expect(sources).toHaveLength(0);
     });
 
-    it("clears every checked row at once", async () => {
+    it("clearing the purchased items keeps them — off the list, still in the table", async () => {
       await addBothChickenRecipes();
       const items = await itemsOf(HH_A);
       await grocery.setGroceryItemChecked(db!, DID_A, HH_A, { itemId: items[0].id, checked: true });
 
-      const result = await grocery.clearCheckedItems(db!, DID_A, HH_A);
-      expect(result.removed).toBe(1);
-      expect(await itemsOf(HH_A)).toHaveLength(items.length - 1);
+      const result = await grocery.clearPurchasedItems(db!, DID_A, HH_A);
+      expect(result.cleared).toBe(1);
+
+      // The row survives — this is the promise the schema header makes about
+      // checked rows — but the list stops reading it.
+      const after = await itemsOf(HH_A);
+      expect(after).toHaveLength(items.length);
+      expect(after.find((item) => item.id === items[0].id)!.cleared_at).not.toBeNull();
+
+      const list = await grocery.readGroceryList(db!, DID_A, HH_A);
+      expect(list.items.map((item) => item.id)).not.toContain(items[0].id);
+      expect(list.items).toHaveLength(items.length - 1);
     });
 
-    it("deletes the whole list, checked or not, and their sources with them", async () => {
+    it("clearing the purchased items leaves the unchecked ones alone", async () => {
       await addBothChickenRecipes();
       const items = await itemsOf(HH_A);
       expect(items.length).toBeGreaterThan(1);
-      // One checked, the rest not: "delete everything" must not turn out to be
-      // "clear checked" wearing a different label.
+
+      // Nothing checked: the end-of-trip sweep has nothing to sweep, and must
+      // not quietly become "clear all".
+      const result = await grocery.clearPurchasedItems(db!, DID_A, HH_A);
+      expect(result.cleared).toBe(0);
+      expect((await grocery.readGroceryList(db!, DID_A, HH_A)).items).toHaveLength(items.length);
+    });
+
+    it("clearing all takes the unchecked rows too, without claiming they were bought", async () => {
+      await addBothChickenRecipes();
+      const items = await itemsOf(HH_A);
       await grocery.setGroceryItemChecked(db!, DID_A, HH_A, { itemId: items[0].id, checked: true });
+
+      const result = await grocery.clearAllItems(db!, DID_A, HH_A);
+      expect(result.cleared).toBe(items.length);
+
+      const after = await itemsOf(HH_A);
+      expect(after).toHaveLength(items.length);
+      expect(after.every((item) => item.cleared_at !== null)).toBe(true);
+      // `checked_at` is untouched: sweeping a row you never ticked must not go
+      // on the record as having bought it.
+      expect(after.filter((item) => item.checked_at !== null)).toHaveLength(1);
+      expect((await grocery.readGroceryList(db!, DID_A, HH_A)).items).toHaveLength(0);
+    });
+
+    it("a cleared row does not capture a re-add — the new one starts fresh", async () => {
+      await grocery.addManualItem(db!, DID_A, HH_A, { text: "1 lb chicken breast" });
+      const [first] = await itemsOf(HH_A);
+      await grocery.clearAllItems(db!, DID_A, HH_A);
+
+      await grocery.addManualItem(db!, DID_A, HH_A, { text: "1 lb chicken breast" });
+      const list = await grocery.readGroceryList(db!, DID_A, HH_A);
+
+      // Not a revival and not a re-total: a second row, holding only what was
+      // just added. Clearing frees the identity the live index keys on.
+      expect(list.items).toHaveLength(1);
+      expect(list.items[0].id).not.toBe(first.id);
+      expect(list.items[0].quantity).toBeCloseTo(453.59237, 2);
+    });
+
+    it("clearing twice does not re-clear what it already cleared", async () => {
+      await addBothChickenRecipes();
+      const items = await itemsOf(HH_A);
+
+      expect((await grocery.clearAllItems(db!, DID_A, HH_A)).cleared).toBe(items.length);
+      expect((await grocery.clearAllItems(db!, DID_A, HH_A)).cleared).toBe(0);
+    });
+
+    it("deletes the whole list — cleared rows included — and their sources with them", async () => {
+      await addBothChickenRecipes();
+      const items = await itemsOf(HH_A);
+      expect(items.length).toBeGreaterThan(1);
+      // One checked and swept, the rest still on the list: "delete everything"
+      // is the only thing that reclaims a cleared row.
+      await grocery.setGroceryItemChecked(db!, DID_A, HH_A, { itemId: items[0].id, checked: true });
+      await grocery.clearPurchasedItems(db!, DID_A, HH_A);
 
       const result = await grocery.deleteAllItems(db!, DID_A, HH_A);
       expect(result.removed).toBe(items.length);
@@ -657,6 +719,20 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
       expect(bChicken.quantity).toBeCloseTo(453.59237, 2);
     });
 
+    it("a checked row is never visible to another household", async () => {
+      // The TTL clause is a raw SQL fragment spliced into the WHERE, and `and`
+      // binds tighter than `or`: unparenthesised, its second branch carries no
+      // household predicate and hands every household's recently-checked rows
+      // to everyone. Nothing else here checks a row off before reading, which
+      // is exactly why that shipped unnoticed.
+      await addBothChickenRecipes(HH_A, DID_A);
+      const items = await itemsOf(HH_A);
+      await grocery.setGroceryItemChecked(db!, DID_A, HH_A, { itemId: items[0].id, checked: true });
+
+      const b = await grocery.readGroceryList(db!, DID_B, HH_B);
+      expect(b.items).toHaveLength(0);
+    });
+
     it("checking off is inert against another household's item id", async () => {
       await addBothChickenRecipes(HH_A, DID_A);
       const chicken = (await itemsOf(HH_A)).find((item) => item.food_slug === "en:chicken-breast")!;
@@ -686,14 +762,22 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
       expect((await itemsOf(HH_A)).find((item) => item.id === chicken.id)).toBeTruthy();
     });
 
-    it("clearing checked rows never reaches another household", async () => {
+    it("clearing the purchased items never reaches another household", async () => {
       await addBothChickenRecipes(HH_A, DID_A);
       const items = await itemsOf(HH_A);
       await grocery.setGroceryItemChecked(db!, DID_A, HH_A, { itemId: items[0].id, checked: true });
 
-      const result = await grocery.clearCheckedItems(db!, DID_B, HH_B);
-      expect(result.removed).toBe(0);
-      expect(await itemsOf(HH_A)).toHaveLength(items.length);
+      const result = await grocery.clearPurchasedItems(db!, DID_B, HH_B);
+      expect(result.cleared).toBe(0);
+      expect((await itemsOf(HH_A)).every((item) => item.cleared_at === null)).toBe(true);
+    });
+
+    it("clearing all never reaches another household", async () => {
+      await addBothChickenRecipes(HH_A, DID_A);
+
+      const result = await grocery.clearAllItems(db!, DID_B, HH_B);
+      expect(result.cleared).toBe(0);
+      expect((await itemsOf(HH_A)).every((item) => item.cleared_at === null)).toBe(true);
     });
 
     it("deleting everything never reaches another household", async () => {

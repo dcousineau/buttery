@@ -99,6 +99,7 @@ export interface GroceryItem {
   aisle: string;
   checked_at: Timestamp | null;
   checked_by_did: string | null;
+  cleared_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   created_by_did: string;
   display_name: string;

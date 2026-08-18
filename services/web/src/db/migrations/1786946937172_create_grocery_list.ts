@@ -48,6 +48,24 @@ import { type Kysely, sql } from "kysely";
  * creates a NEW row rather than reviving and re-totalling an old one — you
  * bought that chicken already.
  *
+ * ── `cleared_at`, the soft delete ───────────────────────────────────────────
+ *
+ * The two sweeps on the list menu — "clear purchased" and "clear all" — stamp
+ * `cleared_at` instead of deleting. Same promise as `checked_at`: the row leaves
+ * the list and stays as history, so a trip you swept at the till is still
+ * answerable later. It is a SEPARATE column rather than a reuse of `checked_at`
+ * because "I bought this" and "get this off my list" are different facts, and
+ * clearing an unchecked row must not claim you bought it.
+ *
+ * A cleared row is out of the live index too, so clearing frees the identity and
+ * a re-added food starts a fresh row rather than resurrecting a swept one. Only
+ * "delete everything" is a real DELETE, and it is the only thing that reclaims
+ * cleared rows.
+ *
+ * There is no `cleared_by_did`. `checked_by_did` earns its keep by rendering
+ * ("got by @sam"); nothing displays who swept, and a column nobody reads is the
+ * kind this schema already went out of its way to remove.
+ *
  * ── `merge_unit`, which §6's sketch did not have ────────────────────────────
  *
  * D5 forbids merging across unit dimensions, and the sketched index keys on
@@ -93,6 +111,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn("is_manual", "boolean", (col) => col.notNull().defaultTo(false))
     .addColumn("checked_at", "timestamptz")
     .addColumn("checked_by_did", "text") // provenance ("got by @sam"), NOT ownership
+    .addColumn("cleared_at", "timestamptz") // soft delete: off the list, kept as history
     .addColumn("created_by_did", "text", (col) => col.notNull())
     .addColumn("created_at", "timestamptz", (col) => col.notNull().defaultTo(now))
     .addColumn("updated_at", "timestamptz", (col) => col.notNull().defaultTo(now))
@@ -106,7 +125,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql`
     create unique index grocery_item_live_identity_key
       on grocery_item (household_id, coalesce(food_slug, name_norm), coalesce(unit_dim, ''), coalesce(merge_unit, ''))
-      where checked_at is null
+      where checked_at is null and cleared_at is null
   `.execute(db);
 
   // The list read is a single scan of one household's live-or-recently-checked

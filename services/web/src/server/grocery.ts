@@ -374,6 +374,7 @@ async function readLiveIdentities(db: Kysely<DB>, householdId: string): Promise<
     .select(["id", "food_slug", "name_norm", "unit_dim", "merge_unit"])
     .where("household_id", "=", householdId)
     .where("checked_at", "is", null)
+    .where("cleared_at", "is", null)
     .execute();
 
   return new Map(rows.map((row) => [identityOf({ foodSlug: row.food_slug, nameNorm: row.name_norm, unitDim: row.unit_dim, mergeUnit: row.merge_unit }), row.id]));
@@ -415,6 +416,7 @@ export async function commitGroceryRows(db: Kysely<DB>, did: string, householdId
       .select(["id", "food_slug", "name_norm", "unit_dim", "merge_unit", "quantity", "quantity_max", "unit"])
       .where("household_id", "=", householdId)
       .where("checked_at", "is", null)
+      .where("cleared_at", "is", null)
       .forUpdate()
       .execute();
 
@@ -560,6 +562,7 @@ export async function addManualItem(db: Kysely<DB>, did: string, householdId: st
     .select("id")
     .where("household_id", "=", householdId)
     .where("checked_at", "is", null)
+    .where("cleared_at", "is", null)
     .where("name_norm", "=", row.nameNorm)
     .orderBy("updated_at", "desc")
     .executeTakeFirstOrThrow();
@@ -602,7 +605,15 @@ export async function readGroceryList(db: Kysely<DB>, _did: string, householdId:
     .selectFrom("grocery_item")
     .select(["id", "food_slug", "display_name", "aisle", "quantity", "quantity_max", "unit", "unit_dim", "is_manual", "checked_at", "checked_by_did", "created_at"])
     .where("household_id", "=", householdId)
-    .where(sql<boolean>`checked_at is null or checked_at > now() - make_interval(secs => ${CHECKED_TTL_SECONDS})`)
+    // Swept rows are gone from the list and kept as history; only "delete
+    // everything" ever removes them for real.
+    .where("cleared_at", "is", null)
+    // The parentheses are load-bearing. Kysely splices a raw fragment into the
+    // WHERE verbatim and `and` binds tighter than `or`, so without them this
+    // reads as `(household … and checked_at is null) or checked_at > cutoff` —
+    // a second branch with no household predicate at all, which returned every
+    // household's recently-checked rows to everybody.
+    .where(sql<boolean>`(checked_at is null or checked_at > now() - make_interval(secs => ${CHECKED_TTL_SECONDS}))`)
     // `created_at` alone is NOT a total order here. It defaults to `now()`, which
     // in Postgres is the *transaction* timestamp, so every row written by one
     // `commitGroceryRows` transaction carries a byte-identical stamp — an 18-row
@@ -806,30 +817,77 @@ export async function deleteGroceryItem(db: Kysely<DB>, _did: string, householdI
   return { removed: Boolean(deleted) };
 }
 
-/** Clear every checked row from the list at once — the end-of-trip sweep. */
-export const clearCheckedGroceryItems = createServerFn({ method: "POST" }).handler(async (): Promise<{ removed: number }> => {
+/**
+ * Sweep what is already in the cart off the list — the end-of-trip sweep.
+ *
+ * A SOFT delete: `cleared_at` is stamped and the row stops being read. That is
+ * the promise the schema header makes about checked rows ("never deleted, kept
+ * as history"), and clearing is the moment it would otherwise be broken. The
+ * rows leave the live index with it, so the same food added tomorrow starts a
+ * fresh row instead of resurrecting this one.
+ */
+export const clearPurchasedGroceryItems = createServerFn({ method: "POST" }).handler(async (): Promise<{ cleared: number }> => {
   const { getDb } = await import("#/lib/db");
   const { assertMember } = await import("./authz");
   const { did, householdId } = await activeContext();
   await assertMember(did, householdId);
-  return clearCheckedItems(getDb(), did, householdId);
+  return clearPurchasedItems(getDb(), did, householdId);
 });
 
-/** The body of `clearCheckedGroceryItems`. */
-export async function clearCheckedItems(db: Kysely<DB>, _did: string, householdId: string): Promise<{ removed: number }> {
-  const deleted = await db.deleteFrom("grocery_item").where("household_id", "=", householdId).where("checked_at", "is not", null).returning("id").execute();
+/** The body of `clearPurchasedGroceryItems`. */
+export async function clearPurchasedItems(db: Kysely<DB>, _did: string, householdId: string): Promise<{ cleared: number }> {
+  const { sql } = await import("kysely");
 
-  return { removed: deleted.length };
+  const cleared = await db
+    .updateTable("grocery_item")
+    .set({ cleared_at: sql`now()`, updated_at: sql`now()` })
+    .where("household_id", "=", householdId)
+    .where("cleared_at", "is", null)
+    .where("checked_at", "is not", null)
+    .returning("id")
+    .execute();
+
+  return { cleared: cleared.length };
 }
 
 /**
- * Empty the list outright — every row, checked or not.
+ * Sweep the WHOLE list off, checked or not — "start over", not "I bought this".
  *
- * The sibling of `clearCheckedGroceryItems` and deliberately not a variant of
- * it: "clear checked" is the end-of-trip sweep and takes only what is already in
- * the cart, while this is "start over", which is a different intent even on the
- * days the two would delete the same rows. Both are real deletes; the source
- * rows cascade and the recipes are untouched either way.
+ * Soft, exactly like {@link clearPurchasedItems}, and deliberately not that
+ * function with a wider `where`: on a day nothing is checked the two touch the
+ * same rows and still mean different things, and each confirm has to be able to
+ * say which one you asked for. `checked_at` is left alone — clearing an unchecked
+ * row must not go on the record as having bought it.
+ */
+export const clearAllGroceryItems = createServerFn({ method: "POST" }).handler(async (): Promise<{ cleared: number }> => {
+  const { getDb } = await import("#/lib/db");
+  const { assertMember } = await import("./authz");
+  const { did, householdId } = await activeContext();
+  await assertMember(did, householdId);
+  return clearAllItems(getDb(), did, householdId);
+});
+
+/** The body of `clearAllGroceryItems`. */
+export async function clearAllItems(db: Kysely<DB>, _did: string, householdId: string): Promise<{ cleared: number }> {
+  const { sql } = await import("kysely");
+
+  const cleared = await db
+    .updateTable("grocery_item")
+    .set({ cleared_at: sql`now()`, updated_at: sql`now()` })
+    .where("household_id", "=", householdId)
+    .where("cleared_at", "is", null)
+    .returning("id")
+    .execute();
+
+  return { cleared: cleared.length };
+}
+
+/**
+ * Empty the list for real — every row, checked or not, swept or not.
+ *
+ * The one destructive action on the page and the only thing that reclaims a
+ * cleared row. The two sweeps above hide; this forgets. The source rows cascade
+ * and the recipes are untouched either way.
  */
 export const deleteAllGroceryItems = createServerFn({ method: "POST" }).handler(async (): Promise<{ removed: number }> => {
   const { getDb } = await import("#/lib/db");
