@@ -1,5 +1,5 @@
 import { useId } from "react";
-import type { GroceryItemRow } from "#/server/grocery";
+import type { GroceryItemRow } from "#/lib/api";
 import type { Aisle } from "#/lib/grocery/aisles";
 import { GroceryRow } from "./GroceryRow";
 import { listCounts } from "./optimistic";
@@ -23,9 +23,11 @@ export interface AisleGroupProps {
   onToggle: (item: GroceryItemRow, checked: boolean) => void;
   onEdit: (item: GroceryItemRow, patch: { displayName?: string; quantity?: number | null }) => void;
   onRemove: (item: GroceryItemRow) => void;
+  /** Threaded from the route: false while offline (§4.1). */
+  writable?: boolean;
 }
 
-export function AisleGroup({ aisle, label, items, onToggle, onEdit, onRemove }: AisleGroupProps) {
+export function AisleGroup({ aisle, label, items, onToggle, onEdit, onRemove, writable }: AisleGroupProps) {
   const headingId = useId();
   const { remaining } = listCounts(items);
 
@@ -43,7 +45,14 @@ export function AisleGroup({ aisle, label, items, onToggle, onEdit, onRemove }: 
       {/* No gap: the rows are slats, so the divider is what separates them. */}
       <ul className="m-0 flex list-none flex-col p-0">
         {items.map((item) => (
-          <GroceryRow key={item.id} item={item} onToggle={(checked) => onToggle(item, checked)} onEdit={(patch) => onEdit(item, patch)} onRemove={() => onRemove(item)} />
+          <GroceryRow
+            key={item.id}
+            item={item}
+            onToggle={(checked) => onToggle(item, checked)}
+            onEdit={(patch) => onEdit(item, patch)}
+            onRemove={() => onRemove(item)}
+            writable={writable}
+          />
         ))}
       </ul>
     </section>

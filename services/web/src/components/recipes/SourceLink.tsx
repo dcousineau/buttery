@@ -1,5 +1,5 @@
 import { SourceIcon } from "./SourceIcon";
-import type { RecipeSource } from "#/server/recipe-provenance";
+import type { RecipeSource } from "#/lib/api";
 import { cn } from "#/lib/utils";
 
 /**

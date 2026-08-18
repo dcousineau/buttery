@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { redirect } from "@tanstack/react-router";
 import type { Role } from "./errors";
+import type { HouseholdSummary } from "#/lib/api/types";
 
 /**
  * Household lifecycle server functions (§7, §9). Every function is server-only:
@@ -14,13 +15,14 @@ import type { Role } from "./errors";
  * Agent C wires the UI to. Do not change them.
  */
 
-/** A caller's membership in one household, for list/summary UIs. */
-export interface HouseholdSummary {
-  id: string;
-  name: string;
-  role: Role;
-  memberCount: number;
-}
+/**
+ * The wire DTOs this module returns are declared in the port's `types.ts` and
+ * imported from there (offline plan §4.3 / §7): the client caches these shapes
+ * in IndexedDB, versions them, and must be able to name them without importing
+ * a server module — so it owns the declaration. Re-exported here for the
+ * server-side callers that already reach for them through this module.
+ */
+export type { HouseholdSummary };
 
 /** Coerce a free-text DB role to the ranked `Role` union (unknown → member). */
 function asRole(role: string): Role {

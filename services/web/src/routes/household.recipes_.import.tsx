@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import type { DroppedFile } from "@buttery/recipe-extract/import";
-import { requireActiveHousehold } from "#/server/household/onboarding";
+import { requireActiveHousehold } from "#/lib/api";
 import { DEFAULT_IMPORTER_ID, requireImporter } from "#/lib/recipe-import/importers.ts";
 import { useImportSession } from "#/lib/recipe-import/useImportSession.ts";
 import { ImportCommittingScreen } from "#/components/recipes/import/ImportCommittingScreen";

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { requireActiveHousehold } from "#/server/household/onboarding";
+import { requireActiveHousehold } from "#/lib/api";
 import { RecipeForm } from "#/components/recipes/create/RecipeForm";
 import { seo } from "#/lib/seo";
 

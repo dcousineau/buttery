@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import * as z from "zod";
+import type { HouseholdPreferences } from "#/lib/api/types";
 
 /**
  * Household-wide preferences (meal planner plan §3.1 / §6.11).
@@ -20,12 +21,14 @@ import * as z from "zod";
 
 // --- shapes -------------------------------------------------------------
 
-export interface HouseholdPreferences {
-  /** ISO-8601 weekday numbering: 1 = Monday … 7 = Sunday. */
-  weekStartDay: number;
-  /** IANA zone name, e.g. "America/Chicago". */
-  timezone: string;
-}
+/**
+ * The wire DTOs this module returns are declared in the port's `types.ts` and
+ * imported from there (offline plan §4.3 / §7): the client caches these shapes
+ * in IndexedDB, versions them, and must be able to name them without importing
+ * a server module — so it owns the declaration. Re-exported here for the
+ * server-side callers that already reach for them through this module.
+ */
+export type { HouseholdPreferences };
 
 /** The effective values for a household that has never saved a preference. */
 export const DEFAULT_HOUSEHOLD_PREFERENCES: HouseholdPreferences = {

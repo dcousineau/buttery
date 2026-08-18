@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { redirect } from "@tanstack/react-router";
 import type { Role } from "./errors";
-import type { HouseholdSummary } from "./households";
+import type { HouseholdMemberView, OnboardingVerdict, PendingInvite } from "#/lib/api/types";
 
 /**
  * Onboarding & active-household session context (Agent C's slice — §5, §8, and
@@ -17,46 +17,14 @@ import type { HouseholdSummary } from "./households";
  * decline of pending BOUND invites (see the note on those functions).
  */
 
-/** A pending BOUND invite for the caller, surfaced on the onboarding screen. */
-export interface PendingInvite {
-  /**
-   * Bound-invite rows are surfaced by their `id` because the raw token is
-   * unrecoverable (only `token_hash` is stored). Accept/decline therefore go
-   * through {@link acceptBoundInviteById} / {@link declineBoundInviteById}, NOT
-   * the token-based `acceptInvite`/`declineBoundInvite` (which need the raw
-   * token from a shareable link).
-   */
-  inviteId: string;
-  householdName: string;
-  inviterHandle: string | null;
-  role: Role;
-}
-
-/** One live member for the household-management members list. */
-export interface HouseholdMemberView {
-  did: string;
-  role: Role;
-  /** ISO timestamp. */
-  joinedAt: string;
-  /** Denormalized handle from `atproto_repo` (best-effort, may be null). */
-  handle: string | null;
-  invitedByDid: string | null;
-  /** True when this row is the caller (so the UI can label "you"). */
-  isSelf: boolean;
-}
-
 /**
- * The §5 state-machine verdict for the current caller.
- * - `active` — a live active household is confirmed (or was just auto-set for a
- *   single-membership user); render the app in it.
- * - `pick`  — 2+ live memberships; show the picker.
- * - `onboard` — 0 live memberships; show the single onboarding screen carrying
- *   the caller's pending bound invites (empty array → empty state).
+ * The wire DTOs this module returns are declared in the port's `types.ts` and
+ * imported from there (offline plan §4.3 / §7): the client caches these shapes
+ * in IndexedDB, versions them, and must be able to name them without importing
+ * a server module — so it owns the declaration. Re-exported here for the
+ * server-side callers that already reach for them through this module.
  */
-export type OnboardingVerdict =
-  | { kind: "active"; householdId: string; name: string }
-  | { kind: "pick"; households: HouseholdSummary[] }
-  | { kind: "onboard"; pendingInvites: PendingInvite[] };
+export type { HouseholdMemberView, OnboardingVerdict, PendingInvite };
 
 /** Coerce a free-text DB role to the ranked `Role` union (unknown → member). */
 function asRole(role: string): Role {

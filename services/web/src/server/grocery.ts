@@ -2,13 +2,13 @@ import { createServerFn } from "@tanstack/react-start";
 import type { Kysely } from "kysely";
 import * as z from "zod";
 import type { DB } from "#/db/types";
-import { AISLES, type Aisle, aisleOrder, toAisle } from "#/lib/grocery/aisles";
+import { AISLES, aisleOrder, toAisle } from "#/lib/grocery/aisles";
 import type { MergedRow } from "#/lib/grocery/merge";
-import type { UnitDim } from "#/lib/grocery/units";
 // `units.ts` is pure, tiny and carries no lexicon, so it is a static import
 // while `categorize.ts` and `merge.ts` stay dynamic to keep the JSON lazy.
 import { renderQuantity } from "#/lib/grocery/units";
 import { type PlanDate, isPlanDate, shiftDays, weekStartFor } from "#/lib/plan/week";
+import type { GroceryItemRow, GroceryItemSourceRow, GroceryListPayload, GroceryPreview, GroceryPreviewRow } from "#/lib/api/types";
 
 /**
  * Grocery-list server functions (grocery-list plan §7).
@@ -38,73 +38,14 @@ import { type PlanDate, isPlanDate, shiftDays, weekStartFor } from "#/lib/plan/w
 
 // --- shared shapes -------------------------------------------------------
 
-/** A row as the list renders it. */
-export interface GroceryItemRow {
-  id: string;
-  foodSlug: string | null;
-  displayName: string;
-  aisle: Aisle;
-  /** Rendered total: `1 lb 8 oz`, `2½ cups`, `3 cloves`. `null` when unknown. */
-  quantityDisplay: string | null;
-  /** Raw base-unit total, so the client can re-render after an inline edit. */
-  quantity: number | null;
-  unit: string | null;
-  unitDim: string | null;
-  isManual: boolean;
-  checkedAt: string | null;
-  checkedByHandle: string | null;
-  /** The recipes that put this on the list, resolved to titles. */
-  sources: GroceryItemSourceRow[];
-}
-
-export interface GroceryItemSourceRow {
-  recipeId: string | null;
-  title: string | null;
-  /** The ingredient line, verbatim, as it read when it was added. */
-  rawText: string;
-  scale: number;
-}
-
-export interface GroceryListPayload {
-  items: GroceryItemRow[];
-  /** Server time at read, so the client can apply the TTL without clock skew. */
-  readAt: string;
-  /** How long a checked row stays visible, in seconds (plan D10). */
-  checkedTtlSeconds: number;
-}
-
-/** A candidate row in the confirm-preview dialog (plan D9). Nothing written. */
-export interface GroceryPreviewRow {
-  /** Stable within one preview; the client sends back the ones it wants. */
-  key: string;
-  foodSlug: string | null;
-  nameNorm: string;
-  displayName: string;
-  aisle: Aisle;
-  quantity: number | null;
-  quantityMax: number | null;
-  quantityDisplay: string | null;
-  unit: string | null;
-  /**
-   * Not `string`: a preview row is handed straight back to `commitGroceryAdd`,
-   * whose validator only accepts the three real dimensions. Widening this to
-   * `string` makes that round trip fail to typecheck, which is exactly what
-   * `grocery.db.test.ts` caught.
-   */
-  unitDim: UnitDim;
-  mergeUnit: string | null;
-  /** Shown but unchecked by default (plan D9). */
-  isStaple: boolean;
-  /** True when this food already has a live row that this would merge into. */
-  mergesInto: string | null;
-  sources: Array<{ recipeId: string | null; planEntryId: string | null; rawText: string; scale: number; quantityBase: number | null }>;
-}
-
-export interface GroceryPreview {
-  rows: GroceryPreviewRow[];
-  /** Recipes the preview drew from, for the dialog's header copy. */
-  recipes: Array<{ recipeId: string; title: string; scale: number }>;
-}
+/**
+ * The wire DTOs this module returns are declared in the port's `types.ts` and
+ * imported from there (offline plan §4.3 / §7): the client caches these shapes
+ * in IndexedDB, versions them, and must be able to name them without importing
+ * a server module — so it owns the declaration. Re-exported here for the
+ * server-side callers that already reach for them through this module.
+ */
+export type { GroceryItemRow, GroceryItemSourceRow, GroceryListPayload, GroceryPreview, GroceryPreviewRow };
 
 /** Checked rows stay visible for an hour, then retire from the default view. */
 export const CHECKED_TTL_SECONDS = 60 * 60;

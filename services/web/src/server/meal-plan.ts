@@ -4,7 +4,8 @@ import * as z from "zod";
 import type { DB } from "#/db/types";
 import { blobImageUrl } from "#/lib/atproto/images";
 import { MEAL_SLOTS, type MealSlot, type PlanDate, daysBetween, isPlanDate, shiftDays, todayIn, weekDates, weekStartFor } from "#/lib/plan/week";
-import { type RecipeSource, deriveSource } from "./recipe-provenance";
+import { deriveSource } from "#/lib/recipe-provenance";
+import type { CopiedWeek, CreatedPlanEntry, PlanDay, PlanEntry, PlanNoteEntry, PlanRecipeEntry, PlanWeek, PlannedUsage } from "#/lib/api/types";
 
 /**
  * Meal-planner server functions (plan §6).
@@ -36,71 +37,14 @@ import { type RecipeSource, deriveSource } from "./recipe-provenance";
 
 // --- §6.0 shared shapes -------------------------------------------------
 
-export interface PlanRecipeEntry {
-  id: string;
-  kind: "recipe";
-  position: number;
-  recipeId: string;
-  title: string;
-  /** Popover hero (4:3). Null ⇒ the design's utensils placeholder. */
-  imageUrl: string | null;
-  totalMinutes: number | null;
-  totalTimeDisplay: string | null;
-  source: RecipeSource;
-  /** Still in the household box? False ⇒ "not in box" flag + "Add back to your box". */
-  inBox: boolean;
-  /** Source went unavailable on the network; still renders from the local cache. */
-  unavailable: boolean;
-  /** A local draft with no atproto record yet ("private draft" flag). */
-  unpublished: boolean;
-  cookedAt: string | null;
-  /** "@sam", already prefixed; null when unresolvable. */
-  cookedByHandle: string | null;
-  addedByHandle: string | null;
-}
-
-export interface PlanNoteEntry {
-  id: string;
-  kind: "note";
-  position: number;
-  body: string;
-  /** Notes are never "cooked" — kept so callers can read `.cookedAt` uniformly. */
-  cookedAt: null;
-  addedByHandle: string | null;
-}
-
-export type PlanEntry = PlanRecipeEntry | PlanNoteEntry;
-
-export interface PlanDay {
-  date: PlanDate;
-  isToday: boolean;
-  /** The design dims past days. Dimming is not disabling — they stay editable (D6). */
-  isPast: boolean;
-  /** Always all 4 keys, possibly empty arrays. */
-  slots: Record<MealSlot, PlanEntry[]>;
-}
-
-export interface PlanWeek {
-  weekStart: PlanDate;
-  weekEnd: PlanDate;
-  timezone: string;
-  weekStartDay: number;
-  today: PlanDate;
-  /** Exactly 7. */
-  days: PlanDay[];
-  /** Panel stats + the shopping button's "Add all N to shopping list" label. */
-  recipeEntryCount: number;
-  /** Slots (of 28) with no live entry — the panel's "N of 28 slots still empty". */
-  emptySlotCount: number;
-  cookedCount: number;
-}
-
-/** Powers the remove-from-box warning (§7.2). */
-export interface PlannedUsage {
-  total: number;
-  upcoming: number;
-  nextDate: PlanDate | null;
-}
+/**
+ * The wire DTOs this module returns are declared in the port's `types.ts` and
+ * imported from there (offline plan §4.3 / §7): the client caches these shapes
+ * in IndexedDB, versions them, and must be able to name them without importing
+ * a server module — so it owns the declaration. Re-exported here for the
+ * server-side callers that already reach for them through this module.
+ */
+export type { CopiedWeek, CreatedPlanEntry, PlanDay, PlanEntry, PlanNoteEntry, PlanRecipeEntry, PlanWeek, PlannedUsage };
 
 // --- validators ---------------------------------------------------------
 
@@ -137,14 +81,6 @@ const noteBody = z
   .string()
   .max(NOTE_MAX * 4)
   .transform((value) => value.trim());
-
-/** What a write returns about a row it created. */
-export interface CreatedPlanEntry {
-  id: string;
-  kind: "recipe" | "note";
-  position: number;
-  recipeId: string | null;
-}
 
 // --- helpers ------------------------------------------------------------
 
@@ -926,15 +862,6 @@ export async function setPlanEntryCooked(db: Kysely<DB>, did: string, householdI
 }
 
 // --- §6.7 copyMealPlanWeek ----------------------------------------------
-
-/** What a copy did, in the server's own (re-snapped) terms. */
-export interface CopiedWeek {
-  copied: number;
-  fromWeek: PlanDate;
-  toWeek: PlanDate;
-  /** The destination week's last date — the toast's "… to Aug 10 – Aug 16". */
-  toWeekEnd: PlanDate;
-}
 
 /**
  * Copy a whole week onto another week, same weekday to same weekday (§6.7).

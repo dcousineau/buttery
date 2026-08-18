@@ -1,24 +1,16 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { startTransition, useCallback, useEffect, useOptimistic, useRef, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { BookOpenText, CalendarRange, Check, EllipsisVertical, ListX, Trash2 } from "lucide-react";
-import {
-  type GroceryItemRow,
-  type GroceryListPayload,
-  clearAllGroceryItems,
-  clearPurchasedGroceryItems,
-  deleteAllGroceryItems,
-  getGroceryList,
-  removeGroceryItem,
-  toggleGroceryItem,
-  updateGroceryItem,
-} from "#/server/grocery";
-import { requireActiveHousehold } from "#/server/household/onboarding";
+import { type GroceryItemRow, groceryListQuery, grocerySweepMutation, keys, removeGroceryItemMutation, toggleGroceryItemMutation, updateGroceryItemMutation } from "#/lib/api";
+import { ensureActiveHousehold } from "#/lib/offline/active-household";
+import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
 import { todayIn } from "#/lib/plan/week";
 import { AddPreviewDialog, type AddPreviewRequest } from "#/components/grocery/AddPreviewDialog";
 import { RecipePickerDialog } from "#/components/grocery/RecipePickerDialog";
 import { GroceryList } from "#/components/grocery/GroceryList";
 import { ManualItemInput } from "#/components/grocery/ManualItemInput";
-import { listCounts, visibleItems, withAllCleared, withCheckedCleared, withItemChecked, withItemEdited, withItemRemoved } from "#/components/grocery/optimistic";
+import { listCounts, visibleItems } from "#/components/grocery/optimistic";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
@@ -29,9 +21,25 @@ import { seo } from "#/lib/seo";
  * The household shopping list (`/household/list`).
  *
  * One running list per household (D1), always grouped by aisle, read and written
- * the way the meal planner is: optimistic patch, `router.invalidate()`,
- * refetch-on-focus, last-write-wins per item (D12). Two people in the same store
- * on two phones is the normal case, not the edge one.
+ * the way the meal planner is: optimistic patch, refetch-on-focus,
+ * last-write-wins per item (D12). Two people in the same store on two phones is
+ * the normal case, not the edge one.
+ *
+ * **The best offline surface in the app (offline plan §4.1).** It is read in a
+ * store, on a phone, on the one network the household does not control. Reads
+ * come from `groceryListQuery`, so the list is persisted to IndexedDB and paints
+ * from cache with no network at all; writes stay online-only in M1 and disable
+ * with an offline affordance. M2 is what queues the check-offs — and it can
+ * without a single server change, because `toggleGroceryItem` is already an
+ * absolute `{itemId, checked}` write and therefore replay-safe by shape (§2.5).
+ *
+ * The optimistic machinery is Query's now, not `useOptimistic` + a transition.
+ * The long comments this file used to carry about flicker — a `setState(null)`
+ * outranking the router's pending transition and painting one frame of pre-write
+ * data — describe a problem that does not arise here: the patched value lives in
+ * the query cache, so there is no window in which the settled payload and the
+ * dropped patch disagree. `onMutate`/`onError`/`onSettled` in
+ * `src/lib/api/mutations.ts` is the whole lifecycle, once, for every write.
  *
  * Grouping has no toggle and no search param. The plan gave D8 a flat-list
  * escape hatch for when the lexicon files something in the wrong aisle; the
@@ -68,30 +76,22 @@ function recipeCaveat(item: GroceryItemRow): string {
 }
 
 export const Route = createFileRoute("/household/list")({
-  loader: async () => {
-    await requireActiveHousehold();
-    return await getGroceryList();
-  },
+  beforeLoad: async () => ({ ...(await ensureActiveHousehold()) }),
+  loader: ({ context }) => context.queryClient.ensureQueryData(groceryListQuery(context.householdId)),
   head: () => ({ meta: seo({ title: "Shopping list · Buttery", description: "One running list for your household, consolidated and grouped by aisle." }) }),
   component: GroceryListPage,
 });
 
 function GroceryListPage() {
-  const loaded = Route.useLoaderData();
-  const router = useRouter();
+  const { householdId } = Route.useRouteContext();
+  const queryClient = useQueryClient();
+  // The hook, not the loader's return value: an unobserved query gets no
+  // refetch-on-reconnect, no invalidation and no gc protection — the exact
+  // machinery an aisle with no signal depends on (§4.1).
+  const { data: list } = useSuspenseQuery(groceryListQuery(householdId));
+  const online = useIsOnline();
   const { toasts, push, dismiss, pauseAll, resumeAll } = useToasts(4000);
 
-  /**
-   * The optimistic overlay: the list as it should already look, laid over the
-   * one the loader last returned.
-   *
-   * `useOptimistic` rather than ordinary state, for the reason the planner
-   * documents at length: React drops the optimistic value in the same commit
-   * that delivers the settled payload, while a hand-cleared `setState(null)`
-   * outranks the router's pending transition and paints one frame of pre-write
-   * data. In a store that frame reads as "my tap didn't take".
-   */
-  const [list, applyPatch] = useOptimistic(loaded, (current: GroceryListPayload, patch: (list: GroceryListPayload) => GroceryListPayload) => patch(current));
   const [announcement, setAnnouncement] = useState("");
   const [addRequest, setAddRequest] = useState<AddPreviewRequest | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -110,100 +110,48 @@ function GroceryListPage() {
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   /**
-   * D12's answer to "two people shopping at once": no sockets, just look again
-   * when you come back. Coming back to the tab is the moment a stale list is
-   * most likely and least expensive to fix. Throttled so alt-tabbing does not
-   * hammer the loader.
-   */
-  useEffect(() => {
-    let last = 0;
-    function refresh() {
-      if (document.visibilityState !== "visible") return;
-      const now = Date.now();
-      if (now - last < 10_000) return;
-      last = now;
-      void router.invalidate();
-    }
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [router]);
-
-  /** "The fresh list is now on screen" — the signal `run` ends its transition on. */
-  const loaderCommitted = useRef<(() => void) | null>(null);
-  useEffect(() => {
-    loaderCommitted.current?.();
-    loaderCommitted.current = null;
-  }, [loaded]);
-
-  const whenLoaderCommits = useCallback(
-    () =>
-      new Promise<void>((resolve) => {
-        loaderCommitted.current?.();
-        loaderCommitted.current = resolve;
-        // Nothing guarantees a *new* payload — a no-op write, or a load the
-        // router dedupes, can leave `loaded` untouched — and a transition that
-        // never ends would pin the optimistic list there for good.
-        setTimeout(() => {
-          if (loaderCommitted.current !== resolve) return;
-          loaderCommitted.current = null;
-          resolve();
-        }, 1000);
-      }),
-    [],
-  );
-
-  /**
-   * One shape for every write: paint, send, then reconcile. Lifted verbatim from
-   * `/household/plan` — the two routes have the same concurrency story, and a
-   * second dialect of it would be a second place for the flicker to come back.
+   * Every write on this page, as Query mutations. The optimistic patch, the
+   * rollback and the invalidation all live in `src/lib/api/mutations.ts`; what
+   * stays here is what the *page* owns — the toast and the live-region wording,
+   * which are copy, not cache.
    *
-   * Failure does not un-apply the patch; the transition ending drops it. Only
-   * the loader knows what the list really contains, and after a failed write it
-   * is also the only thing that knows whether the write half-happened.
+   * D12's "look again when you come back" is gone from this file entirely: it is
+   * `refetchOnWindowFocus` on the QueryClient now, throttled by `staleTime`
+   * (10s for this query) rather than by a hand-rolled timestamp.
    */
-  const run = useCallback(
-    (options: { optimistic?: (list: GroceryListPayload) => GroceryListPayload; action: () => Promise<unknown>; toast?: string; announce?: string }) => {
-      startTransition(async () => {
-        if (options.optimistic) applyPatch(options.optimistic);
-        const settled = whenLoaderCommits();
-        try {
-          await options.action();
-          if (options.toast) push({ variant: "success", title: options.toast });
-          if (options.announce) setAnnouncement(options.announce);
-        } catch (error) {
-          push({ variant: "destructive", title: error instanceof Error ? error.message : "That didn't save. Try again." });
-        } finally {
-          await router.invalidate();
-          await settled;
-        }
-      });
-    },
-    [applyPatch, push, router, whenLoaderCommits],
-  );
+  const toggle = useMutation(toggleGroceryItemMutation(queryClient, householdId));
+  const edit = useMutation(updateGroceryItemMutation(queryClient, householdId));
+  const remove = useMutation(removeGroceryItemMutation(queryClient, householdId));
+  const sweep = useMutation(grocerySweepMutation(queryClient, householdId));
+
+  /** The one failure message every write on this page shares. */
+  function onWriteFailed(error: unknown) {
+    push({ variant: "destructive", title: error instanceof Error ? error.message : "That didn't save. Try again." });
+  }
+
+  /** A write landed and there is nothing on this page left to patch. */
+  async function refreshList() {
+    await queryClient.invalidateQueries({ queryKey: keys.household.grocery(householdId) });
+  }
 
   const items = visibleItems(list);
   const { remaining, checked } = listCounts(items);
 
   function toggleItem(item: GroceryItemRow, isChecked: boolean) {
-    run({
-      optimistic: (current) => withItemChecked(current, item.id, isChecked),
-      action: () => toggleGroceryItem({ data: { itemId: item.id, checked: isChecked } }),
-      announce: isChecked ? `${item.displayName} in the cart` : `${item.displayName} back on the list`,
-    });
+    setAnnouncement(isChecked ? `${item.displayName} in the cart` : `${item.displayName} back on the list`);
+    toggle.mutate({ itemId: item.id, checked: isChecked }, { onError: onWriteFailed });
   }
 
   function editItem(item: GroceryItemRow, patch: { displayName?: string; quantity?: number | null }) {
     // Nothing changed — an edit form submitted unedited is not a write.
     if (patch.displayName === undefined && patch.quantity === undefined) return;
-    run({
-      optimistic: (current) => withItemEdited(current, item.id, patch),
-      action: () => updateGroceryItem({ data: { itemId: item.id, ...patch } }),
-      toast: "Saved",
-    });
+    edit.mutate(
+      { itemId: item.id, ...patch },
+      {
+        onSuccess: () => push({ variant: "success", title: "Saved" }),
+        onError: onWriteFailed,
+      },
+    );
   }
 
   /**
@@ -220,12 +168,14 @@ function GroceryListPage() {
   /** The confirmed remove. Still optimistic — the confirm sits in front of it. */
   function removeItem(item: GroceryItemRow) {
     setConfirmRemove(false);
-    run({
-      optimistic: (current) => withItemRemoved(current, item.id),
-      action: () => removeGroceryItem({ data: { itemId: item.id } }),
-      toast: `${item.displayName} removed`,
-      announce: `${item.displayName} removed from the list`,
-    });
+    setAnnouncement(`${item.displayName} removed from the list`);
+    remove.mutate(
+      { itemId: item.id },
+      {
+        onSuccess: () => push({ variant: "success", title: `${item.displayName} removed` }),
+        onError: onWriteFailed,
+      },
+    );
   }
 
   /**
@@ -237,34 +187,34 @@ function GroceryListPage() {
    */
   function clearPurchased() {
     setConfirmClearPurchased(false);
-    run({
-      optimistic: withCheckedCleared,
-      action: () => clearPurchasedGroceryItems(),
-      toast: checked === 1 ? "1 item cleared" : `${checked} items cleared`,
-      announce: "Purchased items cleared",
-    });
+    setAnnouncement("Purchased items cleared");
+    sweep.mutate(
+      { kind: "purchased" },
+      {
+        onSuccess: () => push({ variant: "success", title: checked === 1 ? "1 item cleared" : `${checked} items cleared` }),
+        onError: onWriteFailed,
+      },
+    );
   }
 
   /** The same sweep, widened: the list goes back to empty, checked or not. */
   function clearAll() {
     setConfirmClearAll(false);
-    run({
-      optimistic: withAllCleared,
-      action: () => clearAllGroceryItems(),
-      toast: items.length === 1 ? "1 item cleared" : `${items.length} items cleared`,
-      announce: "The list was cleared",
-    });
+    setAnnouncement("The list was cleared");
+    sweep.mutate(
+      { kind: "all" },
+      {
+        onSuccess: () => push({ variant: "success", title: items.length === 1 ? "1 item cleared" : `${items.length} items cleared` }),
+        onError: onWriteFailed,
+      },
+    );
   }
 
   /** The one that actually deletes — swept rows included. */
   function deleteAll() {
     setConfirmDeleteAll(false);
-    run({
-      optimistic: withAllCleared,
-      action: () => deleteAllGroceryItems(),
-      toast: "List deleted",
-      announce: "The whole list was deleted",
-    });
+    setAnnouncement("The whole list was deleted");
+    sweep.mutate({ kind: "delete" }, { onSuccess: () => push({ variant: "success", title: "List deleted" }), onError: onWriteFailed });
   }
 
   return (
@@ -289,9 +239,14 @@ function GroceryListPage() {
                 week in is an action the list itself offers — not something you
                 have to go back to the planner to do. The server snaps the date
                 to the household's own week start. */}
+                {/* Every "add" here reads the household's recipes and the food
+                  lexicon server-side, so there is nothing to do offline but
+                  say so. The list itself stays fully readable. */}
                 <Button
                   variant="outline"
                   size="sm"
+                  disabled={!online}
+                  title={online ? undefined : OFFLINE_WRITE_HINT}
                   onClick={() => setAddRequest({ planWeek: todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone), label: "This week's plan" })}
                 >
                   <CalendarRange data-icon="inline-start" aria-hidden="true" />
@@ -302,7 +257,7 @@ function GroceryListPage() {
                 recipes", the preview answers "which rows", and collapsing them
                 into one dialog would ask both questions before either has an
                 answer. */}
-                <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)}>
+                <Button variant="outline" size="sm" disabled={!online} title={online ? undefined : OFFLINE_WRITE_HINT} onClick={() => setPickerOpen(true)}>
                   <BookOpenText data-icon="inline-start" aria-hidden="true" />
                   Add recipes
                 </Button>
@@ -326,11 +281,11 @@ function GroceryListPage() {
                     }
                   />
                   <DropdownMenuContent align="end" className="min-w-52">
-                    <DropdownMenuItem disabled={checked === 0} onClick={() => setConfirmClearPurchased(true)}>
+                    <DropdownMenuItem disabled={checked === 0 || !online} onClick={() => setConfirmClearPurchased(true)}>
                       <Check aria-hidden="true" />
                       {checked > 0 ? `Clear purchased (${checked})` : "Clear purchased"}
                     </DropdownMenuItem>
-                    <DropdownMenuItem disabled={items.length === 0} onClick={() => setConfirmClearAll(true)}>
+                    <DropdownMenuItem disabled={items.length === 0 || !online} onClick={() => setConfirmClearAll(true)}>
                       <ListX aria-hidden="true" />
                       Clear all
                     </DropdownMenuItem>
@@ -345,7 +300,7 @@ function GroceryListPage() {
                     one action that reclaims them. Disabling it then would leave
                     them unreachable forever. On a genuinely empty list it is a
                     server-side no-op. */}
-                    <DropdownMenuItem variant="destructive" onClick={() => setConfirmDeleteAll(true)}>
+                    <DropdownMenuItem variant="destructive" disabled={!online} onClick={() => setConfirmDeleteAll(true)}>
                       <Trash2 aria-hidden="true" />
                       Delete everything
                     </DropdownMenuItem>
@@ -365,12 +320,13 @@ function GroceryListPage() {
           <div className="flex-none border-b-2 border-border bg-card px-3 py-2.5 md:px-4">
             <ManualItemInput
               className="mx-auto w-full max-w-3xl"
+              disabled={!online}
               onAdded={(text, result) => {
                 // No optimistic row: the aisle, the parsed amount and whether it
                 // merged are the lexicon's answers, not the client's.
                 push({ variant: "success", title: result.merged ? `${text} merged into the list` : `${text} added` });
                 setAnnouncement(`${text} added to the list`);
-                void router.invalidate();
+                void refreshList();
               }}
               onError={(message) => push({ variant: "destructive", title: message })}
             />
@@ -388,7 +344,7 @@ function GroceryListPage() {
             edge and only the text is inset. */}
           <div className="flex min-h-0 flex-1 flex-col overflow-auto pb-8">
             <div className="mx-auto w-full max-w-3xl">
-              <GroceryList items={items} onToggle={toggleItem} onEdit={editItem} onRemove={askRemove} />
+              <GroceryList items={items} onToggle={toggleItem} onEdit={editItem} onRemove={askRemove} writable={online} />
             </div>
           </div>
         </section>
@@ -413,7 +369,7 @@ function GroceryListPage() {
             title: total === 0 ? "Nothing to add" : `${total} ${total === 1 ? "item" : "items"} on the list${result.merged > 0 ? ` · ${result.merged} merged` : ""}`,
           });
           setAnnouncement(`${total} added to the list`);
-          void router.invalidate();
+          void refreshList();
         }}
         onError={(message) => push({ variant: "destructive", title: message })}
       />

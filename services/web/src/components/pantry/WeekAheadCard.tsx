@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { CalendarRange, ChevronRight, Dices, Plus } from "lucide-react";
-import type { PlanDay, PlanRecipeEntry, PlanWeek } from "#/server/meal-plan";
+import type { PlanDay, PlanRecipeEntry, PlanWeek } from "#/lib/api";
 import { MEAL_SLOTS, type PlanDate } from "#/lib/plan/week";
 import { formatPlanDate, shortDow } from "#/lib/plan/labels";
 import { Button } from "#/components/ui/button";

@@ -1,6 +1,6 @@
 import type { ExtractedRecipe, ImportCandidate, ImportParseFailure, JsonObject } from "@buttery/recipe-extract/import";
 import { recipeRecordProblems, type RecipeRecordInput } from "#/lib/recipe-record";
-import type { AttributionChoice } from "#/server/recipes-write";
+import type { AttributionChoice } from "#/lib/api";
 import {
   COMMIT_CHUNK_SIZE,
   type CommitItem,

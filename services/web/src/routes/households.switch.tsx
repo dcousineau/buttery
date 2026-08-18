@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { Check, Users } from "lucide-react";
-import { listMyHouseholds } from "#/server/household/households";
-import { switchActiveHousehold } from "#/server/household/onboarding";
-import { errorMessage } from "#/server/household/pending-invite";
+import { listMyHouseholds } from "#/lib/api";
+import { switchActiveHousehold } from "#/lib/api";
+import { errorMessage } from "#/lib/api";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent } from "#/components/ui/card";
 import { Spinner } from "#/components/ui/spinner";
 import { seo } from "#/lib/seo";
-import type { HouseholdSummary } from "#/server/household/households";
+import type { HouseholdSummary } from "#/lib/api";
 
 /** The multi-household picker (§5). Reached from the §5 state machine (2+ live
  * memberships, no active) and from the chrome switcher at any time. */
@@ -62,7 +62,7 @@ function PickerCard({ household }: { household: HouseholdSummary }) {
     setError(null);
     setPending(true);
     try {
-      await switchActiveHousehold({ data: { householdId: household.id } });
+      await switchActiveHousehold(household.id);
       await navigate({ to: "/households" });
     } catch (err) {
       setError(errorMessage(err));

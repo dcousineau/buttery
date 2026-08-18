@@ -1,5 +1,7 @@
-import { HeadContent, Scripts, createRootRoute, useRouterState } from "@tanstack/react-router";
+import { HeadContent, Scripts, createRootRouteWithContext, useRouterState } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
+import { ReactQueryDevtoolsPanel } from "@tanstack/react-query-devtools";
+import type { QueryClient } from "@tanstack/react-query";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import { PostHogProvider } from "@posthog/react";
 import { useEffect, useRef } from "react";
@@ -7,15 +9,50 @@ import { authClient } from "../lib/auth-client";
 import AppShell from "../components/AppShell";
 import Waitlist from "../components/Waitlist";
 import { POSTHOG_CLIENT_CONFIG, useAnalytics } from "../lib/analytics";
-import { getGateState } from "../lib/gate";
+import { fetchGateState, isOffline, type GateState } from "#/lib/api";
+import { cacheGateState, gateStateOffline } from "#/lib/offline/session-cache";
+import { useCachePartition } from "#/lib/offline/use-cache-partition";
 import { absolute, seo } from "../lib/seo";
 
 import appCss from "../styles.css?url";
 
 const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getItem('theme');var mode=(stored==='light'||stored==='dark'||stored==='auto')?stored:'auto';var prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;var resolved=mode==='auto'?(prefersDark?'dark':'light'):mode;var root=document.documentElement;root.classList.remove('light','dark');root.classList.add(resolved);if(mode==='auto'){root.removeAttribute('data-theme')}else{root.setAttribute('data-theme',mode)}root.style.colorScheme=resolved;}catch(e){}})();`;
 
-export const Route = createRootRoute({
-  loader: () => getGateState(),
+/**
+ * The gate verdict, with the offline arm §4.4 requires.
+ *
+ * This loader runs on **every** page in the app, and before this change it was
+ * the single point that took the whole tree down without a network: a throwing
+ * root loader means an error screen, not a degraded one, so an installed Buttery
+ * in airplane mode showed nothing at all.
+ *
+ * On the server a failure still throws — there is no cache to fall back to and a
+ * broken gate is a real bug worth surfacing. On the client it falls back to the
+ * last known verdict, and to "authed and invited" when there is none, because the
+ * gate is chrome (it picks between the app and a waitlist screen) and every
+ * actual authorization is a server function that by definition reached the
+ * server. §4.4 argues the direction at length: the failure mode of erring open
+ * is a stranger seeing an empty shell; the failure mode of erring closed is the
+ * household being locked out of its own shopping list in a store.
+ */
+async function loadGateState(): Promise<GateState> {
+  try {
+    const gate = await fetchGateState();
+    if (typeof window !== "undefined") cacheGateState(gate);
+    return gate;
+  } catch (error) {
+    if (typeof window === "undefined") throw error;
+    // Not narrowed to `isOffline` alone: a service-worker-served shell, an
+    // aborted navigation and a captive portal all fail differently, and none of
+    // them is a reason to blank the app. The distinction is kept only so that a
+    // genuinely broken gate still reaches the console.
+    if (!isOffline(error)) console.warn("[gate] falling back to the cached verdict", error);
+    return gateStateOffline();
+  }
+}
+
+export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  loader: () => loadGateState(),
   head: () => ({
     meta: [
       {
@@ -100,7 +137,7 @@ function PostHogIdentity() {
     if (identifiedDid.current && identifiedDid.current !== did) posthog.reset();
     // DID is the primary lookup id (distinct_id); handle rides along as a person
     // property so PostHog is filterable by handle, not just the opaque DID. Keep
-    // `handle` the real atproto handle (server does the same in src/lib/gate.ts);
+    // `handle` the real atproto handle (server does the same in src/server/gate.ts);
     // `name` is the separate display fallback.
     posthog.identify(did, {
       ...(session.user.handle ? { handle: session.user.handle } : {}),
@@ -123,6 +160,10 @@ function PostHogIdentity() {
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   const gate = Route.useLoaderData();
+  // Keeps the IndexedDB partition pointed at the signed-in household, and wipes
+  // it when that changes (§2.7). Mounted at the root because a household switch
+  // navigates, and any component below could unmount mid-switch.
+  useCachePartition();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // A signed-in user without the `invited` flag gets the waitlist takeover,
   // except on the ungated legal pages so they can still read them / sign out.
@@ -174,6 +215,14 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             {
               name: "Tanstack Router",
               render: <TanStackRouterDevtoolsPanel />,
+            },
+            // The offline surface is a cache, so "what is in the cache, how old
+            // is it, and is it persisted" is the question every offline bug
+            // starts from. §2.2 exists so that this panel is the ONLY place that
+            // question has an answer — the service worker never caches data.
+            {
+              name: "Tanstack Query",
+              render: <ReactQueryDevtoolsPanel />,
             },
           ]}
         />

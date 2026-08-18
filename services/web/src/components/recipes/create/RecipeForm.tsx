@@ -16,9 +16,8 @@ import { RECIPE_VOCAB, slugForLabel, slugForToken, tokenForSlug } from "#/lib/re
 import { useHydratedSession } from "#/lib/auth-client";
 import { reconnectAtproto } from "#/lib/atproto-reauth";
 import { type AttributionState, EMPTY_ATTRIBUTION, attributionComplete, buildAttribution } from "#/lib/recipe-attribution";
-import { deriveSource } from "#/server/recipe-provenance";
-import { saveRecipe, type RecipeRecordInput, type FieldIssue } from "#/server/recipes-write";
-import { getImportPrefill } from "#/server/recipe-scrape";
+import { deriveSource } from "#/lib/recipe-provenance";
+import { type FieldIssue, getImportPrefill, type RecipeRecordInput, saveRecipe } from "#/lib/api";
 import { useRecipesView } from "../context";
 import type { RecipeViewData } from "../RecipeView";
 import { type EditorMode } from "./LineEditor";
@@ -119,7 +118,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
     if (!importId) return;
     let cancelled = false;
     void (async () => {
-      const payload = await getImportPrefill({ data: { id: importId } }).catch(() => null);
+      const payload = await getImportPrefill(importId).catch(() => null);
       if (cancelled || !payload) return;
       const r = payload.recipe;
       setSourceUrl(payload.sourceUrl);
@@ -191,14 +190,12 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
     setIssues([]);
     try {
       const result = await saveRecipe({
-        data: {
-          record: buildRecord(),
-          visibility: "draft",
-          publish,
-          sourceUrl,
-          image: image?.kind === "bytes" ? { dataBase64: image.dataBase64, mime: image.mime, alt: image.alt } : null,
-          imageSourceUrl: image?.kind === "url" ? image.url : null,
-        },
+        record: buildRecord(),
+        visibility: "draft",
+        publish,
+        sourceUrl,
+        image: image?.kind === "bytes" ? { dataBase64: image.dataBase64, mime: image.mime, alt: image.alt } : null,
+        imageSourceUrl: image?.kind === "url" ? image.url : null,
       });
       if (result.status === "invalid") {
         setIssues(result.issues);

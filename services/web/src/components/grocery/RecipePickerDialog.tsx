@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { BookOpenText, UtensilsCrossed } from "lucide-react";
-import { type HouseholdRecipeRow, listHouseholdRecipes } from "#/server/household-recipes";
+import { type HouseholdRecipeRow, listHouseholdRecipes } from "#/lib/api";
 import { Button } from "#/components/ui/button";
 import { CheckboxRow } from "#/components/ui/checkbox";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "#/components/ui/dialog";

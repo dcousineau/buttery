@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PlanDay, PlanEntry, PlanWeek } from "#/server/meal-plan";
+import type { PlanDay, PlanEntry, PlanWeek } from "#/lib/api";
 import { MEAL_SLOTS, type MealSlot, type PlanDate } from "#/lib/plan/week";
 import { findEntry, isOptimisticId, optimisticNoteEntry, withEntriesAppended, withEntryCooked, withEntryMoved, withEntryRemoved, withNoteBody } from "./optimistic";
 

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { CircleAlert } from "lucide-react";
-import { requireActiveHousehold } from "#/server/household/onboarding";
-import { submitImport } from "#/server/recipe-scrape";
+import { requireActiveHousehold } from "#/lib/api";
+import { submitImport } from "#/lib/api";
 import { Spinner } from "#/components/ui/spinner";
 import { Button } from "#/components/ui/button";
 import { seo } from "#/lib/seo";
@@ -51,7 +51,7 @@ function ImportBridge() {
       handled.current = true;
       window.clearInterval(poll);
       try {
-        const res = await submitImport({ data: payload });
+        const res = await submitImport(payload);
         if (res.status === "ok" || res.status === "partial") {
           void navigate({ to: "/household/recipes/new", search: { import: res.importId } });
           return;

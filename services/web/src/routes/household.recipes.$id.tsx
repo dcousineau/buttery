@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, UtensilsCrossed } from "lucide-react";
 import * as z from "zod";
-import { getHouseholdRecipe } from "#/server/household-recipes";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { householdRecipeQuery } from "#/lib/api";
 import { Button } from "#/components/ui/button";
 import { DetailPane } from "#/components/recipes/DetailPane";
 
@@ -41,12 +42,23 @@ const searchSchema = z.object({
 
 export const Route = createFileRoute("/household/recipes/$id")({
   validateSearch: searchSchema,
-  loader: ({ params }) => getHouseholdRecipe({ data: { recipeId: params.id } }),
+  /**
+   * Offline-capable (§4.1). The parent layout route has already resolved the
+   * active household, so `context.householdId` is available here without a
+   * second round trip — and it has to be, because a query key needs a partition
+   * before the query can even be looked up in IndexedDB.
+   */
+  loader: ({ context, params }) => context.queryClient.ensureQueryData(householdRecipeQuery(context.householdId, params.id)),
   component: RecipeDetailRoute,
 });
 
 function RecipeDetailRoute() {
-  const recipe = Route.useLoaderData();
+  const { id } = Route.useParams();
+  const { householdId } = Route.useRouteContext();
+  // The hook rather than the loader's return value, on purpose: an unobserved
+  // query gets no refetch-on-reconnect, no invalidation and no gc protection,
+  // which is exactly the machinery this route needs offline (§4.1).
+  const { data: recipe } = useSuspenseQuery(householdRecipeQuery(householdId, id));
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   if (!recipe) return <NotInBox />;

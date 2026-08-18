@@ -2,9 +2,9 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useHydratedSession } from "#/lib/auth-client";
-import { requireActiveHousehold } from "#/server/household/onboarding";
-import { getMealPlanWeek } from "#/server/meal-plan";
-import { addRecipeToHousehold, listHouseholdRecipes, searchGlobalRecipes, type GlobalRecipeResult } from "#/server/household-recipes";
+import { requireActiveHousehold } from "#/lib/api";
+import { getMealPlanWeek } from "#/lib/api";
+import { addRecipeToHousehold, listHouseholdRecipes, searchGlobalRecipes, type GlobalRecipeResult } from "#/lib/api";
 import { Badge } from "#/components/ui/badge";
 import { Toast, ToastViewport, useToasts } from "#/components/ui/toast";
 import { AddRecipeChooser } from "#/components/recipes/create/AddRecipeChooser";
@@ -46,10 +46,10 @@ export const Route = createFileRoute("/household/")({
     if (recipes.length === 0) return { active, recipes, week: null, network: [] as GlobalRecipeResult[] };
 
     const [week, network] = await Promise.all([
-      getMealPlanWeek({ data: {} }),
+      getMealPlanWeek(),
       // Best-effort garnish. The public corpus going quiet (or slow) must not
       // take the household's own pantry down with it.
-      searchGlobalRecipes({ data: { limit: NETWORK_COUNT } }).then(
+      searchGlobalRecipes({ limit: NETWORK_COUNT }).then(
         (r) => r.results,
         () => [] as GlobalRecipeResult[],
       ),
@@ -101,7 +101,7 @@ function PantryPage() {
     if (savingRecipeId) return false;
     setSavingRecipeId(recipeId);
     try {
-      await addRecipeToHousehold({ data: { recipeId } });
+      await addRecipeToHousehold(recipeId);
       await router.invalidate();
       pushToast("Added to your box");
       return true;

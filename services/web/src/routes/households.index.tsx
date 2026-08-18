@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { Check, Copy, Crown, Link2, LogOut, Mail, Pencil, Plus, Shield, Trash2, UserMinus, UserPlus, Users } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
-import { requireActiveHousehold, listHouseholdMembers } from "#/server/household/onboarding";
-import { listMyHouseholds, renameHousehold, deleteHousehold, createHousehold } from "#/server/household/households";
-import { listInvites, createInvite, revokeInvite } from "#/server/household/invites";
-import { removeMember, setMemberRole, leaveHousehold } from "#/server/household/members";
-import { errorMessage } from "#/server/household/pending-invite";
+import { requireActiveHousehold, listHouseholdMembers } from "#/lib/api";
+import { listMyHouseholds, renameHousehold, deleteHousehold, createHousehold } from "#/lib/api";
+import { listInvites, createInvite, revokeInvite } from "#/lib/api";
+import { removeMember, setMemberRole, leaveHousehold } from "#/lib/api";
+import { errorMessage } from "#/lib/api";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -19,9 +19,9 @@ import { Select } from "#/components/ui/select";
 import { Separator } from "#/components/ui/separator";
 import { Spinner } from "#/components/ui/spinner";
 import { seo } from "#/lib/seo";
-import type { Role } from "#/server/household/errors";
-import type { HouseholdMemberView } from "#/server/household/onboarding";
-import type { InviteSummary } from "#/server/household/invites";
+import type { Role } from "#/lib/api";
+import type { HouseholdMemberView } from "#/lib/api";
+import type { InviteSummary } from "#/lib/api";
 import type { FormEvent } from "react";
 
 /** Focus an element via a ref when it becomes `active` — the accessible
@@ -44,10 +44,10 @@ function useAutoFocus<T extends HTMLElement>(active: boolean = true) {
 export const Route = createFileRoute("/households/")({
   loader: async () => {
     const active = await requireActiveHousehold();
-    const [members, mine] = await Promise.all([listHouseholdMembers({ data: { householdId: active.householdId } }), listMyHouseholds()]);
+    const [members, mine] = await Promise.all([listHouseholdMembers(active.householdId), listMyHouseholds()]);
     const summary = mine.find((h) => h.id === active.householdId);
     const myRole: Role = summary?.role ?? "member";
-    const invites = myRole === "owner" ? await listInvites({ data: { householdId: active.householdId } }) : [];
+    const invites = myRole === "owner" ? await listInvites(active.householdId) : [];
     return { householdId: active.householdId, name: active.name, myRole, members, invites, householdCount: mine.length };
   },
   head: ({ loaderData }) => ({ meta: seo({ title: loaderData ? `${loaderData.name} · Buttery` : "Household · Buttery", description: "Manage your household." }) }),
@@ -96,7 +96,7 @@ function HouseholdHeader({ householdId, name, isOwner }: { householdId: string; 
     setError(null);
     setPending(true);
     try {
-      await renameHousehold({ data: { householdId, name: value.trim() } });
+      await renameHousehold({ householdId, name: value.trim() });
       posthog.capture("household_renamed", { household_id: householdId });
       setEditing(false);
       await router.invalidate();
@@ -207,7 +207,7 @@ function MemberRow({ householdId, member, isOwner }: { householdId: string; memb
     // On success the member row unmounts after invalidate; on error `run`
     // surfaces it inline below, so close the dialog either way.
     await run(async () => {
-      await removeMember({ data: { householdId, did: member.did } });
+      await removeMember({ householdId, did: member.did });
       posthog.capture("household_member_removed", { household_id: householdId });
     });
     setRemoveOpen(false);
@@ -237,12 +237,12 @@ function MemberRow({ householdId, member, isOwner }: { householdId: string; memb
         {showControls ? (
           <div className="flex flex-wrap gap-1.5">
             {member.role === "member" ? (
-              <Button size="xs" variant="outline" disabled={pending} onClick={() => run(() => setMemberRole({ data: { householdId, did: member.did, role: "owner" } }))}>
+              <Button size="xs" variant="outline" disabled={pending} onClick={() => run(() => setMemberRole({ householdId, did: member.did, role: "owner" }))}>
                 <Shield aria-hidden="true" />
                 Make owner
               </Button>
             ) : (
-              <Button size="xs" variant="outline" disabled={pending} onClick={() => run(() => setMemberRole({ data: { householdId, did: member.did, role: "member" } }))}>
+              <Button size="xs" variant="outline" disabled={pending} onClick={() => run(() => setMemberRole({ householdId, did: member.did, role: "member" }))}>
                 Make member
               </Button>
             )}
@@ -338,9 +338,7 @@ function CreateInviteForm({ householdId, invites }: { householdId: string; invit
     setPending(true);
     try {
       const expiresAt = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
-      const result = await createInvite({
-        data: mode === "bound" ? { householdId, role, boundHandle: handle.trim(), expiresAt } : { householdId, role, maxUses, expiresAt },
-      });
+      const result = await createInvite(mode === "bound" ? { householdId, role, boundHandle: handle.trim(), expiresAt } : { householdId, role, maxUses, expiresAt });
       setCreated({ id: result.id, link: result.link });
       posthog.capture("household_invite_created", { household_id: householdId, invite_type: mode, invite_role: role });
       if (mode === "bound") setHandle("");
@@ -475,7 +473,7 @@ function InviteRow({ invite }: { invite: InviteSummary }) {
     setError(null);
     setPending(true);
     try {
-      await revokeInvite({ data: { inviteId: invite.id } });
+      await revokeInvite(invite.id);
       posthog.capture("household_invite_revoked", { invite_type: invite.boundToDid ? "bound" : "open", invite_role: invite.role });
       await router.invalidate();
     } catch (err) {
@@ -554,7 +552,7 @@ function CreateAnotherSection({ currentName }: { currentName: string }) {
     setError(null);
     setPending(true);
     try {
-      await createHousehold({ data: { name: name.trim() } });
+      await createHousehold(name.trim());
       setOpen(false);
       // createHousehold sets the new one active server-side; land in it.
       await navigate({ to: "/households" });
@@ -636,7 +634,7 @@ function DangerZone({ householdId, isOwner, memberCount }: { householdId: string
     setError(null);
     setPending(true);
     try {
-      await leaveHousehold({ data: { householdId } });
+      await leaveHousehold(householdId);
       posthog.capture("household_left", { household_id: householdId });
       setLeaveOpen(false);
       await navigate({ to: "/onboarding" });
@@ -651,7 +649,7 @@ function DangerZone({ householdId, isOwner, memberCount }: { householdId: string
     setError(null);
     setPending(true);
     try {
-      await deleteHousehold({ data: { householdId } });
+      await deleteHousehold(householdId);
       posthog.capture("household_deleted", { household_id: householdId, member_count: memberCount });
       setDeleteOpen(false);
       await navigate({ to: "/onboarding" });

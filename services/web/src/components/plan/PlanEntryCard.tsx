@@ -1,11 +1,12 @@
 import { Check, CookingPot, EyeOff, Lock } from "lucide-react";
 import { useRef, useState } from "react";
-import type { PlanEntry } from "#/server/meal-plan";
+import type { PlanEntry } from "#/lib/api";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
 import { SLOT_LABELS, formatPlanDate } from "#/lib/plan/labels";
 import { Popover, PopoverTrigger } from "#/components/ui/popover";
 import { PlanEntryPopover } from "./PlanEntryPopover";
 import type { PlanEntryActionIntent } from "./PlanEntryPopover";
+import { OFFLINE_WRITE_HINT } from "#/lib/offline/use-online";
 import { usePlanActions } from "./PlanActions";
 import { isOptimisticId } from "./optimistic";
 import { useTextSafeDrag } from "#/lib/hooks/use-drag-source";
@@ -63,7 +64,8 @@ export function PlanEntryCard({ entry, date, slot, variant, isPast = false }: Pl
   // The whole card is the drag source, so any text control it ever grows (an
   // inline note edit, say) would lose click-and-drag selection to the card drag.
   // This stands the card down for a press that begins inside one.
-  const dragProps = useTextSafeDrag(!pending);
+  // Dragging IS a move, so it goes with the rest of the writes when offline.
+  const dragProps = useTextSafeDrag(!pending && actions.writable);
 
   /**
    * Escape and outside-press dismissal are the primitive's now; the only case it
@@ -192,9 +194,9 @@ export function PlanEntryCard({ entry, date, slot, variant, isPast = false }: Pl
             </button>
             <button
               type="button"
-              disabled={pending}
+              disabled={pending || !actions.writable}
               aria-pressed={cooked}
-              title={cooked ? "Not cooked after all" : "Mark cooked"}
+              title={actions.writable ? (cooked ? "Not cooked after all" : "Mark cooked") : OFFLINE_WRITE_HINT}
               aria-label={cooked ? `Mark ${entry.title} not cooked` : `Mark ${entry.title} cooked`}
               onClick={(event) => {
                 event.stopPropagation();

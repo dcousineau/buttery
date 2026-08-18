@@ -14,9 +14,9 @@ import type { MealSlot, PlanDate } from "#/lib/plan/week";
  *
  * The API is deliberately id-in / void-out. Callers never await a mutation and
  * never see its result: the optimistic patch has already repainted, and the
- * route owns the toast, the announcement and the reconciling
- * `router.invalidate()`. A card asking "did that work?" would only be able to
- * draw a second, contradictory answer.
+ * route owns the toast, the announcement and the reconciling invalidation of the
+ * week's query key. A card asking "did that work?" would only be able to draw a
+ * second, contradictory answer.
  *
  * There is deliberately no "busy" flag either. Every write here is optimistic
  * and last-write-wins (D10), so a pending request is not a reason to take the
@@ -56,6 +56,18 @@ export interface PlanActionsValue {
   /** The slot currently under the pointer, as `slotKey(date, slot)`. */
   dragOverSlot: string | null;
   setDragOverSlot: (key: string | null) => void;
+
+  /**
+   * False while the browser is offline (offline plan §4.1).
+   *
+   * The week is fully READABLE offline — that is the whole point of M1 — but no
+   * write on it is replay-safe by shape yet: `moveMealPlanEntry` is (it names its
+   * target date and slot), while `addMealPlanRecipes` mints server-side entry ids
+   * and needs the client-minted ULIDs §5.2 adds. Rather than ship half the grid
+   * writable and half not, M1 makes the whole surface read-only offline and M2
+   * turns it on as one piece.
+   */
+  writable: boolean;
 }
 
 const PlanActionsContext = createContext<PlanActionsValue | null>(null);

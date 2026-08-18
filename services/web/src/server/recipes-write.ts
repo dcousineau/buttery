@@ -28,6 +28,7 @@ dayjs.extend(duration);
 // screen can predict this module's verdict with the *same* schema instead of a second copy
 // of the length caps. Re-exported here because this module is still their public address.
 export type { FieldIssue, RecipeRecordInput };
+import type { AttributionChoice } from "#/lib/api/types";
 
 export interface RecipeImageInput {
   /** base64 (no data: prefix) of the image bytes; ≤1MB decoded. */
@@ -90,13 +91,7 @@ function domainOf(url: string): string | null {
  * an author from a title or a name from a page reference, and that rule is only
  * enforceable if there is a single implementation of it.
  */
-export type AttributionChoice =
-  /** Cookbook or magazine. Both fields are lexicon-required; the UI collects the author and prefills nothing. */
-  | { kind: "publication"; title: string; author: string }
-  /** A person the recipe came from — family, a friend. */
-  | { kind: "person"; name: string }
-  /** A site the user supplied a URL for by hand (e.g. a bare "Tiktok" source string). */
-  | { kind: "website"; name: string; url: string };
+export type { AttributionChoice };
 
 /** Build a lexicon attribution from a user's classification, or null if the choice is incomplete. */
 function attributionFromChoice(choice: AttributionChoice): RecipeRecord["attribution"] | null {

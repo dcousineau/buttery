@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { ChevronRight } from "lucide-react";
-import type { GlobalRecipeResult } from "#/server/household-recipes";
+import type { GlobalRecipeResult } from "#/lib/api";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { RecipeMiniCard } from "./RecipeMiniCard";

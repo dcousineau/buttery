@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { blobImageUrl } from "#/lib/atproto/images";
-import { deriveApp, prettify, profileUrl, shortDid } from "./recipe-provenance";
+import { deriveApp, prettify, profileUrl, shortDid } from "#/lib/recipe-provenance";
+import type { RecipeCardData, RecipeDetailData } from "#/lib/api/types";
 
 // Read-side browse/detail queries over the rendered `recipe` layer (see the
 // recipe_rendered migration + the cron's render.ts). These power the home-page
@@ -8,48 +9,14 @@ import { deriveApp, prettify, profileUrl, shortDid } from "./recipe-provenance";
 // server-only: `getDb()` (pg) is pulled in via a dynamic import inside each
 // handler so this module stays safe to reference from the client bundle.
 
-export interface RecipeCardData {
-  id: string;
-  name: string;
-  description: string | null;
-  /** ISO timestamp we consider the recipe "published", or null. */
-  publishedAt: string | null;
-  imageUrl: string | null;
-  imageAlt: string | null;
-  /** Who published it — the atproto handle, else a short DID, else null. */
-  publishedBy: string | null;
-  /** Link to the publisher's profile (Bluesky appview), or null. */
-  publisherUrl: string | null;
-  /** Which app it was published under, if we can tell. Often null. */
-  app: string | null;
-  /** Deep link to this recipe on the source app, or null. */
-  appUrl: string | null;
-}
-
-export interface RecipeDetailData extends RecipeCardData {
-  uri: string | null;
-  did: string | null;
-  images: Array<{ url: string; alt: string | null; aspectW: number | null; aspectH: number | null }>;
-  ingredients: string[];
-  instructions: string[];
-  keywords: string[];
-  recipeYield: string | null;
-  prepTime: string | null;
-  cookTime: string | null;
-  totalTime: string | null;
-  cuisine: string | null;
-  category: string | null;
-  cookingMethod: string | null;
-  suitableForDiet: string[];
-  calories: number | null;
-  attribution: {
-    kind: string;
-    displayName: string | null;
-    author: string | null;
-    publisher: string | null;
-    url: string | null;
-  } | null;
-}
+/**
+ * The wire DTOs this module returns are declared in the port's `types.ts` and
+ * imported from there (offline plan §4.3 / §7): the client caches these shapes
+ * in IndexedDB, versions them, and must be able to name them without importing
+ * a server module — so it owns the declaration. Re-exported here for the
+ * server-side callers that already reach for them through this module.
+ */
+export type { RecipeCardData, RecipeDetailData };
 
 interface CardRow {
   id: string;

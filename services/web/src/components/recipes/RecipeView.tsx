@@ -1,8 +1,8 @@
 import { Clock, UtensilsCrossed } from "lucide-react";
 import { NutritionStrip } from "./NutritionStrip";
 import { SourceLink } from "./SourceLink";
-import type { RecipeSource } from "#/server/recipe-provenance";
-import type { RecipeNutrition } from "#/server/household-recipes";
+import type { RecipeSource } from "#/lib/api";
+import type { RecipeNutrition } from "#/lib/api";
 
 /**
  * Presentational recipe reader (plan §A6). Renders entirely from props — no data

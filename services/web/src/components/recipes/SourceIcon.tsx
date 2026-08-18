@@ -1,5 +1,5 @@
 import { BookOpenText, ExternalLink, Pencil } from "lucide-react";
-import type { SourceKind } from "#/server/recipe-provenance";
+import type { SourceKind } from "#/lib/api";
 
 /**
  * The provenance glyph keyed to a recipe's source kind (design handoff):

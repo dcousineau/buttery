@@ -1,7 +1,7 @@
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { cva } from "class-variance-authority";
 import { Check, Pencil, UtensilsCrossed } from "lucide-react";
-import { type GroceryPreview, type GroceryPreviewRow, commitGroceryAdd, previewGroceryAdd } from "#/server/grocery";
+import { type GroceryPreview, type GroceryPreviewRow, commitGroceryAdd, previewGroceryAdd } from "#/lib/api";
 import { AISLE_LABELS, aisleOrder } from "#/lib/grocery/aisles";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -93,7 +93,7 @@ function AddPreviewBody({ request, onClose, onCommitted, onError }: AddPreviewDi
 
   useEffect(() => {
     let cancelled = false;
-    previewGroceryAdd({ data: { recipes: request.recipes, planWeek: request.planWeek } })
+    previewGroceryAdd({ recipes: request.recipes, planWeek: request.planWeek })
       .then((result) => {
         if (cancelled) return;
         setPreview(result);
@@ -149,7 +149,7 @@ function AddPreviewBody({ request, onClose, onCommitted, onError }: AddPreviewDi
         };
       });
 
-    commitGroceryAdd({ data: { rows: picked } })
+    commitGroceryAdd({ rows: picked })
       .then((result) => {
         onCommitted(result);
         onClose();

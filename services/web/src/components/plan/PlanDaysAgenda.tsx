@@ -1,10 +1,11 @@
 import { Fragment, useCallback, useLayoutEffect, useRef } from "react";
 import { ChevronUp, Plus } from "lucide-react";
-import type { PlanWeek } from "#/server/meal-plan";
+import type { PlanWeek } from "#/lib/api";
 import { MEAL_SLOTS } from "#/lib/plan/week";
 import { SLOT_LABELS, addToSlotLabel, formatPlanDate, longDow } from "#/lib/plan/labels";
 import { Badge } from "#/components/ui/badge";
 import { PlanEntryCard } from "./PlanEntryCard";
+import { OFFLINE_WRITE_HINT } from "#/lib/offline/use-online";
 import { slotDropHandlers, slotKey, usePlanActions } from "./PlanActions";
 import { useIsMobile } from "#/lib/hooks/use-mobile";
 import { cn } from "#/lib/utils";
@@ -175,8 +176,9 @@ export function PlanDaysAgenda({ week, scrollNonce = 0 }: { week: PlanWeek; scro
                     <button
                       type="button"
                       data-plan-add=""
+                      disabled={!actions.writable}
                       onClick={() => actions.openAdd(day.date, slot)}
-                      title={addToSlotLabel(slot, day.date)}
+                      title={actions.writable ? addToSlotLabel(slot, day.date) : OFFLINE_WRITE_HINT}
                       aria-label={addToSlotLabel(slot, day.date)}
                       className="inline-flex items-center gap-1 rounded-4xl border-2 border-dashed border-border/45 px-2 py-0.5 text-[0.6875rem] font-bold text-muted-foreground hover:border-border hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
                     >

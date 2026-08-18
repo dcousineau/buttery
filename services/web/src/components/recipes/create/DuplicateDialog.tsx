@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
 import { Spinner } from "#/components/ui/spinner";
-import { addRecipeToHousehold } from "#/server/household-recipes";
+import { addRecipeToHousehold } from "#/lib/api";
 
 /**
  * Shown when publishing an imported URL that an existing PUBLIC record already
@@ -24,7 +24,7 @@ export function DuplicateDialog({ open, onOpenChange, existingRecipeId }: { open
     if (!existingRecipeId) return;
     setAdding(true);
     try {
-      await addRecipeToHousehold({ data: { recipeId: existingRecipeId } });
+      await addRecipeToHousehold(existingRecipeId);
       onOpenChange(false);
       await navigate({ to: "/household/recipes/$id", params: { id: existingRecipeId } });
     } finally {

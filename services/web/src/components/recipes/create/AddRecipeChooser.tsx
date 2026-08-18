@@ -7,7 +7,7 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Spinner } from "#/components/ui/spinner";
 import { cn } from "#/lib/utils";
-import { scrapeRecipe } from "#/server/recipe-scrape";
+import { scrapeRecipe } from "#/lib/api";
 import { useRecipesView } from "../context";
 import { FetchingDialog, type FetchPhase } from "./FetchingDialog";
 import { BookmarkletInstallDialog } from "./BookmarkletInstallDialog";
@@ -54,7 +54,7 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
     setFailUrl(trimmed);
     setPhase("fetching");
     try {
-      const res = await scrapeRecipe({ data: { url: trimmed } });
+      const res = await scrapeRecipe({ url: trimmed });
       // Reached the page (full or partial) → open the form prefilled by import id.
       if (res.status === "ok" || res.status === "partial") {
         setPhase(null);

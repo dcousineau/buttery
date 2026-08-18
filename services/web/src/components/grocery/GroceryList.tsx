@@ -1,4 +1,4 @@
-import type { GroceryItemRow } from "#/server/grocery";
+import type { GroceryItemRow } from "#/lib/api";
 import { AisleGroup } from "./AisleGroup";
 import { GroceryEmptyState } from "./GroceryEmptyState";
 import { groupByAisle, listCounts } from "./optimistic";
@@ -21,9 +21,11 @@ export interface GroceryListProps {
   onToggle: (item: GroceryItemRow, checked: boolean) => void;
   onEdit: (item: GroceryItemRow, patch: { displayName?: string; quantity?: number | null }) => void;
   onRemove: (item: GroceryItemRow) => void;
+  /** Threaded from the route: false while offline (§4.1). */
+  writable?: boolean;
 }
 
-export function GroceryList({ items, onToggle, onEdit, onRemove }: GroceryListProps) {
+export function GroceryList({ items, onToggle, onEdit, onRemove, writable }: GroceryListProps) {
   if (items.length === 0) return <GroceryEmptyState />;
 
   const { remaining } = listCounts(items);
@@ -34,7 +36,16 @@ export function GroceryList({ items, onToggle, onEdit, onRemove }: GroceryListPr
   return (
     <div className="flex flex-col">
       {groupByAisle(items).map((section) => (
-        <AisleGroup key={section.aisle} aisle={section.aisle} label={section.label} items={section.items} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} />
+        <AisleGroup
+          key={section.aisle}
+          aisle={section.aisle}
+          label={section.label}
+          items={section.items}
+          onToggle={onToggle}
+          onEdit={onEdit}
+          onRemove={onRemove}
+          writable={writable}
+        />
       ))}
       {allDone && <GroceryEmptyState variant="cleared" className="py-6" />}
     </div>

@@ -115,12 +115,73 @@
           }
         ]
       }
+    ],
+    // ── The API port boundary (offline plan §4.3) ────────────────────────────
+    //
+    // Client modules read and write through `src/lib/api`, never by reaching into
+    // `src/server/**` directly. That single rule is what makes a route's offline
+    // status legible ("does its data come from a `queryOptions` factory?"), and
+    // what makes the §7 API-service extraction a rewrite of one file instead of a
+    // sweep of fifty call sites.
+    //
+    // Repo-wide by default and switched OFF in `overrides` for the modules that
+    // are meant to know. Dynamic `await import("#/server/…")` is caught too, which
+    // is why the server-rendered route handlers (`routes/api/**`, the OG image
+    // route) are on that exemption list: they are servers, not clients, and the
+    // dynamic form is the repo's established way of keeping `pg` out of the client
+    // bundle (AGENTS.md) rather than an escape hatch from this rule.
+    //
+    // Order matters: overrides are last-match-wins, and the recipe-import block
+    // further down re-declares this rule for its own paths. `src/lib/api/no-server-imports.test.ts`
+    // is the backstop that does not care about override ordering at all.
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["#/server/*", "#/server/**", "**/src/server/*", "**/src/server/**"],
+            "message": "Client modules import from `#/lib/api`, not from `#/server/**` (offline plan §4.3). Reads that must work offline need a `queryOptions` factory in `src/lib/api/queries.ts`; everything else needs a plain function in `src/lib/api/transport.ts`, which is the only module allowed to name a server module. See docs/plans/2026-08-11-offline-mode.md §4.3 and §7."
+          }
+        ]
+      }
     ]
   },
   "options": {
     "typeAware": true
   },
   "overrides": [
+    // The three modules that are *supposed* to know `src/server/**` exists
+    // (offline plan §4.3). Everything else in the repo reaches the server through
+    // `src/lib/api`.
+    //
+    //   - `src/server/**` is the server tree; its modules import each other.
+    //   - `src/routes/api/**` and the OG-image route are server route handlers.
+    //     They render on the server only and never ship to a client bundle, so
+    //     "reach the server through the port" would mean an HTTP round trip to
+    //     themselves.
+    //   - `src/lib/api/transport.ts` is the adapter — the whole point of the rule
+    //     is that this is the ONE client module holding those imports.
+    //   - `src/lib/recipe-import/contracts.ts` is the import flow's pre-existing
+    //     type-only port. It restates no shape: `import type` is erased at build
+    //     time, so nothing of the server module reaches the client bundle through
+    //     it, and copying ~250 lines of interleaved contract docs into the port
+    //     would create a second place for a field to drift. The offline plan
+    //     keeps the whole import flow online-only, permanently (§1.1), so these
+    //     types are never cached and never versioned — the reason the rest of the
+    //     DTOs had to move does not apply to them. `no-server-imports.test.ts`
+    //     pins that this exemption stays *type-only*.
+    {
+      "files": [
+        "services/web/src/server/**",
+        "services/web/src/routes/api/**",
+        "services/web/src/routes/*og*png.ts",
+        "services/web/src/lib/api/transport.ts",
+        "services/web/src/lib/recipe-import/contracts.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    },
     // Plain JS with no tsconfig covering it — the dev-stack scripts, the
     // bookmarklet loader (authored as buildless browser JS on purpose). Every
     // expression in them is `any`/error-typed for want of declarations, so the
