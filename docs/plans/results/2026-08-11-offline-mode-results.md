@@ -118,6 +118,19 @@ Chromium via Playwright, srvx serving `dist/`, signed in through the local atpro
 dev-env, 33 seeded recipes. Offline was the browser's own offline mode
 (`navigator.onLine === false`, every request fails), not a stopped server.
 
+> **The first version of this table was wrong, and the way it was wrong is worth
+> keeping.** Every offline check below was originally run by _reloading the page
+> while offline_ — and a page loaded while offline is the one case that works
+> even when offline reads are completely broken, because Query's `onlineManager`
+> initialises to `true` and only learns otherwise from an `offline` event. The
+> genuinely important path, going offline **mid-session**, was never exercised,
+> and it was broken: queries paused, the persister (which restores from inside
+> `queryFn`) was never reached, and the route hung indefinitely with no error.
+> Two independent review agents found it; the first attempt to reproduce it
+> _passed_, which is why it took a second, more deliberate one. Fixed by
+> `networkMode: "offlineFirst"`, and every row below has been re-run
+> mid-session.
+
 | §4.7 acceptance                                             | Result                                                                                                       |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | Zero `#/server/**` imports outside `transport.ts`           | ✅ enforced by lint **and** by the scanner test                                                              |
@@ -128,11 +141,13 @@ dev-env, 33 seeded recipes. Offline was the browser's own offline mode
 | **An unvisited recipe's detail** renders offline            | ✅ full ingredients + method + timers, for a recipe never opened on that profile                             |
 | Shopping list renders offline                               | ✅, with every write affordance disabled and the field reading "You're offline"                              |
 | Update flow surfaces a toast, no silent swap                | ✅ the banner appeared on a second build; no `skipWaiting`                                                   |
-| Household switch / sign-out wipes the partition             | ⚠️ implemented, not yet exercised (one household in the test environment)                                    |
+| Offline **mid-session** (not just a reload while offline)   | ✅ re-run after the `networkMode` fix; was the broken path                                                   |
+| Household switch wipes the partition                        | ✅ two real households: IndexedDB emptied, partition marker flips at switch time                             |
+| Sign-out empties the store                                  | ✅ 35 entries + 4 snapshots → 0 entries, no identity, header back to "Sign in"                               |
 | Lighthouse PWA audit                                        | ⚠️ not run — no Lighthouse in this container                                                                 |
 | **Device pass on a real iPhone**                            | ❌ **not done, and required before shipping** — a simulator reproduces neither eviction nor the SW lifecycle |
 
-### Four bugs the browser found that no unit test would have
+### Bugs the browser found that no unit test would have
 
 1. **SSR-hydrated queries were never persisted.** The persister wraps `queryFn`; a
    query hydrated from the dehydrated payload never fetches, so on a cold SSR'd load
@@ -160,6 +175,47 @@ Also caught, by the scanner rather than the browser: **two shipped routes import
 through. Fixed, and the globs widened.
 
 ---
+
+### A second review round, by parallel agents
+
+After the first three commits, four independent review agents were run over the
+diff — one auditing the ~50 rewritten call sites against the zod validators that
+TypeScript cannot check, three reviewing the offline layer, the PWA layer and the
+Query migration. Every finding was reproduced before being acted on, and the
+review earned its cost twice over:
+
+- **`networkMode`** (above) — the headline feature was broken in the scenario it
+  exists for, and the original verification had a systematic blind spot.
+- **Sign-out never wiped anything**, and the offline chrome fallback added in the
+  previous commit meant the previous user's handle survived it. A §2.7 violation
+  introduced by the fix for a different §4.4 requirement.
+- **A household switch was not noticed at switch time**, so the mirror wrote the
+  new household's rows under the old household's buster and they were all
+  discarded later.
+- **The recipe-image cache had never stored a single byte** — opaque responses
+  never satisfy `response.ok`.
+- **The update banner usually never appeared** after a deploy, and when it did it
+  covered cook mode's controls with no way to dismiss it.
+- **"Try again" on the offline error was a permanent no-op.**
+- **The build could ship a service worker that caches nothing**, silently, with a
+  constant cache id.
+
+Two of the fixes briefed to those agents were **wrong, and they proved it rather
+than complying** — which is the part of this worth imitating:
+
+- Adding `crossorigin="anonymous"` to the recipe images would have broken every
+  thumbnail: `cdn.bsky.app` sends no `Access-Control-Allow-Origin` (checked
+  across four presets and a preflight; `public.api.bsky.app` does, so it is not
+  proxy stripping). Opaque responses are stored instead, with the cap cut
+  300 → 48 because WebKit charges ~7MB of quota per opaque entry.
+- The claim that `createClientOnlyFn` does not throw on the server is false. The
+  runtime stub is `(fn) => fn`, but the Start compiler rewrites the call site,
+  and the shipped server bundle contains throwing stubs. The docstrings were
+  right and were left alone.
+
+The textbook `isMutating() === 1` guard was also rejected on reasoning: three
+grocery mutation keys share one payload, so a global count would let a plan write
+suppress a grocery invalidation. Mutations carry a `meta.cacheScope` instead.
 
 ## Deliberate deviations from the plan
 
@@ -192,9 +248,14 @@ through. Fixed, and the globs widened.
 
 1. **Device pass on a real iPhone — required.** Install to the home screen, airplane
    mode, full read cycle including cook mode with timers. §9.1's seven-day eviction and
-   the SW lifecycle are the two things a container cannot reproduce.
+   the SW lifecycle are the two things a container cannot reproduce. Note that the
+   `networkMode` bug above was invisible to every container test that reloaded while
+   offline — treat "it worked when I reloaded" as not having tested anything.
 2. **Lighthouse PWA audit** against a deployed build.
-3. **Household switch / sign-out wipe**, verified with two real households.
+3. **The opaque image cache wants a real-device check.** Storing opaque responses
+   means the ~7MB-per-entry quota accounting is WebKit's, not ours; 48 entries is a
+   calculation, not a measurement. If `cdn.bsky.app` ever serves CORS headers, switch
+   to `crossorigin="anonymous"` and raise the cap.
 4. `CACHE_SCHEMA_VERSION` is 1. Bump it on any breaking change to a DTO in
    `src/lib/api/types.ts` — mismatched payloads are discarded, never migrated.
 5. The mutation keys in `mutations.ts` are a **wire contract from now, not from M2**:

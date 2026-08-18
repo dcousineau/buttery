@@ -15,6 +15,7 @@ import { Spinner } from "#/components/ui/spinner";
 import { seo } from "#/lib/seo";
 import type { PendingInvite } from "#/lib/api";
 import type { FormEvent } from "react";
+import { refreshSession } from "#/lib/auth-client";
 
 /** The single onboarding screen (§5/§10) for users with no live membership.
  * Loader resolves the state machine: an already-active user is bounced into the
@@ -101,6 +102,12 @@ function PendingInviteCard({ invite }: { invite: PendingInvite }) {
     setPending("accept");
     try {
       await acceptBoundInviteById(invite.inviteId);
+      // Every one of these changes `session.active_household_id` server-side, and
+      // better-auth's client store only refetches after its own endpoints — so
+      // without this the offline cache partition keeps pointing at the previous
+      // household until some later window focus, filing the new household's rows
+      // under the old one's buster (offline plan §2.4, §2.7).
+      await refreshSession();
       await navigate({ to: "/households" });
     } catch (err) {
       setError(errorMessage(err));
@@ -247,6 +254,12 @@ function CreateHouseholdCard() {
     setPending(true);
     try {
       await createHousehold(name.trim());
+      // Every one of these changes `session.active_household_id` server-side, and
+      // better-auth's client store only refetches after its own endpoints — so
+      // without this the offline cache partition keeps pointing at the previous
+      // household until some later window focus, filing the new household's rows
+      // under the old one's buster (offline plan §2.4, §2.7).
+      await refreshSession();
       posthog.capture("household_created", { creation_surface: "onboarding" });
       await navigate({ to: "/households" });
     } catch (err) {

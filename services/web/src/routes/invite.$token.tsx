@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DoorOpen, UtensilsCrossed } from "lucide-react";
-import { useHydratedSession } from "#/lib/auth-client";
+import { refreshSession, useHydratedSession } from "#/lib/auth-client";
 import { getInvitePreview, acceptInvite, declineBoundInvite } from "#/lib/api";
 import { stashPendingInvite, clearPendingInvite, errorMessage } from "#/lib/api";
 import { Badge } from "#/components/ui/badge";
@@ -71,6 +71,12 @@ function ValidInvite({ token, preview }: { token: string; preview: InvitePreview
     setPending("accept");
     try {
       await acceptInvite(token);
+      // Every one of these changes `session.active_household_id` server-side, and
+      // better-auth's client store only refetches after its own endpoints — so
+      // without this the offline cache partition keeps pointing at the previous
+      // household until some later window focus, filing the new household's rows
+      // under the old one's buster (offline plan §2.4, §2.7).
+      await refreshSession();
       clearPendingInvite();
       await navigate({ to: "/households" });
     } catch (err) {

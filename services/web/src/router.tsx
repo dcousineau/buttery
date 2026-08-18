@@ -1,9 +1,9 @@
-import { QueryClient } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 import { createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
 import { routeTree } from "./routeTree.gen";
 import { NotFound } from "./components/NotFound";
-import { shouldRetry } from "./lib/api";
+import { isForbidden, shouldRetry } from "./lib/api";
 
 /**
  * One QueryClient per request on the server, one per browser tab on the client —
@@ -24,8 +24,29 @@ import { shouldRetry } from "./lib/api";
  * see `lib/api/errors.ts` for why that is a predicate over wire shapes rather
  * than an error class.
  */
+/**
+ * The §4.5 `forbidden` wipe, wired at the only place that sees every read and
+ * every write: the cache's own error hooks.
+ *
+ * §4.5 lists a membership failure as a wipe trigger and `WipeReason` has always
+ * reserved `"forbidden"` for it — but nothing ever called it, so being removed
+ * from a household left its whole box readable on the device. It cannot live in
+ * a route: the failure can come from any query or mutation, including a mirror
+ * prefetch nobody is watching.
+ *
+ * Deliberately fired on the *server's* verdict rather than on a guess. Offline
+ * failures do not reach here as `forbidden` (see `isOffline`, which now checks
+ * server answers first), so a phone in a lift never wipes itself.
+ */
+function onCacheError(error: unknown): void {
+  if (typeof window === "undefined" || !isForbidden(error)) return;
+  void import("./lib/offline/partition").then(({ wipeCachePartition }) => wipeCachePartition("forbidden"));
+}
+
 export function getRouter() {
   const queryClient = new QueryClient({
+    queryCache: new QueryCache({ onError: onCacheError }),
+    mutationCache: new MutationCache({ onError: onCacheError }),
     defaultOptions: {
       queries: {
         staleTime: 30_000,

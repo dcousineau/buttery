@@ -23,6 +23,7 @@ import type { Role } from "#/lib/api";
 import type { HouseholdMemberView } from "#/lib/api";
 import type { InviteSummary } from "#/lib/api";
 import type { FormEvent } from "react";
+import { refreshSession } from "#/lib/auth-client";
 
 /** Focus an element via a ref when it becomes `active` — the accessible
  * equivalent of the `autoFocus` prop for fields that appear on an intentional
@@ -553,6 +554,12 @@ function CreateAnotherSection({ currentName }: { currentName: string }) {
     setPending(true);
     try {
       await createHousehold(name.trim());
+      // Every one of these changes `session.active_household_id` server-side, and
+      // better-auth's client store only refetches after its own endpoints — so
+      // without this the offline cache partition keeps pointing at the previous
+      // household until some later window focus, filing the new household's rows
+      // under the old one's buster (offline plan §2.4, §2.7).
+      await refreshSession();
       setOpen(false);
       // createHousehold sets the new one active server-side; land in it.
       await navigate({ to: "/households" });
