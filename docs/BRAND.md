@@ -9,8 +9,9 @@ A social recipe app built on atproto. "Buttery" is the **noun**: a pantry, a roo
 where the good stuff is kept. Not the adjective. The app is your well-stocked
 pantry of recipes, shared on the open web.
 
-Planned features: private recipe collections, shopping list generator, meal
-planner, recipe randomizer. **Top priority: recipe display while cooking.** Every
+Shipped beyond the recipe box: meal planner, shopping list. Still planned:
+private recipe collections, recipe randomizer. **Top priority: recipe display
+while cooking.** Every
 design decision defers to that — someone with flour on their hands, phone propped
 against the toaster, squinting from a meter away.
 

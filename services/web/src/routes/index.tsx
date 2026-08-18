@@ -72,9 +72,14 @@ function App() {
             blurb="The whole point. Recipes rendered huge and glare-proof for the counter — no sleep, no scrolling with buttery thumbs."
           />
           <FeatureCard icon={<CalendarRange />} title="Meal planner" status="ready" blurb="Lay the week out on the table before it starts." />
+          <FeatureCard
+            icon={<ShoppingBasket />}
+            title="Shopping list"
+            status="ready"
+            blurb="Send a recipe or the whole week to one running household list — duplicates merged, grouped by aisle for the store."
+          />
           <FeatureCard icon={<Dices />} title="Randomizer" status="development" blurb="Can't decide? Roll the dice, dinner picks itself." />
           <FeatureCard icon={<FolderLock />} title="Private collections" blurb="Sort recipes into shelves only you (or your chosen few) can open." />
-          <FeatureCard icon={<ShoppingBasket />} title="Shopping lists" blurb="Pick recipes, get one consolidated list for the store." />
         </div>
       </section>
     </div>
