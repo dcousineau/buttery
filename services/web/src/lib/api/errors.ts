@@ -80,10 +80,30 @@ export function isForbidden(error: unknown): boolean {
  * being told no. `TypeError: Failed to fetch` is what a dropped connection looks
  * like from `fetch`, in every engine, and it is the case the whole offline
  * design is built around.
+ *
+ * **Answers from the server are checked first, and they win.** The obvious
+ * implementation — "offline if `navigator.onLine` is false" — is wrong in a way
+ * that matters, because two callers act on this predicate:
+ *
+ * - `ensureActiveHousehold` falls back to a cached household when it is true,
+ *   and its whole contract is that a thrown `redirect({ to: "/login" })` or a
+ *   membership refusal still propagates. Short-circuiting on `onLine` swallowed
+ *   both, keeping someone on a household they had been removed from.
+ * - `OfflineRouteError` renders "not saved for offline yet" when it is true, and
+ *   promises in its own comment to re-throw anything that is not a network
+ *   failure. Short-circuiting made it a catch-all for *every* error that
+ *   happened to occur while offline — which is how a real bug gets permanently
+ *   disguised as a connectivity blip.
+ *
+ * A server that answered cannot also be unreachable, so those two cases return
+ * false before `onLine` is consulted at all.
  */
 export function isOffline(error: unknown): boolean {
-  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
-  return error instanceof TypeError && /fetch|network|load failed/i.test(messageOf(error));
+  // The server reached us with a verdict; whatever the radio is doing, this is
+  // not a connectivity failure.
+  if (isSessionExpired(error) || isForbidden(error)) return false;
+  if (error instanceof TypeError && /fetch|network|load failed/i.test(messageOf(error))) return true;
+  return typeof navigator !== "undefined" && navigator.onLine === false;
 }
 
 /**

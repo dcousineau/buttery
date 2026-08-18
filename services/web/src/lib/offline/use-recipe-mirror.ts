@@ -139,7 +139,10 @@ export function useRecipeMirror(householdId: string | null, recipes: HouseholdRe
   // Selected, not read off `router.state` inside the walk: a subscription keeps
   // the flag current without the mirror reaching into router internals, and the
   // selector means a re-render only when this one boolean flips.
-  const cooking = useRouterState({ select: (state) => state.location.searchStr.includes("cook") });
+  // `search.cook`, not a substring of the raw query string. `includes("cook")`
+  // also matched `?q=cookies` and `?q=cookbook` — a search for biscuits parked
+  // the mirror for as long as the query stayed in the box.
+  const cooking = useRouterState({ select: (state) => (state.location.search as { cook?: unknown } | undefined)?.cook === true });
   // The row *ids* are what the mirror cares about; re-running because a title
   // changed would restart the walk for nothing.
   const ids = recipes.map((row) => row.recipeId).join(",");

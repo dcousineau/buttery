@@ -31,6 +31,32 @@ export function getRouter() {
         staleTime: 30_000,
         gcTime: 1000 * 60 * 60 * 24,
         retry: shouldRetry,
+        /**
+         * **The line that makes offline reads work at all.**
+         *
+         * Query's default `networkMode: "online"` *pauses* a fetch while
+         * `onlineManager` says offline — `queryFn` is never called. And the
+         * IndexedDB restore lives *inside* `queryFn`: the persister wraps it
+         * (`lib/offline/persister.ts`). So under the default, going offline
+         * means the persisted entry is never read and the loader's promise
+         * never settles — the route simply hangs, with no error and no
+         * `pendingComponent`.
+         *
+         * That failure hides well. `onlineManager` starts `true` and only
+         * learns otherwise from an `offline` event, so a page *loaded* while
+         * offline still believes it is online, fetches, restores from IDB and
+         * looks perfect. It is the "went offline mid-session" case — the phone
+         * that has been in a pocket since the last aisle, i.e. the whole point
+         * of the feature — that breaks. Measured before this line: a tap on
+         * Shopping list rendered nothing for 37s.
+         *
+         * `offlineFirst` attempts once regardless of the browser's guess, which
+         * is what reaches the persister. When the entry is there the query
+         * resolves from disk; when it is not, the fetch fails and the route's
+         * `errorComponent` says so. The same setting also happens to be right
+         * for captive portals, where `navigator.onLine` lies.
+         */
+        networkMode: "offlineFirst",
         // Coming back to the tab is the moment a stale list is most likely and
         // least expensive to fix — the behaviour `/household/plan` and
         // `/household/list` each hand-rolled with a throttled `focus` listener

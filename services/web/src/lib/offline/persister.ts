@@ -93,11 +93,28 @@ export function persistHydratedQueries(queryClient: QueryClient): void {
 /**
  * Keep doing it. Every client-side navigation to an SSR'd route hydrates more
  * queries the same way, so a one-shot sweep at boot would only cover the landing
- * route. `added` is the event a hydrated query arrives on.
+ * route.
+ *
+ * Two events, and the distinction is load-bearing:
+ *
+ * - **`added`** — a query the cache had never seen, arriving with data already
+ *   in it. That is dehydration.
+ * - **`updated` with `action.type === "setState"`** — a query that already
+ *   existed being filled in by `hydrate()`. Streamed SSR takes this path, and
+ *   watching only `added` missed it.
+ *
+ * Deliberately NOT `updated` in general: `setQueryData` dispatches
+ * `{type: "success", manual: true}`, which is how every optimistic `onMutate`
+ * patch lands. Persisting those would write **unconfirmed** values to disk —
+ * harmless in M1, where a failed write rolls back in the same session, but
+ * actively wrong once M2 replays a queued mutation: the phone would restore an
+ * optimistic value the server had already rejected. Matching on `setState`
+ * keeps that door shut now rather than after it has been walked through.
  */
 export function watchForHydratedQueries(queryClient: QueryClient): () => void {
   return queryClient.getQueryCache().subscribe((event) => {
-    if (event.type !== "added") return;
+    const hydrated = event.type === "added" || (event.type === "updated" && event.action.type === "setState");
+    if (!hydrated) return;
     if (event.query.state.data === undefined) return; // a fresh fetch; `persisterFn` owns it
     // The cache event types its query with `any` generics; the persister wants
     // the `unknown`-shaped one. Same object, and nothing here reads the payload.
