@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@atproto/api": "^0.20.38",
+    "@atproto/api": "^0.20.41",
     "@atproto/dev-env": "^0.5.44",
     "@did-plc/lib": "^0.0.4",
     "@did-plc/server": "0.0.1",

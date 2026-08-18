@@ -6,7 +6,7 @@ user-invocable: true
 
 # Local dev stack
 
-Whole local app = **one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project**: `railway dev` containers, migrations, atproto dev-env, web server.
+Whole local app = **one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project**: docker-compose containers (postgres, redis), migrations, atproto dev-env, web server.
 
 Files — no search for them:
 
@@ -35,7 +35,7 @@ Else: CLI only when tools unavailable (stack down, MCP not connected) or lack ca
 
 `pc_project_state`. Tool error / unreachable = stack down. Not running → start it, no ask user.
 
-After boot poll `pc_project_is_ready` until `{"ready":true,"total":7}` — return immediately, unlike CLI `project is-ready --wait` which hang forever and eat whole tool timeout. **Never `--wait`.**
+After boot poll `pc_project_is_ready` until `{"ready":true,"total":6}` — return immediately, unlike CLI `project is-ready --wait` which hang forever and eat whole tool timeout. **Never `--wait`.**
 
 MCP not reconnected yet after fresh boot? Poll `http://127.0.0.1:3000/` with `curl` in loop. Foreground `sleep` blocked in agent shell — use `command sleep 1`.
 
@@ -75,11 +75,11 @@ Two restarts have side effects:
 Only when truly need two app instances at once (e.g. compare branches). Stack keep 3000; second one need own port **and** matching URL vars, else atproto OAuth build redirects for wrong origin:
 
 ```bash
-railway run --service buttery -- env PORT=3100 BETTER_AUTH_URL=http://127.0.0.1:3100 VITE_APP_URL=http://127.0.0.1:3100 \
+env PORT=3100 BETTER_AUTH_URL=http://127.0.0.1:3100 VITE_APP_URL=http://127.0.0.1:3100 \
   pnpm --filter @buttery/web exec vite dev --port 3100
 ```
 
-- `env VAR=…` must prefix **child** command — Railway injected vars beat shell exports.
+- `env VAR=…` prefix overrides the same keys in `services/web/.env` — `process.loadEnvFile()` (vite.config.ts) never clobbers a var already in the environment.
 - Bypass `pnpm dev:web`, which hardcode `--port 3000`. Also skip lexicon build; run `pnpm --filter @buttery/lexicons build` first if `src/generated` stale.
 - Both servers share one database. Not isolated.
 - Not supervised — `pc_*` tools can't see or stop it. Kill by hand (`pkill -f "vite dev --port 3100"`).
@@ -98,7 +98,7 @@ ATPROTO_PUBLISH_ENABLED=true
 
 Check handshake without browser — POST `{"handle":"chef.test"}` to `/api/auth/atproto/sign-in`; a `{"url":"http://localhost:2583/oauth/authorize?…"}` response mean it work.
 
-`Failed to resolve OAuth server metadata for resource: http://localhost:2583/` mean app did not decide it is loopback, so `allowHttp` off. Cause almost always non-loopback `BETTER_AUTH_URL` — `railway run` inject production `https://buttery.recipes` and Railway values beat `.env`, which why `process-compose.yaml` re-override it on `web` child command. Real cause show up under `[cause]` in web logs, not in HTTP response.
+`Failed to resolve OAuth server metadata for resource: http://localhost:2583/` mean app did not decide it is loopback, so `allowHttp` off. Cause almost always non-loopback `BETTER_AUTH_URL` — must stay `http://127.0.0.1:3000` in `services/web/.env`, which is authoritative now that no `railway run` wrapper inject production `https://buttery.recipes`. Real cause show up under `[cause]` in web logs, not in HTTP response.
 
 Seed DID **stable** across restarts. Resolve at runtime, never hardcode:
 
@@ -106,19 +106,34 @@ Seed DID **stable** across restarts. Resolve at runtime, never hardcode:
 pnpm -s --filter @buttery/atproto-dev-env records   # prints `DID did:plc:…`
 ```
 
+## Loading seed data
+
+Empty database boring. Recipe corpus for grocery list, meal plan, calibration sweep live in kysely-ctl seed, `services/web/src/db/seeds/`. One command:
+
+```bash
+pnpm --filter @buttery/web db:seed:run
+```
+
+- **Manual only. NEVER automatic.** No process, no hook, no CI run it. `migrate` process = migrations only, keep it that way. Human type command or no corpus.
+- Safe re-run. Every row keyed `seed-<slug>`, upserted — your own imported recipes untouched, meal-plan and grocery-list rows pointing at seeded recipe survive. Run twice, same counts.
+- kysely-ctl **no track seeds** like migrations — no `kysely_seed` table. `db:seed:run` run every seed file every time. That why idempotent matter.
+- Need household first. No household = seed print "sign in first" and stop. Sign in as `chef.test` (see above), then run.
+- Sandbox block dev DB — run sandbox-disabled.
+- `db:seed:list` show seed files. `db:seed:make <name>` mint new one — **never hand-name file**, same clock-drift reason as migrations (AGENTS.md).
+
 ## Cleanup
 
 ```bash
-pnpm dev:down          # stop the stack AND the railway dev containers
-process-compose down   # stop the stack only — containers keep running
-railway dev clean      # ALSO wipes the postgres volume; next `pnpm dev` re-migrates
+pnpm dev:down            # == `process-compose down`; stops containers too
+docker compose down -v   # ALSO wipes the postgres volume; next `pnpm dev` re-migrates
 ```
 
-`process-compose down` alone leave Postgres/Redis/Caddy up: detached docker containers, process-compose only tail their logs. Taking project down also kill MCP server on 8098.
+Stack down = containers down: `postgres`/`redis` processes ARE the containers (attached `docker compose up`). Named volumes survive, so no data lost — only `down -v` wipe data. Taking project down also kill MCP server on 8098.
 
 ## Gotchas
 
 - `curl` return `000` have TWO causes: stack down, or command sandbox blocking `localhost:3000`. Check `pc_project_state` BEFORE blaming sandbox — else you assert "sandbox" at dead server, walk it back later.
 - macOS `grep` treat curl'd SSR HTML as **binary** (one huge line, UTF-8 punctuation) and exit 1 silently — look exactly like real miss. Always `grep -a` on fetched HTML, else every content assertion lie.
 - Vite auto-bump 3000 → 3001 if port busy. `pc_process_ports` show real port; usual cause = second dev server someone forgot to kill.
-- `postgres`/`redis`/`railway-proxy` = **log tails over `docker compose`**, not containers. Tails carry `restart: always`, survive container restart/recreate; `web`/`atproto-dev-env` carry `restart: on_failure` + `max_restarts: 5`. So process stuck dead = real failure — read its log before restarting. Restarting tail never restart container (`docker restart <name>` for that).
+- `postgres`/`redis` **ARE the containers** — each process run `docker compose up <svc>` attached. So `pc_process_restart postgres` really restart the container, and its log = container log. They carry `restart: always` (attached `up` can exit 0 on container death, which `on_failure` would file as clean); `web`/`atproto-dev-env` carry `restart: on_failure` + `max_restarts: 5`. Process stuck dead = real failure — read its log before restarting.
+- `docker compose stop postgres` by hand take 10s and SIGKILL (image PID 1 = `wrapper.sh`, swallow signals). Stack teardown avoid this with in-container `pg_ctl stop -m fast`. Prefer `pnpm dev:down` / `pc_process_stop postgres` over raw docker stop.

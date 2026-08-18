@@ -6,6 +6,8 @@ Database schema, migrations, and fixtures.
   `kysely-codegen` (`pnpm db:codegen`); do not edit by hand.
 - `migrations/` — schema migrations, run via `kysely-ctl`. The initial migration
   ports the full schema; apply with `pnpm db:migrate:up`.
+- `seeds/` — kysely-ctl dev seeds. **Manual only**, never run automatically;
+  apply with `pnpm db:seed:run`.
 - `fixtures/` — seed / test data.
 
 Runtime DB utilities (the Kysely instance, connection pool) live in `src/lib/db.ts`,
@@ -20,6 +22,18 @@ Config: `kysely.config.ts` (repo root) — reuses the app's shared pool from
 - `pnpm db:migrate:down` — roll back the last migration.
 - `pnpm db:migrate:new <name>` — scaffold a new migration in `migrations/`.
 - `pnpm db:migrate:list` — show migration status.
+
+## Seeds (kysely-ctl)
+
+Dev fixture data, same config file. Seeds are **only ever run by hand** — no
+process, hook, or pre-deploy step invokes them, and none may be taught to. Unlike
+migrations, kysely-ctl keeps **no ledger table** for seeds: `seed run` re-runs
+every file in `seeds/` on every invocation, so a seed here must be idempotent.
+
+- `pnpm db:seed:run` — run every seed in `seeds/`.
+- `pnpm db:seed:make <name>` — scaffold a new seed (never hand-name the file;
+  the timestamp prefix comes from the CLI, same as migrations).
+- `pnpm db:seed:list` — list seed files.
 
 ## Type generation (kysely-codegen)
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BookOpenText, CalendarRange, UtensilsCrossed, X } from "lucide-react";
+import { BookOpenText, UtensilsCrossed, X } from "lucide-react";
 import { listHouseholdRecipes, type HouseholdRecipeRow } from "#/server/household-recipes";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
 import { SLOT_LABELS, formatPlanDate, longDow } from "#/lib/plan/labels";
@@ -114,15 +114,12 @@ function AddEntryForm({
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
-        <div className="flex items-start gap-[9px]">
-          <span className="flex size-[34px] flex-none items-center justify-center rounded-lg border-2 border-border bg-secondary text-secondary-foreground shadow-pop-sm">
-            <CalendarRange className="size-[17px]" aria-hidden="true" />
-          </span>
-          <span className="flex min-w-0 flex-col gap-px">
-            <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>{description}</DialogDescription>
-          </span>
-        </div>
+        {/* No glyph beside the title. Butter fill + ink border + a hard shadow
+          is the app's "you can press this" sticker; a calendar wearing it in a
+          dialog heading was a control that could not be pressed. Dialog titles
+          across the app carry no iconography. */}
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
 
         {/* Editing a note is note-only: there is nothing to pick from the box. */}
         {!editing && (

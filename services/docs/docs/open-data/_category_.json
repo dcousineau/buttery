@@ -1,0 +1,11 @@
+{
+  "label": "Open Data",
+  "position": 4,
+  "collapsible": true,
+  "collapsed": false,
+  "link": {
+    "type": "generated-index",
+    "title": "Open Data",
+    "description": "The open datasets Buttery is built on — who maintains them, what they contain, which parts we use, and how to support the people doing the work."
+  }
+}

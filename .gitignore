@@ -18,6 +18,8 @@ todos.json
 .dev-data
 .mcp.json
 .pnpm-store
+# Snapshots / screenshots / traces the Playwright MCP writes into the project.
+.playwright-mcp
 
 # @atproto/lex generated TypeScript — regenerated from lexicons/ via the
 # @buttery/lexicons `build` script. The source of truth (lexicons/*.json +

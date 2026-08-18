@@ -1,5 +1,16 @@
 import { defineConfig } from "vitest/config";
 
+// The `db` suites need DATABASE_URL, and nothing wraps the run to inject it —
+// load this package's `.env` here, in the config, so `pnpm test:db` is a bare
+// `vitest run`. Vitest workers inherit this process's env. Vite may load this
+// config from a temp file, so the path is cwd-based (the package dir, which is
+// what `pnpm --filter` runs in) rather than relative to import.meta.url.
+try {
+  process.loadEnvFile(".env");
+} catch {
+  // No .env file present — the db suites skip themselves without DATABASE_URL.
+}
+
 /**
  * Two vitest projects, split by what a test needs to exist — the same split as
  * `services/web/vitest.config.ts`, for the same reason.
@@ -10,11 +21,11 @@ import { defineConfig } from "vitest/config";
  *   They SKIP (never fail) when there isn't one, so `pnpm test` stays green on
  *   a machine that has never booted the dev stack.
  *
- *   pnpm --filter @buttery/atproto-cron-sync test:db
- *   # = railway run --service buttery -- vitest run --project db
+ *   pnpm --filter @buttery/atproto-cron-sync test:db   # = vitest run --project db
  *
- * `railway run` is what injects `DATABASE_URL`; the dev Postgres port is
- * regenerated per machine and is never hardcoded.
+ * `DATABASE_URL` comes from `services/web/.env` (loaded above), which points at
+ * the docker-compose Postgres the `pnpm dev` stack runs — so the stack has to
+ * be up, but no `railway run` wrapper is involved.
  *
  * Tests import through the `#/*` subpath imports declared in `package.json`,
  * which Vite resolves natively — the same arrangement the web package uses.

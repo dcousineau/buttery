@@ -1,14 +1,15 @@
-import { Dices, FolderLock, ShoppingBasket } from "lucide-react";
+import { Dices, FolderLock } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 
 /**
- * "Waiting on a full box" — the three pantry features that need recipes before
- * they mean anything, kept visible with a `soon` chip rather than hidden until
- * they ship (BRAND.md: the roadmap is part of the copy).
+ * "Waiting on a full box" — the pantry features that need recipes before they
+ * mean anything, kept visible with a `soon` chip rather than hidden until they
+ * ship (BRAND.md: the roadmap is part of the copy).
  *
  * Muted panels, no hard shadow: nothing here is clickable, and a sticker that
  * lifts would promise otherwise. The meal planner is deliberately absent — it is
- * shipped, and lives at `/household/plan`.
+ * shipped, and lives at `/household/plan`. So is the shopping list, at
+ * `/household/list`; it left this strip when it stopped being a promise.
  *
  * Purely presentational, no props beyond layout.
  */
@@ -40,6 +41,5 @@ export function LockedFeaturesStrip({ className }: { className?: string }) {
 
 const LOCKED_FEATURES = [
   { icon: FolderLock, title: "Collections", body: "Sort the box into shelves only your household can open." },
-  { icon: ShoppingBasket, title: "Shopping list", body: "One list for the week, grouped by aisle, shared with the household." },
   { icon: Dices, title: "Randomizer", body: "Can’t decide? Roll the dice, dinner picks itself." },
 ];

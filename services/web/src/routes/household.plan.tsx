@@ -25,6 +25,8 @@ import { AddEntryDialog, type AddEntryRequest } from "#/components/plan/AddEntry
 import { MoveEntryDialog, type MoveEntryRequest } from "#/components/plan/MoveEntryDialog";
 import { CopyWeekDialog } from "#/components/plan/CopyWeekDialog";
 import { ThisWeekPanel } from "#/components/plan/ThisWeekPanel";
+import { AddPreviewDialog, type AddPreviewRequest } from "#/components/grocery/AddPreviewDialog";
+import { summarizeGroceryAdd } from "#/components/grocery/added-summary";
 import { CookModeFallback, CookModeOverlay } from "#/components/recipes/CookModeOverlay";
 import {
   findEntry,
@@ -119,6 +121,7 @@ function PlanPage() {
   const [addRequest, setAddRequest] = useState<AddEntryRequest | null>(null);
   const [moveRequest, setMoveRequest] = useState<MoveEntryRequest | null>(null);
   const [copyRequest, setCopyRequest] = useState<PlanDate | null>(null);
+  const [listRequest, setListRequest] = useState<AddPreviewRequest | null>(null);
   const [scrollNonce, setScrollNonce] = useState(0);
   /**
    * Cook mode over the planner (§7.5). Two states, because the recipe body is
@@ -536,6 +539,7 @@ function PlanPage() {
           open={panelOpen}
           onOpenChange={setPanel}
           onCopyWeek={() => setCopyRequest(week.weekStart)}
+          onAddWeekToList={() => setListRequest({ planWeek: week.weekStart, label: "this week’s plan" })}
           onNotify={(title) => push({ variant: "success", title })}
           onPreferencesSaved={(title) => {
             push({ variant: "success", title });
@@ -549,6 +553,21 @@ function PlanPage() {
       </div>
 
       <CopyWeekDialog weekStart={copyRequest} onClose={() => setCopyRequest(null)} onCopy={copyWeek} />
+
+      {/*
+        The grocery list is a different route with its own loader, so there is
+        nothing here to invalidate — the toast is the whole feedback loop, and
+        it names where the rows went so the button does not feel like a no-op.
+      */}
+      <AddPreviewDialog
+        request={listRequest}
+        onClose={() => setListRequest(null)}
+        onCommitted={(result) => {
+          setListRequest(null);
+          push({ variant: "success", title: summarizeGroceryAdd(result.added, result.merged) });
+        }}
+        onError={(title) => push({ variant: "destructive", title })}
+      />
 
       <AddEntryDialog
         request={addRequest}

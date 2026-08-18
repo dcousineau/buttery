@@ -26,16 +26,15 @@ Editing the `mcp_server:` block needs a full project restart (`process-compose d
 
 ## The processes
 
-| Process           | What it is                                                                                             |
-| ----------------- | ------------------------------------------------------------------------------------------------------ |
-| `railway-dev`     | One-shot `railway dev up --no-tui` — starts the containers, prints the port/credential overview, exits |
-| `postgres`        | Log stream + `pg_isready` probe for the Postgres container                                             |
-| `redis`           | Log stream + `redis-cli ping` probe for the Redis container                                            |
-| `railway-proxy`   | Log stream for the Caddy proxy container                                                               |
-| `migrate`         | `db:migrate:up`, gated on Postgres reporting ready                                                     |
-| `atproto-dev-env` | Isolated PDS + local PLC on `localhost:2583` / `:2582`, probed on `/xrpc/_health`                      |
-| `web`             | TanStack Start dev server on port 3000, gated on migrations, Redis, and the atproto dev-env            |
-| `docs`            | Docusaurus site on port 3001 — **opt-in**, boots `Disabled` (see below)                                |
+| Process             | What it is                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------- |
+| `postgres`          | The Postgres container — attached `docker compose up`, probed with `pg_isready`             |
+| `redis`             | The Redis container — attached `docker compose up`, probed with `redis-cli ping`            |
+| `migrate`           | `db:migrate:up`, gated on Postgres reporting ready                                          |
+| `atproto-dev-env`   | Isolated PDS + local PLC on `localhost:2583` / `:2582`, probed on `/xrpc/_health`           |
+| `web`               | TanStack Start dev server on port 3000, gated on migrations, Redis, and the atproto dev-env |
+| `atproto-cron-sync` | One atproto → Postgres sync sweep — **manual one-shot**, boots `Disabled`                   |
+| `docs`              | Docusaurus site on port 3001 — **opt-in**, boots `Disabled` (see below)                     |
 
 ### The opt-in `docs` process
 
@@ -52,38 +51,47 @@ The last two are worth distinguishing. The env var flips the `disabled` default,
 
 `vars:` + `{{ .X }}` templating does **not** work for this: templated values stay strings and `disabled` is a bool, so the config fails to parse. Plain `${VAR:-default}` expansion does.
 
-The cron sync service is deliberately absent — it's a periodic batch job, not part of the interactive app. Run it on demand:
+### The manual `atproto-cron-sync` one-shot
+
+The cron sync is a periodic batch job, not part of the interactive app, so it is defined but never boots: `disabled: true` plus `restart: "no"` make it a **manual one-shot** — `migrate`'s lifecycle with `docs`'s opt-in. Start it from the TUI, or:
 
 ```bash
-railway run --service atproto-cron-sync -- pnpm --filter=@buttery/atproto-cron-sync sync:once
+process-compose process start atproto-cron-sync   # against a running stack
+pnpm dev atproto-cron-sync                        # from cold: it, migrate, and the dev-env
 ```
 
-## How the Railway containers are wired in
+Each run is one idempotent sweep that ends `Completed`; start it again after every publish to pull the new record into the `recipe` tables.
 
-`railway dev up` isn't a supervisable process: it starts a detached docker-compose stack and exits 0. It's also idempotent, so re-running it against a live stack just re-prints the overview. That makes it a natural one-shot gate — every other process depends on it _completing successfully_ rather than staying up.
+The process declares no environment of its own. **Which network gets swept is `services/atproto-cron-sync/.env`'s call** — the same file a shell run reads, so both do the same thing:
 
-The containers themselves are then surfaced as three separate process-compose services, each tailing one container via [`scripts/dev/railway-containers.mjs`](../scripts/dev/railway-containers.mjs). That script also implements the readiness probes.
+```bash
+pnpm --filter=@buttery/atproto-cron-sync sync:once [--dry-run]
+```
 
-Everything it does goes through `docker compose -f <generated file>` rather than `docker logs`/`docker exec` against a container name, and that detail is load-bearing — see "Why the tails go through `docker compose`" below.
+Its defaults are the real atmosphere (`plc.directory` + the public relay), which is what fills a dev database with real recipes. To sweep the local dev-env instead, set `ATPROTO_PLC_URL=http://localhost:2582` and `SYNC_PDS_URL=http://localhost:2583` in that file. `SYNC_PDS_URL` swaps the relay's `listReposByCollection` for that one PDS's `listRepos`, because dev-env ships no relay and its PDS refuses the former unauthenticated (`AuthMissing`).
 
-The generated compose file is the source of truth for ports, credentials, and container naming. It lives at `~/.railway/develop/<project-id>/docker-compose.yml`, where the project id comes from `~/.railway/config.json` keyed by checkout path. That id is machine-local and differs per clone, so it is resolved at runtime and never hardcoded. Two things follow:
+## How the dev containers are wired in
 
-- **The compose file must never be committed.** It carries live production credentials — including `DATABASE_PUBLIC_URL` pointing at the real Railway TCP proxy — and it is written `chmod 600`.
-- **It cannot be relocated.** `railway dev up -o <path>` will happily write it elsewhere (and the output is deterministic — regenerating produces a byte-identical file), but `railway-proxy` mounts `./Caddyfile` and `./certs` relative to the compose file, and those siblings are only generated in the canonical directory.
+Postgres and Redis are defined in a committed [`docker-compose.yml`](../docker-compose.yml) at the repo root — no Railway CLI, no auth, no per-clone generated file. `railway dev` used to write that compose file into machine-local state (`~/.railway/develop/<project-id>/…`) with live production credentials baked in; now the repo owns it outright, with fixed host ports and throwaway local-only credentials (see the compose file's header).
 
-Three consequences worth remembering:
+There is no separate "start the containers" step. The `postgres` and `redis` processes each run `docker compose up <service>` **in the foreground**, so the process _is_ the container: process-compose starts it, streams its logs, restarts it, and stops it. Both invocations race to create the shared compose network on a cold boot; whichever loses logs a one-line `network buttery_default already exists` error and carries on.
 
-- **Stopping process-compose does not stop the databases.** The containers are detached and outlive it; only the log tails die. `pnpm dev:down` does both (`process-compose down` then `railway dev down`).
-- **`railway dev clean` wipes the Postgres volume.** The next `pnpm dev` re-runs migrations automatically, which is why `migrate` is a boot step rather than a documented manual command.
-- **`railway dev up` can't be supervised in the foreground.** `--no-tui`'s "stream logs to stdout" only applies to _code_ services registered with `railway dev configure`; with none registered it prints the overview and exits after a couple of seconds. That's why it's a one-shot gate and the containers are tailed separately.
+That single-supervisor arrangement is why `docker-compose.yml` declares no `restart:` policy. With one, docker would try to resurrect a container that compose is simultaneously tearing down after the attached `up` returned.
 
-## Why the tails go through `docker compose`
+The ports are fixed and repo-owned: **Postgres on host `55432`, Redis on `56379`** (mapped to the containers' standard 5432/6379). They sit in the high range so a Postgres/Redis you already run on the defaults doesn't collide. `services/web/.env` points `DATABASE_URL`/`REDIS_URL` at them; because we own the ports now, hardcoding them in `.env` is correct rather than fragile (under `railway dev` they were reassigned on every `up`, so nothing downstream could pin them). Each service keeps its own `.env` next to its `.env.example` — `services/web/.env` and `services/atproto-cron-sync/.env` today — and [`scripts/dev/bootstrap-env.mjs`](../scripts/dev/bootstrap-env.mjs) creates any that are missing on `pnpm dev` / `mise install`, never touching one that exists.
 
-`docker logs -f` **dies the moment its container restarts, and exits 0**. The containers ship with `restart: on-failure`, so this happens on any crash. Exit 0 means process-compose files the tail as `Completed` rather than failed and leaves it dead — and since `postgres` and `redis` carry the readiness probes `web` gates on (`condition: process_healthy`), a dead tail means the web server can never come back. The container is fine the whole time; only its supervisor thinks otherwise.
+Two consequences worth remembering:
 
-`docker compose logs -f <service>` follows the _service_ and reattaches across both container restarts and full recreates, so the tail (and therefore the probe) survives. The probes use `docker compose exec -T` for the same reason: it drops the `<project-id>-<service>-1` container-naming assumption. The extra overhead is ~40ms per probe, against a 2s period.
+- **The containers stop with the stack.** `pnpm dev:down` (just `process-compose down` now) takes them down too. The named volumes are untouched, so no data is lost — starting the stack again reuses them.
+- **`docker compose down -v` wipes the Postgres volume.** The next `pnpm dev` re-runs migrations automatically, which is why `migrate` is a boot step rather than a documented manual command.
 
-Belt and braces on top of that, the three tails carry `availability: restart: always`. It has to be `always` — `on_failure` would ignore an exit 0.
+## Container lifecycle details
+
+**Readiness** is a real protocol check from inside the container — `pg_isready` and an authenticated `redis-cli ping` — so `process_healthy` means "answering queries", not "container started". Both run through `docker compose exec -T` rather than `docker exec <name>`: it avoids hardcoding the `buttery-postgres-1` naming convention, and `-T` is required because process-compose runs probes with a non-tty stdin, which plain `exec` refuses. Costs ~40ms per probe against a 2s period. The redis probe must match `PONG` rather than trust the exit code — an unauthenticated `redis-cli ping` answers `NOAUTH Authentication required.` and still exits 0.
+
+**Restarts** are `restart: always`, and it has to be `always`: when a container dies, the attached `up` can return 0, which `on_failure` would file as a clean completion and leave the process dead — taking the readiness probe `web` gates on with it. With `always`, `docker kill buttery-redis-1` is back to `Ready` in a few seconds.
+
+**Shutdown** of `redis` is the ordinary SIGTERM: it's `exec`d as PID 1, handles the signal itself, and exits 0 in about a second. `postgres` can't be stopped by a signal at all — its PID 1 is the image's `wrapper.sh`, which neither traps signals nor `exec`s postgres, so SIGTERM is swallowed and `docker compose stop` burns the full 10s grace period before SIGKILL (exit 137, and crash recovery on the next boot). The `postgres` process therefore carries an explicit `shutdown.command` that runs `pg_ctl stop -m fast` inside the container: clients are disconnected, open transactions roll back, the container exits 0 in well under a second, and the attached `up` ends on its own. Whole-stack teardown is ~0.5s. This is worth knowing if you stop the container by hand — `docker compose stop postgres` still takes the slow, unclean path.
 
 The app processes (`atproto-dev-env`, `web`) use `restart: on_failure` with `max_restarts: 5`, so a transient crash heals itself while a genuinely broken config still gives up instead of looping.
 

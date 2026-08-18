@@ -19,6 +19,7 @@ import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as HouseholdIndexRouteImport } from './routes/household.index'
+import { Route as HouseholdListRouteImport } from './routes/household.list'
 import { Route as HouseholdPlanRouteImport } from './routes/household.plan'
 import { Route as HouseholdRecipesRouteImport } from './routes/household.recipes'
 import { Route as HouseholdsIndexRouteImport } from './routes/households.index'
@@ -83,6 +84,11 @@ const TermsRoute = TermsRouteImport.update({
 const HouseholdIndexRoute = HouseholdIndexRouteImport.update({
   id: '/household/',
   path: '/household/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HouseholdListRoute = HouseholdListRouteImport.update({
+  id: '/household/list',
+  path: '/household/list',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HouseholdPlanRoute = HouseholdPlanRouteImport.update({
@@ -167,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/household/recipes': typeof HouseholdRecipesRouteWithChildren
   '/households/switch': typeof HouseholdsSwitchRoute
@@ -193,6 +200,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -219,6 +227,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/household/recipes': typeof HouseholdRecipesRouteWithChildren
   '/households/switch': typeof HouseholdsSwitchRoute
@@ -247,6 +256,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/terms'
+    | '/household/list'
     | '/household/plan'
     | '/household/recipes'
     | '/households/switch'
@@ -273,6 +283,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/terms'
+    | '/household/list'
     | '/household/plan'
     | '/households/switch'
     | '/invite/$token'
@@ -298,6 +309,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/terms'
+    | '/household/list'
     | '/household/plan'
     | '/household/recipes'
     | '/households/switch'
@@ -325,6 +337,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
+  HouseholdListRoute: typeof HouseholdListRoute
   HouseholdPlanRoute: typeof HouseholdPlanRoute
   HouseholdRecipesRoute: typeof HouseholdRecipesRouteWithChildren
   HouseholdsSwitchRoute: typeof HouseholdsSwitchRoute
@@ -409,6 +422,13 @@ declare module '@tanstack/react-router' {
       path: '/household'
       fullPath: '/household/'
       preLoaderRoute: typeof HouseholdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/household/list': {
+      id: '/household/list'
+      path: '/household/list'
+      fullPath: '/household/list'
+      preLoaderRoute: typeof HouseholdListRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/household/plan': {
@@ -537,6 +557,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
+  HouseholdListRoute: HouseholdListRoute,
   HouseholdPlanRoute: HouseholdPlanRoute,
   HouseholdRecipesRoute: HouseholdRecipesRouteWithChildren,
   HouseholdsSwitchRoute: HouseholdsSwitchRoute,

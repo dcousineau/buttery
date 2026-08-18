@@ -4,7 +4,7 @@ import duration from "dayjs/plugin/duration.js";
 import type { Main as RecipeRecord } from "@buttery/lexicons/exchange/recipe/recipe";
 import { validateRecipeRecord } from "#/lib/recipe-record";
 import type { FieldIssue, RecipeRecordInput } from "#/lib/recipe-record";
-import { slugForToken } from "#/lib/recipe-vocab";
+import { labelForSlug, slugForToken, tokenForSlug } from "#/lib/recipe-vocab";
 
 dayjs.extend(duration);
 
@@ -575,7 +575,6 @@ async function writeChildren(trx: Kysely<DB>, id: string, record: RecipeRecord, 
 
   // Weighted search document (A=name, B=facets+attribution, C=ingredients,
   // D=description+instructions) — mirrors the cron's UPSERT_SEARCH_SQL.
-  const { labelForSlug } = await import("#/lib/recipe-vocab");
   const vocabLabels = [
     labelForSlug("cooking_method", slugForToken("cooking_method", record.cookingMethod)),
     labelForSlug("cuisine", slugForToken("cuisine", record.recipeCuisine)),
@@ -779,7 +778,6 @@ async function buildRecordFromRow(
   ctx: Ctx,
   recipeId: string,
 ): Promise<{ record: RecipeRecordInput; uri: string | null; sourceUrl: string | null; pendingImage: RecipeImageInput | null } | null> {
-  const { tokenForSlug } = await import("#/lib/recipe-vocab");
   // Ownership: the recipe must be boxed in the caller's active household.
   const row = await db
     .selectFrom("recipe as r")

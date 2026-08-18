@@ -9,8 +9,9 @@ A social recipe app built on atproto. "Buttery" is the **noun**: a pantry, a roo
 where the good stuff is kept. Not the adjective. The app is your well-stocked
 pantry of recipes, shared on the open web.
 
-Planned features: private recipe collections, shopping list generator, meal
-planner, recipe randomizer. **Top priority: recipe display while cooking.** Every
+Shipped beyond the recipe box: meal planner, shopping list. Still planned:
+private recipe collections, recipe randomizer. **Top priority: recipe display
+while cooking.** Every
 design decision defers to that — someone with flour on their hands, phone propped
 against the toaster, squinting from a meter away.
 
@@ -51,12 +52,17 @@ toggle (and `auto` follows the OS).
 
 ## Typography
 
-- **Display: Alfa Slab One** (Google Fonts). Wordmark, page titles, dialog titles,
-  big numbers. Loud, chunky, vintage-poster. Use sparingly — one or two display
-  moments per screen, never body copy, never below ~1.25rem.
-- **Body/UI: Rubik** (Google Fonts, 400/500/600/700). Everything else. Slightly
-  rounded, big x-height, stays legible at cooking-mode sizes.
+- **Display: Alfa Slab One**. Wordmark, page titles, dialog titles, big numbers.
+  Loud, chunky, vintage-poster. Use sparingly — one or two display moments per
+  screen, never body copy, never below ~1.25rem.
+- **Body/UI: Rubik** (400/500/600/700). Everything else. Slightly rounded, big
+  x-height, stays legible at cooking-mode sizes.
 - No third face. Data/captions are Rubik at smaller sizes with `600` weight.
+- Both are OFL faces from Google Fonts, but **self-hosted** — the app and the
+  docs site serve them from their own `/fonts/`, and the OG renderer carries its
+  own TrueType copies. Nothing fetches type from a CDN at runtime. Refresh them
+  with `scripts/update-fonts.sh`; the generated CSS and `.woff2` are not
+  hand-edited.
 
 ## Design system: shadcn/ui (Base UI primitives, `base-nova` style)
 
