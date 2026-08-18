@@ -37,9 +37,7 @@ const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getIte
  */
 async function loadGateState(): Promise<GateState> {
   try {
-    const gate = await fetchGateState();
-    if (typeof window !== "undefined") cacheGateState(gate);
-    return gate;
+    return await fetchGateState();
   } catch (error) {
     if (typeof window === "undefined") throw error;
     // Not narrowed to `isOffline` alone: a service-worker-served shell, an
@@ -179,6 +177,18 @@ function PostHogIdentity() {
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   const gate = Route.useLoaderData();
+  // Snapshot the verdict from the *render*, not from the loader.
+  //
+  // On a cold page load the root loader runs on the server and its result is
+  // dehydrated into the HTML — the client-side loader never executes, so a
+  // `cacheGateState` call inside it writes nothing in the browser. (Verified:
+  // after a full online session the session and active-household snapshots were
+  // in localStorage and the gate's was not.) Rendering is the one place that
+  // sees the value on both paths.
+  useEffect(() => {
+    cacheGateState(gate);
+  }, [gate]);
+
   // Keeps the IndexedDB partition pointed at the signed-in household, and wipes
   // it when that changes (§2.7). Mounted at the root because a household switch
   // navigates, and any component below could unmount mid-switch.

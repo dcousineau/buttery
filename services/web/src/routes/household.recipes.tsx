@@ -4,6 +4,7 @@ import { createFileRoute, Outlet, useParams, useRouter, useRouterState } from "@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { householdRecipesQuery, keys } from "#/lib/api";
 import { ensureActiveHousehold } from "#/lib/offline/active-household";
+import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { useRecipeMirror } from "#/lib/offline/use-recipe-mirror";
 import { Toast, ToastViewport, useToasts } from "#/components/ui/toast";
 import { RecipeLedger, type LedgerFilters } from "#/components/recipes/RecipeLedger";
@@ -40,6 +41,9 @@ export const Route = createFileRoute("/household/recipes")({
   beforeLoad: async () => ({ ...(await ensureActiveHousehold()) }),
   loader: ({ context }) => context.queryClient.ensureQueryData(householdRecipesQuery(context.householdId)),
   head: () => ({ meta: seo({ title: "Recipes · Buttery", description: "Your household's recipe box." }) }),
+  // An offline-capable route renders what has been cached; when the answer is
+  // "nothing yet", that is a state, not a crash (§4.4).
+  errorComponent: OfflineRouteError,
   component: RecipesLayout,
 });
 

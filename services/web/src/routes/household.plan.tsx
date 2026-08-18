@@ -19,6 +19,7 @@ import {
   setMealPlanEntryCookedMutation,
 } from "#/lib/api";
 import { ensureActiveHousehold } from "#/lib/offline/active-household";
+import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
 import { type MealSlot, type PlanDate, isPlanDate, shiftWeeks, weekStartFor } from "#/lib/plan/week";
 import { formatPlanDate, weekRangeLabel } from "#/lib/plan/labels";
@@ -81,6 +82,9 @@ export const Route = createFileRoute("/household/plan")({
   beforeLoad: async () => ({ ...(await ensureActiveHousehold()) }),
   loader: ({ context, deps }) => context.queryClient.ensureQueryData(mealPlanWeekQuery(context.householdId, deps.week)),
   head: () => ({ meta: seo({ title: "Meal plan · Buttery", description: "What your household is eating this week." }) }),
+  // An offline-capable route renders what has been cached; when the answer is
+  // "nothing yet", that is a state, not a crash (§4.4).
+  errorComponent: OfflineRouteError,
   component: PlanPage,
 });
 

@@ -77,10 +77,22 @@ sw.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE);
-      // Individually, not `addAll`: `addAll` is all-or-nothing, so one asset
-      // 404ing during a deploy would leave the whole install rejected and the
-      // user with no offline shell at all.
-      await Promise.all([...PRECACHE, OFFLINE_SHELL].map((url) => cache.add(url).catch(() => undefined)));
+
+      // Assets are best-effort and individual, not `addAll`: `addAll` is
+      // all-or-nothing, so one hashed chunk 404ing mid-deploy would reject the
+      // whole install. A worker with 103 of 104 chunks is still a useful worker.
+      await Promise.all(PRECACHE.map((url) => cache.add(url).catch(() => undefined)));
+
+      // The shell is NOT best-effort. Without it every offline navigation ends
+      // in `Response.error()` — the browser's own dinosaur — and the worker is
+      // worse than useless, because it looks installed.
+      //
+      // This is not hypothetical: an install interrupted partway through left
+      // exactly that worker active in testing (75 of 105 entries, no `/offline`)
+      // and offline navigation failed outright. Letting the rejection escape
+      // fails the install, so the browser keeps the previous working worker and
+      // retries on the next load.
+      await cache.add(OFFLINE_SHELL);
     })(),
   );
   // Deliberately NO `skipWaiting()`. A new worker waits until every tab running
@@ -192,8 +204,13 @@ async function handleNavigation(request: Request): Promise<Response> {
   try {
     return await fetch(request, { signal: controller.signal });
   } catch {
+    // This build's shell first, then any other cache still on disk. The second
+    // lookup matters during a version transition: a worker whose own precache
+    // was evicted under quota pressure can still hand over a previous build's
+    // shell, and an old shell that boots the client router is a better answer
+    // than a browser error page.
     const cache = await caches.open(CACHE);
-    const shell = await cache.match(OFFLINE_SHELL);
+    const shell = (await cache.match(OFFLINE_SHELL)) ?? (await caches.match(OFFLINE_SHELL));
     return shell ?? Response.error();
   } finally {
     clearTimeout(timeout);

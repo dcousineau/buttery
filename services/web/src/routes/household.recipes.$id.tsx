@@ -3,6 +3,7 @@ import { ArrowLeft, UtensilsCrossed } from "lucide-react";
 import * as z from "zod";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { householdRecipeQuery } from "#/lib/api";
+import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { Button } from "#/components/ui/button";
 import { DetailPane } from "#/components/recipes/DetailPane";
 
@@ -49,6 +50,7 @@ export const Route = createFileRoute("/household/recipes/$id")({
    * before the query can even be looked up in IndexedDB.
    */
   loader: ({ context, params }) => context.queryClient.ensureQueryData(householdRecipeQuery(context.householdId, params.id)),
+  errorComponent: OfflineRouteError,
   component: RecipeDetailRoute,
 });
 

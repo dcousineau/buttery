@@ -4,6 +4,7 @@ import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-q
 import { BookOpenText, CalendarRange, Check, EllipsisVertical, ListX, Trash2 } from "lucide-react";
 import { type GroceryItemRow, groceryListQuery, grocerySweepMutation, keys, removeGroceryItemMutation, toggleGroceryItemMutation, updateGroceryItemMutation } from "#/lib/api";
 import { ensureActiveHousehold } from "#/lib/offline/active-household";
+import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
 import { todayIn } from "#/lib/plan/week";
 import { AddPreviewDialog, type AddPreviewRequest } from "#/components/grocery/AddPreviewDialog";
@@ -79,6 +80,9 @@ export const Route = createFileRoute("/household/list")({
   beforeLoad: async () => ({ ...(await ensureActiveHousehold()) }),
   loader: ({ context }) => context.queryClient.ensureQueryData(groceryListQuery(context.householdId)),
   head: () => ({ meta: seo({ title: "Shopping list · Buttery", description: "One running list for your household, consolidated and grouped by aisle." }) }),
+  // An offline-capable route renders what has been cached; when the answer is
+  // "nothing yet", that is a state, not a crash (§4.4).
+  errorComponent: OfflineRouteError,
   component: GroceryListPage,
 });
 

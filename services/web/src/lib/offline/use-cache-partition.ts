@@ -22,7 +22,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { requestPersistentStorage } from "./idb";
-import { setPartition } from "./persister";
+import { persistHydratedQueries, setPartition, watchForHydratedQueries } from "./persister";
 import { useSessionSnapshot } from "./use-household";
 import { wipeCachePartition } from "./partition";
 
@@ -54,8 +54,15 @@ export function useCachePartition(): void {
     if (isSwitch) {
       queryClient.clear();
       void wipeCachePartition(key === null ? "sign-out" : "household-switch");
+      return;
     }
+
+    // Whatever SSR already put in the cache has never been through the
+    // persister — see `persistHydratedQueries` for why that is not obvious.
+    persistHydratedQueries(queryClient);
   }, [queryClient, did, householdId]);
+
+  useEffect(() => watchForHydratedQueries(queryClient), [queryClient]);
 
   useEffect(() => {
     // Once per app load, best-effort. Chrome may grant it for an installed app;

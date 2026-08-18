@@ -19,7 +19,7 @@
  */
 
 import { experimental_createQueryPersister } from "@tanstack/react-query-persist-client";
-import type { QueryClient } from "@tanstack/react-query";
+import type { Query, QueryClient } from "@tanstack/react-query";
 import { busterFor, type CachePartition } from "./partition";
 import { readQueryEntry, removeQueryEntry, writeQueryEntry } from "./idb";
 
@@ -55,6 +55,57 @@ export function createPersister(partition: CachePartition | null) {
 }
 
 /**
+ * The persister the client is currently using. Held here because
+ * `persistHydratedQueries` needs the *same* instance the queries were configured
+ * with — a second one built with a different `buster` would write entries the
+ * first could never read back.
+ */
+let current: ReturnType<typeof createPersister> | null = null;
+
+/**
+ * Persist the queries that arrived **already resolved**, from SSR.
+ *
+ * This closes a hole that is invisible until you look for it. The persister is a
+ * wrapper around `queryFn`: it runs when a query *fetches*, reads the cached
+ * entry, and writes the fresh one back. A query hydrated from the server's
+ * dehydrated payload never fetches on the client — so on a cold, SSR'd page load
+ * the data is on screen, in memory, and **nowhere on disk**. Verified in a real
+ * browser: after one visit to `/household/recipes`, IndexedDB held all 33
+ * mirrored recipe details (the mirror prefetches, so those go through `queryFn`)
+ * and not the box list they came from.
+ *
+ * In practice a refetch follows within `staleTime` and the entry lands anyway —
+ * but "the shopping list is on disk within thirty seconds, usually" is not the
+ * guarantee this feature is selling. Someone who opens the app and walks into a
+ * lift needs it on the first paint.
+ *
+ * Idempotent and cheap: writing an entry that is already there costs one IDB put
+ * of a payload the page is holding anyway.
+ */
+export function persistHydratedQueries(queryClient: QueryClient): void {
+  const persister = current;
+  if (!persister) return;
+  for (const query of queryClient.getQueryCache().getAll()) {
+    if (query.state.data !== undefined) void persister.persistQuery(query);
+  }
+}
+
+/**
+ * Keep doing it. Every client-side navigation to an SSR'd route hydrates more
+ * queries the same way, so a one-shot sweep at boot would only cover the landing
+ * route. `added` is the event a hydrated query arrives on.
+ */
+export function watchForHydratedQueries(queryClient: QueryClient): () => void {
+  return queryClient.getQueryCache().subscribe((event) => {
+    if (event.type !== "added") return;
+    if (event.query.state.data === undefined) return; // a fresh fetch; `persisterFn` owns it
+    // The cache event types its query with `any` generics; the persister wants
+    // the `unknown`-shaped one. Same object, and nothing here reads the payload.
+    void current?.persistQuery(event.query as Query);
+  });
+}
+
+/**
  * Point the client's default persister at a (possibly new) partition.
  *
  * Called once the session resolves and again on every household switch. Setting
@@ -63,9 +114,10 @@ export function createPersister(partition: CachePartition | null) {
  * are always called together (`useCachePartition`).
  */
 export function setPartition(queryClient: QueryClient, partition: CachePartition | null): void {
+  current = createPersister(partition);
   const defaults = queryClient.getDefaultOptions();
   queryClient.setDefaultOptions({
     ...defaults,
-    queries: { ...defaults.queries, persister: createPersister(partition).persisterFn },
+    queries: { ...defaults.queries, persister: current.persisterFn },
   });
 }

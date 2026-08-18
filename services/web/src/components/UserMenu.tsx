@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { signOutAndGoHome, useHydratedSession } from "../lib/auth-client";
+import { useSessionSnapshot } from "#/lib/offline/use-household";
 import UserAvatar from "./UserAvatar";
 import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
@@ -24,19 +25,27 @@ const THEME_META: Record<ThemeMode, { label: string; icon: typeof Sun; next: The
  *
  * Signed out (or still loading) it shows the sign-in affordance instead, so the
  * header can render it unconditionally.
+ *
+ * **Offline it falls back to the persisted session snapshot** (offline plan
+ * §4.4). `authClient.useSession()` is a network read, so without it this control
+ * would show "Sign in" to someone who is signed in — the cookie is fine, the
+ * network is not, and offering to re-authenticate is both a lie and a dead end
+ * (the sign-in flow needs the network too). The snapshot carries a handle and a
+ * name and nothing else: no avatar, no PDS label, and never a credential.
  */
 export default function UserMenu() {
   // `useHydratedSession`, not the raw hook: the server has no session and the
   // client's store answers from cache immediately, so reading the raw one here
   // renders the menu during hydration against a skeleton in the SSR HTML.
   const { data: session, isPending } = useHydratedSession();
+  const snapshot = useSessionSnapshot();
   const { mode, setMode } = useTheme();
 
   if (isPending) {
     return <Skeleton className="size-9 rounded-full" />;
   }
 
-  if (!session) {
+  if (!session && !snapshot) {
     return (
       <Button render={<Link to="/login" />} nativeButton={false}>
         Sign in
@@ -44,9 +53,11 @@ export default function UserMenu() {
     );
   }
 
-  const { handle, name, image } = session.user;
+  const handle = session?.user.handle ?? snapshot?.handle ?? null;
+  const name = session?.user.name ?? snapshot?.name ?? null;
+  const image = session?.user.image ?? undefined;
   const displayHandle = handle ?? name;
-  const service = serviceNameFromPds(session.user.pds);
+  const service = session ? serviceNameFromPds(session.user.pds) : null;
   const ThemeIcon = THEME_META[mode].icon;
 
   return (
