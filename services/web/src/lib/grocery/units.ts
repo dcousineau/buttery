@@ -221,7 +221,9 @@ export function renderQuantity(base: number, dim: UnitDim, anchorUnitId: string 
   if (dim === "count") {
     const count = formatCount(base);
     if (!anchor) return count;
-    return `${count} ${base === 1 ? anchor.one : anchor.many}`;
+    // Plural follows what the row *reads*, not the raw total: 1.02 renders as
+    // "1", and "1 cloves" is a typo as far as anyone shopping is concerned.
+    return `${count} ${count === "1" ? anchor.one : anchor.many}`;
   }
 
   if (dim === "mass") {
@@ -241,7 +243,13 @@ export function renderQuantity(base: number, dim: UnitDim, anchorUnitId: string 
 
   // volume
   if (metric) return base >= 1000 ? `${formatMetric(base / 1000)} l` : `${formatMetric(base)} ml`;
-  if (base >= CUP / 4) return `${formatUS(base / CUP)} ${base >= CUP * 1.5 ? "cups" : "cup"}`;
+  if (base >= CUP / 4) {
+    // Pluralize off the rounded display value, not the underlying total: the
+    // string says `1½`, so it has to say `cups`, and 1.45 cups must not round up
+    // to `1½ cup`. Only an exact `1` is singular.
+    const cups = Math.round((base / CUP) * 8) / 8;
+    return `${formatUS(base / CUP)} ${cups === 1 ? "cup" : "cups"}`;
+  }
   if (base >= TBSP) return `${formatUS(base / TBSP)} tbsp`;
   return `${formatUS(base / TSP)} tsp`;
 }

@@ -1,6 +1,6 @@
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { DB } from "#/db/types";
 import { ulid } from "./household/ids";
 
@@ -326,6 +326,53 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
     });
   });
 
+  // --- a plan week -------------------------------------------------------
+
+  describe("a plan week contributes once per entry", () => {
+    const WEEK = "2026-03-02";
+
+    async function planRecipe(recipeId: string, planDate: string, slot: string, position: number): Promise<string> {
+      const id = ulid();
+      await db!
+        .insertInto("meal_plan_entry")
+        .values({ id, household_id: HH_A, plan_date: planDate, slot, position, kind: "recipe", recipe_id: recipeId, created_by_did: DID_A })
+        .execute();
+      return id;
+    }
+
+    it("counts a recipe planned twice in the week twice", async () => {
+      // Two dinners of the same roast chicken is two pounds of chicken. A week
+      // deduplicated by recipe id would send you home with one.
+      const first = await planRecipe(R_CHICKEN_LB, "2026-03-02", "dinner", 0);
+      const second = await planRecipe(R_CHICKEN_LB, "2026-03-05", "dinner", 0);
+
+      const preview = await grocery.buildGroceryPreview(db!, DID_A, HH_A, { planWeek: WEEK });
+      const chicken = preview.rows.find((row) => row.foodSlug === "en:chicken-breast")!;
+      expect(chicken.quantity).toBeCloseTo(453.59237 * 2, 2);
+
+      // And each contribution names the entry it came from.
+      expect(new Set(chicken.sources.map((source) => source.planEntryId))).toEqual(new Set([first, second]));
+
+      await grocery.commitGroceryRows(db!, DID_A, HH_A, { rows: preview.rows });
+      const item = (await itemsOf(HH_A)).find((row) => row.food_slug === "en:chicken-breast")!;
+      const sources = await db!.selectFrom("grocery_item_source").select("plan_entry_id").where("item_id", "=", item.id).execute();
+      expect(new Set(sources.map((source) => source.plan_entry_id))).toEqual(new Set([first, second]));
+    });
+
+    it("lets an explicit entry replace the week's copies of that recipe rather than doubling them", async () => {
+      await planRecipe(R_CHICKEN_LB, "2026-03-02", "dinner", 0);
+
+      const preview = await grocery.buildGroceryPreview(db!, DID_A, HH_A, { planWeek: WEEK, recipes: [{ recipeId: R_CHICKEN_LB, scale: 2 }] });
+      const chicken = preview.rows.find((row) => row.foodSlug === "en:chicken-breast")!;
+      expect(chicken.quantity).toBeCloseTo(453.59237 * 2, 2);
+      expect(preview.recipes).toHaveLength(1);
+    });
+
+    afterEach(async () => {
+      await db!.deleteFrom("meal_plan_entry").where("household_id", "in", HOUSEHOLDS).execute();
+    });
+  });
+
   // --- the live-row unique index, and D11 --------------------------------
 
   describe("the live-row partial unique index (D11)", () => {
@@ -351,6 +398,23 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
       );
       expect(error.code).toBe("23505");
       expect(error.constraint).toBe("grocery_item_live_identity_key");
+    });
+
+    it("consolidates two simultaneous adds of a food nobody has yet", async () => {
+      // Two shoppers, same second, same food, no live row to lock: `for update`
+      // finds nothing and Postgres gap-locks nothing, so without the commit's
+      // advisory lock both transactions reach the insert and one dies on
+      // `grocery_item_live_identity_key` instead of merging.
+      const [a, b] = await Promise.all([
+        grocery.buildGroceryPreview(db!, DID_A, HH_A, { recipes: [{ recipeId: R_CHICKEN_LB }] }),
+        grocery.buildGroceryPreview(db!, DID_A, HH_A, { recipes: [{ recipeId: R_CHICKEN_OZ }] }),
+      ]);
+
+      await Promise.all([grocery.commitGroceryRows(db!, DID_A, HH_A, { rows: a.rows }), grocery.commitGroceryRows(db!, DID_A, HH_A, { rows: b.rows })]);
+
+      const chicken = (await itemsOf(HH_A)).filter((item) => item.food_slug === "en:chicken-breast");
+      expect(chicken).toHaveLength(1);
+      expect(Number(chicken[0].quantity)).toBeCloseTo(453.59237 + 8 * 28.349523, 2);
     });
 
     it("re-adding a food whose row is RETIRED creates a new row instead of reviving it", async () => {
@@ -702,6 +766,32 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
     it("previewing refuses a recipe boxed by ANOTHER household", async () => {
       // R_CHICKEN_OZ is in A's box only; B must not be able to preview it.
       await expect(grocery.buildGroceryPreview(db!, DID_B, HH_B, { recipes: [{ recipeId: R_CHICKEN_OZ }] })).rejects.toThrow(/not in this household/i);
+    });
+
+    it("committing refuses a hand-written source recipe the household has not boxed", async () => {
+      // Preview is not the only door: a caller can post rows it wrote itself,
+      // and `readGroceryList` joins `recipe` for the source title — so an
+      // unchecked recipe id here would turn the list into a title lookup for
+      // the whole corpus.
+      const preview = await grocery.buildGroceryPreview(db!, DID_B, HH_B, { recipes: [{ recipeId: R_CHICKEN_LB }] });
+      const forged = preview.rows.map((row) => ({ ...row, sources: row.sources.map((source) => ({ ...source, recipeId: R_CHICKEN_OZ })) }));
+
+      await expect(grocery.commitGroceryRows(db!, DID_B, HH_B, { rows: forged })).rejects.toThrow(/not in this household/i);
+      expect(await itemsOf(HH_B)).toHaveLength(0);
+    });
+
+    it("committing refuses a plan entry belonging to another household", async () => {
+      const planEntryId = ulid();
+      await db!
+        .insertInto("meal_plan_entry")
+        .values({ id: planEntryId, household_id: HH_A, plan_date: "2026-03-02", slot: "dinner", position: 0, kind: "recipe", recipe_id: R_CHICKEN_LB, created_by_did: DID_A })
+        .execute();
+
+      const preview = await grocery.buildGroceryPreview(db!, DID_B, HH_B, { recipes: [{ recipeId: R_CHICKEN_LB }] });
+      const forged = preview.rows.map((row) => ({ ...row, sources: row.sources.map((source) => ({ ...source, planEntryId })) }));
+
+      await expect(grocery.commitGroceryRows(db!, DID_B, HH_B, { rows: forged })).rejects.toThrow(/not in this household/i);
+      await db!.deleteFrom("meal_plan_entry").where("id", "=", planEntryId).execute();
     });
 
     it("reading returns only the caller's household's list", async () => {

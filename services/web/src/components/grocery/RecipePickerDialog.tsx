@@ -37,14 +37,20 @@ export function RecipePickerDialog({ open, onClose, onPicked }: RecipePickerDial
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [query, setQuery] = useState("");
   // One fetch per page load, guarded against React's double-invoked effects.
+  // The guard is released on failure: the empty state tells you to try again,
+  // and reopening the dialog is the only "again" it offers.
   const requested = useRef(false);
 
   useEffect(() => {
     if (!open || requested.current) return;
     requested.current = true;
+    setFailed(false);
     listHouseholdRecipes()
       .then(setBox)
-      .catch(() => setFailed(true));
+      .catch(() => {
+        requested.current = false;
+        setFailed(true);
+      });
   }, [open]);
 
   // Closing unmounts nothing (the dialog stays rendered), so the selection is

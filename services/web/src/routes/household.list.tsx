@@ -315,7 +315,8 @@ function GroceryListPage() {
                 you have to hunt for — and so is every item in it. Items disable
                 rather than disappear for the same reason: a menu whose contents
                 move around between openings is a menu you have to read every
-                time. On an empty list all three are simply inert. */}
+                time. On an empty list the two sweeps are simply inert; the
+                delete is not, because a swept list is not an empty one. */}
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     render={
@@ -336,8 +337,15 @@ function GroceryListPage() {
                     <DropdownMenuSeparator />
                     {/* The only one that is not a sweep. It gets the destructive
                     styling the other two deliberately do not: they keep what
-                    they take. */}
-                    <DropdownMenuItem variant="destructive" disabled={items.length === 0} onClick={() => setConfirmDeleteAll(true)}>
+                    they take.
+
+                    It is also the only one that stays enabled on an empty list,
+                    because "empty" here means "nothing visible": after a sweep
+                    the cleared rows are still in the database and this is the
+                    one action that reclaims them. Disabling it then would leave
+                    them unreachable forever. On a genuinely empty list it is a
+                    server-side no-op. */}
+                    <DropdownMenuItem variant="destructive" onClick={() => setConfirmDeleteAll(true)}>
                       <Trash2 aria-hidden="true" />
                       Delete everything
                     </DropdownMenuItem>
@@ -442,7 +450,7 @@ function GroceryListPage() {
         open={confirmDeleteAll}
         onOpenChange={setConfirmDeleteAll}
         title="Delete everything on the list?"
-        description={`${items.length === 1 ? "The one item on the list goes" : `All ${items.length} items go`}, along with anything already cleared — this is the one that does not keep them. The recipes they came from are untouched, so you can add them back.`}
+        description={`${items.length === 0 ? "Everything already cleared goes" : items.length === 1 ? "The one item on the list goes, along with anything already cleared" : `All ${items.length} items go, along with anything already cleared`} — this is the one that does not keep them. The recipes they came from are untouched, so you can add them back.`}
         confirmLabel="Delete everything"
         destructive
         onConfirm={deleteAll}

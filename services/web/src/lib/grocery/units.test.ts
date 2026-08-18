@@ -123,6 +123,13 @@ describe("renderQuantity", () => {
     expect(renderQuantity(236.58824, "volume", "cup")).toBe("1 cup");
   });
 
+  it("pluralizes cups off the fraction it prints, not the raw total", () => {
+    // Only an exact 1 is singular: the string says 1⅛, so it says cups.
+    expect(renderQuantity(236.58824 * 1.125, "volume", "cup")).toBe("1⅛ cups");
+    // And a total that rounds UP to a half still reads plural.
+    expect(renderQuantity(236.58824 * 1.45, "volume", "cup")).toBe("1½ cups");
+  });
+
   it("steps down to tablespoons and teaspoons for small volumes", () => {
     expect(renderQuantity(14.786765 * 2, "volume", "tbsp")).toBe("2 tbsp");
     expect(renderQuantity(4.928922, "volume", "tsp")).toBe("1 tsp");
@@ -137,6 +144,8 @@ describe("renderQuantity", () => {
     expect(renderQuantity(3, "count", "clove")).toBe("3 cloves");
     expect(renderQuantity(1, "count", "clove")).toBe("1 clove");
     expect(renderQuantity(2, "count", null)).toBe("2");
+    // A total that rounds to "1" reads as one of the thing, not "1 cloves".
+    expect(renderQuantity(1.02, "count", "clove")).toBe("1 clove");
   });
 });
 

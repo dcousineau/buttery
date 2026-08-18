@@ -94,7 +94,8 @@ already wanted split; nothing that used to merge stops merging.
 
 ## Phase 3 — schema and server functions
 
-One migration creating all three tables, and `src/server/grocery.ts` following
+One migration creating the two tables that shipped (see the deviation below), and
+`src/server/grocery.ts` following
 `server/meal-plan.ts` exactly: thin `createServerFn` wrappers that resolve DID and household
 from the session, gate through `assertMember`, and delegate to plain
 `(db, did, householdId, input)` functions.
@@ -277,6 +278,39 @@ thing rather than from the plan:
   isolation test checked a row off before reading; one does now. Every other raw
   fragment in a `where` across the codebase was audited — they are all single
   predicates with no top-level `or`.
+
+## Fixes from the PR review pass
+
+A second review pass over the branch found six real defects. All six are fixed,
+each with a test that fails without the fix:
+
+- **A plan week counted a recipe once no matter how often it was planned.** The
+  preview keyed its contributions by recipe id, so a roast chicken planned Monday
+  and Thursday put one pound on the list while the button beside it counted two
+  entries. Contributions are now per plan entry, and each source row carries the
+  `plan_entry_id` it came from — the column existed and nothing had ever written
+  to it. An explicit `recipes[]` entry still wins over the week's copies of that
+  recipe rather than stacking on top of them.
+- **`commitGroceryAdd` trusted client-supplied provenance.** `assertBoxed` gated
+  preview but not commit, and `readGroceryList` joins `recipe` for each source's
+  title — so a caller posting its own rows with someone else's `recipeId` could
+  read that recipe's name off its own list. Commit now gates every non-null
+  source recipe and plan entry against the household.
+- **Two simultaneous adds of a food nobody had yet could collide.** The
+  `for update` read finds nothing for a missing identity and Postgres gap-locks
+  nothing, so both transactions reached the insert and one died on
+  `grocery_item_live_identity_key`. A transaction-scoped advisory lock per
+  household serializes commits; the loser now merges into the winner's row.
+- **"Delete everything" was disabled exactly when it was needed.** It keyed off
+  the visible item count, which is zero after a sweep — leaving the cleared rows
+  it exists to reclaim unreachable forever. It is always enabled now; on a
+  genuinely empty list it is a server-side no-op.
+- **The recipe picker could not be retried.** Its one-fetch guard stayed set
+  after a failure, so the "close this and try again" the empty state suggests did
+  nothing. The guard is released on failure.
+- **Cups pluralized off the unrounded total.** `1⅛ cup`, and anything that
+  rounded up to `1½` read `1½ cup`. Plural now follows the value the row prints,
+  in counts as well as volumes.
 
 ## Open items
 

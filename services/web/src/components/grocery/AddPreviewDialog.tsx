@@ -31,7 +31,8 @@ import { baseQuantity, editableQuantity, editableUnitLabel, renderRowQuantity } 
  *   this add joins a row you already have, which is the difference between "add
  *   1 lb" and "you'll end up with 1 lb 8 oz".
  * - **Quantity and name are editable, aisle is not.** D8 gives no per-row aisle
- *   override; the flat-list toggle on the route is the escape hatch.
+ *   override, and the route always groups by aisle; a wrong aisle is fixed by
+ *   renaming the row into something the lexicon knows.
  *
  * The preview is fetched lazily on open and **writes nothing** — closing the
  * dialog leaves the list exactly as it was.

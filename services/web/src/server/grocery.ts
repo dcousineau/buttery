@@ -97,7 +97,7 @@ export interface GroceryPreviewRow {
   isStaple: boolean;
   /** True when this food already has a live row that this would merge into. */
   mergesInto: string | null;
-  sources: Array<{ recipeId: string | null; rawText: string; scale: number; quantityBase: number | null }>;
+  sources: Array<{ recipeId: string | null; planEntryId: string | null; rawText: string; scale: number; quantityBase: number | null }>;
 }
 
 export interface GroceryPreview {
@@ -260,8 +260,37 @@ async function assertBoxed(db: Kysely<DB>, householdId: string, recipeIds: reado
   return new Map(rows.map((row) => [row.recipe_id, row.name ?? "Untitled"]));
 }
 
-/** The recipe ids planned in one week, in plan order. */
-async function planWeekRecipeIds(db: Kysely<DB>, householdId: string, week: PlanDate): Promise<string[]> {
+/**
+ * The commit-side twin of `assertBoxed`: every recipe and plan entry a client
+ * claims as provenance must belong to this household.
+ *
+ * `commitGroceryAdd` takes its rows from a preview, but nothing stops a caller
+ * from posting rows it wrote itself. `readGroceryList` joins `recipe` to show
+ * each source's title, so an unchecked `recipeId` here turns the list into a
+ * lookup for any recipe in the corpus.
+ */
+async function assertSourcesInHousehold(db: Kysely<DB>, householdId: string, rows: readonly CommitRow[]): Promise<void> {
+  const sources = rows.flatMap((row) => row.sources);
+
+  const recipeIds = [...new Set(sources.map((source) => source.recipeId).filter((id): id is string => Boolean(id)))];
+  const planEntryIds = [...new Set(sources.map((source) => source.planEntryId).filter((id): id is string => Boolean(id)))];
+
+  await assertBoxed(db, householdId, recipeIds);
+
+  if (!planEntryIds.length) return;
+  const entries = await db.selectFrom("meal_plan_entry").select("id").where("household_id", "=", householdId).where("id", "in", planEntryIds).execute();
+  if (entries.length !== planEntryIds.length) throw new Error("That plan entry is not in this household's plan.");
+}
+
+/**
+ * The recipe *entries* planned in one week, in plan order.
+ *
+ * Entries, not distinct recipes: a recipe planned Monday and again Thursday is
+ * two dinners and therefore twice the ingredients. Collapsing them by recipe id
+ * would under-buy, and would make "Add all 5" — a count of entries — quietly
+ * add four recipes' worth.
+ */
+async function planWeekEntries(db: Kysely<DB>, householdId: string, week: PlanDate): Promise<Array<{ planEntryId: string; recipeId: string }>> {
   const { sql } = await import("kysely");
   const { readHouseholdPreferences } = await import("./household/preferences");
   const { weekStartDay } = await readHouseholdPreferences(householdId);
@@ -270,7 +299,7 @@ async function planWeekRecipeIds(db: Kysely<DB>, householdId: string, week: Plan
 
   const rows = await db
     .selectFrom("meal_plan_entry")
-    .select("recipe_id")
+    .select(["id", "recipe_id"])
     .where("household_id", "=", householdId)
     .where("kind", "=", "recipe")
     .where("deleted_at", "is", null)
@@ -280,7 +309,7 @@ async function planWeekRecipeIds(db: Kysely<DB>, householdId: string, week: Plan
     .orderBy("position")
     .execute();
 
-  return rows.map((row) => row.recipe_id).filter((id): id is string => Boolean(id));
+  return rows.flatMap((row) => (row.recipe_id ? [{ planEntryId: row.id, recipeId: row.recipe_id }] : []));
 }
 
 /** Identity of a row, as the live unique index computes it. */
@@ -313,14 +342,20 @@ export async function buildGroceryPreview(
   const { loadLexicon } = await import("#/lib/grocery/categorize");
   const { mergeRecipeLines } = await import("#/lib/grocery/merge");
 
-  // A plan week contributes its recipes at 1×; explicit entries may carry their
-  // own scale and win when the same recipe appears both ways.
-  const fromWeek = input.planWeek ? await planWeekRecipeIds(db, householdId, input.planWeek) : [];
-  const scaleById = new Map<string, number>();
-  for (const id of fromWeek) scaleById.set(id, 1);
-  for (const entry of input.recipes ?? []) scaleById.set(entry.recipeId, entry.scale ?? 1);
+  // A plan week contributes once per *entry* at 1×, so a recipe planned twice
+  // counts twice. Explicit entries may carry their own scale and win outright
+  // when the same recipe arrives both ways — the caller asked for that recipe
+  // at that scale, and adding the week's copies on top would double it.
+  const explicitScale = new Map<string, number>();
+  for (const entry of input.recipes ?? []) explicitScale.set(entry.recipeId, entry.scale ?? 1);
 
-  const recipeIds = [...scaleById.keys()];
+  const fromWeek = input.planWeek ? await planWeekEntries(db, householdId, input.planWeek) : [];
+  const contributions: Array<{ recipeId: string; planEntryId: string | null; scale: number }> = [
+    ...fromWeek.filter((entry) => !explicitScale.has(entry.recipeId)).map((entry) => ({ recipeId: entry.recipeId, planEntryId: entry.planEntryId, scale: 1 })),
+    ...[...explicitScale].map(([recipeId, scale]) => ({ recipeId, planEntryId: null, scale })),
+  ];
+
+  const recipeIds = [...new Set(contributions.map((c) => c.recipeId))];
   if (!recipeIds.length) return { rows: [], recipes: [] };
   if (recipeIds.length > RECIPE_LIMIT) throw new Error("That is too many recipes for one add.");
 
@@ -328,7 +363,7 @@ export async function buildGroceryPreview(
 
   const merged = mergeRecipeLines(
     lexicon,
-    recipeIds.map((id) => ({ recipeId: id, scale: scaleById.get(id) ?? 1, lines: ingredients.get(id) ?? [] })),
+    contributions.map((c) => ({ recipeId: c.recipeId, planEntryId: c.planEntryId, scale: c.scale, lines: ingredients.get(c.recipeId) ?? [] })),
   );
 
   // What is already on the live list, so the dialog can say "this will merge
@@ -355,6 +390,7 @@ export async function buildGroceryPreview(
       mergesInto: live.get(identityOf(row)) ?? null,
       sources: row.sources.map((source) => ({
         recipeId: source.recipeId,
+        planEntryId: source.planEntryId ?? null,
         rawText: source.rawText,
         scale: source.scale,
         quantityBase: source.quantityBase,
@@ -363,7 +399,7 @@ export async function buildGroceryPreview(
 
   return {
     rows,
-    recipes: recipeIds.map((id) => ({ recipeId: id, title: titles.get(id) ?? "Untitled", scale: scaleById.get(id) ?? 1 })),
+    recipes: recipeIds.map((id) => ({ recipeId: id, title: titles.get(id) ?? "Untitled", scale: explicitScale.get(id) ?? 1 })),
   };
 }
 
@@ -408,7 +444,21 @@ export async function commitGroceryRows(db: Kysely<DB>, did: string, householdId
   const { ulid } = await import("./household/ids");
   const { sql } = await import("kysely");
 
+  // Provenance is client-supplied and is read back out as a recipe *title*, so
+  // it is gated exactly like preview's is. Without this a caller could attach
+  // any recipe id in the corpus to its own row and read the name off its list.
+  await assertSourcesInHousehold(db, householdId, input.rows);
+
   return db.transaction().execute(async (trx) => {
+    // The read below finds nothing for an identity nobody has yet, and Postgres
+    // takes no gap lock on a key that does not exist — two shoppers adding the
+    // same food at the same moment would both fall through to the insert and one
+    // would hit `grocery_item_live_identity_key` instead of consolidating. A
+    // transaction-scoped advisory lock per household is the serialization: an
+    // add is rare, one household at a time is free, and the loser waits for the
+    // winner's rows and merges into them the way it meant to.
+    await sql`select pg_advisory_xact_lock(hashtextextended(${`grocery-commit ${householdId}`}, 0))`.execute(trx);
+
     // One read of the live rows, then every row in this commit decides against
     // it — a merge target found here is guaranteed live for the transaction.
     const liveRows = await trx
