@@ -4,6 +4,7 @@ import * as z from "zod";
 import type { JsonObject, JsonValue } from "@buttery/recipe-extract/import";
 import type { DB } from "#/db/types";
 import { IMPORTER_IDS, type ImporterId } from "#/lib/recipe-import-ids";
+import { slugForLabel, tokenForSlug } from "#/lib/recipe-vocab";
 import { DEDUPE_NS, type AttributionChoice, type RecipeRecordInput } from "./recipes-write";
 
 /**
@@ -1265,7 +1266,7 @@ async function commitImport(
   // §12.3: personal tags are not a controlled vocabulary, so EVERY value becomes
   // a keyword whether or not it matched; almost nothing will match, which is
   // correct. The raw list also reaches the sidecar via `meta`.
-  const record = await applyTags(item.record, item.tags);
+  const record = applyTags(item.record, item.tags);
 
   // Keys are recomputed from the SUBMITTED record, never taken from the client
   // (§6.1, §7.3) — the review screen can rename a recipe after the probe ran.
@@ -1349,10 +1350,9 @@ async function writeNote(trx: Kysely<DB>, householdId: string, recipeId: string,
  * a keyword, and the FIRST value that resolves to a known category label fills
  * `recipeCategory` if the user did not already choose one.
  */
-async function applyTags(record: RecipeRecordInput, tags: readonly string[]): Promise<RecipeRecordInput> {
+function applyTags(record: RecipeRecordInput, tags: readonly string[]): RecipeRecordInput {
   const clean = tags.map((t) => t.trim()).filter(Boolean);
   if (!clean.length) return record;
-  const { slugForLabel, tokenForSlug } = await import("#/lib/recipe-vocab");
 
   // The lexicon caps a keyword at 64 characters; an over-long personal tag is
   // dropped rather than failing the whole record on validation.

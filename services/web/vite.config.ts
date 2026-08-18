@@ -48,7 +48,15 @@ const config = defineConfig({
       consolePiping: { enabled: false },
     }),
     tailwindcss(),
-    tanstackStart(),
+    tanstackStart({
+      importProtection: {
+        enabled: true,
+        behavior: "mock",
+        client: {
+          files: ["**/*.server.*", "src/lib/db.ts", "src/lib/posthog-server.ts", "src/lib/net/safe-fetch.ts", "src/server/household/ids.ts"],
+        },
+      },
+    }),
     viteReact(),
   ],
 });
