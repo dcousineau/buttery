@@ -10,10 +10,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
-# A fresh clone has no services/web/.env, and every process that touches the
-# database or the web server reads it. Create it from the example (no-op once it
-# exists) so the stack boots instead of dying inside `migrate` on an undefined
-# DATABASE_URL.
+# A fresh clone has no per-service `.env` files, and every process that touches
+# the database or the web server reads one (services/web/.env, and
+# services/atproto-cron-sync/.env for the sync one-shot). Create them from their
+# examples (no-op once they exist) so the stack boots instead of dying inside
+# `migrate` on an undefined DATABASE_URL.
 node scripts/dev/bootstrap-env.mjs
 
 # process-compose writes per-process logs here and won't create the directory.

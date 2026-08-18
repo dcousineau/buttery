@@ -1,22 +1,20 @@
+import { Link } from "@tanstack/react-router";
 import { ShoppingBasket } from "lucide-react";
-import { Badge } from "#/components/ui/badge";
+import { Button } from "#/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/components/ui/card";
 import { cn } from "#/lib/utils";
 
 /**
- * The shopping list, before there is a shopping list.
+ * The shopping list card on `/household`.
  *
- * Static by construction — there is nothing to configure, because there is
- * nothing behind it yet. It exists for the same reason the nav keeps `soon`
- * chips on Collections and the randomizer: the roadmap is part of the copy, and
- * a household that plans a week should be told where the list will show up
- * rather than left wondering whether they missed it.
+ * This used to be the feature's placeholder — softened border, no shadow, a
+ * `soon` chip — and its own doc explained that it was deliberately **not** a
+ * `Card` because a card reads as a live object you can act on. It is one now.
+ * The list is built, so the panel takes the full card construction (2px ink,
+ * `shadow-pop-md`) and matches `WeekAheadCard` beside it in the same grid.
  *
- * It is deliberately **not** a `Card`. Cards in this system are 2px ink and a
- * hard `pop-md` shadow, which reads as a live object you can act on; this panel
- * takes the softened `border-border/60` and no shadow at all, the same treatment
- * the empty-plan panel uses, so it sits visibly a step behind the real card next
- * to it. Making it a card and then subtracting the card's construction would
- * just be a card pretending.
+ * Still presentational: it links, it does not fetch. Anything that needs to know
+ * what is on the list belongs on the list.
  */
 
 export interface ShoppingListTeaserProps {
@@ -25,19 +23,20 @@ export interface ShoppingListTeaserProps {
 
 export function ShoppingListTeaser({ className }: ShoppingListTeaserProps) {
   return (
-    <div className={cn("flex flex-wrap items-center gap-4 rounded-xl border-2 border-border/60 bg-muted/45 p-5", className)}>
-      <ShoppingBasket className="size-10 flex-none text-muted-foreground" aria-hidden="true" />
-      <div className="min-w-0 flex-[1_1_10rem]">
-        <div className="flex items-center gap-2">
-          <h2 className="m-0 text-xl leading-[1.1] font-bold text-foreground">Shopping list</h2>
-          <Badge variant="outline" size="xs" className="text-[0.6rem] tracking-[0.05em] uppercase">
-            soon
-          </Badge>
-        </div>
-        <p className="mt-1.5 mb-0 text-sm text-muted-foreground text-pretty">
-          Every recipe on the plan will roll up into one list, grouped by aisle, shared with the household. It isn’t built yet — this is where it will live.
-        </p>
-      </div>
-    </div>
+    <Card className={cn("gap-0", className)}>
+      <CardHeader>
+        <span className="inline-flex text-muted-foreground">
+          <ShoppingBasket className="size-5" aria-hidden="true" />
+        </span>
+        <CardTitle>Shopping list</CardTitle>
+        <CardDescription>One running list for the household — pull in a recipe or a whole week from the planner and it consolidates itself, grouped by aisle.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button size="sm" nativeButton={false} render={<Link to="/household/list" />}>
+          <ShoppingBasket data-icon="inline-start" aria-hidden="true" />
+          Open the list
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

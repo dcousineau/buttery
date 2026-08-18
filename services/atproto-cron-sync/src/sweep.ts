@@ -3,7 +3,7 @@ import type { Config } from "#/config.ts";
 import { RECIPE_COLLECTION } from "#/config.ts";
 import { getPool } from "#/db.ts";
 import { log } from "#/log.ts";
-import { enumerateDids } from "#/relay.ts";
+import { enumerateDids, enumerateDidsFromPds } from "#/relay.ts";
 import { resolveIdentity } from "#/identity.ts";
 import { getRepoRev, listRecords } from "#/pds.ts";
 import { reconcileDeletes, toRecipeRow, upsertRecipe } from "#/recipe.ts";
@@ -156,6 +156,12 @@ export async function runSweep(config: Config): Promise<SweepSummary> {
   if (config.onlyDid) {
     dids.push(config.onlyDid);
     log.info("single-did sweep", { did: config.onlyDid });
+  } else if (config.pdsListUrl) {
+    // Local dev: one PDS's repo list stands in for the relay (see relay.ts).
+    for await (const did of enumerateDidsFromPds(config.pdsListUrl, config.maxRepos)) {
+      dids.push(did);
+    }
+    log.info("enumerated repos from pds", { pds: config.pdsListUrl, count: dids.length });
   } else {
     for await (const did of enumerateDids(config.relayUrl, RECIPE_COLLECTION, config.maxRepos)) {
       dids.push(did);
@@ -163,9 +169,9 @@ export async function runSweep(config: Config): Promise<SweepSummary> {
     log.info("enumerated repos", { count: dids.length });
   }
 
-  // A partial sweep (onlyDid / maxRepos) must NOT drive missing/delete-wide
-  // reconciliation — it hasn't observed the whole network.
-  const fullSweep = !config.onlyDid && !config.maxRepos;
+  // A partial sweep (onlyDid / maxRepos / a single PDS) must NOT drive
+  // missing/delete-wide reconciliation — it hasn't observed the whole network.
+  const fullSweep = !config.onlyDid && !config.maxRepos && !config.pdsListUrl;
 
   let syncRunId: string | null = null;
   if (!config.dryRun) {

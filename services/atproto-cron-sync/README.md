@@ -25,51 +25,61 @@ index-on-write + cron reconciliation, no Tap yet. See
 5. Soft-delete rows absent from a DID's full, successful enumeration.
 6. Write an `atproto_sync_run` summary, end the pool, `exit(0/1)`.
 
-## Local run / bootstrapping the DB
+## Local run
 
 > **Sandbox caveat:** the dev DB host and the atproto network hosts are not in
 > the command sandbox allowlist. Run these with a real-network shell (the `!`
 > prefix in the prompt), not a sandboxed call.
 
-One-time:
+No `railway run` anywhere: `pnpm dev` boots the local stack (Postgres, migrations,
+the atproto dev-env), and this service reads `services/atproto-cron-sync/.env` —
+created from `.env.example` by the same bootstrap that creates `services/web/.env`.
 
 ```bash
-mise install                 # node / pnpm / railway
-pnpm install                 # wires up this workspace package
-# create the tables via the web migration pipeline (web owns DDL):
-railway run --service buttery -- pnpm --filter @buttery/web db:migrate:up
-railway run --service buttery -- pnpm --filter @buttery/web db:codegen
+pnpm --filter @buttery/atproto-cron-sync sync:once
+pnpm --filter @buttery/atproto-cron-sync sync:once --dry-run   # fetch + log, no writes
+SYNC_MAX_REPOS=25 pnpm --filter @buttery/atproto-cron-sync sync:once   # partial, fast
+
+# Same run, supervised — a disabled one-shot in process-compose, so it also
+# shows up in the TUI and logs to .dev-logs/atproto-cron-sync.log
+process-compose process start atproto-cron-sync
 ```
 
-Run a sweep (`DATABASE_URL` must point at the target DB — easiest is to let
-Railway inject it):
+**`.env` decides which network a sweep reads**, and both invocations obey it
+identically. The defaults are the real atmosphere (`plc.directory` + the public
+relay) — a live sync into the local database. To sweep the local atproto dev-env
+instead, set `ATPROTO_PLC_URL=http://localhost:2582` and
+`SYNC_PDS_URL=http://localhost:2583` there, then re-run after each local publish;
+every sweep is idempotent. (The environment still outranks the file, since
+`process.loadEnvFile` never overwrites an already-set var — handy for a one-off
+`SYNC_ONLY_DID=… pnpm …`, and how Railway supplies everything in production.)
 
-```bash
-# full network sweep:
-railway run --service atproto-cron-sync -- pnpm --filter @buttery/atproto-cron-sync sync:once
+The tables live in web's migration pipeline, so a fresh database needs
+`pnpm --filter @buttery/web db:migrate:up` first — which is what the stack's
+`migrate` process does on every boot.
 
-# fast partial bootstrap while iterating (cap repos):
-SYNC_MAX_REPOS=25 railway run --service atproto-cron-sync -- pnpm --filter @buttery/atproto-cron-sync sync:once
-
-# dry run — hit the network, log what would be written, touch nothing:
-railway run --service atproto-cron-sync -- pnpm --filter @buttery/atproto-cron-sync start -- --once --dry-run
-```
-
-Or, with a local `services/atproto-cron-sync/.env` holding `DATABASE_URL`
-(`config.ts` calls `process.loadEnvFile()`), run directly:
-`pnpm --filter @buttery/atproto-cron-sync sync:once`. There's also `mise run sync`.
+Integration tests against that same database:
+`pnpm --filter @buttery/atproto-cron-sync test:db` (bare `vitest`; the `.env`
+supplies `DATABASE_URL`, and the suites skip when there's no database).
 
 ## Flags / env
 
-| Flag / env         | Effect                                                            |
-| ------------------ | ----------------------------------------------------------------- |
-| `--once`           | Accepted for symmetry; one sweep per invocation is the only mode. |
-| `--dry-run`        | Fetch + log, no writes. Good for measuring sweep size/duration.   |
-| `SYNC_MAX_REPOS=N` | Stop after N DIDs — fast partial bootstrap.                       |
-| `SYNC_ONLY_DID=…`  | Sync a single DID — debugging one repo.                           |
-| `SYNC_CONCURRENCY` | Per-DID pool size (default 8).                                    |
-| `RELAY_URL`        | Override the enumeration relay.                                   |
+| Flag / env         | Effect                                                                         |
+| ------------------ | ------------------------------------------------------------------------------ |
+| `--once`           | Accepted for symmetry; one sweep per invocation is the only mode.              |
+| `--dry-run`        | Fetch + log, no writes. Good for measuring sweep size/duration.                |
+| `SYNC_MAX_REPOS=N` | Stop after N DIDs — fast partial bootstrap.                                    |
+| `SYNC_ONLY_DID=…`  | Sync a single DID — debugging one repo.                                        |
+| `SYNC_CONCURRENCY` | Per-DID pool size (default 8).                                                 |
+| `RELAY_URL`        | Override the enumeration relay.                                                |
+| `SYNC_PDS_URL`     | Enumerate one PDS's `listRepos` instead of the relay — the local dev-env mode. |
+| `ATPROTO_PLC_URL`  | Override DID-document resolution (dev-env's PLC locally).                      |
 
-A partial sweep (`SYNC_MAX_REPOS` / `SYNC_ONLY_DID`) does **not** drive
-missing-repo or network-wide delete reconciliation — it hasn't observed the
-whole network.
+A partial sweep (`SYNC_MAX_REPOS` / `SYNC_ONLY_DID` / `SYNC_PDS_URL`) does
+**not** drive missing-repo or network-wide delete reconciliation — it hasn't
+observed the whole network.
+
+`SYNC_PDS_URL` exists because the dev-env ships no relay and its PDS rejects
+unauthenticated `com.atproto.sync.listReposByCollection` with `AuthMissing`;
+`com.atproto.sync.listRepos` on that PDS is the unauthenticated way in. It is not
+collection-filtered, so point it at a dev PDS, never at a real one.

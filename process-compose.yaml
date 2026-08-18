@@ -7,8 +7,9 @@
 # (`pnpm dev:down`). Data lives in named volumes and survives; wiping it is
 # `docker compose down -v`.
 #
-# The cron sync service is deliberately NOT here; run it on demand with
-# `railway run --service atproto-cron-sync -- pnpm --filter=@buttery/atproto-cron-sync sync:once`.
+# The cron sync is here but does not boot — it's a manual one-shot. Which
+# network it sweeps into Postgres is `services/atproto-cron-sync/.env`'s call,
+# not this file's.
 #
 # Humans: `pnpm dev` for the TUI (arrow keys to switch process, F5 restart,
 # F10 quit). Agents: drive the running instance through the `pc_*` MCP tools
@@ -216,6 +217,32 @@ processes:
       period_seconds: 2
       failure_threshold: 60
     log_location: ./.dev-logs/web.log
+    log_configuration: *log_config
+
+  # A sweep is a batch job, not a service: it runs to completion (`restart: "no"`
+  # — `on_failure` would re-run a failed network sweep in a loop) and boots
+  # `Disabled`, because sweeping is something you ask for, not part of having the
+  # app up. `disabled` is a plain literal rather than `docs`'s ${VAR:-…} knob:
+  # there is no "boot the whole stack and also run one sweep" case worth a flag.
+  #
+  # No `environment:` block, deliberately — which network a sweep reads is
+  # `services/atproto-cron-sync/.env`'s call and nothing else's, so this process
+  # and a shell run do the same thing.
+  atproto-cron-sync:
+    description: "One atproto → Postgres sync sweep — manual one-shot, starts Disabled"
+    command: "pnpm --filter=@buttery/atproto-cron-sync sync:once"
+    # It writes tables `migrate` creates. `atproto-dev-env` is in here because a
+    # `.env` pointed at the local dev-env needs it up, and against the real
+    # atmosphere it costs only a wait that has already happened.
+    depends_on:
+      migrate:
+        condition: process_completed_successfully
+      atproto-dev-env:
+        condition: process_healthy
+    disabled: true
+    availability:
+      restart: "no"
+    log_location: ./.dev-logs/atproto-cron-sync.log
     log_configuration: *log_config
 
   # Opt-in. Docusaurus is a slow, memory-hungry second bundler and nothing else

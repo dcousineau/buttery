@@ -106,6 +106,21 @@ Seed DID **stable** across restarts. Resolve at runtime, never hardcode:
 pnpm -s --filter @buttery/atproto-dev-env records   # prints `DID did:plc:…`
 ```
 
+## Loading seed data
+
+Empty database boring. Recipe corpus for grocery list, meal plan, calibration sweep live in kysely-ctl seed, `services/web/src/db/seeds/`. One command:
+
+```bash
+pnpm --filter @buttery/web db:seed:run
+```
+
+- **Manual only. NEVER automatic.** No process, no hook, no CI run it. `migrate` process = migrations only, keep it that way. Human type command or no corpus.
+- Safe re-run. Every row keyed `seed-<slug>`, upserted — your own imported recipes untouched, meal-plan and grocery-list rows pointing at seeded recipe survive. Run twice, same counts.
+- kysely-ctl **no track seeds** like migrations — no `kysely_seed` table. `db:seed:run` run every seed file every time. That why idempotent matter.
+- Need household first. No household = seed print "sign in first" and stop. Sign in as `chef.test` (see above), then run.
+- Sandbox block dev DB — run sandbox-disabled.
+- `db:seed:list` show seed files. `db:seed:make <name>` mint new one — **never hand-name file**, same clock-drift reason as migrations (AGENTS.md).
+
 ## Cleanup
 
 ```bash
