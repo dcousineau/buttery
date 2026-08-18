@@ -66,9 +66,20 @@ const CACHE = `buttery-shell-${BUILD_ID}`;
  *
  * Separate cache from the shell so it can be evicted on its own — under quota
  * pressure images are the first thing that should go (§4.5).
+ *
+ * **The cap is a quota budget, not a byte budget.** Everything in here is an
+ * *opaque* response (see `cacheImage`), and a browser cannot let a page measure
+ * an opaque body — that would be a cross-origin read — so it charges each entry
+ * a large fixed amount instead of its real size. Chrome's published figure is
+ * ~7MB per opaque entry and WebKit does something equivalent. So the 300 this
+ * started at was ~12MB of actual thumbnails and over 2GB of *accounted* quota,
+ * against an iOS ceiling of roughly 1GB (§9.2) — and blowing that ceiling takes
+ * the Query cache down with it, which is the thing that actually makes the app
+ * work offline. 48 entries ≈ 340MB accounted, a third of the budget, images
+ * degrading first exactly as §4.5 asks.
  */
 const IMAGE_CACHE = "buttery-images-v1";
-const IMAGE_CACHE_MAX = 300;
+const IMAGE_CACHE_MAX = 48;
 
 /** The one route precached as a data-free shell. */
 const OFFLINE_SHELL = "/offline";
@@ -165,12 +176,45 @@ async function staleWhileRevalidate(request: Request): Promise<Response> {
 }
 
 /**
- * Recipe images, CacheFirst into a capped LRU-ish bucket.
+ * Recipe images, CacheFirst into a capped LRU-ish bucket of **opaque**
+ * responses.
  *
  * "-ish": the trim drops the oldest *inserted* entries, which Cache Storage
  * gives us for free through key order, rather than the least recently *used*.
  * Tracking real usage would mean writing access times somewhere, and this worker
  * is not allowed to keep state (§9.5).
+ *
+ * **Why opaque, and why that is not a choice.** `cdn.bsky.app` sends no
+ * `Access-Control-Allow-Origin` — verified against the `avatar`,
+ * `feed_thumbnail`, `feed_fullsize` and `banner` presets, and against an
+ * `OPTIONS` preflight: Bunny returns the bytes and no CORS header at all. So a
+ * plain `<img src>` reaches this worker as `mode: "no-cors"` and `fetch` hands
+ * back an opaque response: `status: 0`, `ok === false`, no headers, unreadable
+ * body. The usual remedy — `crossorigin="anonymous"` on the `<img>` tags, which
+ * makes the response inspectable — would turn every thumbnail request into a
+ * CORS request that the CDN's *missing* header then blocks, i.e. it would break
+ * every recipe image in the app, online and offline. The real choice here is
+ * "cache opaque or cache nothing", and this used to be the second one: the old
+ * `if (response.ok)` guard is never true for an opaque response, so this bucket,
+ * its cap and its trim were all unreachable and §4.6's mirrored thumbnails
+ * rendered offline as broken boxes.
+ *
+ * Two consequences of opacity, both accepted deliberately:
+ *
+ *  - **Quota padding**, priced into `IMAGE_CACHE_MAX` above.
+ *  - **A CDN error is indistinguishable from a photo.** A 404 or a 502 arrives
+ *    opaque too, with nothing left to test, so a thumbnail requested during a
+ *    CDN blip is cached broken and stays broken until the trim reaches it. That
+ *    is the price of the bucket existing at all; it is bounded by the cap, and
+ *    a household that re-opens the box replaces the entry on the next miss.
+ *
+ * If `cdn.bsky.app` ever grows a CORS header (or `IMAGE_CDN` moves to a
+ * Buttery-owned proxy, which `lib/atproto/images.ts` says is a one-constant
+ * change), the better design comes back: `crossorigin="anonymous"` on the tags,
+ * `response.ok` here, real byte accounting, and error responses filtered out.
+ *
+ * `cache.put`, not `cache.add`: `add`/`addAll` fetch and then reject anything
+ * that is not `ok`, which is every opaque response. `put` is the only door.
  */
 async function cacheImage(request: Request): Promise<Response> {
   const cache = await caches.open(IMAGE_CACHE);
@@ -178,7 +222,11 @@ async function cacheImage(request: Request): Promise<Response> {
   if (hit) return hit;
 
   const response = await fetch(request);
-  if (response.ok) {
+  // `opaque` is the expected shape; `ok` covers the day the CDN gains CORS.
+  // `error` and `opaqueredirect` are the two `put` refuses outright, and a 206
+  // it would throw on — none of which an `<img>` produces, but the guard is one
+  // expression and a throw inside a fetch handler costs the image on screen.
+  if (response.type === "opaque" || response.ok) {
     void cache.put(request, response.clone()).then(async () => {
       const keys = await cache.keys();
       if (keys.length <= IMAGE_CACHE_MAX) return;
@@ -225,7 +273,13 @@ function handle(request: Request): Promise<Response> | null {
   // browser, so it is not merely uncached — this worker is not in its path.
   if (isDataRequest(url)) return null;
 
-  if (isRecipeImage(url)) return cacheImage(request);
+  // `no-cors` only — which is what an `<img src>` without a `crossorigin`
+  // attribute produces, and the only shape this bucket holds. Handing a cached
+  // *opaque* response back to a request that asked for `cors` is a network
+  // error by spec, so anything that ever fetches a CDN image deliberately (a
+  // canvas export, a share-sheet thumbnail) has to go straight to the network
+  // rather than get a broken response out of here.
+  if (isRecipeImage(url)) return request.mode === "no-cors" ? cacheImage(request) : null;
 
   // Everything else cross-origin (PostHog, the atproto PDS, OAuth hops) is
   // none of this worker's business.

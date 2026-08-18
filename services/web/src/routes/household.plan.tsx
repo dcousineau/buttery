@@ -56,9 +56,11 @@ import { seo } from "#/lib/seo";
  * mistyped a URL. The server recomputes the week start from the household's
  * timezone and week-start preference regardless of what arrives.
  *
- * The route also owns every write (§8): the optimistic patch over the loader's
- * week, the toast, the live-region announcement, and the `router.invalidate()`
- * that reconciles the two. Nothing below it awaits a mutation — see
+ * The route also owns every write (§8): the optimistic patch over the cached
+ * week, the toast, the live-region announcement, and the invalidation that
+ * reconciles the two — the plan *prefix*, never one week's key, because
+ * `"current"` and a dated week are two entries over the same seven days
+ * (`keys.household.planAll`). Nothing below it awaits a mutation — see
  * `components/plan/PlanActions.tsx`.
  */
 
@@ -157,9 +159,23 @@ function PlanPage() {
     push({ variant: "destructive", title: error instanceof Error ? error.message : "That didn’t save. Try again." });
   }
 
-  /** Re-read this week. Used by the writes that have no honest optimistic patch. */
-  async function refreshWeek() {
-    await queryClient.invalidateQueries({ queryKey: keys.household.plan(householdId, search.week) });
+  /**
+   * Re-read the plan. Used by the writes that have no honest optimistic patch.
+   *
+   * The whole plan prefix, not `plan(householdId, search.week)`. One week can
+   * sit in the cache under two keys — `"current"` when the URL carries no
+   * `?week=`, and its date when it does — because only the server can map
+   * "this week" onto a week start (household timezone, week-start day). A write
+   * made under `?week=X` that invalidated only that key leaves the `"current"`
+   * entry holding pre-write data, so: Next week, Previous week (which writes an
+   * explicit `?week=`), delete a meal, Today — and the deleted meal is back on
+   * screen for the rest of `staleTime`. `keys.household.planAll` carries the
+   * long version. The preferences save below already reached for this prefix
+   * for its own reason (a week-start change re-buckets every week); it turns
+   * out to be the right blast radius for every plan write, not just that one.
+   */
+  async function refreshPlan() {
+    await queryClient.invalidateQueries({ queryKey: keys.household.planAll(householdId) });
   }
 
   /** The label a toast or announcement uses for an entry. */
@@ -194,11 +210,11 @@ function PlanPage() {
       } catch (error) {
         onWriteFailed(error);
       } finally {
-        // The destination is usually not the week on screen, so this is
-        // deliberately narrow: only *this* week's entry is re-read. The
-        // destination refetches when someone navigates to it, which is the
-        // behaviour the old whole-router invalidate produced anyway.
-        await refreshWeek();
+        // Both weeks are in the plan prefix, so the destination is covered
+        // whether or not it happens to be the one on screen — the entries that
+        // are not being observed are simply marked stale and re-read when
+        // someone navigates to them.
+        await refreshPlan();
       }
     })();
   }
@@ -312,7 +328,7 @@ function PlanPage() {
         try {
           await addRecipeToHousehold(recipeId);
           push({ variant: "success", title: "Added back to your box" });
-          await Promise.all([refreshWeek(), queryClient.invalidateQueries({ queryKey: keys.household.recipes(householdId) })]);
+          await Promise.all([refreshPlan(), queryClient.invalidateQueries({ queryKey: keys.household.recipes(householdId) })]);
         } catch (error) {
           onWriteFailed(error);
         }
@@ -490,9 +506,9 @@ function PlanPage() {
             push({ variant: "success", title });
             // A week-start or timezone change re-buckets the grid and moves
             // "today", so the week has to be read again — the panel never
-            // patches it itself. Every week is affected, not just this one, so
-            // this invalidates the plan prefix rather than one key.
-            void queryClient.invalidateQueries({ queryKey: [...keys.household.all(householdId), "plan"] });
+            // patches it itself. Every week is affected, not just this one,
+            // which is what the plan prefix covers.
+            void refreshPlan();
           }}
           onError={(title) => push({ variant: "destructive", title })}
         />
@@ -501,9 +517,14 @@ function PlanPage() {
       <CopyWeekDialog weekStart={copyRequest} onClose={() => setCopyRequest(null)} onCopy={copyWeek} />
 
       {/*
-        The grocery list is a different route with its own loader, so there is
-        nothing here to invalidate — the toast is the whole feedback loop, and
-        it names where the rows went so the button does not feel like a no-op.
+        The rows land on `/household/list`, and the toast is no longer the whole
+        feedback loop over there. While that route was a plain loader, walking to
+        it re-read it; now that it reads `groceryListQuery` (§4.1), an
+        un-invalidated key means the list still shows its pre-add payload for the
+        next 10s (that factory's `staleTime`) with nothing queued to correct it —
+        on the one screen where a missing row means buying the thing twice. The
+        toast still names where the rows went, so the button never reads as a
+        no-op; it is just not the only thing that happens.
       */}
       <AddPreviewDialog
         request={listRequest}
@@ -511,6 +532,7 @@ function PlanPage() {
         onCommitted={(result) => {
           setListRequest(null);
           push({ variant: "success", title: summarizeGroceryAdd(result.added, result.merged) });
+          void queryClient.invalidateQueries({ queryKey: keys.household.grocery(householdId) });
         }}
         onError={(title) => push({ variant: "destructive", title })}
       />

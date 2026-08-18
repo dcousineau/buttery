@@ -53,6 +53,11 @@ export function householdRecipeQuery(householdId: string, recipeId: string) {
  * against the household's timezone and week-start day, so the client cannot
  * compute the equivalent date without duplicating that logic. The key spells it
  * `"current"` rather than leaving a hole in the tuple.
+ *
+ * Because of that, one week can sit in the cache twice (once as `"current"`,
+ * once as its date). Reads tolerate the duplicate; **invalidation must not** —
+ * see `keys.household.planAll` for why every plan write invalidates the whole
+ * plan prefix instead of the key it was built with.
  */
 export function mealPlanWeekQuery(householdId: string, week: PlanDate | undefined) {
   return queryOptions({

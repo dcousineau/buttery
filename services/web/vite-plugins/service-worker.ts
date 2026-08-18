@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { build, type Plugin } from "vite";
 
 /**
@@ -35,14 +35,42 @@ export function serviceWorker(): Plugin {
       // Start emits both a client and a server bundle. Only the client one has
       // any business owning a service worker, and only it is served statically.
       if (config.build.ssr) return;
-      outDir = config.build.outDir;
+      // `config.build.outDir` is NOT absolute — Vite leaves it as authored and
+      // resolves it against `config.root` at every use site (`getResolvedOutDirs`).
+      // Captured raw it silently resolved against `process.cwd()` instead, which
+      // is the same directory only because `pnpm --filter @buttery/web build`
+      // happens to chdir into the package. Run the build from the repo root, or
+      // from a workspace script that does not, and this plugin would read an
+      // empty `dist/client/assets` and emit a worker that caches nothing.
+      outDir = resolve(config.root, config.build.outDir);
     },
 
     async closeBundle() {
       if (!outDir) return;
       const clientOutDir = outDir;
 
-      const assets = await collectAssets(clientOutDir);
+      const assets = await collectAssets(clientOutDir).catch((cause: unknown) => {
+        throw new Error(`service worker: could not read ${join(clientOutDir, "assets")} — the client build did not emit where this plugin looks.`, { cause });
+      });
+      // An empty asset list is a hard build error, never a quiet `[]`.
+      //
+      // This is the exact case the injection assertion at the bottom of this
+      // function exists for, and until now it was the one case that assertion
+      // could not see: `collectAssets` swallowed a missing/renamed `assets/`
+      // directory, the empty list hashed to sha256("") — the constant
+      // `e3b0c44298fc`, identical on every build, so the shell cache name never
+      // rotates and `activate`'s eviction never fires — and the precache check
+      // below was guarded by `assets[0] &&`, so it skipped itself. The result is
+      // a worker that installs, activates, looks correct in devtools, precaches
+      // nothing, and serves a stale shell forever. You find that out on a phone
+      // in a shop, which is precisely what the offline plan exists to prevent.
+      const [firstAsset] = assets;
+      if (!firstAsset) {
+        throw new Error(
+          `service worker: no JS/CSS assets found under ${join(clientOutDir, "assets")} — the client build emitted nothing to precache, so the worker would be a no-op.`,
+        );
+      }
+
       // A content hash over the emitted asset list, so the cache name changes
       // exactly when the app does. A timestamp would mint a new cache — and pop
       // a "New version available" toast — on every rebuild of identical output.
@@ -83,7 +111,9 @@ export function serviceWorker(): Plugin {
       // exactly what the offline plan exists to prevent, so it fails the build.
       const emitted = await readFile(join(clientOutDir, "sw.js"), "utf8");
       if (!emitted.includes(buildId)) throw new Error("service worker: the build id was not injected — check the `define` in this plugin against `src/sw.ts`.");
-      if (assets[0] && !emitted.includes(assets[0])) {
+      // Unconditional: `firstAsset` is non-empty by the throw above, so there is
+      // no `assets[0] &&` left for the assertion to opt itself out through.
+      if (!emitted.includes(firstAsset)) {
         throw new Error("service worker: the precache list was not injected — check the `define` in this plugin against `src/sw.ts`.");
       }
 
@@ -98,6 +128,12 @@ export function serviceWorker(): Plugin {
  * Deliberately not *every* emitted file: source maps are large and never
  * requested by a user, and precaching them would spend a phone's storage budget
  * on debugging artifacts. JS and CSS are what a cold offline start needs.
+ *
+ * Failures are **not** swallowed. The previous `.catch(() => undefined)` turned
+ * "the directory Vite emits into moved" — a real, silent, one-upgrade-away
+ * failure — into an empty list, and an empty list is a worker that caches
+ * nothing while looking installed. Let the `ENOENT` out; the caller turns it
+ * into a build error naming the path it looked in.
  */
 async function collectAssets(outDir: string): Promise<string[]> {
   const found: string[] = [];
@@ -116,6 +152,6 @@ async function collectAssets(outDir: string): Promise<string[]> {
     }
   }
 
-  await walk(join(outDir, "assets")).catch(() => undefined);
+  await walk(join(outDir, "assets"));
   return found.sort();
 }

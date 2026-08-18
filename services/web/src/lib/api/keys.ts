@@ -43,7 +43,28 @@ export const keys = {
     all: (hid: HouseholdId) => ["household", hid] as const,
     recipes: (hid: HouseholdId) => ["household", hid, "recipes"] as const,
     recipe: (hid: HouseholdId, recipeId: string) => ["household", hid, "recipes", recipeId] as const,
+    /**
+     * One week of the plan. `undefined` means "whatever the server calls this
+     * week" and is spelled `"current"` rather than left as a hole in the tuple.
+     *
+     * **Two keys can hold the same week, and nothing here can prevent it.**
+     * Only the server can map `undefined` onto a real week start — it depends on
+     * the household's timezone and week-start day (`getMealPlanWeek`), which the
+     * client would have to duplicate to canonicalize the key. So `/household/plan`
+     * and `/household/plan?week=<that same Monday>` are two entries over one
+     * week of server data. That is a duplicate read, which is cheap.
+     *
+     * What is *not* cheap is invalidating only one of them: a meal deleted under
+     * `?week=X` that touched only `plan(hid, X)` leaves the `"current"` entry
+     * still holding the deleted meal, and clicking "Today" inside `staleTime`
+     * puts it back on screen. Every plan write therefore invalidates
+     * {@link planAll} rather than the exact key it was built with (offline plan
+     * §4.2) — one week is one entry as far as staleness is concerned, even when
+     * it is stored twice.
+     */
     plan: (hid: HouseholdId, week: PlanDate | undefined) => ["household", hid, "plan", week ?? "current"] as const,
+    /** Every plan week in one household — the prefix every plan write invalidates. */
+    planAll: (hid: HouseholdId) => ["household", hid, "plan"] as const,
     grocery: (hid: HouseholdId) => ["household", hid, "grocery"] as const,
     members: (hid: HouseholdId) => ["household", hid, "members"] as const,
     preferences: (hid: HouseholdId) => ["household", hid, "preferences"] as const,

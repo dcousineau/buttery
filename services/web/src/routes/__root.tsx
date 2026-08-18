@@ -85,7 +85,20 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       // nowhere — so nothing was installable. This line is what turns it on.
       { rel: "manifest", href: "/manifest.json" },
       // iOS ignores the manifest's icons entirely; this is the one it uses.
-      { rel: "apple-touch-icon", href: "/icon-maskable-192.png" },
+      //
+      // The *non*-maskable art, deliberately. A maskable icon carries ~20% of
+      // safe-zone padding so that Android can crop it to a circle, a squircle or
+      // a rounded square without losing the mark — and iOS applies no mask at
+      // all beyond its own corner rounding, so it would render that padding as
+      // dead space and the butter block would sit visibly smaller than every
+      // icon beside it on the home screen (measured: the mark spans 60% of the
+      // maskable canvas against 75% of this one). `logo192.png` already exists
+      // and is the right art; its own corner radius (~11%) is well inside the
+      // squircle iOS clips to (~22%), so the transparent corners never show as
+      // the black iOS composites transparency onto. 192 rather than Apple's
+      // nominal 180 — iOS downscales, and inventing a third icon file to save a
+      // resample is not worth a new asset.
+      { rel: "apple-touch-icon", href: "/logo192.png" },
     ],
   }),
   shellComponent: RootDocument,

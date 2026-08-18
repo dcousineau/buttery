@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useRouter } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { Link, useRouteContext, useRouter } from "@tanstack/react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CalendarRange, Clock, EyeOff, Lock, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
-import { type HouseholdRecipeDetail, keys, publishRecipe, removeRecipeFromHousehold, toggleHouseholdRecipeFavorite, upsertHouseholdRecipeNote } from "#/lib/api";
-import { useActiveHouseholdId } from "#/lib/offline/use-household";
+import { type HouseholdRecipeDetail, keys, publishRecipe, removeRecipeFromHousehold, toggleRecipeFavoriteMutation, upsertHouseholdRecipeNote } from "#/lib/api";
 import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
 import { Button } from "#/components/ui/button";
 import { Textarea } from "#/components/ui/textarea";
@@ -47,7 +46,23 @@ export function DetailPane({
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const householdId = useActiveHouseholdId();
+  /**
+   * The cache partition, from the **route context** rather than from
+   * `useActiveHouseholdId()`.
+   *
+   * Both name the same household when everything is working, but they fail
+   * differently, and the difference is a silent one here. The hook reads the
+   * better-auth session (with the localStorage snapshot behind it) and answers
+   * `null` until `/get-session` lands — and permanently if that request fails.
+   * A `null` id makes every key below unbuildable, so `invalidateBox()` returned
+   * early and the ledger simply never updated after a favourite, with no error
+   * anywhere. The route context is the value the parent layout's `beforeLoad`
+   * already resolved and the value the queries on screen were *keyed* with
+   * (`household.recipes.tsx`, `household.recipes.$id.tsx`), so reading it here
+   * cannot disagree with them and cannot be absent — the pane does not render
+   * until it exists.
+   */
+  const { householdId } = useRouteContext({ from: "/household/recipes" });
   // M1 writes are online-only (§4.1): the affordance disables rather than
   // queuing, because the favourite toggle is server-side (so replaying it flips
   // twice) and the note is the field two humans erase each other on. Both get
@@ -67,8 +82,6 @@ export function DetailPane({
     titleRef.current?.focus({ preventScroll: true });
   }, []);
 
-  const [favorite, setFavorite] = useState(recipe.favorite);
-  const [favPending, setFavPending] = useState(false);
   const [scaleOpen, setScaleOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -83,10 +96,12 @@ export function DetailPane({
   // `handle` is an atproto-plugin column, absent from better-auth's base user type.
   const { data: session } = useHydratedSession() as { data: { user?: { handle?: string | null } } | null };
 
-  // Detail-pane state (favorite, scroll position, note) is keyed by recipeId at
-  // the render site (`<DetailPane key={recipe.recipeId} …/>`), so switching
-  // recipes remounts this pane — favorite re-inits from props and scroll resets
-  // naturally, with no setState-in-effect.
+  // Detail-pane state (scroll position, note draft) is keyed by recipeId at the
+  // render site (`<DetailPane key={recipe.recipeId} …/>`), so switching recipes
+  // remounts this pane and everything resets naturally, with no
+  // setState-in-effect. The star is *not* in that list any more: it reads
+  // `recipe.favorite` straight off the cache entry the mutation patches, so
+  // there is no second copy of the fact to keep in step.
 
   const scaledIngredients = useMemo(() => scaleIngredients(recipe.ingredients, factor, metric), [recipe.ingredients, factor, metric]);
   const displayServings = recipe.serves != null ? Math.max(1, Math.round(recipe.serves * factor)) : null;
@@ -105,28 +120,30 @@ export function DetailPane({
 
   /** The box list and this recipe's detail — the two entries every write here touches. */
   async function invalidateBox() {
-    if (!householdId) return;
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: keys.household.recipes(householdId) }),
       queryClient.invalidateQueries({ queryKey: keys.household.recipe(householdId, recipe.recipeId) }),
     ]);
   }
 
-  async function onFavorite() {
-    setFavorite((v) => !v);
-    setFavPending(true);
-    try {
-      const { favorite } = await toggleHouseholdRecipeFavorite(recipe.recipeId);
-      setFavorite(favorite);
-      posthog.capture("recipe_favorite_toggled", { recipe_id: recipe.recipeId, favorited: favorite });
-      // Two entries hold this one fact: the detail this star lives on, and the
-      // ledger row beside it. Prefix-scoped, so nothing else on the page refetches.
-      await invalidateBox();
-    } catch {
-      setFavorite(recipe.favorite); // revert on failure
-    } finally {
-      setFavPending(false);
-    }
+  /**
+   * The star, through the port's mutation rather than a local `useState` plus a
+   * bare transport call.
+   *
+   * The hand-rolled version held `favorite` in component state, which made this
+   * pane the only place in the app where the star was true and the cache entry
+   * behind it still said false — so the ledger row two hundred pixels to the
+   * left stayed unstarred until an invalidation landed. `toggleRecipeFavoriteMutation`
+   * patches both entries in `onMutate` (see `lib/api/mutations.ts`), so the star
+   * below just reads `recipe.favorite` and both surfaces flip on the same frame.
+   */
+  const favoriteMutation = useMutation(toggleRecipeFavoriteMutation(queryClient, householdId));
+
+  function onFavorite() {
+    favoriteMutation.mutate(
+      { recipeId: recipe.recipeId, favorite: !recipe.favorite },
+      { onSuccess: (result) => posthog.capture("recipe_favorite_toggled", { recipe_id: recipe.recipeId, favorited: result.favorite }) },
+    );
   }
 
   async function onReconnect() {
@@ -166,11 +183,17 @@ export function DetailPane({
   async function onPlanned(date: PlanDate, slot: MealSlot) {
     posthog.capture("meal_plan_entry_added", { recipe_id: recipe.recipeId, slot, source: "recipe_detail" });
     pushToast(`Added to ${SLOT_LABELS[slot].toLowerCase()} on ${formatPlanDate(date)}`);
-    // The pane's own "on your meal plan" line comes from the detail payload's
-    // `plannedUsage`, so it is stale the moment this lands. The plan week is a
-    // different key on a different route; it refetches when that route is next
-    // observed, which is the behaviour the old whole-router invalidate had too.
-    await invalidateBox();
+    // Three entries move on this write, not two. The box pair, because the
+    // pane's "on your meal plan" line comes from the detail payload's
+    // `plannedUsage` — *and* the plan itself, which is where the meal actually
+    // landed. Skipping the plan used to be defensible when `/household/plan`
+    // re-ran a loader on every visit; now that it reads a cached query, an
+    // un-invalidated week means walking over to the planner inside its 30s
+    // `staleTime` and not finding the meal you just added, with nothing
+    // scheduled to correct it. The date can be any week, so this is the whole
+    // plan prefix (`keys.household.planAll`, which also covers the `"current"`
+    // spelling of whichever week it belongs to).
+    await Promise.all([invalidateBox(), queryClient.invalidateQueries({ queryKey: keys.household.planAll(householdId) })]);
   }
 
   async function onRemove() {
@@ -254,14 +277,14 @@ export function DetailPane({
             write that would corrupt on replay is not. */}
           <Button
             variant="outline"
-            aria-pressed={favorite}
-            disabled={favPending || !online}
+            aria-pressed={recipe.favorite}
+            disabled={favoriteMutation.isPending || !online}
             title={online ? undefined : OFFLINE_WRITE_HINT}
             onClick={onFavorite}
-            className={cn(favorite && "bg-primary text-primary-foreground hover:bg-primary")}
+            className={cn(recipe.favorite && "bg-primary text-primary-foreground hover:bg-primary")}
           >
-            <Star data-icon="inline-start" aria-hidden="true" className={cn(favorite && "fill-current")} />
-            {favorite ? "Favorited" : "Favorite"}
+            <Star data-icon="inline-start" aria-hidden="true" className={cn(recipe.favorite && "fill-current")} />
+            {recipe.favorite ? "Favorited" : "Favorite"}
           </Button>
           {/*
             The scale the pane is CURRENTLY showing rides along (plan D4): if you
@@ -438,6 +461,12 @@ export function DetailPane({
 
       <AddToPlanDialog request={planRequest} onClose={() => setPlanRequest(null)} onAdded={onPlanned} />
 
+      {/* The rows land on `/household/list`, which is a cached query now rather
+        than a loader — so the toast is not the whole feedback loop any more.
+        Without this invalidation the shopping list would still be showing its
+        pre-add payload for the next 10s (`groceryListQuery`'s `staleTime`) with
+        nothing queued to correct it, which is the one screen where a missing
+        row means buying the thing twice. */}
       <AddPreviewDialog
         request={listRequest}
         onClose={() => setListRequest(null)}
@@ -445,6 +474,7 @@ export function DetailPane({
           setListRequest(null);
           posthog.capture("grocery_items_added", { recipe_id: recipe.recipeId, added: result.added, merged: result.merged, source: "recipe_detail" });
           pushToast(summarizeGroceryAdd(result.added, result.merged));
+          void queryClient.invalidateQueries({ queryKey: keys.household.grocery(householdId) });
         }}
         onError={(message) => pushToast(message)}
       />

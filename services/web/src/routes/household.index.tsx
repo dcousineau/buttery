@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useHydratedSession } from "#/lib/auth-client";
-import { requireActiveHousehold } from "#/lib/api";
+import { keys, requireActiveHousehold } from "#/lib/api";
 import { getMealPlanWeek } from "#/lib/api";
 import { addRecipeToHousehold, listHouseholdRecipes, searchGlobalRecipes, type GlobalRecipeResult } from "#/lib/api";
 import { Badge } from "#/components/ui/badge";
@@ -69,6 +70,7 @@ const NETWORK_COUNT = 3;
 function PantryPage() {
   const { active, recipes, week, network } = Route.useLoaderData();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: session } = useHydratedSession();
 
   const [chooserOpen, setChooserOpen] = useState(false);
@@ -91,18 +93,36 @@ function PantryPage() {
   }
 
   /**
-   * Link a public recipe into the box, then re-read the loader so it moves
-   * sections. Reports whether it landed: the card ignores the answer, but the
-   * preview dialog closes itself on a success (the card behind it is on its way
-   * out of "Not in your box yet") and stays open on a failure so the retry is
-   * still one click away.
+   * What a new box row has to touch, which is two caches rather than one.
+   *
+   * This route is **not** migrated (§4.1): its loader calls `listHouseholdRecipes`
+   * and `getMealPlanWeek` through the transport directly, so `router.invalidate()`
+   * genuinely re-reads it and the pantry's own sections do move. What it cannot
+   * do is reach the *Query* cache — and `/household/recipes` has already moved
+   * there. Without the second line, adding a recipe here and then opening the
+   * recipe box shows a ledger with the new recipe missing, because that route's
+   * loader is `ensureQueryData` (returns the cached list without revalidating)
+   * and its observer only refetches on mount once the 30s `staleTime` has run
+   * out. Two cache owners on one screen is the cost of a partial migration; the
+   * fix is to name both until this route crosses the boundary too.
+   */
+  async function refreshBox() {
+    await Promise.all([router.invalidate(), queryClient.invalidateQueries({ queryKey: keys.household.recipes(active.householdId) })]);
+  }
+
+  /**
+   * Link a public recipe into the box, then re-read so it moves sections.
+   * Reports whether it landed: the card ignores the answer, but the preview
+   * dialog closes itself on a success (the card behind it is on its way out of
+   * "Not in your box yet") and stays open on a failure so the retry is still one
+   * click away.
    */
   async function saveToBox(recipeId: string): Promise<boolean> {
     if (savingRecipeId) return false;
     setSavingRecipeId(recipeId);
     try {
       await addRecipeToHousehold(recipeId);
-      await router.invalidate();
+      await refreshBox();
       pushToast("Added to your box");
       return true;
     } catch {
@@ -115,7 +135,7 @@ function PantryPage() {
 
   /** The picker's own add path — same destination, so it gets the same follow-through. */
   async function onPicked() {
-    await router.invalidate();
+    await refreshBox();
     pushToast("Added to your box");
   }
 

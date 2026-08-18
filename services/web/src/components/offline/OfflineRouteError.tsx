@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { CloudOff, RefreshCw } from "lucide-react";
-import type { ErrorComponentProps } from "@tanstack/react-router";
+import { useRouter, type ErrorComponentProps } from "@tanstack/react-router";
 import { Button } from "#/components/ui/button";
 import { isOffline } from "#/lib/api";
 
@@ -23,9 +24,33 @@ import { isOffline } from "#/lib/api";
  * re-thrown, because a real bug must not be disguised as a connectivity blip —
  * that is how a broken query becomes a "flaky offline mode" nobody can
  * reproduce.
+ *
+ * **"Try again" runs `router.invalidate()`, not the `reset` the router hands
+ * this component.** `reset` is `CatchBoundary.reset`, and all it does is
+ * `setState({ error: null })` — the *match* is untouched and still in `error`
+ * status, so on the very next render `MatchInner` reaches `throw match.error`
+ * again, synchronously, and the same boundary catches the same error. Nothing
+ * re-runs, nothing re-fetches: the button was a permanent no-op, and it was a
+ * no-op in precisely the moment it is reached for, with signal restored and a
+ * shopping list still not on screen. `invalidate()` is the one that means it —
+ * it flips matches in `error` status back to `pending` and re-runs their
+ * loaders, and the resulting new match object also trips the boundary's own
+ * `getResetKey`, so the error state clears without touching `reset` at all.
  */
-export function OfflineRouteError({ error, reset }: ErrorComponentProps) {
+export function OfflineRouteError({ error }: ErrorComponentProps) {
+  const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
+
   if (!isOffline(error)) throw error;
+
+  function retry(): void {
+    setRetrying(true);
+    // On success this component unmounts as the boundary resets, so the
+    // `finally` lands on nothing — which is fine, and the alternative (leaving
+    // the button spinning) is worse when the retry fails and the user wants
+    // another go a minute later, further into the car park.
+    void router.invalidate().finally(() => setRetrying(false));
+  }
 
   return (
     <div className="flex h-full min-h-[60svh] flex-col items-center justify-center gap-3 px-6 text-center">
@@ -36,9 +61,9 @@ export function OfflineRouteError({ error, reset }: ErrorComponentProps) {
           This page hasn't been open on this device since it was last online, so there's nothing stored to show. Open it once with a connection and it'll be here next time.
         </p>
       </div>
-      <Button size="sm" variant="outline" onClick={reset}>
+      <Button size="sm" variant="outline" onClick={retry} disabled={retrying}>
         <RefreshCw data-icon="inline-start" aria-hidden="true" />
-        Try again
+        {retrying ? "Trying…" : "Try again"}
       </Button>
     </div>
   );
