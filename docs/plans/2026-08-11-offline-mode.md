@@ -1,9 +1,10 @@
 # 2026-08-11 — Offline mode (offline-capable PWA)
 
-Status: **spec / pre-development**
+Status: **spec / pre-development — rev 2 (milestone re-cut)**
 Depends on: `03-household-recipe-collection.md` (the box + rendered `recipe` layer),
 `2026-08-06-meal-planner.md` (`meal_plan_entry`, the optimistic-patch system),
-`2026-08-09-paprika-import.md` (the `ImportApi` port — the pattern §5 generalizes),
+`2026-08-11-grocery-list.md` (**shipped** in #31 — `grocery_list`/`grocery_item`, the
+checklist UI this plan takes offline),
 `05-cook-mode.md` (the client-persistence idioms, the PWA seam in `lib/timers/alarm-delivery.ts`).
 
 > Implementer: log outcomes to `docs/plans/results/2026-08-11-offline-mode-results.md`
@@ -17,60 +18,41 @@ Buttery is a kitchen app. Kitchens have bad wifi, phones go in pockets on the wa
 grocery store, and cook mode runs for 90 minutes on a counter. The app currently cannot
 survive a single dropped packet: every screen is a route `loader` calling a
 `createServerFn`, every write is a direct RPC followed by `router.invalidate()`, and there
-is no client cache of any kind. Offline is not a feature that can be bolted on later — it
-decides how data is fetched, how mutations are shaped, and what the server has to record.
-That is why this is being planned now, before more surface accumulates.
+is no client cache of any kind.
 
-This plan does three things:
+**Rev 2 re-cuts rev 1 into three milestones ordered by what the household actually needs
+first.** The minimum viable step is: install Buttery on a phone, walk into a store or a
+dead-wifi kitchen, and be able to **read the recipe box, the meal plan, and the grocery
+list — and check items off**. Rev 1 front-loaded write-path machinery (idempotency log,
+result unions, conflict resolution) that reads never touch; rev 2 moves all of it behind
+the point where the app is already useful offline.
 
-1. **Installs a real client cache.** TanStack Query becomes the single owner of server
-   state, persisted to IndexedDB. Router loaders prime it; components read it.
-2. **Makes the app installable and shell-offline.** A web app manifest, a service worker
-   built alongside the SSR bundle, and iOS-specific handling so an installed Buttery keeps
-   its data instead of being evicted after seven days.
-3. **Makes a curated set of writes survive being offline** — favorites, notes, meal-plan
-   edits — through a durable outbox with idempotency keys and per-entity conflict policies.
+| Milestone                          | Delivers                                                                                                                                           | Schema changes                                |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| **M1 — Offline reads**             | Installed PWA; recipe box, plan week, and grocery list readable offline; whole box mirrored in the background                                      | **None**                                      |
+| **M2 — Idempotent offline writes** | Grocery check-offs, favorites, and meal-plan edits queue offline and replay on reconnect — made safe by _write shape_, not by an idempotency table | **None**                                      |
+| **M3 — Sync hardening**            | `mutation_log`, result unions, OCC on the shared note + conflict panel, leader election, mirror progress surface, full telemetry                   | `mutation_log`, `household_recipe.updated_at` |
 
-It also establishes, deliberately and in writing, **what changes about how we talk to the
-server** so that extracting a standalone API service later is a transport swap and not a
-rewrite (§5). Building that service is out of scope. Making it cheap is not.
+Each milestone ships and soaks independently. M3 has no deadline pressure: nothing in M1/M2
+is throwaway, and every M3 mechanism layers on top without a rewrite (§7 is the checklist
+that keeps that true).
 
-### 1.1 In scope
+Rev 1's other correction: it predated the grocery list. The shipped grocery surface is now
+first-class here — it is the single best offline use case in the app.
 
-1. Full adoption of `@tanstack/react-query` + `@tanstack/react-router-ssr-query` as the app's
-   one cache, replacing loader-owned data everywhere (§4).
-2. A client-side API port layer (`src/lib/api/**`) — the only place in client code allowed to
-   import `#/server/**` — with a query-key namespace that is a future REST URL namespace (§5).
-3. IndexedDB persistence of query results, partitioned by `(did, householdId)` and wiped on
-   sign-out or household switch (§6).
-4. A **low-priority background mirror** that fills the local copy of the recipe box behind an
-   observable "X of Y recipes synced" progress surface (§7).
-5. A durable **outbox** for a curated write set, replayed on reconnect, idempotent by
-   client-minted mutation id (§8).
-6. **Conflict handling**: `updated_at` plumbing, optimistic concurrency on the shared note
-   with a real resolution surface, and last-write-wins with clock-skew clamping everywhere
-   else (§9).
-7. Schema: `mutation_log`, `household_recipe.updated_at` (§10).
-8. **PWA**: manifest wired up (it exists in `public/` and is linked from nowhere), a service
-   worker built for the srvx/SSR output, an install prompt, an offline shell route (§11).
-9. iOS-specific readiness work — eviction, quota, the missing Background Sync API (§12).
+### 1.1 Out of scope (all milestones)
 
-### 1.2 Out of scope (seams only)
-
-- **The standalone API service.** Not built. §5 is the complete list of what this plan does
+- **The standalone API service.** Not built. §7 is the complete list of what this plan does
   differently so that building it later is a one-adapter change.
-- **Offline recipe authoring, Paprika import, and publishing.** `saveRecipe`,
-  `commitImportChunk`, and `publishRecipe` stay online-only (§8.4). They touch blob storage
-  and atproto, and an unsent draft lost to Safari's evictor is worse than a disabled button.
-- **Real-time sync / CRDTs / a replication protocol.** No Electric, no PowerSync, no RxDB.
-  The server stays authoritative; the client holds a disposable cache (§2.1).
-- **Web Push for timer alarms.** The seam is already marked at `src/lib/timers/alarm-delivery.ts:6-10,74`
-  and this plan makes it possible (an installed PWA on iOS 16.4+ can receive push) without
-  taking it.
-- **Background Sync API.** Not available in Safari at all (§12.3). The outbox drains from the
-  page, and that is a permanent design constraint, not a temporary one.
-- **Cross-tab query broadcasting.** Only the outbox needs a leader (§6.5). Query results
-  reconcile naturally through IndexedDB.
+- **Offline recipe authoring, Paprika import, publishing.** `saveRecipe`,
+  `commitImportChunk`, and `publishRecipe` stay online-only. They touch blob storage and
+  atproto, and an unsent draft lost to Safari's evictor is worse than a disabled button.
+- **Real-time sync / CRDTs / replication.** No Electric, no PowerSync, no RxDB. The server
+  stays authoritative; the client holds a disposable cache (§2.1).
+- **Web Push for timer alarms.** The seam is marked at `src/lib/timers/alarm-delivery.ts:6-14`;
+  this plan makes it possible (installed PWA on iOS 16.4+) without taking it.
+- **Background Sync API.** Not in Safari at all (§9.3). The outbox drains from the page,
+  permanently.
 
 ---
 
@@ -78,79 +60,73 @@ rewrite (§5). Building that service is out of scope. Making it cheap is not.
 
 ### 2.1 The server is truth; the local copy is disposable
 
-Every byte in IndexedDB must be reconstructible from the server. This is not a philosophical
-position, it is an iOS requirement: Safari evicts script-writable storage and refuses
+Every byte in IndexedDB must be reconstructible from the server. This is an iOS
+requirement, not a philosophy: Safari evicts script-writable storage and refuses
 `navigator.storage.persist()`, so any design where the browser holds the only copy of user
-data will eventually lose that data on someone's phone. The one exception is the outbox, and
-§8 spends its complexity budget on keeping that window short.
+data will eventually lose that data on someone's phone. The one exception is the M2 outbox,
+and its design spends its complexity budget on keeping that window short.
 
 ### 2.2 The service worker caches the app. TanStack Query caches the data. No overlap.
 
-The service worker handles HTML, JS, CSS, and images. It **never** caches `/_serverFn/*` or
-`/api/auth/*`. Data staleness has exactly one owner, with one set of rules, visible in one
-devtools panel. A service worker quietly serving a stale JSON response that Query believes is
-fresh is the single worst failure mode available here, and this rule makes it structurally
-impossible.
+The service worker handles HTML, JS, CSS, and images. It **never** caches `/_serverFn/*`
+or `/api/auth/*`. Data staleness has exactly one owner, with one set of rules, visible in
+one devtools panel. A service worker quietly serving stale JSON that Query believes is
+fresh is the worst failure mode available here; this rule makes it structurally impossible.
 
-### 2.3 One cache owner
+### 2.3 One cache owner — within the migrated surface
 
-Today `defaultPreloadStaleTime: 0` (`src/router.tsx:10`) means the router re-fetches on every
-intent preload; the router match cache is the only cache. After §4 the router keeps that
-setting *permanently* and stops caching entirely — loaders call `ensureQueryData` and
-components call `useSuspenseQuery`. `router.invalidate()` stops being an invalidation
-mechanism; `queryClient.invalidateQueries` replaces it.
+Today `defaultPreloadStaleTime: 0` (`src/router.tsx:10`) means the router match cache is
+the only cache. M1 migrates the offline-target routes to Query (`ensureQueryData` in
+loaders, `useSuspenseQuery` in components); on those routes `router.invalidate()` is dead
+and `queryClient.invalidateQueries` replaces it. Routes not yet migrated keep plain
+loaders — two patterns coexist deliberately, with the boundary written down (§4.1), and
+the un-migrated routes are simply not offline-capable until they cross it.
 
 ### 2.4 `householdId` in a query key is a cache partition, never an authorization input
 
-The server derives the active household from `session.active_household_id` and never accepts
-it as a client argument (`src/server/recipe-context.ts:8`). That does not change. But the
-*client* must know which household a cached row belongs to, or switching households serves
-one household's recipes to another — a privacy failure, not a cache bug. So `householdId`
-appears in every key and in no validator. The rule is written into the port layer and tested.
+The server derives the active household from `session.active_household_id` and never
+accepts it as a client argument (`src/server/recipe-context.ts:8`). That does not change.
+But the _client_ must know which household a cached row belongs to, or switching
+households serves one household's recipes to another — a privacy failure, not a cache bug.
+So `householdId` appears in every key and in no validator. Written into the port layer,
+tested.
 
-### 2.5 Every offline-capable mutation is replayable
+### 2.5 Every offline-capable write is replay-safe **by shape**
 
 A queued mutation may be delivered twice (tab reload mid-flight, retry after an ambiguous
-timeout). Every one carries a client-minted ULID `mutationId`; the server records it in
-`mutation_log` and returns the prior result on a repeat. Idempotency is not an optimization
-here, it is a correctness requirement — and it is exactly what an `Idempotency-Key` header
-needs later (§5).
+timeout). M2's answer is not a dedupe table — it is a constraint on the write set: **only
+absolute (set-state) writes go offline.** `checked: true`, `favorite: false`,
+`{entryId, toDate, toSlot}`. Replaying an absolute write twice converges on the same row
+state. Writes that are not absolute (quantity-merging adds, append-style creates without a
+client-minted id) stay online-only until M3 gives them `mutation_log`.
 
-### 2.6 Offline-capable mutations return result unions; they never throw a redirect
+### 2.6 Nothing exists only in IndexedDB except the outbox
 
-`throw redirect({ to: "/login" })` inside `requireSessionDid()` is fine for a loader and
-hostile to a replayed mutation — there is no navigation to perform, and the thrown object
-does not survive a transport boundary. Offline-capable mutations return a discriminated union
-(§8.7). Reads keep the redirect behavior.
+Corollary of §2.1, stated separately because it decides what is allowed to be
+offline-writable. A queued checkbox is a recoverable loss. A queued 40-minute recipe
+transcription is not.
 
-### 2.7 Nothing exists only in IndexedDB except the outbox
+### 2.7 Household stays the minimum privacy scope
 
-Corollary of §2.1, stated separately because it is the rule that decides what is allowed to
-be offline-writable (§8.4). A queued favorite is a recoverable loss. A queued 40-minute
-recipe transcription is not.
-
-### 2.8 Household stays the minimum privacy scope
-
-The cache is partitioned by `(did, householdId)` and wiped on sign-out, household switch, and
-on any `forbidden` result from the server (you were removed from the household while
-offline). A shared family iPad must not leak one household's box into another's.
+The cache is partitioned by `(did, householdId)` and wiped on sign-out, household switch,
+and on any `forbidden`/membership failure from the server. A shared family iPad must not
+leak one household's box into another's.
 
 ---
 
 ## 3. Why this stack
 
-The requirement was "most battle-tested, IndexedDB, iOS-ready, plays well with react-query,
-prefer a TanStack solution." Those pull in slightly different directions, and here is where
-they land.
+The requirement: battle-tested, IndexedDB, iOS-ready, plays well with react-query, prefer
+TanStack.
 
-| Option | Verdict |
-|---|---|
-| **TanStack Query + `experimental_createQueryPersister` (IndexedDB via `idb-keyval`) + persisted mutations** | **Chosen.** The persister and the paused-mutation/`resumePausedMutations` machinery are first-party, documented for exactly this, and years old. `@tanstack/react-router-ssr-query` is already declared in `services/web/package.json:41` and unused — the integration was clearly anticipated. |
-| **TanStack DB 0.6** (`persistedCollectionOptions`) | Rejected for now. It is the strategically interesting answer — live queries, real optimistic transactions, `queryCollectionOptions` wraps Query — but 0.6 standardized persistence on **SQLite (WASM in the browser)**, not IndexedDB, its SSR story is undocumented, and it is pre-1.0. §17 keeps it as an explicit re-evaluation point: the port layer in §5 and the key namespace are what make swapping to it a contained change. |
-| **`@tanstack/offline-transactions`** | Rejected as a dependency, adopted as a design source. It is TanStack DB-coupled, but its outbox model — persist before dispatch, FIFO per scope, leader election for multi-tab, exponential backoff with jitter — is exactly right and §8 reimplements that shape on Query's own mutation cache. |
-| **RxDB / PowerSync / ElectricSQL** | Rejected. Real replication protocols for a problem we do not have. RxDB's IndexedDB and OPFS storages are paid; all three want to own the data model. Buttery's server is Postgres behind authz joins, not a syncable log. |
-| **Hand-rolled IndexedDB cache under the existing loaders** | Rejected. Re-invents staleness, gc, request dedupe, retry, paused mutations, and devtools, with no ecosystem. |
-| **`vite-plugin-pwa` / Serwist for the service worker** | Rejected as-is. TanStack Start's Vite plugin replaces the build step these rely on; the community consensus in TanStack/router#4770 is a custom plugin. §11.2 takes that route, made simpler by Buttery serving from `dist/client` under srvx rather than nitro's `.output/public`. |
+| Option                                                                                                      | Verdict                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **TanStack Query + `experimental_createQueryPersister` (IndexedDB via `idb-keyval`) + persisted mutations** | **Chosen.** First-party, documented for exactly this, years old. `@tanstack/react-router-ssr-query` is already declared in `services/web/package.json:44` and unused — the integration was anticipated.                                                                             |
+| **TanStack DB 0.6**                                                                                         | Rejected for now. Strategically interesting (live queries, real optimistic transactions) but 0.6 standardized persistence on SQLite-WASM not IndexedDB, SSR story undocumented, pre-1.0. §10 keeps the re-evaluation point; the §5 port layer is what makes a later swap contained. |
+| **`@tanstack/offline-transactions`**                                                                        | Rejected as a dependency, adopted as a design source: persist-before-dispatch, FIFO per scope, leader election, backoff with jitter. M2/M3 reimplement that shape on Query's own mutation cache.                                                                                    |
+| **RxDB / PowerSync / ElectricSQL**                                                                          | Rejected. Real replication protocols for a problem we do not have; all three want to own the data model.                                                                                                                                                                            |
+| **Hand-rolled IndexedDB under existing loaders**                                                            | Rejected. Re-invents staleness, gc, dedupe, retry, paused mutations, devtools.                                                                                                                                                                                                      |
+| **`vite-plugin-pwa` / Serwist**                                                                             | Rejected as-is. TanStack Start's Vite plugin replaces the build step they hook; community consensus in TanStack/router#4770 is a custom plugin. §4.4 takes that route, simplified by srvx serving `dist/client`.                                                                    |
 
 New direct dependencies: `@tanstack/react-query` (promote from transitive 5.101.2),
 `@tanstack/react-query-persist-client`, `@tanstack/react-query-devtools`, `idb-keyval`.
@@ -158,14 +134,28 @@ Per AGENTS.md, `pnpm add` needs `CI=true` and the sandbox disabled.
 
 ---
 
-## 4. P0 — TanStack Query becomes the one cache
+## 4. Milestone 1 — offline reads
 
-This phase ships **no offline behavior**. It is a pure refactor with its own acceptance
-criteria, and everything after it is additive.
+Delivers: an installable Buttery that, in airplane mode, renders the recipe box (list and
+every detail), the current plan week, and the grocery list. No offline writes; buttons
+that would write while offline are disabled with a "you're offline" affordance.
 
-### 4.1 Router setup
+### 4.1 Scoped TanStack Query adoption
 
-`src/router.tsx` grows a `QueryClient` in context and the SSR integration:
+**Routes migrating to Query in M1** (the offline surface):
+
+- `/household/recipes` (box list) and `/household/recipes/$id` (detail + cook mode)
+- `/household/plan` (week view)
+- `/household/list` (the grocery list — `household.list.tsx`)
+- The root-level data both depend on: session/household context, gate state (offline
+  fallbacks in §4.4)
+
+**Routes staying on plain loaders for now:** public browse/search, household admin,
+invites, the import flow, settings. They migrate opportunistically later; until then they
+are online-only and that is fine. The boundary rule: **a route is offline-capable iff its
+data comes from a `queryOptions` factory in `src/lib/api/`.** No third state.
+
+Router setup (`src/router.tsx`):
 
 ```ts
 import { QueryClient } from "@tanstack/react-query";
@@ -178,7 +168,6 @@ export function getRouter() {
         staleTime: 30_000,
         gcTime: 1000 * 60 * 60 * 24, // survive a day so IDB restore has something to hold
         retry: (count, err) => !isSessionExpired(err) && count < 3,
-        // networkMode + persister are attached in P2; P0 leaves defaults.
       },
     },
   });
@@ -188,7 +177,7 @@ export function getRouter() {
     context: { queryClient },
     scrollRestoration: true,
     defaultPreload: "intent",
-    defaultPreloadStaleTime: 0, // §2.3 — Query owns caching, the router owns none
+    defaultPreloadStaleTime: 0, // §2.3 — Query owns caching on migrated routes
     defaultNotFoundComponent: NotFound,
   });
 
@@ -199,30 +188,63 @@ export function getRouter() {
 
 `__root.tsx` moves to `createRootRouteWithContext<{ queryClient: QueryClient }>()`.
 
-### 4.2 The query-key namespace *is* the future URL namespace
+Migration shape per route:
 
-`src/lib/api/keys.ts`. Every key is resource-shaped and carries its partition. This table is
-the contract §5 depends on:
+```ts
+// before — src/routes/household.recipes.$id.tsx:44
+loader: ({ params }) => getHouseholdRecipe({ data: { recipeId: params.id } });
+const recipe = Route.useLoaderData();
 
-| Key | Today | Future REST |
-|---|---|---|
-| `["me","households"]` | `listMyHouseholds()` | `GET /v1/me/households` |
-| `["household",hid,"recipes"]` | `listHouseholdRecipes()` | `GET /v1/households/:hid/recipes` |
-| `["household",hid,"recipes",id]` | `getHouseholdRecipe({recipeId})` | `GET /v1/households/:hid/recipes/:id` |
-| `["household",hid,"plan",week]` | `getMealPlanWeek({week})` | `GET /v1/households/:hid/plan?week=` |
-| `["household",hid,"members"]` | `listHouseholdMembers()` | `GET /v1/households/:hid/members` |
-| `["household",hid,"preferences"]` | `getHouseholdPreferences()` | `GET /v1/households/:hid/preferences` |
-| `["recipes","public","recent"]` | `listRecentRecipes()` | `GET /v1/recipes?sort=recent` |
-| `["recipes","public",id]` | `getRecipe(id)` | `GET /v1/recipes/:id` |
-| `["search","global",q,cursor]` | `searchGlobalRecipes()` | `GET /v1/recipes/search?q=` |
+// after
+loader: ({ context, params }) => context.queryClient.ensureQueryData(householdRecipeQuery(hid, params.id));
+const { data: recipe } = useSuspenseQuery(householdRecipeQuery(hid, params.id));
+```
 
-Invalidation becomes prefix-scoped and cheap: a favorite toggle invalidates
-`["household",hid,"recipes"]`, not the entire router.
+Components **must** call the hook rather than reading loader data — an unobserved query
+gets no refetch-on-reconnect, no invalidation, and no gc protection, which is precisely
+the machinery offline depends on. Add a `useActiveHouseholdId()` hook (from
+`authClient.useSession()` → `session.session.active_household_id`) so no component
+reaches for it twice.
+
+**The two optimistic-update libraries are the highest-risk migrations** and both are kept:
+
+- `src/components/plan/optimistic.ts` — tested pure patch functions + `household.plan.tsx`'s
+  `run()` helper. Move from `useOptimistic` + `router.invalidate()` to Query
+  `onMutate`/`onError`/`onSettled` with `setQueryData`; patch functions reused verbatim;
+  `optimistic.test.ts` is the safety net, extend it.
+- `src/components/grocery/optimistic.ts` — same idiom, same treatment. (Rev 1 predated it.)
+
+M1 mutations stay **online-only**: they run through the port layer and invalidate query
+keys, but `networkMode` and persistence wait for M2. While offline, write affordances
+disable.
+
+### 4.2 The query-key namespace _is_ the future URL namespace
+
+`src/lib/api/keys.ts`. Every key is resource-shaped and carries its partition. This table
+is the contract §7 depends on:
+
+| Key                               | Today                            | Future REST                           |
+| --------------------------------- | -------------------------------- | ------------------------------------- |
+| `["me","households"]`             | `listMyHouseholds()`             | `GET /v1/me/households`               |
+| `["household",hid,"recipes"]`     | `listHouseholdRecipes()`         | `GET /v1/households/:hid/recipes`     |
+| `["household",hid,"recipes",id]`  | `getHouseholdRecipe({recipeId})` | `GET /v1/households/:hid/recipes/:id` |
+| `["household",hid,"plan",week]`   | `getMealPlanWeek({week})`        | `GET /v1/households/:hid/plan?week=`  |
+| `["household",hid,"grocery"]`     | `getGroceryList()`               | `GET /v1/households/:hid/grocery`     |
+| `["household",hid,"members"]`     | `listHouseholdMembers()`         | `GET /v1/households/:hid/members`     |
+| `["household",hid,"preferences"]` | `getHouseholdPreferences()`      | `GET /v1/households/:hid/preferences` |
+| `["recipes","public","recent"]`   | `listRecentRecipes()`            | `GET /v1/recipes?sort=recent`         |
+| `["recipes","public",id]`         | `getRecipe(id)`                  | `GET /v1/recipes/:id`                 |
+| `["search","global",q,cursor]`    | `searchGlobalRecipes()`          | `GET /v1/recipes/search?q=`           |
+
+Define the full namespace now even though only the `household` rows migrate in M1 —
+un-migrated routes adopt their reserved keys when they cross the §4.1 boundary.
+Invalidation becomes prefix-scoped and cheap: a grocery check-off invalidates
+`["household",hid,"grocery"]`, not the entire router.
 
 ### 4.3 The port layer
 
-Generalize the pattern already proven in `src/lib/recipe-import/api.ts` and its doc comment
-("swapping the transport is one file") to the whole app:
+Generalize the pattern proven in `src/lib/recipe-import/api.ts` ("swapping the transport
+is one file") to the whole app:
 
 ```
 src/lib/api/
@@ -230,102 +252,82 @@ src/lib/api/
   types.ts       # wire DTOs, moved off the server modules
   keys.ts        # §4.2
   queries.ts     # queryOptions factories
-  mutations.ts   # mutationOptions + the setMutationDefaults registry (§8)
-  errors.ts      # MutationResult union, SessionExpiredError
+  mutations.ts   # mutationOptions (M2 adds the setMutationDefaults registry)
+  errors.ts      # SessionExpiredError (M3 adds the MutationResult union)
   index.ts       # the port surface consumers import
 ```
 
-```ts
-// src/lib/api/queries.ts
-export const householdRecipesQuery = (hid: string) =>
-  queryOptions({
-    queryKey: keys.householdRecipes(hid),
-    queryFn: () => api.listHouseholdRecipes(),
-    staleTime: 60_000,
-  });
-```
+**Rule, enforced from M1 day one:** no module outside `src/lib/api/transport.ts` may
+import from `#/server/**`. Add an oxlint `no-restricted-imports` rule, plus a meta-test
+modeled on the existing scanner at `src/server/import-authz.test.ts:158-167` that greps
+the client tree and fails on a new violation. That existing meta-test also means any new
+`createServerFn` added here must be registered in its gated list or the suite fails.
 
-**Rule, enforced:** no module outside `src/lib/api/transport.ts` may import from `#/server/**`.
-Add an oxlint `no-restricted-imports` rule, plus a meta-test modeled on the existing scanner
-at `src/server/import-authz.test.ts:150-170` that greps the client tree and fails on a new
-violation. That existing meta-test also means **any new `createServerFn` added here must be
-registered in its gated list or the suite fails.**
+### 4.4 PWA shell
 
-### 4.4 What every route looks like after
+**Manifest.** `services/web/public/manifest.json` exists with the correct brand colors
+(`#FFD84D` / `#FFF6E3`) and is linked from nowhere — a CRA leftover. Fix and wire:
+`id: "/"`, `scope: "/"`, `start_url: "/household?source=pwa"`,
+`display_override: ["standalone"]`, real **maskable** 192/512 icons (current ones will
+letterbox on Android), `shortcuts` for "Recipe box" and "This week", linked from
+`__root.tsx` `head.links` with `apple-touch-icon`.
 
-```ts
-// before — src/routes/household.recipes.$id.tsx:44
-loader: ({ params }) => getHouseholdRecipe({ data: { recipeId: params.id } })
-const recipe = Route.useLoaderData();
+**Service worker build.** TanStack Start's Vite plugin replaces the build step
+`vite-plugin-pwa`/Serwist hook into. Buttery is served by srvx with `--static ../client`,
+so the target is simply `dist/client/sw.js` at root scope. A small local plugin,
+`services/web/vite-plugins/service-worker.ts`, runs a second Rollup build of `src/sw.ts`
+in `closeBundle`, injecting the emitted asset list as `__PRECACHE__`. No-op in dev —
+offline behavior is verified against production builds. The SW is hand-written (~150
+lines), not Workbox: the rules below are short enough that Workbox is more dependency
+than value, and a hand-written SW keeps rule §2.2 auditable at a glance.
 
-// after
-loader: ({ context, params }) =>
-  context.queryClient.ensureQueryData(householdRecipeQuery(hid, params.id))
-const { data: recipe } = useSuspenseQuery(householdRecipeQuery(hid, params.id));
-```
+**Caching rules:**
 
-Components **must** call the hook rather than reading loader data — an unobserved query gets
-no refetch-on-reconnect, no invalidation, and no gc protection, which is precisely the
-machinery offline depends on.
+| Request                      | Strategy                                                           |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `/assets/*` (content-hashed) | CacheFirst, immutable, versioned cache name                        |
+| `/manifest.json`, icons      | StaleWhileRevalidate                                               |
+| Navigation / document        | NetworkFirst, 3s timeout → precached `/offline` shell              |
+| **`/_serverFn/*`**           | **Never cached. Network-only.** (§2.2)                             |
+| **`/api/auth/*`**            | **Never cached. Network-only.**                                    |
+| `cdn.bsky.app` recipe images | CacheFirst into a capped LRU bucket, shared with the mirror (§4.6) |
+| PostHog                      | Network-only, failures swallowed                                   |
 
-The active `householdId` comes from `authClient.useSession()` →
-`session.session.active_household_id`, and on the server from the existing
-`requireActiveHousehold()`. Add a `useActiveHouseholdId()` hook so no component reaches for it
-twice.
+**The offline shell.** SSR HTML embeds per-user state, so authenticated documents are
+never cached. Precache one route, `/offline`, that renders the app shell with no server
+data and lets the client router take over at the requested URL, hydrating from IndexedDB.
+Two loaders must tolerate offline and currently do not:
 
-### 4.5 Mutations
+- `__root.tsx:18` `loader: () => getGateState()` — offline it throws and takes the whole
+  tree down. Persist the last known gate state in IDB and fall back to it; fail _open_ to
+  the app (an uninvited user's cached shell is not a security boundary, the server fns are).
+- `authClient.useSession()` — a network call. Persist the last-known-good session (DID,
+  handle, name, `active_household_id`) and serve it offline flagged `stale: true`. It
+  renders chrome; it never authorizes anything. Cleared on sign-out (§4.5).
 
-`src/components/plan/optimistic.ts` is already a tested library of pure patch functions over
-the plan payload, and `household.plan.tsx`'s `run()` helper already solves the
-optimistic/commit flicker problem. **Keep both.** They move from `useOptimistic` +
-`router.invalidate()` to Query's `onMutate` / `onError` / `onSettled` with
-`queryClient.setQueryData`, and the patch functions are reused verbatim. This is the highest-risk
-file in P0; treat `optimistic.test.ts` as the safety net and extend it.
+**Update flow.** No `skipWaiting()`. A waiting worker surfaces a "New version available —
+Reload" toast. Silently swapping the bundle under a running cook-mode timer is not
+acceptable.
 
----
+**Install.** iOS first: detect iOS Safari + non-standalone, show a custom "Add to Home
+Screen" sheet with share-sheet instructions. This is a **data-durability feature**, not
+cosmetics — §9.1 makes home-screen install the difference between keeping data and losing
+it. Chrome/Android `beforeinstallprompt` capture is a nice-to-have; take it only if cheap.
 
-## 5. The API-service seam — what changes now, and why
+**iOS standalone chrome.** `apple-mobile-web-app-capable`, status-bar meta,
+`viewport-fit=cover` on the existing viewport meta (`__root.tsx:24-27`),
+`env(safe-area-inset-*)` padding in `AppShell` (cook mode runs full-bleed and will collide
+with the home indicator), overscroll suppression on the shell only. Per AGENTS.md, global
+element CSS goes in `@layer base`.
 
-Extracting a dedicated API service later fails for boring reasons: call sites scattered
-across components, types that only exist inside server modules, errors that are thrown class
-instances, and no idempotency. This plan fixes all four as a side effect of going offline,
-because offline needs the same things. Nothing here builds the service.
+### 4.5 Persistence
 
-| Concern | Today | After this plan | Cost at extraction |
-|---|---|---|---|
-| **Transport** | Components import `#/server/x` and call `x({ data })` | One adapter in `src/lib/api/transport.ts` | Rewrite one file to `fetch()` |
-| **Auth** | better-auth cookie, same-origin, `tanstackStartCookies()` | Unchanged, but the port owns *how a call is authenticated* | Add bearer or parent-domain cookie in the adapter; CORS + `trustedOrigins` on the API |
-| **`householdId`** | Server-only, from session | Still server-only in validators; also a client-side cache partition in every key (§2.4) | Becomes an explicit path segment; server still verifies membership via `assertMember` |
-| **Errors** | Throws `NotAMemberError`, `throw redirect()` | Offline-capable mutations return a union (§8.7); reads keep throwing | Union variants map 1:1 to status codes |
-| **Idempotency** | None | Client-minted `mutationId` + `mutation_log` (§10) | Becomes the `Idempotency-Key` header, zero server change |
-| **Wire types** | `interface`s exported from server modules (`household-recipes.ts:23-105`) | Moved to `src/lib/api/types.ts`; server modules import *from there* | Promote that file to a `@buttery/api-types` package |
-| **Validation** | `.validator()` closures, inline | Zod request schemas in a shared module, used by the validator *and* by the port | Same schemas become the API's request contracts |
-| **Domain logic** | Partly separated (`persistRecipeDraft`, `runSave` in `recipes-write.ts`) | Every offline-capable server fn is a thin transport wrapper over a pure domain function | The API service imports the same domain modules |
-| **Pagination** | Opaque numeric-offset cursor in `searchGlobalRecipes` | Unchanged, kept opaque | Fine as-is |
-| **Blob upload** | base64 inside `SaveRecipeInput`, ≤1MB, client-enforced | Unchanged — online-only (§1.2) | Flagged, not solved: becomes multipart or a presigned PUT |
-| **SSR** | Server fn runs in-process during SSR | Unchanged | The web server becomes an API client; SSR needs an internal base URL + service-to-service auth. Called out now so it is not a surprise. |
-
-**The one-sentence version:** after this plan, moving to a separate API means rewriting
-`transport.ts`, adding CORS and a token strategy, and nothing else in the client.
-
----
-
-## 6. Persistence layer
-
-### 6.1 Two IndexedDB stores, different jobs
-
-| Store | Contents | Mechanism | Loss tolerance |
-|---|---|---|---|
-| `buttery-queries` | One entry per query, keyed by query hash | `experimental_createQueryPersister` on `defaultOptions.queries.persister` | Total. Refetches. |
-| `buttery-outbox` | Dehydrated pending mutations only | Hand-managed `dehydrate`/`hydrate` on the mutation cache (§8.2) | **None.** This is the durability budget. |
-
-Per-query persistence is chosen over whole-cache `persistQueryClient` deliberately: it
-restores lazily per query instead of blocking first paint on a single large blob, it does not
-fight SSR hydration, and it does not rewrite a 300-recipe blob on every keystroke-driven
-cache touch. The whole-cache persister's one advantage — free mutation persistence — is
-replaced by §8.2, which needs to be explicit anyway.
-
-### 6.2 Configuration
+One IndexedDB store in M1: `buttery-queries`, one entry per query, via
+`experimental_createQueryPersister` on `defaultOptions.queries.persister`. (M2 adds the
+separate `buttery-outbox` store.) Per-query persistence over whole-cache
+`persistQueryClient`, deliberately: restores lazily per query instead of blocking first
+paint on one large blob, does not fight SSR hydration, and does not rewrite a 300-recipe
+blob on every cache touch.
 
 ```ts
 // src/lib/offline/persister.ts
@@ -337,562 +339,424 @@ const persister = experimental_createQueryPersister({
 });
 ```
 
-`buster` folds in both the payload schema version **and** the `(did, householdId)` partition,
-so a household switch or a DTO change invalidates by construction rather than by cleanup
-code. This mirrors the versioned-discard idiom already used by `COOK_STATE_VERSION`
-(`useCookPersistence.ts:14`) and `TIMER_STATE_VERSION` — mismatched versions are discarded,
-never migrated.
+`buster` folds in the payload schema version **and** the `(did, householdId)` partition,
+so a household switch or a DTO change invalidates by construction. Mirrors the
+versioned-discard idiom of `COOK_STATE_VERSION` (`useCookPersistence.ts:14`) — mismatched
+versions are discarded, never migrated. Storage access goes through `createClientOnlyFn`,
+matching `src/lib/timers/storage.ts`, so a server-side read throws loudly.
 
-Storage access goes through `createClientOnlyFn` from `@tanstack/react-start`, matching
-`src/lib/timers/storage.ts`, so a server-side read throws loudly instead of silently
-producing `undefined`.
+**Wipe triggers.** `wipeCachePartition()` on: sign-out, household switch
+(`switchActiveHousehold`), any membership-failure response, `CACHE_SCHEMA_VERSION` bump.
+Clears the query store, the image cache bucket, and the persisted gate/session fallbacks.
 
-### 6.3 Wipe triggers
+**Quota.** Wrap every IDB write; on `QuotaExceededError`: stop the mirror, evict mirrored
+details oldest-first, capture `idb_quota_exceeded`. Call `navigator.storage.persist()`
+once on install — Chrome may grant it, Safari will not, the design depends on neither.
 
-`wipeCachePartition()` runs on: sign-out, household switch (`switchActiveHousehold`), a
-`forbidden` result from any replayed mutation, and `CACHE_SCHEMA_VERSION` bump. It clears both
-stores and the image cache bucket. Sign-out also clears the persisted last-known session
-(§11.4).
+**Multi-tab:** queries need no coordination — last writer to a per-query IDB entry wins,
+payloads are server-derived.
 
-### 6.4 Quota
+### 4.6 The mini-mirror
 
-Wrap every IDB write; on `QuotaExceededError`: stop the mirror, evict mirrored details oldest-first,
-capture `idb_quota_exceeded`, and **never** evict the outbox. Call `navigator.storage.persist()`
-once on install — Chrome may grant it, Safari will not, and the design does not depend on it.
+Lazy-only caching fails the actual use case: offline in a store, opening a recipe never
+viewed on this phone. The box list is a single server fn returning the whole box, so the
+list is offline-free after §4.5; details need prefetching. M1 ships the ~50-line version:
 
-### 6.5 Multi-tab
+- After `["household",hid,"recipes"]` resolves, enqueue every `recipeId` not already
+  fresh in IDB; `queryClient.prefetchQuery` each at concurrency 2.
+- Batches scheduled in `requestIdleCallback` (`setTimeout` fallback for Safari).
+- Pause while the document is hidden, while offline, and while a cook-mode or timer route
+  is active; resume on `online`/visible. Three consecutive failures park the run until
+  next app open.
+- Hero thumbnails only, into the §4.4 image bucket (they are cross-origin bsky CDN URLs
+  from `blobImageUrl()`, `src/lib/atproto/images.ts` — the SW rule covers them).
 
-Queries need no coordination — last writer to a per-query IDB entry wins, and the payloads are
-server-derived. **The outbox does.** A `BroadcastChannel("buttery-outbox")` leader election
-(heartbeat + takeover on silence) ensures exactly one tab drains the queue. Followers observe
-progress through IDB.
+**Deferred to M3:** the observable progress store, the "Syncing 47 of 312" chip,
+`saveData`/`effectiveType` detection, retry affordances. M1's mirror is silent and
+best-effort; its only UI is that offline recipe details simply work.
 
----
+### 4.7 M1 acceptance
 
-## 7. The background mirror
-
-Lazy-only caching fails the actual use case (offline in a store, opening a recipe never
-viewed on this phone). A blocking full mirror is worse — it would stall login on a fat sync.
-So: **eager list, background details, always yielding, always visible.**
-
-### 7.1 Engine
-
-`src/lib/offline/mirror.ts`. Given the already-cached `["household",hid,"recipes"]` list (a
-single-shot server fn returning the whole box), enqueue every `recipeId` not already fresh in
-IDB and prefetch details through `queryClient.prefetchQuery` at concurrency 2.
-
-Yielding rules — this is the "low priority" requirement made concrete:
-
-- Schedule each batch in `requestIdleCallback` (with a `setTimeout` fallback for Safari).
-- Pause while a cook-mode or timer route is active — cook mode owns the device — and while
-  the document is hidden.
-- Pause on `navigator.connection.saveData`, or `effectiveType` of `2g`/`slow-2g`.
-- Pause when offline; resume on `online`.
-- Exponential backoff with jitter on failure; three consecutive failures parks the run.
-- Hero thumbnails only (not full-size), fetched into a dedicated Cache Storage bucket with an
-  LRU cap. Note these are **cross-origin bsky CDN URLs** from `blobImageUrl()`
-  (`src/lib/atproto/images.ts`), not same-origin — the SW rule in §11.3 covers them.
-
-### 7.2 Progress is a first-class, observable value
-
-`mirrorProgress` is a small store (same shape as the timer store idiom) persisted to IDB meta
-and exposed via `useMirrorProgress()`:
-
-```ts
-interface MirrorProgress {
-  state: "idle" | "running" | "paused" | "parked" | "complete";
-  total: number;    // recipes in the box
-  synced: number;   // details present and fresh in IDB
-  failed: number;
-  startedAt: string | null;
-  updatedAt: string;
-  pausedReason: "offline" | "hidden" | "save-data" | "cooking" | null;
-}
-```
-
-Rendered in the sync chip (§8.8) as **"Syncing 47 of 312 recipes"** with a thin progress bar,
-collapsing to a checkmark on `complete` and a retry affordance on `parked`. Per AGENTS.md, run
-the `buttery-design-system` and `accessibility-compliance` skills before building it; the
-progress control needs `role="progressbar"` with `aria-valuenow`/`aria-valuemax` and a polite
-live region that announces at completion only, not per recipe.
-
-### 7.3 Priority
-
-The mirror is **P3 and independently deferrable**. P2 already delivers "everything you opened
-works offline." The mirror upgrades that to "your whole box works offline," and if it slips,
-nothing else in the plan blocks.
+- `pnpm test`, `tsc --noEmit`, `oxlint` green. Zero imports of `#/server/**` outside
+  `src/lib/api/transport.ts`, enforced by the meta-test.
+- Migrated routes: data via `queryOptions` factories only; zero `router.invalidate()`
+  remaining on migrated routes. SSR still streams (view source on `/household/recipes`
+  shows recipe titles — use `grep -a`; macOS grep silently skips curl'd dev-server HTML).
+- Lighthouse PWA audit passes. Installs via iOS share sheet. Network killed in devtools:
+  hard reload of `/household/recipes` renders the shell, not the browser offline page.
+- Open the box online on a fresh profile, wait for idle mirror, airplane mode, reload:
+  the list **and an unvisited recipe's detail** render from IDB. Plan week and grocery
+  list render offline. Cook mode runs a full recipe with timers in airplane mode.
+- Switch households: previous household's rows gone from IDB (Application panel). Sign
+  out: store empty.
+- A new deploy surfaces the update toast and does not swap under a running timer.
+- **Device pass on a real iPhone** — installed to home screen, airplane mode, full read
+  cycle. Simulator does not reproduce eviction or SW lifecycle.
 
 ---
 
-## 8. Offline writes: the outbox
+## 5. Milestone 2 — idempotent offline writes
 
-### 8.1 Network mode
+Delivers: the store trip. Check items off the grocery list in a dead aisle, favorite a
+recipe, adjust the week's plan — all queued, all landing exactly-once-in-effect on
+reconnect. Behind a **fail-closed PostHog flag** (`offline-writes`), matching the atproto
+publish gate. Offline _reads_ are never gated.
 
-`networkMode: "offlineFirst"` on mutations: attempt once regardless of the browser's online
-guess (which lies, especially on captive-portal wifi), and pause on network failure rather
-than erroring. Queries use the default `"online"` plus the persister — a query offline serves
-cached data and refetches on reconnect.
+### 5.1 The idempotency trick: absolute writes, no `mutation_log`
 
-### 8.2 Making a paused mutation survive a reload
+Rev 1 required a `mutation_log` table, client-minted ULIDs on every mutation, and
+clock-skew clamping before any write went offline. M2 gets exactly-once-in-effect without
+any of it, by constraining the write set to **absolute state**: replaying
+`{checked: true}` or `{favorite: false}` or `{entryId, toDate, toSlot}` twice converges
+on the same row. Double-delivery, double-drain from two tabs, retry after an ambiguous
+timeout — all harmless by construction. `mutation_log` arrives in M3 only when
+non-absolute writes (quantity merges, OCC'd notes) need it.
 
-Functions do not serialize, so every offline-capable mutation is registered by key before
-hydration:
+This is not a new posture for the data: the grocery list was _designed_
+last-write-wins per item — "two people in the same store on two phones is the normal
+case, not the edge one" (`household.list.tsx` header, grocery plan D12). M2 extends the
+assumption the feature already lives by, from two online phones to one of them being
+offline.
+
+### 5.2 The M2 write set
+
+Audited against the shipped server fns:
+
+| Mutation                        | Shape today                                                                                    | M2 change                                                                                                                                                                                                        | Replay-safe because            |
+| ------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `toggleGroceryItem`             | `{itemId, checked: boolean}` (`grocery.ts:757`) — already absolute                             | none                                                                                                                                                                                                             | set-state                      |
+| `updateGroceryItem`             | absolute field patch (`grocery.ts:801`)                                                        | none                                                                                                                                                                                                             | set-state                      |
+| `removeGroceryItem`             | returns `{removed: boolean}`, already-gone = `false` (`grocery.ts:849`)                        | none                                                                                                                                                                                                             | delete wins                    |
+| `toggleHouseholdRecipeFavorite` | **server-side toggle** (`household-recipes.ts:461`)                                            | add `setHouseholdRecipeFavorite({recipeId, favorite})`; UI moves to it; toggle fn retired                                                                                                                        | set-state                      |
+| `moveMealPlanEntry`             | `{entryId, toDate, toSlot}` (`meal-plan.ts:779`) — already intent-shaped, server owns ordering | none                                                                                                                                                                                                             | same target twice = same state |
+| `removeMealPlanEntry`           | soft delete (`meal-plan.ts:851`)                                                               | none                                                                                                                                                                                                             | delete wins                    |
+| `setMealPlanEntryCooked`        | absolute flag                                                                                  | none                                                                                                                                                                                                             | set-state                      |
+| `addMealPlanRecipes`            | server-minted entry ids                                                                        | accept optional client-minted entry ULIDs; insert-if-absent on id. Extract `ulid()` from `src/server/household/ids.ts:45` into `src/lib/ulid.ts` (`crypto.getRandomValues`, works both sides); server re-exports | client id + insert-if-absent   |
+
+**Stays online-only in M2** (disabled with an offline affordance):
+
+- `addManualGroceryItem` and the recipe → list flow (`previewGroceryAdd`/`commitGroceryAdd`)
+  — the live-identity merge **adds quantities**; replay would double them. Needs
+  `mutation_log` (M3) or a client-minted-row redesign.
+- `clearPurchasedGroceryItems`, `clearAllGroceryItems`, `deleteAllGroceryItems` — bulk
+  sweeps are absolute-_looking_ but not replay-safe: the row set they touch **grows
+  between queue-time and replay**, so a sweep queued Saturday and replayed Sunday clears
+  rows the user never saw. Item-scoped writes carry their target id; sweeps do not.
+- Recipe note edits (`upsertHouseholdRecipeNote`) and meal-plan note create — the shared
+  note is where two humans erase each other; it waits for OCC + the conflict panel (M3).
+- `saveRecipe`, `publishRecipe`, the import flow, household admin/invites — permanent
+  (§1.1).
+
+Replay of a write whose row vanished (`toggleGroceryItem` throws "no longer on the
+list"): **drop the mutation, invalidate the key, refetch.** The refetched list is the
+truth and the user sees it. No result-union plumbing needed for checkbox-weight writes.
+
+### 5.3 The outbox core
+
+`networkMode: "offlineFirst"` on the write set: attempt once regardless of the browser's
+online guess (which lies on captive portals), pause on network failure. Queries keep
+default `"online"` + the persister.
+
+Functions do not serialize, so every offline-capable mutation is registered by key at
+client boot, before hydration:
 
 ```ts
-// src/lib/api/mutations.ts — registered once, at client boot, before hydrate()
-queryClient.setMutationDefaults(keys.mutation("household-recipe-favorite"), {
-  mutationFn: (vars) => api.toggleFavorite(vars),
-  scope: { id: `recipe:${vars.recipeId}` }, // serialize per entity
-  onMutate, onError, onSettled,
+// src/lib/api/mutations.ts — defaults are static; they carry the function + callbacks
+queryClient.setMutationDefaults(keys.mutation("grocery-item-checked"), {
+  mutationFn: (vars: SetCheckedVars) => api.setGroceryItemChecked(vars),
+  onMutate,
+  onError,
+  onSettled,
+});
+
+// call site — scope depends on the entity, so it is set where vars are known;
+// FIFO per entity, parallel across entities. Dehydration preserves it.
+useMutation({
+  mutationKey: keys.mutation("grocery-item-checked"),
+  scope: { id: `grocery:${itemId}` },
 });
 ```
 
-The mutation cache is subscribed; on any change, mutations with `isPaused` are dehydrated with
-`dehydrate(queryClient, { shouldDehydrateMutation: m => m.state.isPaused })` and written to
-`buttery-outbox`. On boot, after defaults are registered, `hydrate()` restores them. The leader
-tab calls `queryClient.resumePausedMutations()` on `online`, on `visibilitychange` to visible,
-and once at boot — and then `invalidateQueries()` when the queue drains.
+The mutation cache is subscribed; on change, paused mutations are dehydrated with
+`dehydrate(queryClient, { shouldDehydrateMutation: m => m.state.isPaused })` and written
+to a second IDB store, `buttery-outbox` (loss tolerance: **none** — this is the
+durability budget; never evicted under quota pressure). On boot, after defaults are
+registered, `hydrate()` restores them. `resumePausedMutations()` runs at boot, on
+`online`, and on `visibilitychange` → visible; `invalidateQueries()` when the queue
+drains. Draining aggressively keeps the only-copy window measured in seconds (§9.1).
 
-### 8.3 Idempotency
+**Session expiry, M2 version:** a 401 during replay stops the drain, keeps the outbox
+intact, and surfaces a "sign in to sync N changes" toast; the queue drains after
+re-login. That much ships in M2 — dropping queued writes because a cookie expired is
+unacceptable at any milestone. What waits for M3 is only the _typed_ machinery
+(`SessionExpiredError` in the retry predicate, leader-coordinated park/resume states).
 
-Every offline-capable mutation carries `mutationId` (client ULID) and `at` (client wall
-clock ISO). The server records `(household_id, mutation_id)` in `mutation_log` inside the same
-transaction as the write and returns `{ status: "duplicate", data }` on a repeat.
+**Deferred to M3, safe to skip because of §5.1:**
 
-`at` is **clamped**: if `at > now()` the server uses `now()`, and `received_at` is always
-recorded server-side. A phone with a wrong clock must not be able to permanently win every
-last-write-wins race.
+- _Leader election._ Two tabs double-draining absolute writes is harmless; an installed
+  phone PWA is single-tab. Revisit when non-absolute writes arrive.
+- _Result unions, conflict states._ Everything in M2 is LWW-by-arrival of absolute
+  states; there is nothing to surface.
 
-Extract the existing `ulid()` from `src/server/household/ids.ts:45` into `src/lib/ulid.ts`
-using `crypto.getRandomValues` (present on `globalThis` in Node 26 and every browser), and
-have the server module re-export it. One implementation, both sides.
+### 5.4 Status surface, minimal
 
-### 8.4 The curated write set
+One small chip in `AppShell`, three states: **Offline** (with pending count when > 0) /
+**Syncing** / **Synced**. No sheet, no per-mutation list — that arrives with M3's
+conflicts, which are the first thing worth a detail view. Run the
+`buttery-design-system` and `accessibility-compliance` skills before building it; the
+chip needs a polite live region announcing state changes, not per-item updates.
 
-| Mutation | Offline? | Idempotency | Conflict policy |
-|---|---|---|---|
-| `toggleHouseholdRecipeFavorite` | yes | `mutationId` | LWW by clamped `at` |
-| `upsertHouseholdRecipeNote` | yes | `mutationId` | **OCC** on `baseUpdatedAt` → conflict surface (§9.3) |
-| `addMealPlanRecipes` | yes | client-minted entry ULIDs | Insert-if-absent; naturally idempotent |
-| `addMealPlanNote` / `updateMealPlanNote` | yes | `mutationId` | LWW by clamped `at` |
-| `moveMealPlanEntry` | yes | `mutationId` | Intent, not state (§9.4) |
-| `removeMealPlanEntry` | yes | `mutationId` | Delete wins; already-deleted = `ok` |
-| `setMealPlanEntryCooked` | yes | `mutationId` | LWW by clamped `at` |
-| `removeRecipeFromHousehold` | yes | `mutationId` | Delete wins; already-removed = `ok` |
-| `addRecipeToHousehold` | yes | `(hid, recipeId)` natural key | Insert-if-absent |
-| `saveRecipe`, `publishRecipe` | no | — | Online-only (§2.7, blob + atproto) |
-| `commitImportChunk` and the whole import flow | no | — | Online-only; already has its own resumable driver |
-| Household create / rename / delete, invites, membership | no | — | Online-only; rare, and authorization-shaped |
+Telemetry (PostHog, production-only; events buffer in posthog-js's queue and flush on
+reconnect): `offline_entered`/`offline_exited {durationMs}`, `outbox_enqueued {kind}`,
+`outbox_replayed {kind, queuedMs}`, `outbox_dropped {kind, reason}`,
+`pwa_installed`, `idb_quota_exceeded {store}`, `cache_partition_wiped {reason}`.
 
-Offline writes ship behind a **fail-closed PostHog flag** (`offline-writes`), matching the
-existing atproto publish gate. Offline *reads* are not gated.
+### 5.5 M2 acceptance
 
-### 8.5 Ordering
+- Offline: check three grocery items, favorite a recipe, move a plan entry, then close
+  the tab entirely. Reopen offline — all pending in the chip. Go online — all land,
+  exactly once in effect.
+- Replay the same dehydrated mutation twice against the server (manual harness) — row
+  state identical after both.
+- Check an item offline in tab A while tab B (online) removes it — on reconnect the
+  mutation drops, the list refetches, no error surfaces beyond the row being gone.
+- Kill the session server-side mid-queue — queue survives, toast prompts, drains after
+  re-login.
+- Flag off → no mutation persistence, writes disable offline exactly as in M1.
+- **Device pass required before shipping the flag on:** real iPhone, home screen install,
+  airplane mode, full read + queued write + reconnect cycle.
 
-`scope: { id }` per entity makes Query serialize mutations touching the same row while
-leaving independent rows parallel. Two favorite toggles on the same recipe replay in order;
-a favorite and a plan edit do not block each other.
+---
 
-### 8.6 Session expiry during replay
+## 6. Milestone 3 — sync hardening
 
-A session can expire while offline. A 401 during replay must **park** the outbox, not drain
-it: the transport throws a typed `SessionExpiredError`, the retry predicate refuses to retry
-it, the leader stops draining, and the UI prompts re-authentication. On successful sign-in,
-resume. **Dropping a queued note edit because a cookie expired is unacceptable.**
+Everything below layers onto M1/M2 without rework. Build in this order; each item is
+independently shippable.
 
-### 8.7 The result union
+### 6.1 `mutation_log` + result unions
+
+The general idempotency mechanism, needed the moment a non-absolute write goes offline
+(manual grocery add is the first customer). Client-minted `mutationId` ULID + `at`
+wall-clock on each write; `at` clamped server-side (`at > now()` → `now()`) so a wrong
+phone clock cannot permanently win LWW races.
+
+Migration `create_mutation_log`: `household_id` (→ `household.id` cascade),
+`mutation_id`, `kind`, `actor_did`, `result jsonb`, `created_at`; PK
+`(household_id, mutation_id)` — scoped by household so replay dedupe cannot leak across
+households (§2.7). Index `created_at`; rows older than 30 days swept by the existing cron
+service. Server records the id in the same transaction as the write and returns the prior
+result on a repeat.
+
+Offline-capable mutations move to a discriminated union return (they never throw
+redirects — a thrown redirect does not survive a transport boundary and means nothing to
+a replay):
 
 ```ts
 export type MutationResult<T> =
   | { status: "ok"; data: T; updatedAt: string }
-  | { status: "duplicate"; data: T }        // mutation_log hit
-  | { status: "conflict"; current: T }      // OCC failure
-  | { status: "gone" }                      // entity deleted while offline
-  | { status: "forbidden" }                 // no longer a member (§2.8 → wipe partition)
+  | { status: "duplicate"; data: T } // mutation_log hit
+  | { status: "conflict"; current: T } // OCC failure
+  | { status: "gone" } // deleted while offline
+  | { status: "forbidden" } // no longer a member → wipe partition (§2.7)
   | { status: "invalid"; message: string };
 ```
 
-`unauthenticated` is deliberately *not* a member — it is transport-level and throws
-`SessionExpiredError`, because it must not be handled per-mutation.
+`unauthenticated` is deliberately not a member — transport-level, throws
+`SessionExpiredError`, handled by parking (§6.3), never per-mutation. `saveRecipe`'s
+existing union (`recipes-write.ts:56-66`) is the precedent; align the names.
 
-`saveRecipe`'s existing union (`recipes-write.ts:56-66`: `ok | invalid | duplicate |
-publish_disabled | reauth_required`) is the precedent; keep it and align the names.
+Per AGENTS.md: `pnpm --filter @buttery/web db:migrate:new`, `db:migrate:up`, then
+**immediately** `db:codegen`; DB commands under `railway run --service buttery --` with
+the sandbox disabled. Migrations require a `pnpm test:db` run — `*.db.test.ts` silently
+skip without a database, so green `pnpm test` proves nothing about them.
 
-### 8.8 Sync status surface
+### 6.2 The shared-note conflict
 
-One chip in `AppShell`, four states: **Offline** (pending count) / **Syncing** (mirror
-progress, §7.2) / **Synced** / **Needs attention** (conflicts or parked). Tapping opens a small
-sheet listing pending writes and any conflicts. This is the only new persistent chrome.
+The one field where two humans genuinely erase each other's writing, so the one field
+that gets UI. Migration `add_household_recipe_updated_at`
+(`household_recipe.updated_at timestamptz not null default now()`, bumped manually in the
+favorite/note upserts — the repo has no triggers and this does not add the first one;
+`grocery_item` and `meal_plan_entry` already carry `updated_at`). Read payloads for
+offline-writable entities carry `updatedAt`.
 
----
-
-## 9. Conflicts on resync — what we have to know
-
-### 9.1 What detection requires
-
-The server today has **no concurrency primitive at all** — no `version`, no `etag`, no
-`row_version` on any table. To resolve conflicts we need seven facts, and the schema and
-payloads must be changed to carry them:
-
-1. **When the client read the row.** Every read payload for an offline-writable entity must
-   carry `updatedAt`. `HouseholdRecipeNoteView` already does (`household-recipes.ts:55-58`);
-   `household_recipe` needs the column added (§10).
-2. **When the user acted.** `at`, clamped server-side (§8.3).
-3. **Who acted.** The DID from the session. Already available; already stored as provenance
-   (`author_did`, `added_by_did`) and, per the household-scope principle, **never** used for
-   authorization.
-4. **Whether this exact write already landed.** `mutationId` + `mutation_log`.
-5. **Whether the entity still exists.** Deleted-while-offline is `gone`, not an error.
-6. **Whether the user is still a member.** Removed-while-offline is `forbidden`, and it wipes
-   the cache partition (§2.8).
-7. **Whether the session is still valid.** 401 parks (§8.6).
-
-### 9.2 Policy per entity
-
-| Entity | Detection | Resolution | User sees |
-|---|---|---|---|
-| `household_recipe.favorite` | none | LWW by clamped `at` | nothing |
-| `household_recipe_note.body` | OCC vs `updated_at` | Server rejects; **both texts preserved** | Conflict panel (§9.3) |
-| `household_recipe` membership (add/remove) | none | Delete wins; both directions idempotent | nothing |
-| `meal_plan_entry` insert | client ULID | Insert-if-absent | nothing |
-| `meal_plan_entry` move | none | Intent, not state (§9.4) | nothing |
-| `meal_plan_entry` cooked / note | none | LWW by clamped `at` | nothing |
-| `recipe` (create/publish) | n/a | Online-only | n/a |
-
-### 9.3 The note conflict surface
-
-The shared note is the only field where two humans can genuinely erase each other's writing,
-so it is the only one that gets UI. `upsertHouseholdRecipeNote` takes `baseUpdatedAt`; if it
-does not match `household_recipe_note.updated_at`, the server writes nothing and returns
-`{ status: "conflict", current }`. The client keeps the local body in the outbox record,
-marks the mutation `conflicted`, and the recipe detail pane shows a two-pane panel:
+`upsertHouseholdRecipeNote` takes `baseUpdatedAt`; mismatch → server writes nothing,
+returns `{status: "conflict", current}`. Client keeps the local body in the outbox,
+marks the mutation conflicted, detail pane shows a two-pane panel:
 
 > **Your offline note conflicts with a change made here.**
-> [ your version ] [ their version ] — *Keep mine* / *Keep theirs* / *Edit together*
+> [ your version ] [ their version ] — _Keep mine_ / _Keep theirs_ / _Edit together_
 
-"Edit together" opens the editor pre-filled with both bodies separated by a rule, which is a
-crude merge and an honest one. Nothing resolves silently, and nothing is discarded until the
-user picks.
+"Edit together" pre-fills the editor with both bodies separated by a rule — a crude
+merge and an honest one. Nothing resolves silently; nothing is discarded until the user
+picks. The chip gains its fourth state, **Needs attention**, and the tap-through sheet
+listing pending writes and conflicts.
 
-### 9.4 Move is an intent, not a state
+Deliberately not built, ever, on this data: field-level/three-way merges, vector clocks,
+cross-entity transactions. Wrong amount of machinery for a two-to-five-person household;
+all addable later on top of `updated_at` + `mutation_log` without a data migration.
 
-`meal_plan_entry.position` is dense `0..n-1` per day, re-densified by the server. A queued
-move that replays against a changed day must not carry an absolute array. It sends
-`(entryId, targetDate, targetIndex)`; the server clamps `targetIndex` into range and
-re-densifies. Two conflicting moves converge on *an* order — possibly not the one either user
-imagined, never a crash or a duplicate. The existing pure re-densify logic in
-`src/components/plan/optimistic.ts` is the client mirror of this and is reused.
+### 6.3 Outbox hardening
 
-### 9.5 What we deliberately do not detect
+- **Leader election**: `BroadcastChannel("buttery-outbox")`, heartbeat + takeover on
+  silence; exactly one tab drains, followers observe via IDB. Required once non-absolute
+  writes exist.
+- **Session parking**: transport throws typed `SessionExpiredError`; retry predicate
+  refuses it; leader stops draining; UI prompts re-auth; resume on sign-in. Dropping a
+  queued note because a cookie expired is unacceptable.
+- Exponential backoff with jitter on replay failure.
+- Offline manual grocery add rides on `mutation_log`.
 
-Field-level merges. Three-way merges. Causality (vector clocks, Lamport timestamps). Cross-entity
-transactional consistency. Offline household membership changes. All are the wrong amount of
-machinery for a two-to-five-person household editing recipe notes, and every one of them can be
-added later on top of `updated_at` + `mutation_log` without a data migration.
+### 6.4 Mirror progress surface
 
----
+Upgrade the M1 mini-mirror with the observable store (`state: idle | running | paused |
+parked | complete`, `total`, `synced`, `failed`, `pausedReason`), persisted to IDB meta,
+exposed via `useMirrorProgress()`, rendered in the chip as "Syncing 47 of 312 recipes"
+with a thin progress bar → checkmark on complete, retry on parked. Add
+`navigator.connection.saveData` / `effectiveType` (`2g`/`slow-2g`) pausing. Progress
+control needs `role="progressbar"` + `aria-valuenow`/`aria-valuemax` and a polite live
+region announcing completion only. Acceptance: on Slow 3G it still yields — main-thread
+long tasks under 50ms.
 
-## 10. Schema changes
+### 6.5 Full telemetry
 
-Per AGENTS.md: `pnpm --filter @buttery/web db:migrate:new <snake_case_name>`, then
-`db:migrate:up`, then **immediately** `db:codegen`. All DB-touching commands run under
-`railway run --service buttery --` with the sandbox disabled.
+Add to §5.4's set: `outbox_conflict {kind}`, `outbox_parked {pending}`,
+`mirror_started/progress/completed/parked`, `pwa_install_prompted {platform}`,
+`sw_update_available`/`sw_update_applied`.
 
-1. **`create_mutation_log`**
-   `household_id text not null` → `household.id` cascade, `mutation_id text not null`,
-   `kind text not null`, `actor_did text not null`, `result jsonb not null`,
-   `created_at timestamptz not null default now()`. PK `(household_id, mutation_id)`.
-   Index on `created_at` for the sweep. Scoped by household so replay dedupe cannot leak
-   across households (§2.8). Rows older than 30 days are swept by the existing cron service.
+### 6.6 M3 acceptance
 
-2. **`add_household_recipe_updated_at`**
-   `household_recipe.updated_at timestamptz not null default now()`, bumped manually in the
-   favorite/note upserts (the repo has no triggers, and this migration does not add the first
-   one). Returned in `HouseholdRecipeRow` and `HouseholdRecipeDetail`.
-
-`recipe` gets nothing — it is create-then-publish and online-only. `meal_plan_entry` already
-has `created_at`/`updated_at`.
-
-Both migrations require a `pnpm test:db` run; `*.db.test.ts` files silently skip without a
-database, so a green `pnpm test` proves nothing about them.
-
----
-
-## 11. PWA
-
-### 11.1 Manifest
-
-`services/web/public/manifest.json` already exists with the correct brand colors
-(`#FFD84D` / `#FFF6E3`) and is **linked from nowhere** — a leftover from the CRA template.
-Fix it and wire it up:
-
-- Add `id: "/"`, `scope: "/"`, `start_url: "/household?source=pwa"`,
-  `display_override: ["standalone"]`, `orientation: "any"`.
-- Real **maskable** 192/512 icons (the current ones are not maskable; Android will letterbox).
-- `shortcuts`: "Recipe box" → `/household/recipes`, "This week" → `/household/plan`.
-- Link it from `__root.tsx`'s `head.links` alongside the stylesheet, with `apple-touch-icon`.
-
-### 11.2 Service worker build
-
-TanStack Start's Vite plugin replaces the build step `vite-plugin-pwa` and Serwist hook into.
-Buttery is served by **srvx** with `--static ../client`, so the target is simply
-`dist/client/sw.js`, served at `/sw.js` with root scope — no nitro `.output/public` handling.
-
-A small local plugin, `services/web/vite-plugins/service-worker.ts`, runs a second Rollup
-build of `src/sw.ts` in `closeBundle`, injecting the emitted client asset list as a
-`__PRECACHE__` constant. In dev it is a no-op — a service worker in the dev loop causes more
-confusion than it catches, and offline behavior is verified against a production build.
-
-The SW is hand-written (roughly 150 lines) rather than Workbox-generated. The caching rules
-below are short enough that Workbox's runtime is more dependency than value, and a hand-written
-SW makes rule §2.2 auditable at a glance.
-
-### 11.3 Caching rules
-
-| Request | Strategy |
-|---|---|
-| `/assets/*` (content-hashed) | CacheFirst, immutable, versioned cache name |
-| `/manifest.json`, icons | StaleWhileRevalidate |
-| Navigation / document | NetworkFirst, 3s timeout → precached `/offline` shell |
-| **`/_serverFn/*`** | **Never cached. Network-only.** (§2.2) |
-| **`/api/auth/*`** | **Never cached. Network-only.** |
-| `cdn.bsky.app` recipe images | CacheFirst into a capped LRU bucket, shared with the mirror (§7.1) |
-| PostHog | Network-only, failures swallowed |
-
-### 11.4 The offline shell
-
-SSR HTML embeds per-user state, so authenticated documents must never be cached. Instead
-precache one route, `/offline`, that renders the app shell with no server data and lets the
-client router take over at the requested URL, hydrating from IndexedDB. This is the SSR-safe
-equivalent of a precached `index.html`.
-
-Two loaders must tolerate this and currently do not:
-
-- **`__root.tsx:18` `loader: () => getGateState()`** — a server fn. Offline it throws and takes
-  the whole tree down. Persist the last known gate state in IDB and fall back to it; fail
-  *open* to the app (an uninvited user's cached state is not a security boundary, the server
-  fns are).
-- **`authClient.useSession()`** — a network call. Persist the last-known-good session (DID,
-  handle, name, `active_household_id`) and serve it offline flagged `stale: true`. It renders
-  chrome. It never authorizes anything. Cleared on sign-out (§6.3).
-
-### 11.5 Update flow
-
-No `skipWaiting()`. A waiting worker surfaces a small "New version available — Reload" toast.
-Silently swapping the JS bundle under a user mid-cook-mode, with timers running, is not
-acceptable.
-
-### 11.6 Install prompt
-
-Capture `beforeinstallprompt` on Chrome/Android and offer install from settings after a
-threshold of return visits. **iOS has no such event** — detect iOS Safari + non-standalone and
-show a custom "Add to Home Screen" sheet with the share-sheet instructions. This is not
-cosmetic: §12.1 makes home-screen installation the difference between keeping data and losing
-it.
+- Force duplicate delivery of a `mutationId` — server returns `duplicate`, no double
+  write (proven in `pnpm test:db`).
+- Two browsers, one household: A edits a note offline, B edits it online, A reconnects →
+  panel shows both, neither lost, either choice persists.
+- A and B move the same plan entry offline/online → positions converge, no duplicates,
+  no crash.
+- Expire the session mid-queue → parks, drains after re-login, nothing dropped.
+- Manual grocery add offline, replayed twice → one row, quantities not doubled.
 
 ---
 
-## 12. iOS readiness
+## 7. The API-service seam — what changes when, and why
 
-### 12.1 Seven-day eviction — the reason install matters
+Extracting a dedicated API service later fails for boring reasons: scattered call sites,
+server-module-only types, thrown class instances, no idempotency. This plan fixes all
+four as a side effect, because offline needs the same things. Nothing here builds the
+service.
 
-Safari erases IndexedDB, localStorage, Cache Storage, and service worker registrations for
-sites not interacted with for seven days. **Web apps added to the home screen are outside
-Safari and keep their own usage counter**, so an installed Buttery is exempt. Consequences,
-all already load-bearing above:
+| Concern           | Today                                                                      | After which milestone                                                       | Cost at extraction                                                                                  |
+| ----------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Transport**     | Components import `#/server/x`                                             | M1: one adapter in `src/lib/api/transport.ts`                               | Rewrite one file to `fetch()`                                                                       |
+| **Auth**          | better-auth cookie, same-origin                                            | M1: the port owns _how a call is authenticated_                             | Bearer or parent-domain cookie in the adapter; CORS + `trustedOrigins`                              |
+| **`householdId`** | Server-only, from session                                                  | M1: also a client cache partition in every key (§2.4)                       | Becomes a path segment; server still verifies via `assertMember`                                    |
+| **Wire types**    | `interface`s exported from server modules                                  | M1: moved to `src/lib/api/types.ts`; server imports _from there_            | Promote to `@buttery/api-types`                                                                     |
+| **Validation**    | `.validator()` closures inline                                             | M1–M2: Zod request schemas in a shared module, used by validator _and_ port | Same schemas become API request contracts                                                           |
+| **Errors**        | Thrown classes, `throw redirect()`                                         | M3: offline writes return unions; reads keep throwing                       | Union variants map 1:1 to status codes                                                              |
+| **Idempotency**   | None                                                                       | M3: `mutationId` + `mutation_log`                                           | Becomes the `Idempotency-Key` header, zero server change                                            |
+| **Domain logic**  | Mostly separated already (`grocery.ts`, `meal-plan.ts` thin-wrapper idiom) | Unchanged — keep the idiom                                                  | API service imports the same domain modules                                                         |
+| **Blob upload**   | base64 in `SaveRecipeInput`, ≤1MB                                          | Unchanged, online-only                                                      | Flagged, not solved: multipart or presigned PUT                                                     |
+| **SSR**           | Server fn runs in-process                                                  | Unchanged                                                                   | Web server becomes an API client; internal base URL + s2s auth. Called out so it is not a surprise. |
 
-- The install prompt (§11.6) is a data-durability feature.
-- The server stays truth (§2.1); eviction is a cold start, not data loss.
-- The outbox is drained aggressively — at boot, on `online`, on `visibilitychange` — so the
-  window where the browser holds the only copy is measured in seconds.
-- `saveRecipe` stays online-only (§8.4), so eviction can never destroy authored content.
-
-### 12.2 `navigator.storage.persist()`
-
-Safari does not grant it. Call it once anyway (Chrome may), and design as though it always
-returns false. Quota is roughly 1GB on iOS but varies; the mirror's image cache is capped well
-under it and degrades first under `QuotaExceededError` (§6.4).
-
-### 12.3 No Background Sync API — a permanent constraint
-
-Safari implements neither Background Sync nor Periodic Background Sync. The outbox therefore
-**drains from the page, never from the service worker.** The SW is a static-asset cache and
-nothing more. Do not design any flow that assumes work happens while the app is closed. This
-is the single most important iOS finding in this plan.
-
-### 12.4 Web Push
-
-Available on iOS 16.4+ **only for home-screen-installed PWAs**. Out of scope here, but this
-plan delivers its precondition, and `src/lib/timers/alarm-delivery.ts:6-10` already documents
-the `ServiceWorkerPushDelivery` insertion point at `:74`.
-
-### 12.5 Standalone chrome
-
-`apple-mobile-web-app-capable=yes`, `apple-mobile-web-app-status-bar-style=default`,
-`viewport-fit=cover` appended to the existing viewport meta (`__root.tsx:25-27`), and
-`env(safe-area-inset-*)` padding in `AppShell` — cook mode runs full-bleed and will collide
-with the home indicator otherwise. Suppress overscroll bounce on the app shell only. Per
-AGENTS.md, global element CSS goes in `@layer base`.
-
-### 12.6 Service worker lifecycle
-
-iOS kills service workers aggressively and restarts them with no memory. The SW must hold no
-in-memory state between events. (It holds none — see §12.3.)
+**One-sentence version:** after M1 the client is one-file swappable; after M3 the wire
+contract (unions, idempotency key, schemas) is REST-shaped too.
 
 ---
 
-## 13. The recipe entity, end to end
-
-The simplest complete flow: open a recipe, then favorite it — online and offline.
+## 8. The recipe entity, end to end (M2 shape)
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant UI as Recipe detail (React)
+    participant UI as Grocery list (React)
     participant Q as QueryClient
     participant IDB as IndexedDB
-    participant API as recipeApi (port)
+    participant API as port (src/lib/api)
     participant SRV as server fn → future REST
 
-    Note over UI,SRV: READ — /household/recipes/:id
-    UI->>Q: useSuspenseQuery(recipeQuery(hid, id))
-    Q->>IDB: restore ["household",hid,"recipes",id]
-    IDB-->>Q: cached detail (or miss)
+    Note over UI,SRV: READ — /household/grocery
+    UI->>Q: useSuspenseQuery(groceryQuery(hid))
+    Q->>IDB: restore ["household",hid,"grocery"]
+    IDB-->>Q: cached list (or miss)
     Q-->>UI: paint immediately from cache
     alt online
-        Q->>API: getHouseholdRecipe(id)
-        API->>SRV: GET /_serverFn/… (later GET /v1/households/:hid/recipes/:id)
-        SRV-->>API: detail + updatedAt
-        API-->>Q: fresh data
-        Q->>IDB: persist
-        Q-->>UI: re-render
+        Q->>API: getGroceryList()
+        API->>SRV: GET (later GET /v1/households/:hid/grocery)
+        SRV-->>Q: fresh payload → persist → re-render
     else offline
         Q-->>UI: cached data, marked stale
     end
 
-    Note over UI,SRV: WRITE — toggle favorite
-    UI->>Q: mutate({recipeId, favorite, mutationId, at})
+    Note over UI,SRV: WRITE — check off an item
+    UI->>Q: mutate({itemId, checked: true})
     Q->>Q: onMutate → setQueryData (optimistic)
-    Q-->>UI: heart fills instantly
+    Q-->>UI: row checks instantly
     alt online
-        Q->>API: toggleFavorite(…)
-        API->>SRV: POST
-        SRV-->>API: {status:"ok", updatedAt}
-        Q->>Q: invalidate ["household",hid,"recipes"]
+        Q->>API: setGroceryItemChecked(…)
+        SRV-->>Q: ok → invalidate ["household",hid,"grocery"]
     else offline
         Q->>Q: mutation paused (networkMode offlineFirst)
         Q->>IDB: outbox.put(dehydrated mutation)
         Note right of IDB: survives reload, tab close, app restart
-        IDB-->>Q: on "online" → leader tab resumePausedMutations()
-        Q->>API: replay, FIFO within scope recipe:id
-        SRV-->>Q: ok | duplicate | conflict | gone | forbidden
-        Q->>Q: settle, roll back, or surface conflict
-        Q->>IDB: outbox.delete(mutationId)
+        IDB-->>Q: boot / online / visible → resumePausedMutations()
+        Q->>API: replay, FIFO within scope grocery:itemId
+        SRV-->>Q: ok (absolute write — replay converges)
+        Q->>IDB: outbox entry removed
     end
 ```
 
-A queued mutation's lifecycle:
-
-```mermaid
-stateDiagram-v2
-    [*] --> optimistic: user acts
-    optimistic --> sending: online
-    optimistic --> queued: offline
-    queued --> sending: online / visible / boot
-    sending --> settled: ok | duplicate | gone
-    sending --> queued: network error (backoff + jitter)
-    sending --> conflicted: conflict
-    sending --> parked: 401 SessionExpired
-    sending --> dropped: forbidden | invalid
-    parked --> queued: re-authenticated
-    conflicted --> settled: user resolves
-    dropped --> [*]: optimistic patch rolled back
-    settled --> [*]
-```
+M3 extends the replay arm with `duplicate | conflict | gone | forbidden` handling and the
+parked/conflicted lifecycle states.
 
 ---
 
-## 14. Telemetry
+## 9. iOS readiness (constrains every milestone)
 
-PostHog, production-only as everywhere else. Offline events buffer in posthog-js's own queue
-and flush on reconnect.
+### 9.1 Seven-day eviction — the reason install matters
 
-`offline_entered` / `offline_exited { durationMs }` · `outbox_enqueued { kind }` ·
-`outbox_replayed { kind, queuedMs, attempts }` · `outbox_conflict { kind }` ·
-`outbox_dropped { kind, reason }` · `outbox_parked { pending }` ·
-`mirror_started { total }` / `mirror_progress { synced, total }` / `mirror_completed { durationMs }` /
-`mirror_parked { reason }` · `pwa_install_prompted { platform }` / `pwa_installed` ·
-`sw_update_available` / `sw_update_applied` · `idb_quota_exceeded { store }` ·
-`cache_partition_wiped { reason }`.
+Safari erases IndexedDB, localStorage, Cache Storage, and SW registrations for sites not
+interacted with for seven days. **Home-screen web apps are outside Safari and keep their
+own usage counter** — an installed Buttery is exempt. Consequences, all load-bearing
+above: the install sheet (§4.4) is a data-durability feature; the server stays truth
+(§2.1) so eviction is a cold start, not data loss; the outbox drains aggressively (§5.3)
+so the only-copy window is seconds; authored content never queues (§2.6).
 
-Flags: `offline-writes` (fail-closed, gates §8 only).
+### 9.2 `navigator.storage.persist()`
 
----
+Safari does not grant it. Call once anyway (Chrome may); design as though it always
+returns false. Quota ≈1GB on iOS but varies; the image cache is capped well under it and
+degrades first (§4.5).
 
-## 15. Phases
+### 9.3 No Background Sync API — permanent constraint
 
-| Phase | Delivers | Independently shippable |
-|---|---|---|
-| **P0** | TanStack Query adoption, port layer, key namespace, result unions, `mutation_log` + `updated_at` migrations, `src/lib/ulid.ts`. **No offline behavior.** | Yes — pure refactor; ship and soak before P1 |
-| **P1** | Manifest, iOS meta + safe areas, service worker + build plugin, `/offline` shell, gate/session offline fallbacks, install prompt | Yes — app installs and boots offline (with empty data) |
-| **P2** | IDB per-query persister, partitioning, wipe triggers, offline read UI states, cook mode fully offline | Yes — everything you've opened works offline |
-| **P3** | Background mirror + progress surface (§7) | Yes — deferrable without blocking P4 |
-| **P4** | Outbox: `offlineFirst`, mutation persistence, replay, idempotency, leader election, sync chip | Yes — behind the `offline-writes` flag |
-| **P5** | Conflicts: `updated_at` plumbing, OCC on notes, conflict panel, move-as-intent | Yes — completes §9 |
+Safari implements neither Background Sync nor Periodic Background Sync. The outbox
+**drains from the page, never from the SW.** The SW is a static-asset cache and nothing
+more; no flow may assume work happens while the app is closed. The single most important
+iOS finding in this plan.
 
----
+### 9.4 Web Push
 
-## 16. Acceptance
+iOS 16.4+, home-screen-installed PWAs only. Out of scope; this plan delivers the
+precondition, and the PWA-seam comment at `src/lib/timers/alarm-delivery.ts:6-14` names
+the insertion point (`ServiceWorkerPushDelivery`, behind the same `AlarmDelivery` interface).
 
-**P0** — `pnpm test`, `pnpm test:db`, `tsc --noEmit`, `oxlint` all green. Zero
-`router.invalidate()` calls remain. Zero imports of `#/server/**` outside
-`src/lib/api/transport.ts`, enforced by the new meta-test. Every route's data comes from a
-`queryOptions` factory. SSR still streams (view source on `/household/recipes` shows recipe
-titles in the HTML — use `grep -a`, macOS `grep` silently skips curl'd dev-server HTML).
+### 9.5 SW lifecycle
 
-**P1** — Lighthouse PWA audit passes. Installs on Android and via iOS share sheet. With the
-network killed in devtools, a hard reload of `/household/recipes` renders the shell rather
-than the browser's offline page. A new deploy surfaces the update toast and does not swap
-under a running timer.
-
-**P2** — Open three recipes online, go offline, reload: all three render from IDB. Switch
-households: the previous household's rows are gone from IDB (verify in the Application panel).
-Sign out: both stores are empty. Cook mode runs a full recipe with timers in airplane mode.
-
-**P3** — On a fresh profile, the chip reports increasing "X of Y", pauses on `visibilitychange`,
-resumes, and reaches `complete`. Throttled to Slow 3G it still yields — main-thread long tasks
-stay under 50ms.
-
-**P4** — Offline: toggle a favorite, edit a note, add a plan entry, then close the tab entirely.
-Reopen offline — all three still pending in the chip. Go online — all three land, exactly once.
-Force a duplicate delivery (replay the same `mutationId`) — server returns `duplicate`, no double
-write. Expire the session mid-queue — the queue parks and drains after re-login.
-
-**P5** — Two browsers, one household. A edits a note offline; B edits the same note online; A
-reconnects → conflict panel shows both, neither is lost, either choice persists. A and B move
-the same plan entry offline/online → positions converge to dense `0..n-1`, no duplicates, no
-crash.
-
-**Device pass, required before P4 ships:** a real iPhone, installed to home screen, airplane
-mode, full read + queued write + reconnect cycle. iOS Simulator does not reproduce eviction or
-SW lifecycle behavior.
+iOS kills SWs aggressively and restarts them cold. The SW must hold no in-memory state
+between events. (It holds none — §9.3.)
 
 ---
 
-## 17. Deferred
+## 10. Deferred
 
-- **Re-evaluate TanStack DB** once it reaches 1.0 with a documented SSR story. The port layer
-  (§5) and key namespace (§4.2) are what would make that swap contained — collections would
-  replace `queries.ts` and `mutations.ts`, and nothing else.
-- **Web Push for timer alarms** — §12.4; the seam is `alarm-delivery.ts:74`.
-- **Offline recipe authoring**, once §12.1's durability story is proven in production and blob
-  staging has an answer.
-- **Field-level or three-way merge** for notes, on top of `updated_at` + `mutation_log`.
-- **A shopping list**, which `docs/research/05-private-vs-public-data.md:196` already
-  anticipated as offline-first (`ingredients_snapshot jsonb, -- shopping list must work
-  offline of the source`). It is the first feature that should be designed offline-first from
-  day one on top of this.
-- **Extraction of the API service** — §5 is its checklist.
+- **Re-evaluate TanStack DB** at 1.0 with a documented SSR story. The §4.3 port layer and
+  §4.2 key namespace make the swap contained — collections would replace `queries.ts` and
+  `mutations.ts`, nothing else.
+- **Web Push for timer alarms** — §9.4.
+- **Offline recipe authoring**, once §9.1's durability story is proven in production and
+  blob staging has an answer.
+- **Field-level / three-way note merge**, on top of `updated_at` + `mutation_log`.
+- **Offline add-to-grocery from a cached recipe** — wants the M3 `mutation_log` plus a
+  client-side preview against the (already client-safe) lexicon; design when M3 lands.
+- **Extraction of the API service** — §7 is its checklist.
 
 ---
 
