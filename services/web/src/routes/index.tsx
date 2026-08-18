@@ -1,14 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AtSign, CalendarRange, Check, CookingPot, Dices, FolderLock, ShoppingBasket, UtensilsCrossed } from "lucide-react";
-import { resolveHomeRedirect } from "../server/household/onboarding";
-import { listRecentRecipes } from "../server/recipes";
+import { listRecentRecipes, type RecipeCardData, resolveHomeRedirect } from "#/lib/api";
 import { formatPublished } from "../lib/format";
 import ButterStick from "../components/ButterStick";
 import AtprotoProviderCycle from "../components/AtprotoProviderCycle";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
-import type { RecipeCardData } from "../server/recipes";
 
 export const Route = createFileRoute("/")({
   validateSearch: (search: Record<string, unknown>): { auth_error?: string } => (typeof search.auth_error === "string" ? { auth_error: search.auth_error } : {}),

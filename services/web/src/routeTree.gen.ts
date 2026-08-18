@@ -15,6 +15,7 @@ import { Route as AiUsageRouteImport } from './routes/ai-usage'
 import { Route as BookmarkletDotjsRouteImport } from './routes/bookmarklet[.]js'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OauthClientMetadataDotjsonRouteImport } from './routes/oauth-client-metadata[.]json'
+import { Route as OfflineRouteImport } from './routes/offline'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
@@ -66,6 +67,11 @@ const OauthClientMetadataDotjsonRoute =
     path: '/oauth-client-metadata.json',
     getParentRoute: () => rootRouteImport,
   } as any)
+const OfflineRoute = OfflineRouteImport.update({
+  id: '/offline',
+  path: '/offline',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
@@ -170,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/bookmarklet.js': typeof BookmarkletDotjsRoute
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
+  '/offline': typeof OfflineRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
@@ -197,6 +204,7 @@ export interface FileRoutesByTo {
   '/bookmarklet.js': typeof BookmarkletDotjsRoute
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
+  '/offline': typeof OfflineRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
@@ -224,6 +232,7 @@ export interface FileRoutesById {
   '/bookmarklet.js': typeof BookmarkletDotjsRoute
   '/login': typeof LoginRoute
   '/oauth-client-metadata.json': typeof OauthClientMetadataDotjsonRoute
+  '/offline': typeof OfflineRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
@@ -253,6 +262,7 @@ export interface FileRouteTypes {
     | '/bookmarklet.js'
     | '/login'
     | '/oauth-client-metadata.json'
+    | '/offline'
     | '/onboarding'
     | '/privacy'
     | '/terms'
@@ -280,6 +290,7 @@ export interface FileRouteTypes {
     | '/bookmarklet.js'
     | '/login'
     | '/oauth-client-metadata.json'
+    | '/offline'
     | '/onboarding'
     | '/privacy'
     | '/terms'
@@ -306,6 +317,7 @@ export interface FileRouteTypes {
     | '/bookmarklet.js'
     | '/login'
     | '/oauth-client-metadata.json'
+    | '/offline'
     | '/onboarding'
     | '/privacy'
     | '/terms'
@@ -334,6 +346,7 @@ export interface RootRouteChildren {
   BookmarkletDotjsRoute: typeof BookmarkletDotjsRoute
   LoginRoute: typeof LoginRoute
   OauthClientMetadataDotjsonRoute: typeof OauthClientMetadataDotjsonRoute
+  OfflineRoute: typeof OfflineRoute
   OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
@@ -394,6 +407,13 @@ declare module '@tanstack/react-router' {
       path: '/oauth-client-metadata.json'
       fullPath: '/oauth-client-metadata.json'
       preLoaderRoute: typeof OauthClientMetadataDotjsonRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/offline': {
+      id: '/offline'
+      path: '/offline'
+      fullPath: '/offline'
+      preLoaderRoute: typeof OfflineRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/onboarding': {
@@ -554,6 +574,7 @@ const rootRouteChildren: RootRouteChildren = {
   BookmarkletDotjsRoute: BookmarkletDotjsRoute,
   LoginRoute: LoginRoute,
   OauthClientMetadataDotjsonRoute: OauthClientMetadataDotjsonRoute,
+  OfflineRoute: OfflineRoute,
   OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,

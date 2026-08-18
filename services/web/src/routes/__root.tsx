@@ -59,9 +59,23 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         charSet: "utf-8",
       },
       {
+        // `viewport-fit=cover` is what lets a standalone iOS window paint under
+        // the notch and the home indicator — without it the OS letterboxes the
+        // page in black bars. It is only safe because `AppShell` and the two
+        // PWA affordances inset themselves with `env(safe-area-inset-*)`;
+        // adding it without those would put cook mode's controls under the home
+        // indicator (offline plan §4.4).
         name: "viewport",
-        content: "width=device-width, initial-scale=1",
+        content: "width=device-width, initial-scale=1, viewport-fit=cover",
       },
+      // iOS reads none of the web app manifest for home-screen installs — it
+      // has its own decade-old meta vocabulary, and these three are what make an
+      // installed Buttery open chrome-less with a warm status bar instead of as
+      // a Safari tab with a white bar (§9.1).
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-title", content: "Buttery" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "default" },
+      { name: "theme-color", content: "#FFD84D" },
       ...seo(),
     ],
     links: [
@@ -69,6 +83,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
+      // The manifest has existed in `public/` since the CRA days, linked from
+      // nowhere — so nothing was installable. This line is what turns it on.
+      { rel: "manifest", href: "/manifest.json" },
+      // iOS ignores the manifest's icons entirely; this is the one it uses.
+      { rel: "apple-touch-icon", href: "/icon-maskable-192.png" },
     ],
   }),
   shellComponent: RootDocument,

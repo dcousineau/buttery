@@ -1,6 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
   "include": ["**/*.ts", "**/*.tsx"],
+  // The service worker runs under `lib: WebWorker`, which contradicts `DOM`
+  // (both declare `self`). It is typechecked by `tsconfig.sw.json` instead.
+  "exclude": ["src/sw.ts"],
   "compilerOptions": {
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],

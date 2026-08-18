@@ -5,6 +5,8 @@ import { TooltipProvider } from "#/components/ui/tooltip";
 import AppSidebar from "./AppSidebar";
 import Footer from "./Footer";
 import Header from "./Header";
+import { InstallPrompt } from "./offline/InstallPrompt";
+import { UpdateBanner } from "./offline/UpdateBanner";
 
 /** Routes that render without the sidebar — just the shared header + footer. */
 const NAVLESS_ROUTES = new Set(["/", "/login", "/terms", "/privacy", "/ai-usage", "/acknowledgements", "/onboarding", "/households/switch"]);
@@ -55,6 +57,22 @@ function useHeaderHeightVar() {
   }, []);
 }
 
+/**
+ * The two PWA affordances that have to outlive every route (offline plan §4.4):
+ * the "new version ready" banner, which is a standing offer rather than a
+ * transient toast, and the install sheet, which is a data-durability feature
+ * (§9.1 — an installed app is exempt from Safari's seven-day eviction). Both
+ * render nothing until they have something to say.
+ */
+function PwaAffordances() {
+  return (
+    <>
+      <UpdateBanner />
+      <InstallPrompt />
+    </>
+  );
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const headerRef = useHeaderHeightVar();
@@ -68,6 +86,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
         <Footer />
+        <PwaAffordances />
       </div>
     );
   }
@@ -92,6 +111,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             {appView ? null : <Footer />}
           </div>
         </div>
+        <PwaAffordances />
       </SidebarProvider>
     </TooltipProvider>
   );

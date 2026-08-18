@@ -5,6 +5,7 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { serviceWorker } from "./vite-plugins/service-worker";
 
 // Local dev reads server-side config (DATABASE_URL, REDIS_URL, BLOB_S3_*, the
 // ATPROTO_* overrides, …) from this package's `.env` into process.env — the
@@ -58,6 +59,9 @@ const config = defineConfig({
       },
     }),
     viteReact(),
+    // Second build pass, production only: `src/sw.ts` → `dist/client/sw.js`
+    // at root scope (offline plan §4.4).
+    serviceWorker(),
   ],
 });
 

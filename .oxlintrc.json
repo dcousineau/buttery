@@ -131,15 +131,32 @@
     // dynamic form is the repo's established way of keeping `pg` out of the client
     // bundle (AGENTS.md) rather than an escape hatch from this rule.
     //
+    // The relative spellings are listed too, and they are not hypothetical: the
+    // scanner test found two shipped routes importing `../server/recipes`, which
+    // the subpath patterns alone had waved through.
+    //
     // Order matters: overrides are last-match-wins, and the recipe-import block
-    // further down re-declares this rule for its own paths. `src/lib/api/no-server-imports.test.ts`
-    // is the backstop that does not care about override ordering at all.
+    // further down re-declares this rule for its own paths.
+    // `src/lib/api/no-server-imports.test.ts` is the backstop that does not care
+    // about override ordering at all — which is why it is a test and not a
+    // second lint rule.
     "no-restricted-imports": [
       "error",
       {
         "patterns": [
           {
-            "group": ["#/server/*", "#/server/**", "**/src/server/*", "**/src/server/**"],
+            "group": [
+              "#/server/*",
+              "#/server/**",
+              "**/src/server/*",
+              "**/src/server/**",
+              "../server/*",
+              "../server/**",
+              "../../server/*",
+              "../../server/**",
+              "../../../server/*",
+              "../../../server/**"
+            ],
             "message": "Client modules import from `#/lib/api`, not from `#/server/**` (offline plan §4.3). Reads that must work offline need a `queryOptions` factory in `src/lib/api/queries.ts`; everything else needs a plain function in `src/lib/api/transport.ts`, which is the only module allowed to name a server module. See docs/plans/2026-08-11-offline-mode.md §4.3 and §7."
           }
         ]

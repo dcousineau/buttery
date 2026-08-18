@@ -242,6 +242,35 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /* ── Installed-PWA chrome (offline plan §4.4) ─────────────────────────────
+   *
+   * `viewport-fit=cover` in `__root.tsx` lets the page paint under the notch
+   * and the home indicator, which is the only way an installed iOS app looks
+   * installed rather than letterboxed. The cost is that the OS stops reserving
+   * those strips, so anything pinned to an edge has to inset itself — cook mode
+   * runs full-bleed and its controls would otherwise sit under the home
+   * indicator, where a swipe leaves the app instead of pressing the button.
+   *
+   * Padding on `body` rather than on each surface: it is one rule, it cannot be
+   * forgotten by a new full-bleed screen, and every inset is `0px` on hardware
+   * without a notch, so nothing changes on a desktop.
+   *
+   * Scoped to standalone display. In a browser tab the chrome already reserves
+   * these strips and the padding would be a second, visible margin. */
+  @media (display-mode: standalone) {
+    body {
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+
+    /* Rubber-band scrolling reveals the page background behind a standalone
+     * window and reads as the app coming loose from the frame. Suppressed on
+     * the shell only — inner scroll containers (the aisle list, the week grid,
+     * cook mode's steps) keep their own momentum scrolling. */
+    html {
+      overscroll-behavior-y: none;
+    }
+  }
+
   /* Prose links only — component anchors (buttons, nav items) carry their own classes. */
   a:not([class]) {
     color: var(--primary);

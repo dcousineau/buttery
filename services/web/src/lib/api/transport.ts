@@ -65,6 +65,7 @@ import {
   declineBoundInviteById as declineBoundInviteByIdFn,
   listHouseholdMembers as listHouseholdMembersFn,
   requireActiveHousehold as requireActiveHouseholdFn,
+  resolveHomeRedirect as resolveHomeRedirectFn,
   resolveOnboarding as resolveOnboardingFn,
   switchActiveHousehold as switchActiveHouseholdFn,
 } from "#/server/household/onboarding";
@@ -280,6 +281,15 @@ export function requireActiveHousehold(): Promise<{ householdId: string; name: s
 
 export function resolveOnboarding(): Promise<OnboardingVerdict> {
   return resolveOnboardingFn();
+}
+
+/**
+ * The post-login pivot on `/`. Redirects a signed-in caller into the app and
+ * resolves `{ authed: false }` for everyone else — so its *return* type is the
+ * uninteresting half and the throw is the point.
+ */
+export function resolveHomeRedirect(): Promise<{ authed: false }> {
+  return resolveHomeRedirectFn();
 }
 
 export function switchActiveHousehold(householdId: string) {
