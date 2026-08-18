@@ -4,6 +4,7 @@ import { Check, Users } from "lucide-react";
 import { listMyHouseholds } from "#/lib/api";
 import { switchActiveHousehold } from "#/lib/api";
 import { errorMessage } from "#/lib/api";
+import { refreshSession } from "#/lib/auth-client";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent } from "#/components/ui/card";
@@ -63,6 +64,14 @@ function PickerCard({ household }: { household: HouseholdSummary }) {
     setPending(true);
     try {
       await switchActiveHousehold(household.id);
+      // The server moved `session.active_household_id`; better-auth's client
+      // store has no idea, because this was a plain server function and not one
+      // of its own endpoints. Refresh it *before* navigating: this is an SPA
+      // navigation, so nothing else re-reads the session, and until it lands the
+      // cache partition — and with it the persister's `buster` — still names the
+      // previous household. Anything the new household fetches in that window is
+      // written to disk under the old buster and thrown away unread (§2.4, §4.5).
+      await refreshSession();
       await navigate({ to: "/households" });
     } catch (err) {
       setError(errorMessage(err));

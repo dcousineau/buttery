@@ -103,14 +103,63 @@ export function cacheSession(snapshot: SessionSnapshot): void {
   write(OFFLINE_FALLBACK_KEYS.session, snapshot);
 }
 
+// --- the last confirmed partition ---------------------------------------
+
 /**
- * Drop both snapshots. Called from `wipeCachePartition` — on sign-out, household
- * switch, membership failure, and schema bump. A session snapshot that outlived a
- * sign-out would keep the previous user's name on a shared iPad's header, which
- * is the exact thing §2.7 refuses.
+ * The `(did, householdId)` this device last held — a tripwire, not a fallback.
+ *
+ * `useCachePartition` compares the current partition against the previous one to
+ * decide whether to wipe, and it used to keep "previous" in a `useRef`. That ref
+ * can never see the transition that matters: **every identity change in this app
+ * crosses a full document load.** Sign-out hard-navigates (`signOutAndGoHome`),
+ * sign-in returns from the atproto redirect, so on the run that would have to
+ * notice "different person now" the ref is freshly `null` and the wipe branch
+ * cannot fire. A second user signing in on a shared iPad therefore inherited the
+ * first one's box, sitting in IndexedDB for the persister's full fourteen days —
+ * exactly the leak §2.7 exists to prevent.
+ *
+ * localStorage survives the reload the ref does not, so the comparison finally
+ * has both sides.
+ */
+const PARTITION_KEY = "buttery:offline:partition";
+
+/**
+ * Deliberately **not** age-checked, unlike the two snapshots above.
+ *
+ * Those go stale — a two-week-old handle is worth forgetting. This one is a
+ * record of whose bytes are on this disk, and forgetting it does not delete
+ * them, it only loses the ability to notice they should be deleted. A marker
+ * older than `MAX_AGE_MS` is the case where a wipe matters *most* (a device
+ * untouched for a fortnight, then handed to someone else), so it never expires.
+ */
+export function readLastPartition(): string | null {
+  const stored = readJSON<Snapshot<string | null>>(PARTITION_KEY);
+  if (!stored || stored.version !== SNAPSHOT_VERSION) return null;
+  return stored.value;
+}
+
+/**
+ * Record the partition now held. Callers must only pass a **confirmed** identity
+ * — a live session, or a session the server confirmed is gone. An offline guess
+ * written here would be compared against on the next load as though the server
+ * had said it, and a wrong answer in either direction is either a leak or a
+ * pointless wipe of the cache the feature exists to keep.
+ */
+export function rememberPartition(key: string | null): void {
+  write(PARTITION_KEY, key);
+}
+
+/**
+ * Drop every snapshot. Called from `wipeCachePartition` on sign-out, membership
+ * failure and schema bump — **not** on a household switch, which keeps the
+ * identity it has just re-written for the new household (see the reason branch
+ * there). A session snapshot that outlived a sign-out would keep the previous
+ * user's name and avatar on a shared iPad's header, which is the exact thing
+ * §2.7 refuses.
  */
 export function clearOfflineFallbacks(): void {
   removeKey(OFFLINE_FALLBACK_KEYS.gate);
   removeKey(OFFLINE_FALLBACK_KEYS.session);
+  removeKey(PARTITION_KEY);
   clearCachedActiveHousehold();
 }

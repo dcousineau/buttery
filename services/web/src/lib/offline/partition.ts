@@ -20,6 +20,7 @@
 
 import { createClientOnlyFn } from "@tanstack/react-start";
 import { clearQueryStore } from "./idb";
+import { clearOfflineFallbacks } from "./session-cache";
 
 /**
  * Bump on ANY breaking change to a cached wire DTO in `src/lib/api/types.ts`.
@@ -31,8 +32,16 @@ import { clearQueryStore } from "./idb";
  */
 export const CACHE_SCHEMA_VERSION = 1;
 
-/** Why the partition was thrown away. Reported as `cache_partition_wiped {reason}`. */
-export type WipeReason = "sign-out" | "household-switch" | "forbidden" | "schema-version" | "quota";
+/**
+ * Why the partition was thrown away. Reported as `cache_partition_wiped {reason}`.
+ *
+ * `identity-change` is not in §4.5's list because §4.5 assumed sign-out was the
+ * only way to stop being one person and start being another. It is not: signing
+ * in as someone else without signing out first is one document load, and on a
+ * shared device it is the *likely* path. It wipes as hard as a sign-out does —
+ * only `household-switch` is narrower (same person, same snapshots).
+ */
+export type WipeReason = "sign-out" | "identity-change" | "household-switch" | "forbidden" | "schema-version" | "quota";
 
 /**
  * The identity a cached payload belongs to. `null` for a signed-out or
@@ -59,6 +68,36 @@ export function busterFor(partition: CachePartition | null): string {
 }
 
 /**
+ * The service worker's recipe-image bucket (`src/sw.ts`, `IMAGE_CACHE`).
+ *
+ * Matched by prefix rather than by importing the constant: `sw.ts` compiles in
+ * its own build (`tsconfig.sw.json`) and versions its bucket name, so a prefix is
+ * the one seam that survives both sides moving.
+ *
+ * The `buttery-shell-*` precache is deliberately **not** matched. It holds the
+ * app's own JS/CSS/HTML and no user data, and dropping it would make every
+ * household switch re-download a hundred-odd assets — an offline-hostile cost for
+ * zero privacy gain (§2.2: the SW caches the app, Query caches the data).
+ */
+const IMAGE_CACHE_PREFIX = "buttery-images-";
+
+/**
+ * Cache Storage is the *third* place user data lands, and the one that is easy to
+ * forget because nothing in the Query stack ever touches it: the SW caches recipe
+ * hero images from the bsky CDN (§4.4, §4.6), keyed by URL. Those URLs are
+ * household content. A wipe that cleared IndexedDB and localStorage but left them
+ * behind still leaves the previous household's photos on the disk of a shared
+ * iPad, retrievable by anyone who can get the app to request that URL.
+ */
+async function clearImageCaches(): Promise<void> {
+  // Undefined in an insecure context, and known to throw on property access in
+  // some private-browsing modes — hence the guard *and* the caller's allSettled.
+  if (typeof caches === "undefined") return;
+  const names = await caches.keys();
+  await Promise.all(names.filter((name) => name.startsWith(IMAGE_CACHE_PREFIX)).map((name) => caches.delete(name)));
+}
+
+/**
  * Drop everything cached for the current partition.
  *
  * Called on sign-out, household switch, and any membership failure from the
@@ -67,18 +106,33 @@ export function busterFor(partition: CachePartition | null): string {
  * precisely a wrong idea of which partition is current, so "delete all of it" is
  * the only version that cannot be wrong. Everything is refetchable (§2.1).
  *
- * Best-effort and never throwing: a failed wipe must not block a sign-out.
+ * **The reason matters for the localStorage snapshots, and only for those.** A
+ * household switch is the one wipe that runs *while the identity is being
+ * rewritten*: `useSessionSnapshot` caches the new household's snapshot the moment
+ * the session reports it, which is a render before this promise resolves. Wiping
+ * the fallbacks here therefore deleted the snapshot belonging to the household
+ * being switched **to**, leaving the app less offline-capable straight after a
+ * switch than before it. Every other reason — sign-out, a different person
+ * signing in, `forbidden`, a schema bump — invalidates the identity itself, so
+ * those clear the lot.
+ *
+ * Best-effort and never throwing: `signOutAndGoHome` awaits this *before* it
+ * redirects, and a rejection that skipped the redirect would strand a signed-out
+ * user on an authed screen. Nothing in here is allowed to reject.
  */
 export const wipeCachePartition = createClientOnlyFn(async (reason: WipeReason): Promise<void> => {
-  try {
-    await clearQueryStore();
-  } catch {
-    // A store we cannot open holds nothing we can leak. Sign-out proceeds.
+  // A store we cannot open holds nothing we can leak; either way the caller
+  // proceeds. `allSettled` so one failing bucket cannot skip the other.
+  await Promise.allSettled([clearQueryStore(), clearImageCaches()]);
+
+  if (reason !== "household-switch") {
+    try {
+      clearOfflineFallbacks();
+    } catch {
+      // localStorage can throw in private mode. Not a reason to stay put.
+    }
   }
-  // The gate/session fallbacks are separate keys with their own lifetime; the
-  // session snapshot in particular must not outlive a sign-out.
-  const { clearOfflineFallbacks } = await import("./session-cache");
-  clearOfflineFallbacks();
+
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("buttery:cache-wiped", { detail: { reason } }));
   }
