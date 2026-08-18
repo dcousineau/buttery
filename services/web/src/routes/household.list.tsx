@@ -1,16 +1,26 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { startTransition, useCallback, useEffect, useOptimistic, useRef, useState } from "react";
-import { BookOpenText, CalendarRange, Check, Trash2 } from "lucide-react";
-import { type GroceryItemRow, type GroceryListPayload, clearCheckedGroceryItems, getGroceryList, removeGroceryItem, toggleGroceryItem, updateGroceryItem } from "#/server/grocery";
+import { BookOpenText, CalendarRange, Check, EllipsisVertical, Trash2 } from "lucide-react";
+import {
+  type GroceryItemRow,
+  type GroceryListPayload,
+  clearCheckedGroceryItems,
+  deleteAllGroceryItems,
+  getGroceryList,
+  removeGroceryItem,
+  toggleGroceryItem,
+  updateGroceryItem,
+} from "#/server/grocery";
 import { requireActiveHousehold } from "#/server/household/onboarding";
 import { todayIn } from "#/lib/plan/week";
 import { AddPreviewDialog, type AddPreviewRequest } from "#/components/grocery/AddPreviewDialog";
 import { RecipePickerDialog } from "#/components/grocery/RecipePickerDialog";
 import { GroceryList } from "#/components/grocery/GroceryList";
 import { ManualItemInput } from "#/components/grocery/ManualItemInput";
-import { listCounts, visibleItems, withCheckedCleared, withItemChecked, withItemEdited, withItemRemoved } from "#/components/grocery/optimistic";
+import { listCounts, visibleItems, withAllCleared, withCheckedCleared, withItemChecked, withItemEdited, withItemRemoved } from "#/components/grocery/optimistic";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Button } from "#/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
 import { Toast, ToastViewport, useToasts } from "#/components/ui/toast";
 import { seo } from "#/lib/seo";
 
@@ -85,6 +95,7 @@ function GroceryListPage() {
   const [addRequest, setAddRequest] = useState<AddPreviewRequest | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   /**
    * The row the trash button asked to remove, and whether its confirm is open.
    *
@@ -225,6 +236,24 @@ function GroceryListPage() {
     });
   }
 
+  /**
+   * The other sweep: the list goes back to empty, checked or not.
+   *
+   * Deliberately a separate action rather than "clear checked" with a wider
+   * `where` — on the day you check nothing off, the two would delete the same
+   * rows and mean entirely different things, and the confirm has to be able to
+   * say which one you asked for.
+   */
+  function deleteAll() {
+    setConfirmDeleteAll(false);
+    run({
+      optimistic: withAllCleared,
+      action: () => deleteAllGroceryItems(),
+      toast: items.length === 1 ? "1 item deleted" : `${items.length} items deleted`,
+      announce: "The whole list was deleted",
+    });
+  }
+
   return (
     <>
       <div className="flex h-[calc(100svh-var(--header-height,4rem))] min-h-0 w-full">
@@ -264,11 +293,34 @@ function GroceryListPage() {
                   <BookOpenText data-icon="inline-start" aria-hidden="true" />
                   Add recipes
                 </Button>
-                {checked > 0 && (
-                  <Button variant="outline" size="sm" onClick={() => setConfirmClear(true)}>
-                    <Trash2 data-icon="inline-start" aria-hidden="true" />
-                    Clear checked
-                  </Button>
+                {/* Both sweeps live behind one triple-dot: they are rare, they
+                are destructive, and neither deserves a permanent button beside
+                the two you press every week. The menu appears only when there is
+                something on the list for it to act on. */}
+                {items.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button variant="outline" size="icon-sm" aria-label="List actions" title="List actions">
+                          <EllipsisVertical aria-hidden="true" />
+                        </Button>
+                      }
+                    />
+                    <DropdownMenuContent align="end" className="min-w-52">
+                      {/* Disabled rather than hidden when nothing is checked: a
+                      menu whose contents move around between openings is a menu
+                      you have to read every time. */}
+                      <DropdownMenuItem disabled={checked === 0} onClick={() => setConfirmClear(true)}>
+                        <Check aria-hidden="true" />
+                        {checked > 0 ? `Clear checked (${checked})` : "Clear checked"}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem variant="destructive" onClick={() => setConfirmDeleteAll(true)}>
+                        <Trash2 aria-hidden="true" />
+                        Delete everything
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </div>
             </div>
@@ -355,6 +407,16 @@ function GroceryListPage() {
         confirmLabel="Clear checked"
         destructive
         onConfirm={clearChecked}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteAll}
+        onOpenChange={setConfirmDeleteAll}
+        title="Delete everything on the list?"
+        description={`${items.length === 1 ? "The one item on the list goes" : `All ${items.length} items go`} — checked or not, for everyone. The recipes they came from are untouched, so you can add them back.`}
+        confirmLabel="Delete everything"
+        destructive
+        onConfirm={deleteAll}
       />
 
       <ToastViewport position="bottom-center" onMouseEnter={pauseAll} onMouseLeave={resumeAll} onFocusCapture={pauseAll} onBlurCapture={resumeAll}>

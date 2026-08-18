@@ -190,3 +190,9 @@ export function withCheckedCleared(list: GroceryListPayload): GroceryListPayload
   if (!list.items.some((item) => item.checkedAt)) return list;
   return { ...list, items: list.items.filter((item) => !item.checkedAt) };
 }
+
+/** The other sweep: the whole list goes, checked or not. */
+export function withAllCleared(list: GroceryListPayload): GroceryListPayload {
+  if (list.items.length === 0) return list;
+  return { ...list, items: [] };
+}

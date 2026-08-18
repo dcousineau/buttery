@@ -7,6 +7,7 @@ import {
   listCounts,
   renderRowQuantity,
   visibleItems,
+  withAllCleared,
   withCheckedCleared,
   withItemChecked,
   withItemEdited,
@@ -216,5 +217,17 @@ describe("withCheckedCleared", () => {
   it("is a no-op when nothing is checked", () => {
     const list = makeList([item("a")]);
     expect(withCheckedCleared(list)).toBe(list);
+  });
+});
+
+describe("withAllCleared", () => {
+  it("takes the unchecked rows too — that is the whole difference from clearing checked", () => {
+    const list = makeList([item("a"), item("b", { checkedAt: minutesFromRead(-1) })]);
+    expect(withAllCleared(list).items).toEqual([]);
+  });
+
+  it("is a no-op on an already empty list", () => {
+    const list = makeList([]);
+    expect(withAllCleared(list)).toBe(list);
   });
 });

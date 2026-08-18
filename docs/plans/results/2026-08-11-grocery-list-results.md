@@ -125,8 +125,9 @@ usefully existed. Anyone with the old schema locally needs `docker compose down 
 ## Phases 4 and 5 — the route, the components, the stubs
 
 `/household/list` follows `household.plan.tsx`: `useOptimistic` plus the
-"paint, send, reconcile" write helper, refetch-on-focus, its own toast viewport,
-and `?group=flat` as a pure client toggle kept out of `loaderDeps` (D15).
+"paint, send, reconcile" write helper, refetch-on-focus, and its own toast
+viewport. It shipped with D8's `?group=flat` escape hatch as a pure client toggle
+kept out of `loaderDeps` (D15); review removed it — see below.
 
 D10's TTL is applied against the payload's `readAt` rather than a live clock, so
 a row checked mid-trip dims and stays put until reload. The optimistic patch
@@ -229,6 +230,34 @@ afterwards; the corpus is unchanged.)
 - **The `frozen` aisle is nearly empty** (3 foods). The Open Food Facts taxonomy
   classifies by what a food _is_, not how it is sold, so "frozen peas" lands in
   produce. Fixing it properly means matching on the modifier, not the food.
+
+## Post-review refinements
+
+Everything below landed after the plan was executed, from looking at the real
+thing rather than from the plan:
+
+- **Slat rows, one centred column, no grouping toggle.** The rows were cards;
+  they are now the `selectableRowVariants` slats the recipe list uses, in a
+  `max-w-3xl` column that goes full-bleed on a phone. D8's flat-list toggle went
+  with them: the layout switch cost more than the miscategorisations it hedged
+  against, and a wrong aisle is fixed by renaming the line.
+- **The add button is icon-only below `md`.** "Add" survives as `sr-only` text.
+- **Rows no longer reshuffle when you check one off.** `created_at` is the
+  _transaction_ timestamp, so a whole commit shares one value and the sort was
+  effectively arbitrary among ties; `id` is now the tiebreaker.
+- **Removing a row asks first**, through the same `ConfirmDialog` "clear checked"
+  uses.
+- **No iconography in dialog titles**, and the preview dialog's rows are slats
+  too — the yellow chip treatment is for pressable things only.
+- **There is no `grocery_list` table** (see the deviation above).
+- **Both sweeps live behind one triple-dot menu.** "Clear checked" was a header
+  button that appeared only when something was checked; it is now one of two
+  items in a `DropdownMenu`, beside a new "Delete everything" backed by
+  `deleteAllGroceryItems`. They are separate server functions rather than one
+  with a wider `where`: on a day nothing is checked the two would delete the same
+  rows and still mean different things, and each confirm has to be able to say
+  which one you asked for. The menu is disabled-not-hidden for "clear checked"
+  when nothing is checked, and the whole trigger is absent on an empty list.
 
 ## Open items
 

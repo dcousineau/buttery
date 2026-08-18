@@ -599,6 +599,35 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
       expect(result.removed).toBe(1);
       expect(await itemsOf(HH_A)).toHaveLength(items.length - 1);
     });
+
+    it("deletes the whole list, checked or not, and their sources with them", async () => {
+      await addBothChickenRecipes();
+      const items = await itemsOf(HH_A);
+      expect(items.length).toBeGreaterThan(1);
+      // One checked, the rest not: "delete everything" must not turn out to be
+      // "clear checked" wearing a different label.
+      await grocery.setGroceryItemChecked(db!, DID_A, HH_A, { itemId: items[0].id, checked: true });
+
+      const result = await grocery.deleteAllItems(db!, DID_A, HH_A);
+      expect(result.removed).toBe(items.length);
+      expect(await itemsOf(HH_A)).toHaveLength(0);
+
+      const sources = await db!
+        .selectFrom("grocery_item_source")
+        .select("id")
+        .where(
+          "item_id",
+          "in",
+          items.map((item) => item.id),
+        )
+        .execute();
+      expect(sources).toHaveLength(0);
+    });
+
+    it("deleting everything on an empty list removes nothing", async () => {
+      const result = await grocery.deleteAllItems(db!, DID_A, HH_A);
+      expect(result.removed).toBe(0);
+    });
   });
 
   // --- cross-household isolation -----------------------------------------
@@ -663,6 +692,15 @@ describe.skipIf(!db)(db ? "grocery list DB integration (§9)" : `grocery list DB
       await grocery.setGroceryItemChecked(db!, DID_A, HH_A, { itemId: items[0].id, checked: true });
 
       const result = await grocery.clearCheckedItems(db!, DID_B, HH_B);
+      expect(result.removed).toBe(0);
+      expect(await itemsOf(HH_A)).toHaveLength(items.length);
+    });
+
+    it("deleting everything never reaches another household", async () => {
+      await addBothChickenRecipes(HH_A, DID_A);
+      const items = await itemsOf(HH_A);
+
+      const result = await grocery.deleteAllItems(db!, DID_B, HH_B);
       expect(result.removed).toBe(0);
       expect(await itemsOf(HH_A)).toHaveLength(items.length);
     });

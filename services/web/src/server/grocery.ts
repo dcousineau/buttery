@@ -821,3 +821,27 @@ export async function clearCheckedItems(db: Kysely<DB>, _did: string, householdI
 
   return { removed: deleted.length };
 }
+
+/**
+ * Empty the list outright — every row, checked or not.
+ *
+ * The sibling of `clearCheckedGroceryItems` and deliberately not a variant of
+ * it: "clear checked" is the end-of-trip sweep and takes only what is already in
+ * the cart, while this is "start over", which is a different intent even on the
+ * days the two would delete the same rows. Both are real deletes; the source
+ * rows cascade and the recipes are untouched either way.
+ */
+export const deleteAllGroceryItems = createServerFn({ method: "POST" }).handler(async (): Promise<{ removed: number }> => {
+  const { getDb } = await import("#/lib/db");
+  const { assertMember } = await import("./authz");
+  const { did, householdId } = await activeContext();
+  await assertMember(did, householdId);
+  return deleteAllItems(getDb(), did, householdId);
+});
+
+/** The body of `deleteAllGroceryItems`. */
+export async function deleteAllItems(db: Kysely<DB>, _did: string, householdId: string): Promise<{ removed: number }> {
+  const deleted = await db.deleteFrom("grocery_item").where("household_id", "=", householdId).returning("id").execute();
+
+  return { removed: deleted.length };
+}
