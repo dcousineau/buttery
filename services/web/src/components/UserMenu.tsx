@@ -8,6 +8,7 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { serviceNameFromPds } from "#/lib/atproto/service-name";
 import { useOnboardingVerdict } from "#/lib/hooks/use-onboarding-verdict";
 import { useTheme, type ThemeMode } from "#/lib/hooks/use-theme";
+import type { OnboardingVerdict } from "#/server/household/onboarding";
 
 // Single-item theme control: clicking cycles light → dark → auto. The icon and
 // label reflect the CURRENT mode; `next` is what the click will switch to.
@@ -25,9 +26,13 @@ const THEME_META: Record<ThemeMode, { label: string; icon: typeof Sun; next: The
  * Renders nothing while the verdict is unknown or the caller has no household
  * yet (onboarding); a caller with memberships but no active one gets a single
  * "Choose household" entry instead of an indicator.
+ *
+ * The verdict is a PROP, not a hook call: this renders inside the menu popup,
+ * which Base UI unmounts while the menu is closed (`Menu.Portal` defaults to
+ * `keepMounted={false}`). Fetching here would only re-validate the active
+ * household when someone opened the menu — see `UserMenu`.
  */
-function HouseholdSection() {
-  const verdict = useOnboardingVerdict();
+function HouseholdSection({ verdict }: { verdict: OnboardingVerdict | null }) {
   if (!verdict || verdict.kind === "onboard") return null;
 
   if (verdict.kind === "pick") {
@@ -75,12 +80,18 @@ function HouseholdSection() {
  *
  * Signed out (or still loading) it shows the sign-in affordance instead, so the
  * header can render it unconditionally.
+ *
+ * The household verdict is fetched HERE rather than in the popup: this component
+ * is mounted on every page, the popup only while the menu is open. Resolving it
+ * on mount is what re-validates the session's active household (and clears a
+ * stale pointer) on every page, as the old header switcher did.
  */
 export default function UserMenu() {
   // `useHydratedSession`, not the raw hook: the server has no session and the
   // client's store answers from cache immediately, so reading the raw one here
   // renders the menu during hydration against a skeleton in the SSR HTML.
   const { data: session, isPending } = useHydratedSession();
+  const verdict = useOnboardingVerdict();
   const { mode, setMode } = useTheme();
 
   if (isPending) {
@@ -128,7 +139,7 @@ export default function UserMenu() {
 
         <DropdownMenuSeparator />
 
-        <HouseholdSection />
+        <HouseholdSection verdict={verdict} />
 
         {/* Cycles light → dark → auto in place; stays open so you can keep tapping. */}
         <DropdownMenuItem closeOnClick={false} onClick={() => setMode(THEME_META[mode].next)}>
