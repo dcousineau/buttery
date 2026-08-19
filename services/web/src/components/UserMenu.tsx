@@ -44,16 +44,12 @@ function HouseholdSection() {
 
   return (
     <>
-      {/* Indicator, not a control: the household this session is working in. */}
-      <div className="flex items-center gap-2.5 px-1.5 py-1.5">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full border-2 border-border bg-secondary text-secondary-foreground">
-          <Home aria-hidden="true" className="size-4" />
-        </span>
-        <div className="min-w-0">
-          <div className="text-xs text-muted-foreground">Household</div>
-          <div className="truncate text-sm font-semibold" title={verdict.name}>
-            {verdict.name}
-          </div>
+      {/* Indicator, not a control: the household this session is working in. The
+          avatar is the menu's only circle, so this stays plain text. */}
+      <div className="min-w-0 px-1.5 py-1.5">
+        <div className="text-xs text-muted-foreground">Household</div>
+        <div className="truncate text-sm font-semibold" title={verdict.name}>
+          {verdict.name}
         </div>
       </div>
 
