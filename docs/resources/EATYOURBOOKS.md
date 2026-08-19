@@ -64,10 +64,10 @@ that parser reads — no EYB in the loop at all.
   URL/blog resolver (buildable now, no new integration) and a book-page
   capture tool (a different problem, with no EYB shortcut through it).
 
-Reader-facing version:
-[Open Data → Eat Your Books](../../services/docs/docs/open-data/eat-your-books.md)
-on `docs.buttery.recipes`. This file is the internal note; that one is what
-we tell users. Keep them from drifting.
+No reader-facing version of this yet — there's nothing user-facing built on
+Eat Your Books, so a page on `docs.buttery.recipes` would be premature. Write
+one (following the [Open Food Facts](../../services/docs/docs/open-data/open-food-facts.md)
+pattern) if and when that changes.
 
 ## Links
 
