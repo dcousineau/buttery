@@ -94,7 +94,18 @@ export function useCachePartition(): void {
     // tab that did the switch just performed (§2.7). `previous !==
     // undefined` keeps cold start out of this: on the first run there is no
     // partition to have moved away from.
-    const tabRepartitioned = status !== "pending" && previous !== undefined && previous !== key;
+    //
+    // This arm may act on `stale` — but only when the key it moved TO is real.
+    // A stale *non-null* key is trustworthy secondhand news: the shared snapshot
+    // only ever changes via `cacheSession` from a live answer in some tab, so an
+    // offline tab following a switch through it is this mechanism working. A
+    // stale *null* is not news at all — `readCachedSession()` answers null for
+    // evicted or unreadable localStorage too, and private-mode Safari evicts
+    // under pressure mid-session. Acting on that would wipe the IndexedDB of an
+    // offline, signed-in user with the radio down: the exact harm the
+    // "only a confirmed identity may act" rule above exists to prevent. So a
+    // move to null needs the server's word, like every other destructive answer.
+    const tabRepartitioned = status !== "pending" && previous !== undefined && previous !== key && (key !== null || confirmed);
 
     // Install the persister for whatever partition this is, including the `null`
     // one a confirmed signed-out visitor gets. That visitor used to get no
@@ -118,9 +129,18 @@ export function useCachePartition(): void {
       // than a split on ":" because a DID contains colons of its own
       // (`did:plc:…`), so the household id is not the second field.
       //
-      // `last` is empty in a tab that did not perform the switch — the marker was
-      // advanced before this tab woke up — so fall back to what this tab itself
-      // had installed.
+      // On the per-tab arm, `last` no longer names where this tab came *from*:
+      // after a cross-tab switch the marker has already advanced (it equals
+      // `key`), and after a cross-tab sign-out the wipe took it (it is null, and
+      // `previous` fills in). That collapse is deliberate, not sloppy — with
+      // `from === key`, `samePerson` answers for the identity the device holds
+      // NOW, which is exactly what this wipe must decide: the shared snapshots
+      // it would clear are already the *new* identity's (rewritten the moment
+      // that session went live), so keeping them is right for any signed-in
+      // handover and wrong only for a sign-out, which the `key === null` arm
+      // catches. The cost is a telemetry label: a cross-tab identity change
+      // reports `household-switch`. The tab's own ref would name the truer
+      // "from", and clear a snapshot the new person is about to need.
       const from = last ?? previous ?? null;
       const samePerson = did !== null && from !== null && from.startsWith(`${did}:`);
       queryClient.clear();
@@ -133,8 +153,10 @@ export function useCachePartition(): void {
       // B's plan and grocery list under `["household", A, …]`. That is the §2.4
       // leak in the one direction the buster cannot catch, because under A the
       // buster matches. Invalidating moves the routes in the same tick as the
-      // persister. Only on the per-tab arm: an identity change that crossed a
-      // document load has already run `beforeLoad` against the new session.
+      // persister. Only on the per-tab arm — which includes the tab that made
+      // the switch itself (its ref moved too; its own navigation makes this a
+      // cheap no-op) — and not on a plain `identityChanged`, which crossed a
+      // document load and has already run `beforeLoad` against the new session.
       if (tabRepartitioned) void router.invalidate();
       // Re-arm the tripwire afterwards. A wipe that is not a household switch
       // takes the marker with it — it names the *previous* person's DID, so a
