@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import type { Kysely } from "kysely";
 import * as z from "zod";
 import type { DB } from "#/db/types";
@@ -118,7 +118,7 @@ function minutesDisplay(totalSeconds: number | null | undefined): { minutes: num
  * `getHouseholdRecipe`'s `addedByHandle` uses. An unresolvable DID yields null
  * and the UI simply omits the line.
  */
-async function resolveHandles(dids: Array<string | null>): Promise<Map<string, string>> {
+const resolveHandles = createServerOnlyFn(async (dids: Array<string | null>): Promise<Map<string, string>> => {
   const out = new Map<string, string>();
   const distinct = [...new Set(dids.filter((d): d is string => Boolean(d)))];
   if (!distinct.length) return out;
@@ -126,7 +126,7 @@ async function resolveHandles(dids: Array<string | null>): Promise<Map<string, s
   const rows = await getDb().selectFrom("atproto_repo").select(["did", "handle"]).where("did", "in", distinct).execute();
   for (const row of rows) if (row.handle) out.set(row.did, `@${row.handle}`);
   return out;
-}
+});
 
 // --- §3.6 ordering: lock the slot, rewrite `position` densely --------------
 
@@ -537,55 +537,52 @@ export const addMealPlanRecipes = createServerFn({ method: "POST" })
  * DID and a household id it has already validated, and every statement in here
  * re-asserts `household_id` regardless.
  */
-export async function addRecipesToPlan(
-  db: Kysely<DB>,
-  did: string,
-  householdId: string,
-  input: { date: PlanDate; slot: MealSlot; recipeIds: string[] },
-): Promise<CreatedPlanEntry[]> {
-  const { ulid } = await import("./household/ids");
+export const addRecipesToPlan = createServerOnlyFn(
+  async (db: Kysely<DB>, did: string, householdId: string, input: { date: PlanDate; slot: MealSlot; recipeIds: string[] }): Promise<CreatedPlanEntry[]> => {
+    const { ulid } = await import("./household/ids");
 
-  const boxed = await db
-    .selectFrom("household_recipe")
-    .select("recipe_id")
-    .where("household_id", "=", householdId)
-    // `in` over the DISTINCT ids: the input may legitimately repeat one (D4).
-    .where("recipe_id", "in", [...new Set(input.recipeIds)])
-    .execute();
-  const inBox = new Set(boxed.map((row) => row.recipe_id));
-  if (input.recipeIds.some((id) => !inBox.has(id))) throw new Error("That recipe is not in this household's box.");
+    const boxed = await db
+      .selectFrom("household_recipe")
+      .select("recipe_id")
+      .where("household_id", "=", householdId)
+      // `in` over the DISTINCT ids: the input may legitimately repeat one (D4).
+      .where("recipe_id", "in", [...new Set(input.recipeIds)])
+      .execute();
+    const inBox = new Set(boxed.map((row) => row.recipe_id));
+    if (input.recipeIds.some((id) => !inBox.has(id))) throw new Error("That recipe is not in this household's box.");
 
-  const key: SlotKey = { date: input.date, slot: input.slot };
-  return db.transaction().execute(async (trx) => {
-    const existing = await lockSlot(trx, householdId, key);
-    const created: CreatedPlanEntry[] = [];
-    let position = existing.length;
-    for (const recipeId of input.recipeIds) {
-      const id = ulid();
-      await trx
-        .insertInto("meal_plan_entry")
-        .values({
-          id,
-          household_id: householdId,
-          // `plan_date` is a `date` column and Kysely accepts the string
-          // straight through — no Date object ever crosses this boundary (§2.3).
-          plan_date: input.date,
-          slot: input.slot,
-          kind: "recipe",
-          position,
-          recipe_id: recipeId,
-          created_by_did: did,
-        })
-        .execute();
-      created.push({ id, kind: "recipe", position, recipeId });
-      position += 1;
-    }
-    // The appends are already dense, but the rewrite also repairs any gap an
-    // interrupted earlier write left behind in this slot.
-    await renumberSlot(trx, householdId, existing.concat(created.map((entry) => entry.id)));
-    return created;
-  });
-}
+    const key: SlotKey = { date: input.date, slot: input.slot };
+    return db.transaction().execute(async (trx) => {
+      const existing = await lockSlot(trx, householdId, key);
+      const created: CreatedPlanEntry[] = [];
+      let position = existing.length;
+      for (const recipeId of input.recipeIds) {
+        const id = ulid();
+        await trx
+          .insertInto("meal_plan_entry")
+          .values({
+            id,
+            household_id: householdId,
+            // `plan_date` is a `date` column and Kysely accepts the string
+            // straight through — no Date object ever crosses this boundary (§2.3).
+            plan_date: input.date,
+            slot: input.slot,
+            kind: "recipe",
+            position,
+            recipe_id: recipeId,
+            created_by_did: did,
+          })
+          .execute();
+        created.push({ id, kind: "recipe", position, recipeId });
+        position += 1;
+      }
+      // The appends are already dense, but the rewrite also repairs any gap an
+      // interrupted earlier write left behind in this slot.
+      await renumberSlot(trx, householdId, existing.concat(created.map((entry) => entry.id)));
+      return created;
+    });
+  },
+);
 
 // --- §6.3 addMealPlanNote / updateMealPlanNote --------------------------
 
@@ -613,31 +610,33 @@ export const addMealPlanNote = createServerFn({ method: "POST" })
   });
 
 /** The body of `addMealPlanNote`. See `addRecipesToPlan` for the contract. */
-export async function addNoteToPlan(db: Kysely<DB>, did: string, householdId: string, input: { date: PlanDate; slot: MealSlot; body: string }): Promise<CreatedPlanEntry> {
-  const { ulid } = await import("./household/ids");
+export const addNoteToPlan = createServerOnlyFn(
+  async (db: Kysely<DB>, did: string, householdId: string, input: { date: PlanDate; slot: MealSlot; body: string }): Promise<CreatedPlanEntry> => {
+    const { ulid } = await import("./household/ids");
 
-  const key: SlotKey = { date: input.date, slot: input.slot };
-  return db.transaction().execute(async (trx) => {
-    const existing = await lockSlot(trx, householdId, key);
-    const id = ulid();
-    const position = existing.length;
-    await trx
-      .insertInto("meal_plan_entry")
-      .values({
-        id,
-        household_id: householdId,
-        plan_date: input.date,
-        slot: input.slot,
-        kind: "note",
-        position,
-        body: input.body,
-        created_by_did: did,
-      })
-      .execute();
-    await renumberSlot(trx, householdId, existing.concat([id]));
-    return { id, kind: "note" as const, position, recipeId: null };
-  });
-}
+    const key: SlotKey = { date: input.date, slot: input.slot };
+    return db.transaction().execute(async (trx) => {
+      const existing = await lockSlot(trx, householdId, key);
+      const id = ulid();
+      const position = existing.length;
+      await trx
+        .insertInto("meal_plan_entry")
+        .values({
+          id,
+          household_id: householdId,
+          plan_date: input.date,
+          slot: input.slot,
+          kind: "note",
+          position,
+          body: input.body,
+          created_by_did: did,
+        })
+        .execute();
+      await renumberSlot(trx, householdId, existing.concat([id]));
+      return { id, kind: "note" as const, position, recipeId: null };
+    });
+  },
+);
 
 /**
  * Edit a note in place. An empty body REMOVES it (§6.3) rather than storing a
@@ -895,97 +894,94 @@ export const copyMealPlanWeek = createServerFn({ method: "POST" })
   });
 
 /** The body of `copyMealPlanWeek`. See `addRecipesToPlan` for the contract. */
-export async function copyPlanWeek(
-  db: Kysely<DB>,
-  did: string,
-  householdId: string,
-  input: { fromWeek: PlanDate; toWeek: PlanDate; mode: "append" | "replace" },
-): Promise<CopiedWeek> {
-  const { sql } = await import("kysely");
-  const { readHouseholdPreferences } = await import("./household/preferences");
-  const { ulid } = await import("./household/ids");
+export const copyPlanWeek = createServerOnlyFn(
+  async (db: Kysely<DB>, did: string, householdId: string, input: { fromWeek: PlanDate; toWeek: PlanDate; mode: "append" | "replace" }): Promise<CopiedWeek> => {
+    const { sql } = await import("kysely");
+    const { readHouseholdPreferences } = await import("./household/preferences");
+    const { ulid } = await import("./household/ids");
 
-  const { weekStartDay } = await readHouseholdPreferences(householdId);
-  const fromWeek = weekStartFor(input.fromWeek, weekStartDay);
-  const toWeek = weekStartFor(input.toWeek, weekStartDay);
-  const fromWeekEnd = weekDates(fromWeek)[6];
-  const toWeekEnd = weekDates(toWeek)[6];
-  const offset = daysBetween(fromWeek, toWeek);
+    const { weekStartDay } = await readHouseholdPreferences(householdId);
+    const fromWeek = weekStartFor(input.fromWeek, weekStartDay);
+    const toWeek = weekStartFor(input.toWeek, weekStartDay);
+    const fromWeekEnd = weekDates(fromWeek)[6];
+    const toWeekEnd = weekDates(toWeek)[6];
+    const offset = daysBetween(fromWeek, toWeek);
 
-  return db.transaction().execute(async (trx) => {
-    // Read the source BEFORE the `replace` wipe. The two weeks are snapped
-    // week starts, so they are either disjoint or identical — and copying a
-    // week onto itself in `replace` mode is then a rebuild (same entries,
-    // new ids, cooked marks cleared) rather than a self-inflicted delete.
-    const rows = await trx
-      .selectFrom("meal_plan_entry")
-      .select(["id", "kind", "slot", "body", "recipe_id", sql<string>`to_char(plan_date, 'YYYY-MM-DD')`.as("plan_date")])
-      .where("household_id", "=", householdId)
-      .where("deleted_at", "is", null)
-      .where(sql<boolean>`plan_date between ${fromWeek}::date and ${fromWeekEnd}::date`)
-      .orderBy("plan_date")
-      .orderBy("slot")
-      .orderBy("position")
-      .orderBy("created_at")
-      .execute();
-
-    if (rows.length === 0) return { copied: 0, fromWeek, toWeek, toWeekEnd };
-
-    if (input.mode === "replace") {
-      await trx
-        .updateTable("meal_plan_entry")
-        .set({ deleted_at: sql`now()`, updated_at: sql`now()` })
+    return db.transaction().execute(async (trx) => {
+      // Read the source BEFORE the `replace` wipe. The two weeks are snapped
+      // week starts, so they are either disjoint or identical — and copying a
+      // week onto itself in `replace` mode is then a rebuild (same entries,
+      // new ids, cooked marks cleared) rather than a self-inflicted delete.
+      const rows = await trx
+        .selectFrom("meal_plan_entry")
+        .select(["id", "kind", "slot", "body", "recipe_id", sql<string>`to_char(plan_date, 'YYYY-MM-DD')`.as("plan_date")])
         .where("household_id", "=", householdId)
         .where("deleted_at", "is", null)
-        .where(sql<boolean>`plan_date between ${toWeek}::date and ${toWeekEnd}::date`)
+        .where(sql<boolean>`plan_date between ${fromWeek}::date and ${fromWeekEnd}::date`)
+        .orderBy("plan_date")
+        .orderBy("slot")
+        .orderBy("position")
+        .orderBy("created_at")
         .execute();
-    }
 
-    // Bucket by destination slot so each slot is locked and renumbered
-    // exactly once, however many entries land in it.
-    const buckets = new Map<string, { key: SlotKey; rows: typeof rows }>();
-    for (const row of rows) {
-      const slot = MEAL_SLOTS.find((s) => s === row.slot);
-      if (!slot) continue;
-      const key: SlotKey = { date: shiftDays(row.plan_date, offset), slot };
-      const id = `${key.date}|${key.slot}`;
-      const bucket = buckets.get(id);
-      if (bucket) bucket.rows.push(row);
-      else buckets.set(id, { key, rows: [row] });
-    }
+      if (rows.length === 0) return { copied: 0, fromWeek, toWeek, toWeekEnd };
 
-    // Same lock discipline as `moveMealPlanEntry`: slots are taken in
-    // `compareSlotKeys` order so a copy and a concurrent move between the
-    // same slots queue up instead of deadlocking.
-    const ordered = [...buckets.values()].sort((a, b) => compareSlotKeys(a.key, b.key));
-    let copied = 0;
-    for (const bucket of ordered) {
-      const existing = await lockSlot(trx, householdId, bucket.key);
-      const created: string[] = [];
-      let position = existing.length;
-      for (const row of bucket.rows) {
-        const id = ulid();
+      if (input.mode === "replace") {
         await trx
-          .insertInto("meal_plan_entry")
-          .values({
-            id,
-            household_id: householdId,
-            plan_date: bucket.key.date,
-            slot: bucket.key.slot,
-            kind: row.kind,
-            position,
-            body: row.body,
-            recipe_id: row.recipe_id,
-            created_by_did: did,
-          })
+          .updateTable("meal_plan_entry")
+          .set({ deleted_at: sql`now()`, updated_at: sql`now()` })
+          .where("household_id", "=", householdId)
+          .where("deleted_at", "is", null)
+          .where(sql<boolean>`plan_date between ${toWeek}::date and ${toWeekEnd}::date`)
           .execute();
-        created.push(id);
-        position += 1;
-        copied += 1;
       }
-      await renumberSlot(trx, householdId, existing.concat(created));
-    }
 
-    return { copied, fromWeek, toWeek, toWeekEnd };
-  });
-}
+      // Bucket by destination slot so each slot is locked and renumbered
+      // exactly once, however many entries land in it.
+      const buckets = new Map<string, { key: SlotKey; rows: typeof rows }>();
+      for (const row of rows) {
+        const slot = MEAL_SLOTS.find((s) => s === row.slot);
+        if (!slot) continue;
+        const key: SlotKey = { date: shiftDays(row.plan_date, offset), slot };
+        const id = `${key.date}|${key.slot}`;
+        const bucket = buckets.get(id);
+        if (bucket) bucket.rows.push(row);
+        else buckets.set(id, { key, rows: [row] });
+      }
+
+      // Same lock discipline as `moveMealPlanEntry`: slots are taken in
+      // `compareSlotKeys` order so a copy and a concurrent move between the
+      // same slots queue up instead of deadlocking.
+      const ordered = [...buckets.values()].sort((a, b) => compareSlotKeys(a.key, b.key));
+      let copied = 0;
+      for (const bucket of ordered) {
+        const existing = await lockSlot(trx, householdId, bucket.key);
+        const created: string[] = [];
+        let position = existing.length;
+        for (const row of bucket.rows) {
+          const id = ulid();
+          await trx
+            .insertInto("meal_plan_entry")
+            .values({
+              id,
+              household_id: householdId,
+              plan_date: bucket.key.date,
+              slot: bucket.key.slot,
+              kind: row.kind,
+              position,
+              body: row.body,
+              recipe_id: row.recipe_id,
+              created_by_did: did,
+            })
+            .execute();
+          created.push(id);
+          position += 1;
+          copied += 1;
+        }
+        await renumberSlot(trx, householdId, existing.concat(created));
+      }
+
+      return { copied, fromWeek, toWeek, toWeekEnd };
+    });
+  },
+);

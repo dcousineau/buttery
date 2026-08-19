@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { redirect } from "@tanstack/react-router";
 import type { Role } from "./errors";
 import type { HouseholdMemberView, OnboardingVerdict, PendingInvite } from "#/lib/api/types";
@@ -52,7 +52,7 @@ function validateInviteId(id: unknown): string {
  * household the caller is no longer a live member of, it is cleared here and
  * resolution re-runs (§5 / §8, acceptance items 10 & 14).
  */
-async function computeOnboarding(): Promise<OnboardingVerdict> {
+const computeOnboarding = createServerOnlyFn(async (): Promise<OnboardingVerdict> => {
   const { getServerSession, setActiveHousehold } = await import("./session");
   const { loadLiveMembership } = await import("../authz");
   const { getDb } = await import("#/lib/db");
@@ -144,7 +144,7 @@ async function computeOnboarding(): Promise<OnboardingVerdict> {
       role: asRole(i.role),
     })),
   };
-}
+});
 
 /**
  * §5/§9 `resolveOnboarding()` — the state-machine verdict for the current user

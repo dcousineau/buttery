@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { redirect } from "@tanstack/react-router";
 import type { Kysely } from "kysely";
 import type { DB } from "#/db/types";
@@ -200,7 +200,7 @@ export const leaveHousehold = createServerFn({ method: "POST" })
  * feed calls this yet (§12). Wire an atproto account-deletion / tombstone signal
  * to this function when that feed exists.
  */
-export async function tombstoneMemberForDeletedAccount(householdId: string, did: string): Promise<void> {
+export const tombstoneMemberForDeletedAccount = createServerOnlyFn(async (householdId: string, did: string): Promise<void> => {
   const { getDb } = await import("#/lib/db");
   const { sql } = await import("kysely");
 
@@ -241,4 +241,4 @@ export async function tombstoneMemberForDeletedAccount(householdId: string, did:
         }
       }
     });
-}
+});

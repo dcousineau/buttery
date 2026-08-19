@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import * as z from "zod";
 import type { HouseholdPreferences } from "#/lib/api/types";
 
@@ -99,7 +99,7 @@ async function activeContext(): Promise<{ did: string; householdId: string }> {
  * Authorization is the caller's responsibility, which is why this takes an
  * explicit `householdId` and is not exported to the client.
  */
-export async function readHouseholdPreferences(householdId: string): Promise<HouseholdPreferences> {
+export const readHouseholdPreferences = createServerOnlyFn(async (householdId: string): Promise<HouseholdPreferences> => {
   const { getDb } = await import("#/lib/db");
   const row = await getDb().selectFrom("household_preference").select(["week_start_day", "timezone"]).where("household_id", "=", householdId).executeTakeFirst();
   if (!row) return { ...DEFAULT_HOUSEHOLD_PREFERENCES };
@@ -109,7 +109,7 @@ export async function readHouseholdPreferences(householdId: string): Promise<Hou
     weekStartDay: row.week_start_day >= 1 && row.week_start_day <= 7 ? row.week_start_day : DEFAULT_HOUSEHOLD_PREFERENCES.weekStartDay,
     timezone: row.timezone,
   };
-}
+});
 
 /**
  * Upsert the row behind `updateHouseholdPreferences`, WITHOUT the session round
@@ -120,7 +120,7 @@ export async function readHouseholdPreferences(householdId: string): Promise<Hou
  * This is where §3.1's lazy materialisation actually happens: no row exists
  * until someone saves a preference, and then exactly one does.
  */
-export async function writeHouseholdPreferences(householdId: string, prefs: HouseholdPreferences): Promise<HouseholdPreferences> {
+export const writeHouseholdPreferences = createServerOnlyFn(async (householdId: string, prefs: HouseholdPreferences): Promise<HouseholdPreferences> => {
   const { getDb } = await import("#/lib/db");
   const { sql } = await import("kysely");
 
@@ -137,7 +137,7 @@ export async function writeHouseholdPreferences(householdId: string, prefs: Hous
     .execute();
 
   return { weekStartDay: prefs.weekStartDay, timezone: prefs.timezone };
-}
+});
 
 // --- §6.11 server functions ---------------------------------------------
 

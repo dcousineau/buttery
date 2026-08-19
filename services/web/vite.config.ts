@@ -5,7 +5,7 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { serviceWorker } from "./vite-plugins/service-worker";
+import { serviceWorker } from "./vite-plugins/service-worker.ts";
 
 // Local dev reads server-side config (DATABASE_URL, REDIS_URL, BLOB_S3_*, the
 // ATPROTO_* overrides, …) from this package's `.env` into process.env — the
