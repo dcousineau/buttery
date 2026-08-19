@@ -29,6 +29,13 @@
  *   (in-flight) both look exactly like "signed out" from the outside, and acting
  *   on either would wipe the cache of an offline user — deleting the shopping
  *   list this whole feature exists to keep readable in a store.
+ * - *The ref is still needed, for the other axis.* That disk marker is
+ *   localStorage: it is shared by every tab on the device, so the tab that
+ *   performs a switch advances it for all of them and every other tab then sees
+ *   "nothing changed" while still holding the old household in RAM and in its
+ *   route context. The marker answers "did this device change hands"; the ref
+ *   answers "did this tab move", and only the two together cover a switch made
+ *   in one tab with others open.
  */
 
 import { useEffect, useRef } from "react";
@@ -51,7 +58,8 @@ export function useCachePartition(): void {
   // `setupRouterSsrQueryIntegration` installs via `router.options.Wrap`. The
   // router context is available everywhere under the provider *and* above it,
   // and it is the same client either way (`getRouter` constructs exactly one).
-  const queryClient = useRouter().options.context.queryClient;
+  const router = useRouter();
+  const queryClient = router.options.context.queryClient;
   const { status, snapshot } = useSessionState();
   const did = snapshot?.did ?? null;
   const householdId = snapshot?.activeHouseholdId ?? null;
@@ -68,13 +76,25 @@ export function useCachePartition(): void {
     const confirmed = status === "live" || status === "signed-out";
     const last = confirmed ? readLastPartition() : null;
     const identityChanged = confirmed && last !== null && last !== key;
+    const previous = installed.current;
     // `pending` is the one status that must not install anything. Its key is
     // `null` only because nobody has answered yet, and installing the anon
     // persister there would file the household rows SSR just hydrated under the
     // `v1:anon` buster — writing household data to a partition that is meant to
     // hold none. Every other status has a real answer behind its key, `stale`
     // included: an offline cold start's whole job is to serve that partition.
-    const repoint = status !== "pending" && installed.current !== key;
+    const repoint = status !== "pending" && previous !== key;
+    // A partition change *this tab* has lived through, which `identityChanged`
+    // structurally cannot see: it compares against a localStorage marker, and the
+    // tab that performed the switch has already advanced that marker for the
+    // whole device. Every other open tab therefore computes `identityChanged ===
+    // false` while `repoint` is true, skips the clear below, and falls through to
+    // the `persistHydratedQueries` sweep at the end of this effect — re-filing the
+    // old household's rows through the new persister, and so undoing the wipe the
+    // tab that did the switch just performed (§2.7). `previous !==
+    // undefined` keeps cold start out of this: on the first run there is no
+    // partition to have moved away from.
+    const tabRepartitioned = status !== "pending" && previous !== undefined && previous !== key;
 
     // Install the persister for whatever partition this is, including the `null`
     // one a confirmed signed-out visitor gets. That visitor used to get no
@@ -88,7 +108,7 @@ export function useCachePartition(): void {
     }
     if (confirmed) rememberPartition(key);
 
-    if (identityChanged) {
+    if (identityChanged || tabRepartitioned) {
       // A sign-out, a second person signing in on the family iPad, or a
       // household switch. The old partition's bytes go now rather than whenever
       // each entry is next read (§2.7 — "eventually" is not a privacy answer).
@@ -97,8 +117,25 @@ export function useCachePartition(): void {
       // household switch may keep the identity snapshots. `startsWith` rather
       // than a split on ":" because a DID contains colons of its own
       // (`did:plc:…`), so the household id is not the second field.
-      const samePerson = did !== null && last !== null && last.startsWith(`${did}:`);
+      //
+      // `last` is empty in a tab that did not perform the switch — the marker was
+      // advanced before this tab woke up — so fall back to what this tab itself
+      // had installed.
+      const from = last ?? previous ?? null;
+      const samePerson = did !== null && from !== null && from.startsWith(`${did}:`);
       queryClient.clear();
+      // Route context is the other half of the partition, and it does not move on
+      // its own: every migrated route resolves `householdId` in `beforeLoad`, and
+      // nothing re-runs `beforeLoad` when the session changes underneath it. Left
+      // alone, this tab's persister points at B while its queries keep their A
+      // keys — and since the query factories send no household at all (the server
+      // reads `active_household_id` off the session), the next focus refetch files
+      // B's plan and grocery list under `["household", A, …]`. That is the §2.4
+      // leak in the one direction the buster cannot catch, because under A the
+      // buster matches. Invalidating moves the routes in the same tick as the
+      // persister. Only on the per-tab arm: an identity change that crossed a
+      // document load has already run `beforeLoad` against the new session.
+      if (tabRepartitioned) void router.invalidate();
       // Re-arm the tripwire afterwards. A wipe that is not a household switch
       // takes the marker with it — it names the *previous* person's DID, so a
       // sign-out must not leave it behind — and the marker is what lets the next
@@ -127,7 +164,7 @@ export function useCachePartition(): void {
     // recipes under household B's buster. That is the §2.4 leak, written by the
     // very code meant to prevent it.
     if (repoint) persistHydratedQueries(queryClient);
-  }, [queryClient, did, householdId, status]);
+  }, [router, queryClient, did, householdId, status]);
 
   useEffect(() => watchForHydratedQueries(queryClient), [queryClient]);
 

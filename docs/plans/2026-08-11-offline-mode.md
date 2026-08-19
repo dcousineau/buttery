@@ -1,6 +1,7 @@
 # 2026-08-11 — Offline mode (offline-capable PWA)
 
-Status: **spec / pre-development — rev 2 (milestone re-cut)**
+Status: **M1 shipped; M2/M3 spec — rev 2 (milestone re-cut), plus the §11 stack
+re-evaluation of 2026-08-19**
 Depends on: `03-household-recipe-collection.md` (the box + rendered `recipe` layer),
 `2026-08-06-meal-planner.md` (`meal_plan_entry`, the optimistic-patch system),
 `2026-08-11-grocery-list.md` (**shipped** in #31 — `grocery_list`/`grocery_item`, the
@@ -119,14 +120,14 @@ leak one household's box into another's.
 The requirement: battle-tested, IndexedDB, iOS-ready, plays well with react-query, prefer
 TanStack.
 
-| Option                                                                                                      | Verdict                                                                                                                                                                                                                                                                             |
-| ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **TanStack Query + `experimental_createQueryPersister` (IndexedDB via `idb-keyval`) + persisted mutations** | **Chosen.** First-party, documented for exactly this, years old. `@tanstack/react-router-ssr-query` is already declared in `services/web/package.json:44` and unused — the integration was anticipated.                                                                             |
-| **TanStack DB 0.6**                                                                                         | Rejected for now. Strategically interesting (live queries, real optimistic transactions) but 0.6 standardized persistence on SQLite-WASM not IndexedDB, SSR story undocumented, pre-1.0. §10 keeps the re-evaluation point; the §5 port layer is what makes a later swap contained. |
-| **`@tanstack/offline-transactions`**                                                                        | Rejected as a dependency, adopted as a design source: persist-before-dispatch, FIFO per scope, leader election, backoff with jitter. M2/M3 reimplement that shape on Query's own mutation cache.                                                                                    |
-| **RxDB / PowerSync / ElectricSQL**                                                                          | Rejected. Real replication protocols for a problem we do not have; all three want to own the data model.                                                                                                                                                                            |
-| **Hand-rolled IndexedDB under existing loaders**                                                            | Rejected. Re-invents staleness, gc, dedupe, retry, paused mutations, devtools.                                                                                                                                                                                                      |
-| **`vite-plugin-pwa` / Serwist**                                                                             | Rejected as-is. TanStack Start's Vite plugin replaces the build step they hook; community consensus in TanStack/router#4770 is a custom plugin. §4.4 takes that route, simplified by srvx serving `dist/client`.                                                                    |
+| Option                                                                                                      | Verdict                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **TanStack Query + `experimental_createQueryPersister` (IndexedDB via `idb-keyval`) + persisted mutations** | **Chosen.** First-party, documented for exactly this, years old. `@tanstack/react-router-ssr-query` is already declared in `services/web/package.json:44` and unused — the integration was anticipated.                                                                                                                                                                                        |
+| **TanStack DB** (0.6 at rev 2; **re-evaluated at 0.8.0 on 2026-08-19**)                                     | **Still rejected — but two of the three original reasons are dead, and two harder ones replaced them. §11 is the full re-evaluation.** Short version: adopting collections for the writes forces adopting them for the reads, and the only first-party row persistence is a ~690 KB-gzip SQLite-WASM worker whose OPFS bytes are evicted by the same iOS rule as the IndexedDB we already use. |
+| **`@tanstack/offline-transactions`** (1.0.46)                                                               | **Rejected as a dependency, re-confirmed 2026-08-19 (§11); still the design source — but a more carefully-read one.** It does _not_ implement FIFO-per-scope: one global serial queue, no key logic. §5.3's `scope` design is strictly better than the thing it was copied from. What is worth stealing is listed in §11.4.                                                                    |
+| **RxDB / PowerSync / ElectricSQL**                                                                          | Rejected. Real replication protocols for a problem we do not have; all three want to own the data model.                                                                                                                                                                                                                                                                                       |
+| **Hand-rolled IndexedDB under existing loaders**                                                            | Rejected. Re-invents staleness, gc, dedupe, retry, paused mutations, devtools.                                                                                                                                                                                                                                                                                                                 |
+| **`vite-plugin-pwa` / Serwist**                                                                             | Rejected as-is. TanStack Start's Vite plugin replaces the build step they hook; community consensus in TanStack/router#4770 is a custom plugin. §4.4 takes that route, simplified by srvx serving `dist/client`.                                                                                                                                                                               |
 
 New direct dependencies: `@tanstack/react-query` (promote from transitive 5.101.2),
 `@tanstack/react-query-persist-client`, `@tanstack/react-query-devtools`, `idb-keyval`.
@@ -498,6 +499,16 @@ unacceptable at any milestone. What waits for M3 is only the _typed_ machinery
 - _Result unions, conflict states._ Everything in M2 is LWW-by-arrival of absolute
   states; there is nothing to surface.
 
+The 2026-08-19 re-evaluation (§11) turned the first of those from a judgement call into a
+supported one. `@tanstack/offline-transactions` — the reference implementation this
+section was modelled on — makes leader election **load-bearing**: `isOfflineEnabled` is
+`mode === 'offline' && isLeaderState`, and a non-leader tab falls back to an unpersisted
+online-only path, so a write made offline in the second tab is not queued, it is rolled
+back. On the default Web Locks path it requests leadership exactly once and never
+re-requests, so a tab that starts non-leader never becomes one. Deferring leader election
+because §5.1 makes double-drain harmless is not the weaker choice here; it is the one
+without a data-loss path. Build it in M3 for ordering, not for safety.
+
 ### 5.4 Status surface, minimal
 
 One small chip in `AppShell`, three states: **Offline** (with pending count when > 0) /
@@ -747,9 +758,9 @@ between events. (It holds none — §9.3.)
 
 ## 10. Deferred
 
-- **Re-evaluate TanStack DB** at 1.0 with a documented SSR story. The §4.3 port layer and
-  §4.2 key namespace make the swap contained — collections would replace `queries.ts` and
-  `mutations.ts`, nothing else.
+- **Re-evaluate TanStack DB** — done once already, at 0.8.0 on 2026-08-19; see §11 for what
+  was found and §11.5 for the four triggers that would make it worth running a third time.
+  The §4.3 port layer and §4.2 key namespace still make the swap contained.
 - **Web Push for timer alarms** — §9.4.
 - **Offline recipe authoring**, once §9.1's durability story is proven in production and
   blob staging has an answer.
@@ -760,11 +771,198 @@ between events. (It holds none — §9.3.)
 
 ---
 
+## 11. The 2026-08-19 TanStack DB re-evaluation
+
+Rev 2 rejected TanStack DB at 0.6 and deferred a re-look to "1.0 with a documented SSR
+story" (§10). M1 has since shipped. This section is that re-look, run at
+`@tanstack/db` **0.8.0** / `@tanstack/react-db` **0.3.0** /
+`@tanstack/offline-transactions` **1.0.46**, by four independent agents reading the
+published tarballs rather than the marketing pages. It records the answer and the
+evidence, so the next re-evaluation starts from facts instead of from this paragraph.
+
+**Verdict: keep the plan. Build M2's outbox as §5.3 specifies.** The reasons changed
+completely; the conclusion did not.
+
+### 11.1 What the deferral condition actually asked for, and what happened to it
+
+| Rev-2 objection              | Status at 0.8.0                                                                                                                                                                                                                                                                                |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "SSR story undocumented"     | **Resolved.** `DbClient` + `@tanstack/react-router-with-db` is real and, read in source, _composes_ with our `setupRouterSsrQueryIntegration` rather than fighting it — it captures `router.options` and preserves all three hooks. Order matters: SSR-query first, then `routerWithDbClient`. |
+| "persistence is SQLite-WASM" | **Unchanged, and now measured.** §11.3.                                                                                                                                                                                                                                                        |
+| "pre-1.0"                    | **Unchanged.** Still 0.8.0. GitHub milestones list is empty; no roadmap issue, no date. Repo README says `status-beta`, the npm-published README of the same version still says `status-alpha`. 1.0 appears in the docs only as a set of pre-announced _breaking_ changes.                     |
+
+So the stated trigger is one-third met — which is exactly why re-running it was worth
+doing, and why the new triggers in §11.5 are written against outcomes instead of version
+numbers.
+
+Two facts worth carrying forward regardless of adoption:
+
+- **`@tanstack/db` core has no persistence at all.** Durable storage lives in a separate
+  package family (`db-sqlite-persistence-core` + `browser-db-sqlite-persistence`). "Adopt
+  TanStack DB" is always at minimum a three-package decision.
+- Its offline design is still moving in the open — RFC #1625, _"Mutation log
+  reconciliation for optimistic writes,"_ is open as of 2026-06-26. That is this plan's
+  §6.1 problem, unsolved upstream.
+
+### 11.2 `@tanstack/offline-transactions` cannot be adopted standalone
+
+This was the sharpest question, because §3 already treats the library as a design source
+and it is the only 1.x package in the family. The answer is no, and it is structural.
+
+`OfflineConfig.collections` is a required field, `@tanstack/db` is an **exact-pinned hard
+dependency** (deliberately moved from peer to regular dependency in 1.0.1), and every
+entry point funnels through a `createTransaction` callback that `@tanstack/db`
+**short-circuits on zero mutations** — so with no collection write, `mutationFn` is never
+called and nothing is persisted. Verified by running it: with `collections: {}` and
+variables passed via `metadata`, `mutationFn` fired **0 times**, the outbox was empty, and
+**no error or warning was raised**. A silent no-op. The library's own bundled skill file
+rates `collections: {}` as merely costing "optimistic state restoration on reload," which
+materially understates it.
+
+Taking it therefore means taking collections, which §11.3 prices. And having read the
+implementation, the queue we would be buying is worse than the one §5.3 specifies:
+
+| §5.3 requirement                          | What 1.0.46 actually does                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FIFO **per entity**, parallel across      | `KeyScheduler` contains no key logic: one flat array, one global `isRunning` boolean, `getNext()` only ever returns element 0. `transaction.keys` is never consulted for scheduling. One backing-off write **head-of-line-blocks the entire outbox**. `maxConcurrency` is declared, documented, and never read.                                                                                                                              |
+| A 401 keeps the queue intact              | The retry policy substring-matches `401`/`403`/`422`/`400` against `error.message`; on a match it **deletes the outbox entry**. This is the precise behaviour §5.3 calls "unacceptable at any milestone." It is also unfixable from config — the policy is hardcoded, with no slot in `OfflineConfig`. And it is unreliable in both directions: `Forbidden: not a member of this household` matches neither literal and would retry forever. |
+| M3 result unions (§6.1) reach the caller  | The internal `runMutationFn` is typed `Promise<void>` and discards the handler's return value, so `waitForTransactionCompletion()` always resolves `undefined`. A `{status: "conflict", current}` cannot escape the closure. Looks like a bug rather than a design choice.                                                                                                                                                                   |
+| `networkMode: "offlineFirst"` (§5.3)      | Gates on raw `navigator.onLine` — the guess §5.3 explicitly chose to ignore because it lies on captive portals. Injectable, at least.                                                                                                                                                                                                                                                                                                        |
+| Cache partitioned by `(did, householdId)` | Storage is a single fixed IndexedDB database with `tx:`-prefixed keys. `clearOutbox()` is all-or-nothing across tenants; `removeFromOutbox(id)` deletes the bytes but **not** the scheduler entry, so the request still goes out.                                                                                                                                                                                                            |
+
+Three findings rise to the level of §2.7 violations, and they are the reason this section
+exists rather than a one-line "still no":
+
+1. **`dispose()` does not stop replay.** It unsubscribes listeners and releases the leader
+   lock but never touches the executor, outbox, or scheduler. The retry `setTimeout`
+   survives it and fires `executeAll()` — so sign out, dispose, and the previous
+   household's queued writes go out over the network under the **next** session's cookies.
+   `clearOutbox()` must precede `dispose()`, and nothing in the API says so.
+2. **A queued write can be replayed into the wrong household's UI.** The serializer stores
+   `collectionId` as the _registry key_, not `collection.id`. Keep stable keys and swap the
+   collection per household — the natural shape — and household A's queued transaction
+   deserializes onto B's live collection, whose optimistic state it is written straight
+   into. Namespace the key instead and the transaction becomes undeserializable, at which
+   point `getAll()` swallows it in a `try/catch` and the bytes are unreachable forever.
+3. **Non-leader tabs silently lose offline writes** — see the note added to §5.3.
+
+Maturity signals, for the record: 1.0.0 was published nine days after 0.1.0 and its
+changelog is a pure dependency bump; 38 of 51 releases are dependency-bump-only; the
+package depends on a 0.x core; `console.log` debugging statements ship in the 1.0.46
+`dist`; telemetry is a no-op'd stub; there is **no documentation page at all** (every
+plausible docs URL 404s), only a README and a bundled skill file stamped
+`library_version: '0.6.17'` whose scheduler description contradicts the shipped code.
+"1.0" here is version alignment, not a stability claim.
+
+### 11.3 Collections cannot be adopted narrowly either
+
+The tempting middle path — collections for M2's three writes, M1's Query read layer
+untouched — does not exist, for one concrete reason.
+
+`queryCollectionOptions` does wrap an existing `queryFn` and does share one cache entry
+when pointed at the same key. But **optimistic collection writes never reach the Query
+cache.** The only code path that calls `setQueryData` is the `writeInsert`/`writeUpdate`/
+`writeDelete` direct-write utilities, documented as operating _"without triggering a query
+refetch or optimistic update."_ Optimistic mutations live in TanStack DB's own transaction
+overlay. So a `useSuspenseQuery` reader sees **nothing** when the user taps a checkbox —
+the UI updates only after the handler resolves and triggers a refetch.
+
+Adopting the write therefore forces adopting the read (`useLiveQuery`) on those three
+surfaces, or writing the `setQueryData` by hand anyway and getting nothing for the
+dependency. Either way the "narrow" framing collapses: we would own two read paths, two
+SSR stories, and two loading-state models on the same page.
+
+The price of that, measured rather than estimated:
+
+| Piece                                                              | Cost                                                                                                                        |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `createCollection` + `queryCollectionOptions` + one `useLiveQuery` | **~74 KB gzip** (255 KB raw) — the differential-dataflow incremental-view-maintenance engine, to power `{checked: boolean}` |
+| `@tanstack/browser-db-sqlite-persistence` worker                   | **~706 KB gzip / ~573 KB brotli**, inlining a 1.1 MB `wa-sqlite.wasm` as a base64 data URI                                  |
+| `@tanstack/offline-transactions` on top                            | +7.2 KB gzip                                                                                                                |
+
+Two corrections to assumptions worth recording, because they cut both ways:
+
+- **Cross-origin isolation is _not_ required.** The worker uses `OPFSCoopSyncVFS` — zero
+  references to `SharedArrayBuffer`, `Atomics`, or `crossOriginIsolated` in the built
+  asset. No COOP/COEP headers. This had been the expected blocker and it is not one.
+- **OPFS buys nothing on our target anyway.** On iOS it sits in the same script-writable
+  bucket as IndexedDB, under the same seven-day eviction rule (§9.1), with
+  `navigator.storage.persist()` refused either way. We would ship ~690 KB gzip of WASM for
+  storage with **identical durability** to the `idb-keyval` already in place. Against §2.1
+  — the local copy is disposable by design — that is a straight loss.
+
+There is no first-party IndexedDB persistence for collection _rows_; the IndexedDB
+options are community packages (Dexie, PGLite) or the RxDB collection, and RxDB is already
+a §3 reject.
+
+One genuinely good finding, worth remembering if this is ever revisited: a query
+collection's internal `QueryObserver` inherits `defaultOptions.queries.persister`, so its
+reads would land in **our existing partitioned store with our existing buster** — no
+second storage layer for the read path. The persistence problem is confined to collection
+rows, not to anything the query collection touches.
+
+### 11.4 What this research changes in M2
+
+Nothing structural. The design is unchanged; these are the pieces worth lifting from a
+library we are not depending on, and they are all reproducible in well under 300 lines:
+
+- **The `StorageAdapter` shape** — `get`/`set`/`delete`/`keys`/`clear`. Our
+  `src/lib/offline/idb.ts` already exports four of the five, so the `buttery-outbox` store
+  is an additive sibling of the query store, not a new dependency.
+- **Probe-then-degrade.** The library probes storage availability at boot and falls back to
+  an explicit `online-only` mode with a typed diagnostic, rather than failing at first
+  write. M2 should do the same: if IndexedDB is unavailable, offline writes disable with
+  the M1 affordance instead of queueing into a void.
+- **The named-handler registry.** Already ours — `mutationKeys` in
+  `src/lib/api/mutations.ts` is the same idea, and its header already calls itself a wire
+  contract. The library independently arriving at string-keyed handlers because functions
+  do not serialize confirms §5.3's reasoning.
+- **`idempotencyKey` threaded into the handler.** When M3's `mutation_log` lands, mint the
+  id at enqueue time and pass it to the handler, so a retry and its original carry the same
+  id. §7 already routes this to an `Idempotency-Key` header at extraction.
+- **`NonRetriableError` as an explicit permanent-failure signal** — a typed sentinel beats
+  substring-matching an error message, which is exactly the bug §11.2 found.
+
+And one anti-pattern to avoid on purpose: **a permanent failure must not silently delete a
+queued write.** The library's `console.warn`-and-drop is the behaviour §5.3 forbids.
+
+### 11.5 Triggers for a third re-evaluation
+
+Version numbers were a poor trigger — 0.8.0 met the SSR condition while getting no closer
+to being adoptable. Use outcomes instead. Re-open this when **any two** hold:
+
+1. **First-party IndexedDB persistence for collection rows** exists, or SQLite-WASM stops
+   being the only supported browser backend. (Alone, this is the biggest single unlock.)
+2. **Optimistic collection writes are visible to a `useSuspenseQuery` reader** on a shared
+   query key — i.e. narrow adoption becomes real and the read path need not move.
+3. **`@tanstack/db` reaches 1.0** with a published milestone, and the offline story
+   (RFC #1625) has landed rather than being open.
+4. **We need something the current stack genuinely cannot do** — cross-collection joins,
+   live aggregates, or real-time multi-device sync. Today §1.1 puts all three out of scope,
+   and that is the honest reason none of this is close: we do not have the problem the
+   library solves.
+
+Independently of TanStack DB: if M2's hand-rolled outbox exceeds ~400 lines or grows a
+second conflict-resolution concept, that is a signal the write model has drifted from
+§2.5's absolute-writes constraint — fix the write set, not the queue.
+
+**Verification limits of this re-evaluation.** All of it is source reading of published
+tarballs plus one runtime probe of the `collections: {}` no-op. Nothing was tested on a
+device; the iOS OPFS eviction claim rests on documented WebKit storage policy, not on our
+own measurement. The bundle figures are esbuild-minified with peers external and may differ
+under our Rollup build. Not chased down: whether a `localOnlyCollection` plus manual
+`setQueryData` rescues the narrow path (the one configuration that might), and whether the
+`Promise<void>` result-swallowing and the substring-matched retry policy are known upstream
+bugs with fixes in flight — both look like patches a maintainer would take.
+
+---
+
 ## Sources
 
 - [TanStack Query — persistQueryClient](https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient) · [createPersister (per-query)](https://tanstack.com/query/latest/docs/framework/react/plugins/createPersister) · [Mutations / paused + `resumePausedMutations`](https://tanstack.com/query/latest/docs/framework/react/guides/mutations) · [Network mode](https://tanstack.com/query/latest/docs/framework/react/guides/network-mode)
 - [TanStack Router — Query integration](https://tanstack.com/router/latest/docs/integrations/query) · [tkdodo — TanStack Router and Query](https://tkdodo.eu/blog/tan-stack-router-and-query)
 - [TanStack DB 0.6 — persistence & offline](https://tanstack.com/blog/tanstack-db-0.6-app-ready-with-persistence-and-includes) · [TanStack DB overview](https://tanstack.com/db/latest/docs/overview) · [`@tanstack/offline-transactions`](https://www.npmjs.com/package/@tanstack/offline-transactions)
+- §11 re-evaluation (2026-08-19), read from published tarballs — [`@tanstack/db` 0.8.0](https://www.npmjs.com/package/@tanstack/db) · [`@tanstack/offline-transactions` 1.0.46 source](https://github.com/TanStack/db/tree/main/packages/offline-transactions) · [`@tanstack/query-db-collection`](https://www.npmjs.com/package/@tanstack/query-db-collection) · [`@tanstack/browser-db-sqlite-persistence`](https://www.npmjs.com/package/@tanstack/browser-db-sqlite-persistence) · [TanStack DB SSR guide](https://tanstack.com/db/latest/docs/guides/ssr) · [RFC #1625 — mutation log reconciliation](https://github.com/TanStack/db/issues/1625) · [OPFS storage &amp; eviction](https://rxdb.info/rx-storage-opfs.html)
 - [TanStack Start — Server Functions](https://tanstack.com/start/latest/docs/framework/react/guide/server-functions) · [Server functions and when you still need REST](https://jilles.me/tanstack-start-server-functions-how-they-work/)
 - [TanStack Start + PWA (TanStack/router #4770)](https://github.com/TanStack/router/discussions/4770) · [PWA offline support with TanStack Start](https://robelest.com/journal/pwa-tanstack-start)
 - [Building an offline PWA with TanStack DB + RxDB](https://rxdb.info/articles/tanstack-db/tanstack-db-pwa.html)

@@ -244,6 +244,65 @@ suppress a grocery invalidation. Mutations carry a `meta.cacheScope` instead.
 - **`@resvg/resvg-js` added to the root `devDependencies`** so the icon script can
   resolve it. Already a dependency of `services/web`; the script is a root-level tool.
 
+## Post-ship fix: the cross-tab household switch (2026-08-19)
+
+Found while checking whether the §11 stack re-evaluation implied changes to M1 — not by
+reading the library research, but by applying its _classes_ of failure (cross-tab
+resurrection, wrong-tenant writes, teardown ordering) back to shipped code. Adversarially
+verified, then fixed in `use-cache-partition.ts`.
+
+**Root cause: one guard measured on the wrong axis.** `identityChanged` compares against
+`readLastPartition()`, which is `localStorage` (`lib/timers/storage.ts`) and therefore
+**shared by every tab on the device**. `repoint` compares against `installed.current`, a
+`useRef` and therefore **per-tab**. When a switch happens with two tabs open, the tab that
+performs it advances the shared marker for both; the other tab then wakes up (better-auth
+refetches the session on window focus by default — `refetchOnWindowFocus` is on and no
+`cookieCache` is configured) and computes `identityChanged === false` against a marker that
+already names the new household, while `repoint === true`. It skipped the wipe branch
+entirely.
+
+Two distinct harms followed, and the second is the serious one:
+
+1. **The wipe gets undone.** That tab fell through to `persistHydratedQueries`, which has no
+   key filter, and re-wrote its entire in-memory household set into the IndexedDB store the
+   first tab's `clearQueryStore()` had just emptied. Those particular entries are not
+   themselves readable across households — `createPersister` keys on the query hash and
+   stores the buster _inside_ the value, so they are old-hash/new-buster and match nothing —
+   but `gcTime` is 24h, so a day's worth of the previous household's rows come back from RAM
+   and sit on disk after a wipe that was supposed to be the §2.7 guarantee.
+
+2. **Route context does not move with the persister, and that leak _is_ readable.** Every
+   migrated route resolves `householdId` in `beforeLoad: ensureActiveHousehold()`, and
+   nothing re-runs `beforeLoad` when the session changes underneath it. So the second tab's
+   persister flipped to B while its queries kept their A keys — indefinitely, not for a
+   frame. The query factories send no household at all (`api.listHouseholdRecipes()`; the
+   server reads `active_household_id` off the session), so the next focus refetch returns
+   **B's box, plan, and grocery list filed under `["household", A, …]`** — and, written after
+   the marker moved but under A's keys, they match on a later read under A. Household B's
+   shopping list rendered as A's. `useRecipeMirror(householdId /* A */, recipes /* B's */)`
+   compounds it, walking B's recipe ids into `keys.household.recipe(A, <B id>)` for as long
+   as the tab sits on the route.
+
+**The fix, both halves in `use-cache-partition.ts`:**
+
+- `tabRepartitioned` — a per-tab arm on the clear/wipe branch, guarded on
+  `previous !== undefined` so cold start keeps its existing semantics (that is what the
+  `undefined`/`null` sentinel split already existed for). It also covers sign-out in another
+  tab, which had the same hole. `from = last ?? previous` supplies the wipe-reason
+  comparison in the tab where `last` has already been advanced past it.
+- `router.invalidate()` on that arm, so `beforeLoad` re-runs and the routes' `householdId`
+  moves in the same tick as the persister. Not on the identity-change arm: that path crossed
+  a document load, so `beforeLoad` already ran against the new session.
+
+Note that the comment at `routes/households.switch.tsx:67-73` already knew about this
+window, but framed it as _data loss_ rather than _mislabeling_. In the single-tab flow the
+`queryClient.clear()` plus wipe that follows covers it either way, which is why it never
+showed up — the second tab was the one that never did either.
+
+Read-only M1 never surfaced this because a mislabeled read is still the user's own data
+under a wrong key. It stops being harmless the moment M2 queues a **write** against a key
+resolved this way.
+
 ## Open items
 
 1. **Device pass on a real iPhone — required.** Install to the home screen, airplane
@@ -261,3 +320,9 @@ suppress a grocery invalidation. Mutations carry a `meta.cacheScope` instead.
 5. The mutation keys in `mutations.ts` are a **wire contract from now, not from M2**:
    renaming one after M2 ships orphans whatever is already queued in someone's
    IndexedDB.
+6. **The sub-RTT window is still open, and it is M2-shaped.** A focus refetch that fires
+   after the household changed server-side but before the session response lands still
+   labels its answer with the old household. Nothing on the client can tell — the request
+   carries no household and the response echoes none. Closing it means the server stating
+   which household it actually served and the client discarding mismatches, i.e. a wire
+   format change; §5 should carry it.
