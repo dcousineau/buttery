@@ -1,10 +1,19 @@
+import type { RecipeSource } from "#/lib/api/types";
+
+/** The provenance DTOs live in the port's `types.ts` (offline plan §7 — every
+ * wire shape is declared client-side and imported by the server). Re-exported
+ * here so `deriveSource`'s callers keep getting the type from the function. */
+export type { RecipeSource, SourceKind } from "#/lib/api/types";
+
 /**
  * Shared recipe provenance derivation — the source kind / label / url logic used
  * by the public recipe page (`server/recipes.ts`), the household ledger, and the
  * household detail pane, so all three agree on "where did this recipe come from".
  * Client-safe (no DB imports): callers pass already-selected row fields.
  *
- * Factored out of `server/recipes.ts` (plan §5.2 / §11) rather than duplicated.
+ * Factored out of `server/recipes.ts` (plan §5.2 / §11) rather than duplicated,
+ * and moved under `lib/` when the offline plan banned client imports of
+ * `#/server/**` (§4.3): this was always a client-safe pure module.
  */
 
 /** did:plc:abcdef… → did:plc:abcdef (short, still recognizable). */
@@ -58,16 +67,6 @@ export function prettify(slug: string | null): string | null {
 export function deriveApp(origin: string, id: string): { name: string; url: string | null } {
   if (origin === "local") return { name: "Buttery", url: null };
   return { name: "recipe.exchange", url: `https://recipe.exchange/recipes/${encodeURIComponent(id)}` };
-}
-
-/** The three provenance glyphs the design maps: web / handwritten-note / atproto handle. */
-export type SourceKind = "web" | "note" | "handle";
-
-/** A recipe's display provenance: an icon-keyed kind, a label, and an optional link. */
-export interface RecipeSource {
-  kind: SourceKind;
-  label: string;
-  url: string | null;
 }
 
 /** Bare hostname of a URL ("https://www.smittenkitchen.com/…" → "smittenkitchen.com"). */

@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import dayjs from "dayjs";
 import duration from "dayjs/plugin/duration.js";
 import type { Main as RecipeRecord } from "@buttery/lexicons/exchange/recipe/recipe";
@@ -28,6 +28,7 @@ dayjs.extend(duration);
 // screen can predict this module's verdict with the *same* schema instead of a second copy
 // of the length caps. Re-exported here because this module is still their public address.
 export type { FieldIssue, RecipeRecordInput };
+import type { AttributionChoice } from "#/lib/api/types";
 
 export interface RecipeImageInput {
   /** base64 (no data: prefix) of the image bytes; ≤1MB decoded. */
@@ -90,13 +91,7 @@ function domainOf(url: string): string | null {
  * an author from a title or a name from a page reference, and that rule is only
  * enforceable if there is a single implementation of it.
  */
-export type AttributionChoice =
-  /** Cookbook or magazine. Both fields are lexicon-required; the UI collects the author and prefills nothing. */
-  | { kind: "publication"; title: string; author: string }
-  /** A person the recipe came from — family, a friend. */
-  | { kind: "person"; name: string }
-  /** A site the user supplied a URL for by hand (e.g. a bare "Tiktok" source string). */
-  | { kind: "website"; name: string; url: string };
+export type { AttributionChoice };
 
 /** Build a lexicon attribution from a user's classification, or null if the choice is incomplete. */
 function attributionFromChoice(choice: AttributionChoice): RecipeRecord["attribution"] | null {
@@ -297,7 +292,7 @@ export type PersistRecipeDraftResult =
  * so this function needs no dynamic `import()` of `#/lib/db` to stay out of the
  * client bundle.
  */
-export async function persistRecipeDraft(db: Kysely<DB>, ctx: Ctx, input: PersistRecipeDraftInput): Promise<PersistRecipeDraftResult> {
+export const persistRecipeDraft = createServerOnlyFn(async (db: Kysely<DB>, ctx: Ctx, input: PersistRecipeDraftInput): Promise<PersistRecipeDraftResult> => {
   const { ulid } = await import("./household/ids");
 
   // 1. Assemble the full record + lexicon validation gate.
@@ -329,9 +324,9 @@ export async function persistRecipeDraft(db: Kysely<DB>, ctx: Ctx, input: Persis
   }
 
   return { status: "ok", recipeId, record };
-}
+});
 
-async function runSave(db: Kysely<DB>, ctx: Ctx, input: SaveRecipeInput): Promise<SaveRecipeResult> {
+const runSave = createServerOnlyFn(async (db: Kysely<DB>, ctx: Ctx, input: SaveRecipeInput): Promise<SaveRecipeResult> => {
   const { sql } = await import("kysely");
 
   const sourceUrl = input.sourceUrl?.trim() || null;
@@ -392,7 +387,7 @@ async function runSave(db: Kysely<DB>, ctx: Ctx, input: SaveRecipeInput): Promis
   const scopeErr = await publishOrScopeError(db, ctx, recipeId, record, input.image ?? null);
   if (scopeErr) return scopeErr;
   return { status: "ok", recipeId, published: true };
-}
+});
 
 /**
  * Run the PDS publish, translating an under-scoped atproto grant into a
@@ -418,7 +413,7 @@ async function publishOrScopeError(
   }
 }
 
-async function runPublishExisting(db: Kysely<DB>, ctx: Ctx, recipeId: string): Promise<SaveRecipeResult> {
+const runPublishExisting = createServerOnlyFn(async (db: Kysely<DB>, ctx: Ctx, recipeId: string): Promise<SaveRecipeResult> => {
   if (!recipeId) return { status: "invalid", issues: [{ path: "recipeId", message: "Missing recipe." }] };
 
   // Load the caller's own draft and rebuild the record for the PDS write.
@@ -455,7 +450,7 @@ async function runPublishExisting(db: Kysely<DB>, ctx: Ctx, recipeId: string): P
   const scopeErr = await publishOrScopeError(db, ctx, recipeId, validated.record, built.pendingImage);
   if (scopeErr) return scopeErr;
   return { status: "ok", recipeId, published: true };
-}
+});
 
 /**
  * Run `fn` in a transaction, reusing the caller's if there already is one.
@@ -633,7 +628,7 @@ async function storePendingImageSourceUrl(db: Kysely<DB>, recipeId: string, sour
 }
 
 // Fetch an imported hero image (SSRF-guarded, ≤1MB per the lexicon blob cap).
-async function fetchImageFromUrl(url: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+const fetchImageFromUrl = createServerOnlyFn(async (url: string): Promise<{ bytes: Uint8Array; mime: string } | null> => {
   const { safeFetchBytes } = await import("#/lib/net/safe-fetch");
   try {
     const res = await safeFetchBytes(url, { maxBytes: 1_000_000 });
@@ -643,7 +638,7 @@ async function fetchImageFromUrl(url: string): Promise<{ bytes: Uint8Array; mime
   } catch {
     return null; // a missing hero shouldn't fail the whole publish.
   }
-}
+});
 
 // Store a draft image in the bucket + a pointer row (draft path).
 async function storePendingImage(db: Kysely<DB>, recipeId: string, image: RecipeImageInput): Promise<void> {

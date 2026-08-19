@@ -1,3 +1,5 @@
+import type { Role } from "#/lib/api/types";
+
 /**
  * Typed error set for the households feature (§9 of
  * `docs/plans/02-households-and-private-foundation.md`).
@@ -16,7 +18,7 @@
  */
 
 /** Membership roles. Free text in the DB, but these are the only ranked values. */
-export type Role = "owner" | "member";
+export type { Role };
 
 /**
  * Role rank for `assertMember`'s `minRole` gating: `owner (2) > member (1)`.

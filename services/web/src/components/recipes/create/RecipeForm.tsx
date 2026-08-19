@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useRouter } from "@tanstack/react-router";
+import { useNavigate, useRouteContext } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, BookOpenText, Check, CircleAlert, Clock, Compass, CookingPot, Eye, Link2, ShoppingBasket, UtensilsCrossed, X } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
 import { Badge } from "#/components/ui/badge";
@@ -16,9 +17,8 @@ import { RECIPE_VOCAB, slugForLabel, slugForToken, tokenForSlug } from "#/lib/re
 import { useHydratedSession } from "#/lib/auth-client";
 import { reconnectAtproto } from "#/lib/atproto-reauth";
 import { type AttributionState, EMPTY_ATTRIBUTION, attributionComplete, buildAttribution } from "#/lib/recipe-attribution";
-import { deriveSource } from "#/server/recipe-provenance";
-import { saveRecipe, type RecipeRecordInput, type FieldIssue } from "#/server/recipes-write";
-import { getImportPrefill } from "#/server/recipe-scrape";
+import { deriveSource } from "#/lib/recipe-provenance";
+import { type FieldIssue, getImportPrefill, keys, type RecipeRecordInput, saveRecipe } from "#/lib/api";
 import { useRecipesView } from "../context";
 import type { RecipeViewData } from "../RecipeView";
 import { type EditorMode } from "./LineEditor";
@@ -63,7 +63,11 @@ type FormImage = { kind: "bytes"; dataBase64: string; mime: string; previewUrl: 
  */
 export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importId }: { householdName: string; sourceUrl: string | null; importId?: string | null }) {
   const navigate = useNavigate();
-  const router = useRouter();
+  const queryClient = useQueryClient();
+  // The cache partition, from the parent layout's `beforeLoad` context — the
+  // same value `/household/recipes` keyed its box query with, so the
+  // invalidation below is guaranteed to name the entry the ledger is observing.
+  const { householdId } = useRouteContext({ from: "/household/recipes" });
   const { posthog } = useAnalytics();
   const { pushToast } = useRecipesView();
   // `handle` is an atproto-plugin column, absent from better-auth's base user type.
@@ -119,7 +123,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
     if (!importId) return;
     let cancelled = false;
     void (async () => {
-      const payload = await getImportPrefill({ data: { id: importId } }).catch(() => null);
+      const payload = await getImportPrefill(importId).catch(() => null);
       if (cancelled || !payload) return;
       const r = payload.recipe;
       setSourceUrl(payload.sourceUrl);
@@ -186,19 +190,37 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
     };
   }
 
+  /**
+   * The box gained a row, so the box query has to be told.
+   *
+   * This used to be `router.invalidate()`, which stopped doing anything the day
+   * `/household/recipes` moved onto `householdRecipesQuery` (§4.1). Re-running
+   * that loader now means re-running `ensureQueryData`, and `ensureQueryData`
+   * returns whatever is cached without revalidating — there is no
+   * `revalidateIfStale` on it. The layout never unmounts while this form is on
+   * screen (the form is its child), so its `useSuspenseQuery` observer stays
+   * mounted and never refetches on mount either: **the recipe you just wrote
+   * did not appear in the ledger at all** until a reload or a window refocus.
+   *
+   * Invalidating the key is what the router used to do by proxy, and it is also
+   * narrower than what the router used to do — one entry, not every loader in
+   * the tree (`household.recipes.tsx`'s `onAdded` takes the same shape).
+   */
+  async function refreshBox() {
+    await queryClient.invalidateQueries({ queryKey: keys.household.recipes(householdId) });
+  }
+
   async function submit(publish: boolean) {
     setPending(publish ? "publish" : "draft");
     setIssues([]);
     try {
       const result = await saveRecipe({
-        data: {
-          record: buildRecord(),
-          visibility: "draft",
-          publish,
-          sourceUrl,
-          image: image?.kind === "bytes" ? { dataBase64: image.dataBase64, mime: image.mime, alt: image.alt } : null,
-          imageSourceUrl: image?.kind === "url" ? image.url : null,
-        },
+        record: buildRecord(),
+        visibility: "draft",
+        publish,
+        sourceUrl,
+        image: image?.kind === "bytes" ? { dataBase64: image.dataBase64, mime: image.mime, alt: image.alt } : null,
+        imageSourceUrl: image?.kind === "url" ? image.url : null,
       });
       if (result.status === "invalid") {
         setIssues(result.issues);
@@ -212,7 +234,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
       if (result.status === "publish_disabled") {
         posthog.capture("recipe_created", { published: false, imported, publish_blocked: true });
         pushToast("Publishing is turned off right now — kept private.");
-        await router.invalidate();
+        await refreshBox();
         await navigate({ to: "/household/recipes/$id", params: { id: result.recipeId } });
         return;
       }
@@ -224,11 +246,13 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
         setReauthPending(false);
         setNeedsReauth(true);
         window.scrollTo({ top: 0, behavior: "smooth" });
-        await router.invalidate();
+        // The recipe *is* in the box — only the PDS write was refused — so the
+        // ledger behind this form is already out of date even though we stay put.
+        await refreshBox();
         return;
       }
       posthog.capture("recipe_created", { published: result.published, imported });
-      await router.invalidate();
+      await refreshBox();
       await navigate({ to: "/household/recipes/$id", params: { id: result.recipeId } });
     } catch (err) {
       setIssues([{ path: "", message: String(err instanceof Error ? err.message : err) }]);

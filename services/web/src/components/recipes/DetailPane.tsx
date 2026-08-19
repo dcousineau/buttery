@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useRouter } from "@tanstack/react-router";
+import { Link, useRouteContext, useRouter } from "@tanstack/react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CalendarRange, Clock, EyeOff, Lock, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
-import type { HouseholdRecipeDetail } from "#/server/household-recipes";
-import { removeRecipeFromHousehold, toggleHouseholdRecipeFavorite, upsertHouseholdRecipeNote } from "#/server/household-recipes";
-import { publishRecipe } from "#/server/recipes-write";
+import { type HouseholdRecipeDetail, keys, publishRecipe, removeRecipeFromHousehold, toggleRecipeFavoriteMutation, upsertHouseholdRecipeNote } from "#/lib/api";
+import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
 import { Button } from "#/components/ui/button";
 import { Textarea } from "#/components/ui/textarea";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
@@ -45,6 +45,29 @@ export function DetailPane({
   onCookModeClosed?: () => void;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  /**
+   * The cache partition, from the **route context** rather than from
+   * `useActiveHouseholdId()`.
+   *
+   * Both name the same household when everything is working, but they fail
+   * differently, and the difference is a silent one here. The hook reads the
+   * better-auth session (with the localStorage snapshot behind it) and answers
+   * `null` until `/get-session` lands — and permanently if that request fails.
+   * A `null` id makes every key below unbuildable, so `invalidateBox()` returned
+   * early and the ledger simply never updated after a favourite, with no error
+   * anywhere. The route context is the value the parent layout's `beforeLoad`
+   * already resolved and the value the queries on screen were *keyed* with
+   * (`household.recipes.tsx`, `household.recipes.$id.tsx`), so reading it here
+   * cannot disagree with them and cannot be absent — the pane does not render
+   * until it exists.
+   */
+  const { householdId } = useRouteContext({ from: "/household/recipes" });
+  // M1 writes are online-only (§4.1): the affordance disables rather than
+  // queuing, because the favourite toggle is server-side (so replaying it flips
+  // twice) and the note is the field two humans erase each other on. Both get
+  // their offline story in M2/M3, with the machinery that makes them safe.
+  const online = useIsOnline();
   const { posthog } = useAnalytics();
   const { pushToast } = useRecipesView();
   const { factor, setFactor, metric, setMetric } = useRecipeScale();
@@ -59,8 +82,6 @@ export function DetailPane({
     titleRef.current?.focus({ preventScroll: true });
   }, []);
 
-  const [favorite, setFavorite] = useState(recipe.favorite);
-  const [favPending, setFavPending] = useState(false);
   const [scaleOpen, setScaleOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -75,10 +96,12 @@ export function DetailPane({
   // `handle` is an atproto-plugin column, absent from better-auth's base user type.
   const { data: session } = useHydratedSession() as { data: { user?: { handle?: string | null } } | null };
 
-  // Detail-pane state (favorite, scroll position, note) is keyed by recipeId at
-  // the render site (`<DetailPane key={recipe.recipeId} …/>`), so switching
-  // recipes remounts this pane — favorite re-inits from props and scroll resets
-  // naturally, with no setState-in-effect.
+  // Detail-pane state (scroll position, note draft) is keyed by recipeId at the
+  // render site (`<DetailPane key={recipe.recipeId} …/>`), so switching recipes
+  // remounts this pane and everything resets naturally, with no
+  // setState-in-effect. The star is *not* in that list any more: it reads
+  // `recipe.favorite` straight off the cache entry the mutation patches, so
+  // there is no second copy of the fact to keep in step.
 
   const scaledIngredients = useMemo(() => scaleIngredients(recipe.ingredients, factor, metric), [recipe.ingredients, factor, metric]);
   const displayServings = recipe.serves != null ? Math.max(1, Math.round(recipe.serves * factor)) : null;
@@ -95,19 +118,32 @@ export function DetailPane({
   const plannedAhead = (planned?.upcoming ?? 0) > 0;
   const nextPlannedLabel = planned?.nextDate ? `${shortDow(planned.nextDate)}, ${formatPlanDate(planned.nextDate)}` : null;
 
-  async function onFavorite() {
-    setFavorite((v) => !v);
-    setFavPending(true);
-    try {
-      const { favorite } = await toggleHouseholdRecipeFavorite({ data: { recipeId: recipe.recipeId } });
-      setFavorite(favorite);
-      posthog.capture("recipe_favorite_toggled", { recipe_id: recipe.recipeId, favorited: favorite });
-      await router.invalidate();
-    } catch {
-      setFavorite(recipe.favorite); // revert on failure
-    } finally {
-      setFavPending(false);
-    }
+  /** The box list and this recipe's detail — the two entries every write here touches. */
+  async function invalidateBox() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: keys.household.recipes(householdId) }),
+      queryClient.invalidateQueries({ queryKey: keys.household.recipe(householdId, recipe.recipeId) }),
+    ]);
+  }
+
+  /**
+   * The star, through the port's mutation rather than a local `useState` plus a
+   * bare transport call.
+   *
+   * The hand-rolled version held `favorite` in component state, which made this
+   * pane the only place in the app where the star was true and the cache entry
+   * behind it still said false — so the ledger row two hundred pixels to the
+   * left stayed unstarred until an invalidation landed. `toggleRecipeFavoriteMutation`
+   * patches both entries in `onMutate` (see `lib/api/mutations.ts`), so the star
+   * below just reads `recipe.favorite` and both surfaces flip on the same frame.
+   */
+  const favoriteMutation = useMutation(toggleRecipeFavoriteMutation(queryClient, householdId));
+
+  function onFavorite() {
+    favoriteMutation.mutate(
+      { recipeId: recipe.recipeId, favorite: !recipe.favorite },
+      { onSuccess: (result) => posthog.capture("recipe_favorite_toggled", { recipe_id: recipe.recipeId, favorited: result.favorite }) },
+    );
   }
 
   async function onReconnect() {
@@ -124,7 +160,7 @@ export function DetailPane({
   async function onPublish() {
     setPublishing(true);
     try {
-      const res = await publishRecipe({ data: { recipeId: recipe.recipeId } });
+      const res = await publishRecipe(recipe.recipeId);
       if (res.status === "publish_disabled") {
         pushToast("Publishing is turned off right now.");
         return;
@@ -137,7 +173,7 @@ export function DetailPane({
         return;
       }
       posthog.capture("recipe_published", { recipe_id: recipe.recipeId, from: "detail_lock" });
-      await router.invalidate();
+      await invalidateBox();
     } finally {
       setPublishing(false);
       setConfirmPublish(false);
@@ -147,18 +183,26 @@ export function DetailPane({
   async function onPlanned(date: PlanDate, slot: MealSlot) {
     posthog.capture("meal_plan_entry_added", { recipe_id: recipe.recipeId, slot, source: "recipe_detail" });
     pushToast(`Added to ${SLOT_LABELS[slot].toLowerCase()} on ${formatPlanDate(date)}`);
-    // The pane's own "on your meal plan" line comes from the loader's
-    // `plannedUsage`, so it is stale the moment this lands.
-    await router.invalidate();
+    // Three entries move on this write, not two. The box pair, because the
+    // pane's "on your meal plan" line comes from the detail payload's
+    // `plannedUsage` — *and* the plan itself, which is where the meal actually
+    // landed. Skipping the plan used to be defensible when `/household/plan`
+    // re-ran a loader on every visit; now that it reads a cached query, an
+    // un-invalidated week means walking over to the planner inside its 30s
+    // `staleTime` and not finding the meal you just added, with nothing
+    // scheduled to correct it. The date can be any week, so this is the whole
+    // plan prefix (`keys.household.planAll`, which also covers the `"current"`
+    // spelling of whichever week it belongs to).
+    await Promise.all([invalidateBox(), queryClient.invalidateQueries({ queryKey: keys.household.planAll(householdId) })]);
   }
 
   async function onRemove() {
     setRemoving(true);
     try {
-      await removeRecipeFromHousehold({ data: { recipeId: recipe.recipeId } });
+      await removeRecipeFromHousehold(recipe.recipeId);
       posthog.capture("recipe_removed_from_household", { recipe_id: recipe.recipeId, planned_upcoming: planned?.upcoming ?? 0 });
       await router.navigate({ to: "/household/recipes" });
-      await router.invalidate();
+      await invalidateBox();
     } finally {
       setRemoving(false);
       setConfirmRemove(false);
@@ -187,7 +231,9 @@ export function DetailPane({
                 <button
                   type="button"
                   onClick={() => setConfirmPublish(true)}
-                  className="inline-flex items-center gap-1 rounded-4xl border-2 border-border bg-secondary px-2 py-0.5 text-secondary-foreground transition-colors hover:bg-accent"
+                  disabled={!online}
+                  title={online ? undefined : OFFLINE_WRITE_HINT}
+                  className="inline-flex items-center gap-1 rounded-4xl border-2 border-border bg-secondary px-2 py-0.5 text-secondary-foreground transition-colors not-disabled:hover:bg-accent disabled:opacity-60"
                 >
                   <Lock className="size-3" aria-hidden="true" />
                   Private · Publish
@@ -223,15 +269,22 @@ export function DetailPane({
         {/* Action row */}
         <div className="flex flex-wrap items-center gap-2">
           <CookModeLauncher recipe={recipe} autoOpen={autoOpenCook} onAutoOpenConsumed={onCookModeClosed} />
+          {/* Offline, every control on this row disables rather than queuing.
+            M1 ships offline READS; the writes here are the ones §5.2 shows are
+            not replay-safe by shape — a server-side favourite toggle flips twice
+            on a double delivery, and the shared note is the field two people
+            erase each other on. Saying "not now" is honest; silently queuing a
+            write that would corrupt on replay is not. */}
           <Button
             variant="outline"
-            aria-pressed={favorite}
-            disabled={favPending}
+            aria-pressed={recipe.favorite}
+            disabled={favoriteMutation.isPending || !online}
+            title={online ? undefined : OFFLINE_WRITE_HINT}
             onClick={onFavorite}
-            className={cn(favorite && "bg-primary text-primary-foreground hover:bg-primary")}
+            className={cn(recipe.favorite && "bg-primary text-primary-foreground hover:bg-primary")}
           >
-            <Star data-icon="inline-start" aria-hidden="true" className={cn(favorite && "fill-current")} />
-            {favorite ? "Favorited" : "Favorite"}
+            <Star data-icon="inline-start" aria-hidden="true" className={cn(recipe.favorite && "fill-current")} />
+            {recipe.favorite ? "Favorited" : "Favorite"}
           </Button>
           {/*
             The scale the pane is CURRENTLY showing rides along (plan D4): if you
@@ -239,15 +292,32 @@ export function DetailPane({
             is written back to the recipe — `factor` is a reading preference and
             stays one.
           */}
-          <Button variant="outline" onClick={() => setListRequest({ recipes: [{ recipeId: recipe.recipeId, scale: factor }], label: recipe.title })}>
+          <Button
+            variant="outline"
+            disabled={!online}
+            title={online ? undefined : OFFLINE_WRITE_HINT}
+            onClick={() => setListRequest({ recipes: [{ recipeId: recipe.recipeId, scale: factor }], label: recipe.title })}
+          >
             <ShoppingBasket data-icon="inline-start" aria-hidden="true" />
             Add to shopping list
           </Button>
-          <Button variant="outline" onClick={() => setPlanRequest({ recipeId: recipe.recipeId, title: recipe.title })}>
+          <Button
+            variant="outline"
+            disabled={!online}
+            title={online ? undefined : OFFLINE_WRITE_HINT}
+            onClick={() => setPlanRequest({ recipeId: recipe.recipeId, title: recipe.title })}
+          >
             <CalendarRange data-icon="inline-start" aria-hidden="true" />
             Add to meal planner
           </Button>
-          <Button variant="ghost" size="sm" className="ml-auto text-muted-foreground" onClick={() => setConfirmRemove(true)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto text-muted-foreground"
+            disabled={!online}
+            title={online ? undefined : OFFLINE_WRITE_HINT}
+            onClick={() => setConfirmRemove(true)}
+          >
             <Trash2 data-icon="inline-start" aria-hidden="true" />
             Remove
           </Button>
@@ -342,7 +412,7 @@ export function DetailPane({
               )}
             </div>
 
-            <NoteEditor recipeId={recipe.recipeId} initialBody={recipe.note?.body ?? ""} />
+            <NoteEditor recipeId={recipe.recipeId} initialBody={recipe.note?.body ?? ""} online={online} />
           </div>
         </div>
       </div>
@@ -391,6 +461,12 @@ export function DetailPane({
 
       <AddToPlanDialog request={planRequest} onClose={() => setPlanRequest(null)} onAdded={onPlanned} />
 
+      {/* The rows land on `/household/list`, which is a cached query now rather
+        than a loader — so the toast is not the whole feedback loop any more.
+        Without this invalidation the shopping list would still be showing its
+        pre-add payload for the next 10s (`groceryListQuery`'s `staleTime`) with
+        nothing queued to correct it, which is the one screen where a missing
+        row means buying the thing twice. */}
       <AddPreviewDialog
         request={listRequest}
         onClose={() => setListRequest(null)}
@@ -398,6 +474,7 @@ export function DetailPane({
           setListRequest(null);
           posthog.capture("grocery_items_added", { recipe_id: recipe.recipeId, added: result.added, merged: result.merged, source: "recipe_detail" });
           pushToast(summarizeGroceryAdd(result.added, result.merged));
+          void queryClient.invalidateQueries({ queryKey: keys.household.grocery(householdId) });
         }}
         onError={(message) => pushToast(message)}
       />
@@ -410,7 +487,7 @@ export function DetailPane({
  * clears the note. Household-visible, never published (the `eye-off` label is
  * literal — no atproto write path touches this).
  */
-function NoteEditor({ recipeId, initialBody }: { recipeId: string; initialBody: string }) {
+function NoteEditor({ recipeId, initialBody, online }: { recipeId: string; initialBody: string; online: boolean }) {
   const [body, setBody] = useState(initialBody);
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -423,7 +500,7 @@ function NoteEditor({ recipeId, initialBody }: { recipeId: string; initialBody: 
     if (next.trim() === lastSaved.current.trim()) return;
     setStatus("saving");
     try {
-      await upsertHouseholdRecipeNote({ data: { recipeId, body: next } });
+      await upsertHouseholdRecipeNote({ recipeId, body: next });
       lastSaved.current = next;
       setStatus("saved");
     } catch {
@@ -466,13 +543,21 @@ function NoteEditor({ recipeId, initialBody }: { recipeId: string; initialBody: 
           </span>
         </span>
       </div>
+      {/* Read-only offline rather than "type now, save later". The note is
+        household-shared and last-write-wins, so a body typed on a phone in a
+        store and replayed an hour later would silently overwrite whatever
+        someone at home wrote in between. That conflict is what M3's OCC and
+        two-pane panel exist for (§6.2); until then, not accepting the edit is
+        the only answer that cannot lose someone's writing. */}
       <Textarea
         rows={4}
         aria-labelledby={headingId}
         value={body}
         onChange={(e) => onChange(e.target.value)}
         onBlur={onBlur}
-        placeholder="What you'd change next time — the oven that runs hot, the swap that worked."
+        readOnly={!online}
+        title={online ? undefined : OFFLINE_WRITE_HINT}
+        placeholder={online ? "What you'd change next time — the oven that runs hot, the swap that worked." : OFFLINE_WRITE_HINT}
         className="text-[0.8125rem]"
       />
     </div>

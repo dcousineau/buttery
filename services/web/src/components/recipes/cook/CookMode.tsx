@@ -4,7 +4,7 @@ import { useAnalytics } from "#/lib/analytics";
 import { Dialog, DialogContent, DialogTitle } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
 import { CheckboxRow } from "#/components/ui/checkbox";
-import { getCookedCandidates, setMealPlanEntryCooked } from "#/server/meal-plan";
+import { getCookedCandidates, setMealPlanEntryCooked } from "#/lib/api";
 import { SLOT_LABELS } from "#/lib/plan/labels";
 import type { MealSlot } from "#/lib/plan/week";
 import { scaleIngredients } from "#/lib/recipe-scale";
@@ -221,7 +221,7 @@ export default function CookMode({ recipe, onClose }: { recipe: CookRecipe; onCl
     clearCookState(recipe.recipeId);
     posthog.capture("cook_session_completed", { recipe_id: recipe.recipeId });
     try {
-      const candidates = await getCookedCandidates({ data: { recipeId: recipe.recipeId } });
+      const candidates = await getCookedCandidates(recipe.recipeId);
       if (candidates.length > 0) {
         posthog.capture("meal_plan_cook_prompt_shown", { recipe_id: recipe.recipeId, candidates: candidates.length });
         setCookPrompt(candidates.map(({ entryId, slot }) => ({ entryId, slot })));
@@ -253,7 +253,7 @@ export default function CookMode({ recipe, onClose }: { recipe: CookRecipe; onCl
     void (async () => {
       // `allSettled`: one entry that vanished from the plan mid-cook must not
       // cost the others their mark, and there is no surface left to report on.
-      await Promise.allSettled(picked.map((entryId) => setMealPlanEntryCooked({ data: { entryId, cooked: true } })));
+      await Promise.allSettled(picked.map((entryId) => setMealPlanEntryCooked({ entryId, cooked: true })));
       await handleExit();
     })();
   }

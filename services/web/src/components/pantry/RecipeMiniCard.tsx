@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Plus, UtensilsCrossed } from "lucide-react";
-import type { GlobalRecipeResult, HouseholdRecipeRow } from "#/server/household-recipes";
+import type { GlobalRecipeResult, HouseholdRecipeRow } from "#/lib/api";
 import { Button } from "#/components/ui/button";
 import { Card } from "#/components/ui/card";
 import { Spinner } from "#/components/ui/spinner";

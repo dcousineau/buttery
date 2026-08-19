@@ -2,8 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import type { Kysely } from "kysely";
 import type { DB } from "#/db/types";
 import { blobImageUrl } from "#/lib/atproto/images";
-import type { PlannedUsage } from "./meal-plan";
-import { type RecipeSource, deriveSource, prettify } from "./recipe-provenance";
+import { deriveSource, prettify } from "#/lib/recipe-provenance";
+import type { GlobalRecipeResult, HouseholdRecipeDetail, HouseholdRecipeNoteView, HouseholdRecipeRow, RecipeNutrition } from "#/lib/api/types";
 
 /**
  * The household "recipe box" server functions (plan §6). Every one resolves the
@@ -19,90 +19,14 @@ import { type RecipeSource, deriveSource, prettify } from "./recipe-provenance";
 
 // --- shared shapes ------------------------------------------------------
 
-/** One ledger row (left pane). Filter/sort/search happen client-side over these. */
-export interface HouseholdRecipeRow {
-  recipeId: string;
-  title: string;
-  favorite: boolean;
-  sourceKind: RecipeSource["kind"];
-  sourceLabel: string;
-  sourceUrl: string | null;
-  /** Total time in whole minutes, or null (sorts last under "Quickest"). */
-  totalMinutes: number | null;
-  /** Pre-formatted display string for `totalMinutes` ("1h 30m"), or null. */
-  totalTimeDisplay: string | null;
-  keywords: string[];
-  thumbUrl: string | null;
-  /** ISO timestamp the recipe was added to the box (`household_recipe.added_at`). */
-  addedAt: string;
-  /** "@handle" of whoever added it, already prefixed; null when unresolvable. */
-  addedByHandle: string | null;
-  /** Source went unavailable on the network; still renders from cache. */
-  unavailable: boolean;
-  /** A local draft/private recipe with no atproto record yet (shows a lock). */
-  unpublished: boolean;
-}
-
-/** Per-serving nutrition; individual cells are null when the value is absent. */
-export interface RecipeNutrition {
-  calories: number | null;
-  protein: number | null;
-  carbs: number | null;
-  fat: number | null;
-}
-
-/** The shared private note on a boxed recipe. */
-export interface HouseholdRecipeNoteView {
-  body: string;
-  updatedAt: string;
-}
-
-/** Full detail for a boxed recipe (right pane). */
-export interface HouseholdRecipeDetail {
-  recipeId: string;
-  title: string;
-  description: string | null;
-  source: RecipeSource;
-  images: Array<{ url: string; alt: string | null }>;
-  ingredients: string[];
-  instructions: string[];
-  keywords: string[];
-  recipeYield: string | null;
-  /** Parsed leading integer of `recipeYield`, or null. */
-  serves: number | null;
-  totalMinutes: number | null;
-  totalTimeDisplay: string | null;
-  cuisine: string | null;
-  category: string | null;
-  nutrition: RecipeNutrition;
-  favorite: boolean;
-  note: HouseholdRecipeNoteView | null;
-  /** Best-effort handle of whoever added it to the box ("saved by @handle"). */
-  addedByHandle: string | null;
-  unavailable: boolean;
-  /** ISO timestamp the source went unavailable, when known. */
-  unavailableSince: string | null;
-  /** A local draft/private recipe with no atproto record yet (publishable). */
-  unpublished: boolean;
-  /**
-   * Whether (and when next) this recipe is on the household's meal plan, so the
-   * remove-from-box flow can warn without a second round trip (plan §7.2 / D8).
-   * Nullable so a caller must guard: the field is absent-shaped for any payload
-   * built before the planner shipped.
-   */
-  plannedUsage: PlannedUsage | null;
-}
-
-/** One picker result (global public search, excludes already-boxed). */
-export interface GlobalRecipeResult {
-  recipeId: string;
-  title: string;
-  description: string | null;
-  source: RecipeSource;
-  thumbUrl: string | null;
-  /** "@handle" of the publishing repo, already prefixed; null when unresolvable. */
-  handle: string | null;
-}
+/**
+ * The wire DTOs this module returns are declared in the port's `types.ts` and
+ * imported from there (offline plan §4.3 / §7): the client caches these shapes
+ * in IndexedDB, versions them, and must be able to name them without importing
+ * a server module — so it owns the declaration. Re-exported here for the
+ * server-side callers that already reach for them through this module.
+ */
+export type { GlobalRecipeResult, HouseholdRecipeDetail, HouseholdRecipeNoteView, HouseholdRecipeRow, RecipeNutrition };
 
 // --- helpers ------------------------------------------------------------
 

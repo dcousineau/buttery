@@ -1,9 +1,10 @@
 import { Plus } from "lucide-react";
-import type { PlanWeek } from "#/server/meal-plan";
+import type { PlanWeek } from "#/lib/api";
 import { MEAL_SLOTS } from "#/lib/plan/week";
 import { SLOT_LABELS, addToSlotLabel, formatPlanDate, shortDow } from "#/lib/plan/labels";
 import { Badge } from "#/components/ui/badge";
 import { PlanEntryCard } from "./PlanEntryCard";
+import { OFFLINE_WRITE_HINT } from "#/lib/offline/use-online";
 import { slotDropHandlers, slotKey, usePlanActions } from "./PlanActions";
 import { cn } from "#/lib/utils";
 
@@ -107,8 +108,9 @@ export function PlanWeekGrid({ week }: { week: PlanWeek }) {
                 <button
                   type="button"
                   data-plan-add=""
+                  disabled={!actions.writable}
                   onClick={() => actions.openAdd(day.date, slot)}
-                  title={addToSlotLabel(slot, day.date)}
+                  title={actions.writable ? addToSlotLabel(slot, day.date) : OFFLINE_WRITE_HINT}
                   aria-label={addToSlotLabel(slot, day.date)}
                   className="mt-auto flex w-full items-center justify-center gap-1 rounded-sm border-2 border-dashed border-border/45 py-0.5 text-[0.625rem] font-bold text-muted-foreground hover:border-border hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
                 >

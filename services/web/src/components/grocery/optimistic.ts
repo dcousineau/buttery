@@ -1,4 +1,4 @@
-import type { GroceryItemRow, GroceryListPayload } from "#/server/grocery";
+import type { GroceryItemRow, GroceryListPayload } from "#/lib/api";
 import { AISLE_LABELS, type Aisle, aisleOrder } from "#/lib/grocery/aisles";
 import { type UnitDim, renderQuantity, resolveUnit } from "#/lib/grocery/units";
 

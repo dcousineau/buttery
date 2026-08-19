@@ -2,9 +2,9 @@ import { useState } from "react";
 import { createFileRoute, redirect, useNavigate, useRouter } from "@tanstack/react-router";
 import { Mail, MailQuestion, Plus } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
-import { resolveOnboarding, acceptBoundInviteById, declineBoundInviteById } from "#/server/household/onboarding";
-import { createHousehold } from "#/server/household/households";
-import { errorMessage } from "#/server/household/pending-invite";
+import { resolveOnboarding, acceptBoundInviteById, declineBoundInviteById } from "#/lib/api";
+import { createHousehold } from "#/lib/api";
+import { errorMessage } from "#/lib/api";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
@@ -13,8 +13,9 @@ import { Input } from "#/components/ui/input";
 import { Separator } from "#/components/ui/separator";
 import { Spinner } from "#/components/ui/spinner";
 import { seo } from "#/lib/seo";
-import type { PendingInvite } from "#/server/household/onboarding";
+import type { PendingInvite } from "#/lib/api";
 import type { FormEvent } from "react";
+import { refreshSession } from "#/lib/auth-client";
 
 /** The single onboarding screen (§5/§10) for users with no live membership.
  * Loader resolves the state machine: an already-active user is bounced into the
@@ -100,7 +101,13 @@ function PendingInviteCard({ invite }: { invite: PendingInvite }) {
     setError(null);
     setPending("accept");
     try {
-      await acceptBoundInviteById({ data: { inviteId: invite.inviteId } });
+      await acceptBoundInviteById(invite.inviteId);
+      // Every one of these changes `session.active_household_id` server-side, and
+      // better-auth's client store only refetches after its own endpoints — so
+      // without this the offline cache partition keeps pointing at the previous
+      // household until some later window focus, filing the new household's rows
+      // under the old one's buster (offline plan §2.4, §2.7).
+      await refreshSession();
       await navigate({ to: "/households" });
     } catch (err) {
       setError(errorMessage(err));
@@ -112,7 +119,7 @@ function PendingInviteCard({ invite }: { invite: PendingInvite }) {
     setError(null);
     setPending("decline");
     try {
-      await declineBoundInviteById({ data: { inviteId: invite.inviteId } });
+      await declineBoundInviteById(invite.inviteId);
       // Re-run the loader so the declined invite drops out of the list.
       await router.invalidate();
     } catch (err) {
@@ -246,7 +253,13 @@ function CreateHouseholdCard() {
     setError(null);
     setPending(true);
     try {
-      await createHousehold({ data: { name: name.trim() } });
+      await createHousehold(name.trim());
+      // Every one of these changes `session.active_household_id` server-side, and
+      // better-auth's client store only refetches after its own endpoints — so
+      // without this the offline cache partition keeps pointing at the previous
+      // household until some later window focus, filing the new household's rows
+      // under the old one's buster (offline plan §2.4, §2.7).
+      await refreshSession();
       posthog.capture("household_created", { creation_surface: "onboarding" });
       await navigate({ to: "/households" });
     } catch (err) {

@@ -1,7 +1,8 @@
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { cva } from "class-variance-authority";
 import { Check, Pencil, Trash2 } from "lucide-react";
-import type { GroceryItemRow } from "#/server/grocery";
+import type { GroceryItemRow } from "#/lib/api";
+import { OFFLINE_WRITE_HINT } from "#/lib/offline/use-online";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
 import { Input } from "#/components/ui/input";
@@ -58,6 +59,14 @@ export interface GroceryRowProps {
   /** `quantity` is in BASE units — the form converts before calling. */
   onEdit: (patch: { displayName?: string; quantity?: number | null }) => void;
   onRemove: () => void;
+  /**
+   * False while the browser is offline (offline plan §4.1). M1 ships offline
+   * READS; the checkbox is the first thing M2 queues, because `{itemId, checked}`
+   * is already an absolute write and replays safely by shape (§2.5). Until then a
+   * disabled checkbox is the honest answer — a tap that silently did nothing is
+   * the failure this whole plan exists to remove.
+   */
+  writable?: boolean;
 }
 
 /** "Chicken pot pie · Weeknight soup", or "Added by hand" for a typed line. */
@@ -67,7 +76,7 @@ function sourceLine(item: GroceryItemRow): string | null {
   return item.isManual ? "Added by hand" : null;
 }
 
-export function GroceryRow({ item, onToggle, onEdit, onRemove }: GroceryRowProps) {
+export function GroceryRow({ item, onToggle, onEdit, onRemove, writable = true }: GroceryRowProps) {
   const [editing, setEditing] = useState(false);
   const checked = item.checkedAt != null;
   const sources = sourceLine(item);
@@ -94,8 +103,11 @@ export function GroceryRow({ item, onToggle, onEdit, onRemove }: GroceryRowProps
         />
       ) : (
         <>
-          <label className="flex min-h-[3.5rem] min-w-0 flex-1 cursor-(--cursor-interactive) items-center gap-3 py-2 pl-3 md:pl-4">
-            <Checkbox size="lg" checked={checked} onChange={(event) => onToggle(event.target.checked)} />
+          <label
+            title={writable ? undefined : OFFLINE_WRITE_HINT}
+            className={cn("flex min-h-[3.5rem] min-w-0 flex-1 items-center gap-3 py-2 pl-3 md:pl-4", writable && "cursor-(--cursor-interactive)")}
+          >
+            <Checkbox size="lg" checked={checked} disabled={!writable} onChange={(event) => onToggle(event.target.checked)} />
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 leading-snug">
                 {item.quantityDisplay && <span className="font-bold text-foreground tabular-nums">{item.quantityDisplay}</span>}
@@ -110,10 +122,24 @@ export function GroceryRow({ item, onToggle, onEdit, onRemove }: GroceryRowProps
           </label>
 
           <span className="flex flex-none items-center gap-0.5 pr-1.5 pl-1 md:pr-2.5">
-            <Button variant="ghost" size="icon-lg" aria-label={`Edit ${item.displayName}`} onClick={() => setEditing(true)}>
+            <Button
+              variant="ghost"
+              size="icon-lg"
+              aria-label={`Edit ${item.displayName}`}
+              disabled={!writable}
+              title={writable ? undefined : OFFLINE_WRITE_HINT}
+              onClick={() => setEditing(true)}
+            >
               <Pencil aria-hidden="true" />
             </Button>
-            <Button variant="ghost" size="icon-lg" aria-label={`Remove ${item.displayName}`} onClick={onRemove}>
+            <Button
+              variant="ghost"
+              size="icon-lg"
+              aria-label={`Remove ${item.displayName}`}
+              disabled={!writable}
+              title={writable ? undefined : OFFLINE_WRITE_HINT}
+              onClick={onRemove}
+            >
               <Trash2 aria-hidden="true" />
             </Button>
           </span>

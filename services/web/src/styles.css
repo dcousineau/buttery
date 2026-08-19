@@ -213,6 +213,7 @@
    * step over its own backdrop) is NOT part of this scale — those are local
    * `z-10`/`z-20` inside an isolated context and mean nothing globally.
    */
+  --z-banner: 40; /* the PWA update offer — pinned page furniture that is NEVER urgent, so it sits BELOW the modal layer: cook mode's fullscreen dialog renders at --z-modal and shares this banner's bottom strip with its step controls */
   --z-sticky: 50; /* the header — page furniture that outranks page content */
   --z-modal: 50; /* dialogs, sheets, and their backdrops */
   --z-toast: 60; /* above modals, so a confirmation is never buried by the thing that produced it */
@@ -240,6 +241,57 @@
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ── Installed-PWA chrome (offline plan §4.4) ─────────────────────────────
+   *
+   * `viewport-fit=cover` in `__root.tsx` lets the page paint under the notch
+   * and the home indicator, which is the only way an installed iOS app looks
+   * installed rather than letterboxed. The cost is that the OS stops reserving
+   * those strips, so anything pinned to an edge has to inset itself.
+   *
+   * **The safe-area insets belong on the pinned surfaces, not on `body`.** This
+   * rule used to read
+   *
+   *     body { padding: env(safe-area-inset-top) env(safe-area-inset-right)
+   *                     env(safe-area-inset-bottom) env(safe-area-inset-left); }
+   *
+   * with a comment claiming it insets everything so no new full-bleed screen can
+   * forget to. It did the opposite, twice:
+   *
+   *  - `position: fixed` descendants are laid out against the viewport, not
+   *    against their ancestors' padding boxes — so the header, the sidebar,
+   *    every dialog and both PWA affordances ignored it completely. It reached
+   *    only the in-flow content, which was the content that never needed it. The
+   *    fixed sidebar (`left: 0`) then no longer lined up with its own in-flow
+   *    gap in the padded content column: in landscape on a notched phone the
+   *    layout visibly came apart by `env(safe-area-inset-left)`.
+   *  - Every app screen is sized to the *viewport* — `min-h-svh` on the shell,
+   *    `h-[calc(100svh-var(--header-height))]` on the `/household/*` views. Body
+   *    padding is added around that, so the page box came out 34–93px taller
+   *    than the window and **every installed screen scrolled**, including the
+   *    `overflow-hidden` master–detail views deliberately pinned to the viewport
+   *    so that only their inner panes move.
+   *
+   * What actually holds the line is per-surface insets, which is where they were
+   * already: cook mode's top bar, `CookPhase`, `MisePhase` and `MobileCookDock`
+   * (the full-bleed surfaces §4.4 names), plus `InstallPrompt` and
+   * `UpdateBanner`. A new pinned surface adds its own — the alternative did not
+   * work, so there is nothing to trade away. Note also that iOS only hands out
+   * a non-zero *top* inset under `apple-mobile-web-app-status-bar-style:
+   * black-translucent`; `__root.tsx` ships `default`, so the OS still reserves
+   * the status bar itself and the top edge is not in play.
+   *
+   * Scoped to standalone display: in a browser tab the chrome already reserves
+   * these strips. */
+  @media (display-mode: standalone) {
+    /* Rubber-band scrolling reveals the page background behind a standalone
+     * window and reads as the app coming loose from the frame. Suppressed on
+     * the shell only — inner scroll containers (the aisle list, the week grid,
+     * cook mode's steps) keep their own momentum scrolling. */
+    html {
+      overscroll-behavior-y: none;
+    }
   }
 
   /* Prose links only — component anchors (buttons, nav items) carry their own classes. */

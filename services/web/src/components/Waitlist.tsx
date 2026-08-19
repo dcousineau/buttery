@@ -7,7 +7,7 @@ import { signOutAndGoHome } from "#/lib/auth-client";
 
 /**
  * Post-login holding page for a signed-in user who isn't invited yet (the
- * PostHog `invited` flag serves `false` — see `src/lib/gate.ts`). Rendered in
+ * PostHog `invited` flag serves `false` — see `src/server/gate.ts`). Rendered in
  * place of the app shell on gated routes: they're authenticated, so this is a
  * "sit tight" screen with a way back out (sign out), not the public marketing
  * coming-soon page.

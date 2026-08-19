@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GroceryItemRow, GroceryListPayload } from "#/server/grocery";
+import type { GroceryItemRow, GroceryListPayload } from "#/lib/api";
 import {
   baseQuantity,
   editableQuantity,

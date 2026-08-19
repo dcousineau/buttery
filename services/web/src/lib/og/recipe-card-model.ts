@@ -16,7 +16,7 @@
  * every recipe page.
  */
 import { formatDuration } from "#/lib/format";
-import type { RecipeDetailData } from "#/server/recipes";
+import type { RecipeDetailData } from "#/lib/api";
 
 /**
  * Bump this whenever a code change alters what the card looks like — a layout

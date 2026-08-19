@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { BookOpenText, UtensilsCrossed, X } from "lucide-react";
-import { listHouseholdRecipes, type HouseholdRecipeRow } from "#/server/household-recipes";
+import { listHouseholdRecipes, type HouseholdRecipeRow } from "#/lib/api";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
 import { SLOT_LABELS, formatPlanDate, longDow } from "#/lib/plan/labels";
 import { Button } from "#/components/ui/button";

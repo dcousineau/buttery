@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { DoorOpen, UtensilsCrossed } from "lucide-react";
-import { useHydratedSession } from "#/lib/auth-client";
-import { getInvitePreview, acceptInvite, declineBoundInvite } from "#/server/household/invites";
-import { stashPendingInvite, clearPendingInvite, errorMessage } from "#/server/household/pending-invite";
+import { refreshSession, useHydratedSession } from "#/lib/auth-client";
+import { getInvitePreview, acceptInvite, declineBoundInvite } from "#/lib/api";
+import { stashPendingInvite, clearPendingInvite, errorMessage } from "#/lib/api";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Spinner } from "#/components/ui/spinner";
 import { seo } from "#/lib/seo";
-import type { InvitePreview } from "#/server/household/invites";
+import type { InvitePreview } from "#/lib/api";
 
 type LoaderData = { ok: true; token: string; preview: InvitePreview } | { ok: false; token: string; message: string };
 
@@ -20,7 +20,7 @@ type LoaderData = { ok: true; token: string; preview: InvitePreview } | { ok: fa
 export const Route = createFileRoute("/invite/$token")({
   loader: async ({ params }): Promise<LoaderData> => {
     try {
-      const preview = await getInvitePreview({ data: { token: params.token } });
+      const preview = await getInvitePreview(params.token);
       return { ok: true, token: params.token, preview };
     } catch (err) {
       return { ok: false, token: params.token, message: errorMessage(err, "This invite link is not valid.") };
@@ -70,7 +70,13 @@ function ValidInvite({ token, preview }: { token: string; preview: InvitePreview
     setError(null);
     setPending("accept");
     try {
-      await acceptInvite({ data: { token } });
+      await acceptInvite(token);
+      // Every one of these changes `session.active_household_id` server-side, and
+      // better-auth's client store only refetches after its own endpoints — so
+      // without this the offline cache partition keeps pointing at the previous
+      // household until some later window focus, filing the new household's rows
+      // under the old one's buster (offline plan §2.4, §2.7).
+      await refreshSession();
       clearPendingInvite();
       await navigate({ to: "/households" });
     } catch (err) {
@@ -83,7 +89,7 @@ function ValidInvite({ token, preview }: { token: string; preview: InvitePreview
     setError(null);
     setPending("decline");
     try {
-      await declineBoundInvite({ data: { token } });
+      await declineBoundInvite(token);
       clearPendingInvite();
       await navigate({ to: "/onboarding" });
     } catch (err) {

@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import type { Kysely } from "kysely";
 import * as z from "zod";
 import type { JsonObject, JsonValue } from "@buttery/recipe-extract/import";
@@ -615,7 +615,7 @@ async function advanceSession(db: Kysely<DB>, sessionId: string, status: ImportS
   await db.updateTable("recipe_import_session").set({ status }).where("id", "=", sessionId).where("status", "not in", TERMINAL_STATUSES).execute();
 }
 
-export async function runOpenImportSession(db: Kysely<DB>, did: string, householdId: string, input: OpenImportSessionInput): Promise<ImportSessionView> {
+export const runOpenImportSession = createServerOnlyFn(async (db: Kysely<DB>, did: string, householdId: string, input: OpenImportSessionInput): Promise<ImportSessionView> => {
   const { ulid } = await import("./household/ids");
   const id = ulid();
   const row = await db
@@ -632,7 +632,7 @@ export async function runOpenImportSession(db: Kysely<DB>, did: string, househol
     .returningAll()
     .executeTakeFirstOrThrow();
   return sessionView(row);
-}
+});
 
 function sessionView(row: {
   id: string;
@@ -1555,7 +1555,7 @@ async function deriveSessionCounts(
  * (§5.3): the recipes are saved, the next run converges, and phase 1 has no
  * cleanup job.
  */
-export async function runFinalizeImportSession(db: Kysely<DB>, did: string, householdId: string, input: FinalizeInput): Promise<FinalizeResult> {
+export const runFinalizeImportSession = createServerOnlyFn(async (db: Kysely<DB>, did: string, householdId: string, input: FinalizeInput): Promise<FinalizeResult> => {
   const { sql } = await import("kysely");
   const session = await loadSession(db, householdId, input.sessionId);
   const derived = await deriveSessionCounts(db, householdId, input.sessionId);
@@ -1635,7 +1635,7 @@ export async function runFinalizeImportSession(db: Kysely<DB>, did: string, hous
     firstFinalize,
     counters,
   };
-}
+});
 
 /**
  * §13's other event. Terminal, and idempotent for the same reason finalize is:
@@ -1644,7 +1644,7 @@ export async function runFinalizeImportSession(db: Kysely<DB>, did: string, hous
  * `recipe_import_completed` or `recipe_import_failed` — exactly one, exactly
  * once, whichever call arrived first.
  */
-export async function runFailImportSession(db: Kysely<DB>, did: string, householdId: string, input: FailImportSessionInput): Promise<{ ok: true }> {
+export const runFailImportSession = createServerOnlyFn(async (db: Kysely<DB>, did: string, householdId: string, input: FailImportSessionInput): Promise<{ ok: true }> => {
   const { sql } = await import("kysely");
   const session = await loadSession(db, householdId, input.sessionId);
   const failed = await db
@@ -1667,4 +1667,4 @@ export async function runFailImportSession(db: Kysely<DB>, did: string, househol
     });
   }
   return { ok: true };
-}
+});

@@ -1,5 +1,6 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import * as z from "zod";
+import type { HouseholdPreferences } from "#/lib/api/types";
 
 /**
  * Household-wide preferences (meal planner plan §3.1 / §6.11).
@@ -20,12 +21,14 @@ import * as z from "zod";
 
 // --- shapes -------------------------------------------------------------
 
-export interface HouseholdPreferences {
-  /** ISO-8601 weekday numbering: 1 = Monday … 7 = Sunday. */
-  weekStartDay: number;
-  /** IANA zone name, e.g. "America/Chicago". */
-  timezone: string;
-}
+/**
+ * The wire DTOs this module returns are declared in the port's `types.ts` and
+ * imported from there (offline plan §4.3 / §7): the client caches these shapes
+ * in IndexedDB, versions them, and must be able to name them without importing
+ * a server module — so it owns the declaration. Re-exported here for the
+ * server-side callers that already reach for them through this module.
+ */
+export type { HouseholdPreferences };
 
 /** The effective values for a household that has never saved a preference. */
 export const DEFAULT_HOUSEHOLD_PREFERENCES: HouseholdPreferences = {
@@ -96,7 +99,7 @@ async function activeContext(): Promise<{ did: string; householdId: string }> {
  * Authorization is the caller's responsibility, which is why this takes an
  * explicit `householdId` and is not exported to the client.
  */
-export async function readHouseholdPreferences(householdId: string): Promise<HouseholdPreferences> {
+export const readHouseholdPreferences = createServerOnlyFn(async (householdId: string): Promise<HouseholdPreferences> => {
   const { getDb } = await import("#/lib/db");
   const row = await getDb().selectFrom("household_preference").select(["week_start_day", "timezone"]).where("household_id", "=", householdId).executeTakeFirst();
   if (!row) return { ...DEFAULT_HOUSEHOLD_PREFERENCES };
@@ -106,7 +109,7 @@ export async function readHouseholdPreferences(householdId: string): Promise<Hou
     weekStartDay: row.week_start_day >= 1 && row.week_start_day <= 7 ? row.week_start_day : DEFAULT_HOUSEHOLD_PREFERENCES.weekStartDay,
     timezone: row.timezone,
   };
-}
+});
 
 /**
  * Upsert the row behind `updateHouseholdPreferences`, WITHOUT the session round
@@ -117,7 +120,7 @@ export async function readHouseholdPreferences(householdId: string): Promise<Hou
  * This is where §3.1's lazy materialisation actually happens: no row exists
  * until someone saves a preference, and then exactly one does.
  */
-export async function writeHouseholdPreferences(householdId: string, prefs: HouseholdPreferences): Promise<HouseholdPreferences> {
+export const writeHouseholdPreferences = createServerOnlyFn(async (householdId: string, prefs: HouseholdPreferences): Promise<HouseholdPreferences> => {
   const { getDb } = await import("#/lib/db");
   const { sql } = await import("kysely");
 
@@ -134,7 +137,7 @@ export async function writeHouseholdPreferences(householdId: string, prefs: Hous
     .execute();
 
   return { weekStartDay: prefs.weekStartDay, timezone: prefs.timezone };
-}
+});
 
 // --- §6.11 server functions ---------------------------------------------
 

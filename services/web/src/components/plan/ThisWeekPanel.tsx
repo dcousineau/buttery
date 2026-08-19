@@ -1,7 +1,8 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { CalendarRange, Copy, PanelLeft, ShoppingBasket, X } from "lucide-react";
-import type { PlanWeek } from "#/server/meal-plan";
-import { DEFAULT_HOUSEHOLD_PREFERENCES, type HouseholdPreferences, supportedTimezones, updateHouseholdPreferences } from "#/server/household/preferences";
+import type { PlanWeek } from "#/lib/api";
+import { OFFLINE_WRITE_HINT } from "#/lib/offline/use-online";
+import { DEFAULT_HOUSEHOLD_PREFERENCES, type HouseholdPreferences, supportedTimezones, updateHouseholdPreferences } from "#/lib/api";
 import { weekdayName } from "#/lib/plan/labels";
 import { Button } from "#/components/ui/button";
 import { Select } from "#/components/ui/select";
@@ -36,9 +37,17 @@ interface ThisWeekPanelProps {
   onAddWeekToList: () => void;
   /** Plain success toast — no refetch (the `.ics` download changes nothing). */
   onNotify: (message: string) => void;
-  /** Success toast AND `router.invalidate()`: the grid re-buckets on a save. */
+  /** Success toast AND a plan-prefix invalidation: the grid re-buckets on a save. */
   onPreferencesSaved: (message: string) => void;
   onError: (message: string) => void;
+  /**
+   * False while offline (offline plan §4.1). The panel's *stats* stay readable —
+   * they come from the cached week — but everything that writes goes inert. The
+   * `.ics` download is deliberately NOT gated: it is a server route, so it fails
+   * on its own terms, and hiding a download link is a worse answer than a failed
+   * download.
+   */
+  writable: boolean;
 }
 
 /** Card chrome, repeated three times — identical to the comp's inline style. */
@@ -104,6 +113,7 @@ function PanelBody({
   onNotify,
   onPreferencesSaved,
   onError,
+  writable,
 }: Omit<ThisWeekPanelProps, "open" | "onOpenChange"> & { onClose: () => void }) {
   return (
     <>
@@ -123,7 +133,7 @@ function PanelBody({
       </div>
 
       <div className={CARD}>
-        <Button size="sm" variant="outline" className="w-full justify-start" onClick={onCopyWeek}>
+        <Button size="sm" variant="outline" className="w-full justify-start" disabled={!writable} title={writable ? undefined : OFFLINE_WRITE_HINT} onClick={onCopyWeek}>
           <Copy data-icon="inline-start" aria-hidden="true" />
           Copy to next week…
         </Button>
@@ -135,7 +145,14 @@ function PanelBody({
           (plan D9) rather than committing — a week is a lot of rows to add
           without being shown them first.
         */}
-        <Button variant="outline" size="sm" className="w-full justify-start" disabled={week.recipeEntryCount === 0} onClick={onAddWeekToList}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full justify-start"
+          disabled={week.recipeEntryCount === 0 || !writable}
+          title={writable ? undefined : OFFLINE_WRITE_HINT}
+          onClick={onAddWeekToList}
+        >
           <ShoppingBasket data-icon="inline-start" aria-hidden="true" />
           Add all {week.recipeEntryCount} to shopping list
         </Button>
@@ -158,7 +175,7 @@ function PanelBody({
         </Button>
       </div>
 
-      <PreferencesCard week={week} onSaved={onPreferencesSaved} onError={onError} />
+      <PreferencesCard week={week} onSaved={onPreferencesSaved} onError={onError} writable={writable} />
     </>
   );
 }
@@ -213,7 +230,7 @@ function timezoneGroups(current: string): Array<{ area: string; zones: Array<{ v
   return [...groups].map(([area, zoneList]) => ({ area, zones: zoneList }));
 }
 
-function PreferencesCard({ week, onSaved, onError }: { week: PlanWeek; onSaved: (message: string) => void; onError: (message: string) => void }) {
+function PreferencesCard({ week, onSaved, onError, writable }: { week: PlanWeek; onSaved: (message: string) => void; onError: (message: string) => void; writable: boolean }) {
   // The loader is the source of truth, but it only catches up after the save's
   // `router.invalidate()` lands. `pending` holds what the user just chose so the
   // controls do not visibly snap back in between; a failed save clears it.
@@ -227,7 +244,7 @@ function PreferencesCard({ week, onSaved, onError }: { week: PlanWeek; onSaved: 
     setPending(next);
     setSaving(true);
     try {
-      await updateHouseholdPreferences({ data: next });
+      await updateHouseholdPreferences(next);
       onSaved(message);
     } catch (error) {
       setPending(null);
@@ -249,7 +266,8 @@ function PreferencesCard({ week, onSaved, onError }: { week: PlanWeek; onSaved: 
         <Select
           size="sm"
           value={String(prefs.weekStartDay)}
-          disabled={saving}
+          disabled={saving || !writable}
+          title={writable ? undefined : OFFLINE_WRITE_HINT}
           onChange={(event) => {
             const weekStartDay = Number(event.target.value);
             void save({ ...prefs, weekStartDay }, `Weeks start ${weekdayName(weekStartDay)}`);
@@ -265,7 +283,13 @@ function PreferencesCard({ week, onSaved, onError }: { week: PlanWeek; onSaved: 
 
       <label className="flex flex-col gap-1 text-xs font-semibold">
         Timezone
-        <Select size="sm" value={prefs.timezone} disabled={saving} onChange={(event) => void save({ ...prefs, timezone: event.target.value }, "Timezone saved")}>
+        <Select
+          size="sm"
+          value={prefs.timezone}
+          disabled={saving || !writable}
+          title={writable ? undefined : OFFLINE_WRITE_HINT}
+          onChange={(event) => void save({ ...prefs, timezone: event.target.value }, "Timezone saved")}
+        >
           {hydrated ? (
             groups.map((group) => (
               <optgroup key={group.area} label={group.area}>

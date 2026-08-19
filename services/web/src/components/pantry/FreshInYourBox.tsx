@@ -1,7 +1,7 @@
 import { useId } from "react";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, Plus } from "lucide-react";
-import type { HouseholdRecipeRow } from "#/server/household-recipes";
+import type { HouseholdRecipeRow } from "#/lib/api";
 import { Button } from "#/components/ui/button";
 import { RecipeMiniCard } from "./RecipeMiniCard";
 import { cn } from "#/lib/utils";

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { redirect } from "@tanstack/react-router";
 import type { Role } from "./errors";
+import type { InvitePreview, InviteSummary } from "#/lib/api/types";
 
 /**
  * Invite lifecycle server functions (§6, §9): create / revoke / list / preview /
@@ -12,26 +13,14 @@ import type { Role } from "./errors";
  * FROZEN §9 contract — names, inputs, and RETURN shapes are Agent C's UI surface.
  */
 
-/** One pending invite, safe to expose to owners. Never includes `token_hash`. */
-export interface InviteSummary {
-  id: string;
-  role: Role;
-  /** DID this invite is locked to (bound invite), or null for an open link. */
-  boundToDid: string | null;
-  maxUses: number;
-  uses: number;
-  /** ISO timestamp, or null for a never-expiring invite. */
-  expiresAt: string | null;
-  createdAt: string;
-  status: string;
-}
-
-/** Public-ish acceptance-screen preview — no use consumed, no auth required. */
-export interface InvitePreview {
-  householdName: string;
-  inviterHandle: string | null;
-  role: Role;
-}
+/**
+ * The wire DTOs this module returns are declared in the port's `types.ts` and
+ * imported from there (offline plan §4.3 / §7): the client caches these shapes
+ * in IndexedDB, versions them, and must be able to name them without importing
+ * a server module — so it owns the declaration. Re-exported here for the
+ * server-side callers that already reach for them through this module.
+ */
+export type { InvitePreview, InviteSummary };
 
 const MAX_USES_CAP = 100;
 const DEFAULT_OPEN_MAX_USES = 5;

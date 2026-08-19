@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import { BookOpenText, EyeOff, Lock, Plus, Star, UtensilsCrossed } from "lucide-react";
-import type { HouseholdRecipeRow } from "#/server/household-recipes";
+import type { HouseholdRecipeRow } from "#/lib/api";
 import { Button } from "#/components/ui/button";
 import { Select } from "#/components/ui/select";
 import { cn } from "#/lib/utils";

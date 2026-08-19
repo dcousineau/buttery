@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowLeftRight, Home, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { signOutAndGoHome, useHydratedSession } from "../lib/auth-client";
+import { useSessionSnapshot } from "#/lib/offline/use-household";
 import UserAvatar from "./UserAvatar";
 import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
@@ -8,7 +9,7 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { serviceNameFromPds } from "#/lib/atproto/service-name";
 import { useOnboardingVerdict } from "#/lib/hooks/use-onboarding-verdict";
 import { useTheme, type ThemeMode } from "#/lib/hooks/use-theme";
-import type { OnboardingVerdict } from "#/server/household/onboarding";
+import type { OnboardingVerdict } from "#/lib/api";
 
 // Single-item theme control: clicking cycles light → dark → auto. The icon and
 // label reflect the CURRENT mode; `next` is what the click will switch to.
@@ -81,6 +82,13 @@ function HouseholdSection({ verdict }: { verdict: OnboardingVerdict | null }) {
  * Signed out (or still loading) it shows the sign-in affordance instead, so the
  * header can render it unconditionally.
  *
+ * **Offline it falls back to the persisted session snapshot** (offline plan
+ * §4.4). `authClient.useSession()` is a network read, so without it this control
+ * would show "Sign in" to someone who is signed in — the cookie is fine, the
+ * network is not, and offering to re-authenticate is both a lie and a dead end
+ * (the sign-in flow needs the network too). The snapshot carries a handle and a
+ * name and nothing else: no avatar, no PDS label, and never a credential.
+ *
  * The household verdict is fetched HERE rather than in the popup: this component
  * is mounted on every page, the popup only while the menu is open. Resolving it
  * on mount is what re-validates the session's active household (and clears a
@@ -91,6 +99,7 @@ export default function UserMenu() {
   // client's store answers from cache immediately, so reading the raw one here
   // renders the menu during hydration against a skeleton in the SSR HTML.
   const { data: session, isPending } = useHydratedSession();
+  const snapshot = useSessionSnapshot();
   const verdict = useOnboardingVerdict();
   const { mode, setMode } = useTheme();
 
@@ -98,7 +107,7 @@ export default function UserMenu() {
     return <Skeleton className="size-9 rounded-full" />;
   }
 
-  if (!session) {
+  if (!session && !snapshot) {
     return (
       <Button render={<Link to="/login" />} nativeButton={false}>
         Sign in
@@ -106,9 +115,11 @@ export default function UserMenu() {
     );
   }
 
-  const { handle, name, image } = session.user;
+  const handle = session?.user.handle ?? snapshot?.handle ?? null;
+  const name = session?.user.name ?? snapshot?.name ?? null;
+  const image = session?.user.image ?? undefined;
   const displayHandle = handle ?? name;
-  const service = serviceNameFromPds(session.user.pds);
+  const service = session ? serviceNameFromPds(session.user.pds) : null;
   const ThemeIcon = THEME_META[mode].icon;
 
   return (

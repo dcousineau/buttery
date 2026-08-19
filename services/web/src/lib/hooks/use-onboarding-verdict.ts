@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useHydratedSession } from "#/lib/auth-client";
-import { resolveOnboarding } from "#/server/household/onboarding";
-import type { OnboardingVerdict } from "#/server/household/onboarding";
+import { resolveOnboarding } from "#/lib/api";
+import type { OnboardingVerdict } from "#/lib/api";
 
 /**
  * The current caller's §5 household verdict, fetched once per session identity.

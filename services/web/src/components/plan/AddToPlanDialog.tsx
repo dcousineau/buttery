@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { addMealPlanRecipes, getPlanToday } from "#/server/meal-plan";
+import { addMealPlanRecipes, getPlanToday } from "#/lib/api";
 import { MEAL_SLOTS, type MealSlot, type PlanDate, shiftDays } from "#/lib/plan/week";
 import { SLOT_LABELS, formatPlanDate, shortDow } from "#/lib/plan/labels";
 import { Button } from "#/components/ui/button";
@@ -85,7 +85,7 @@ function AddToPlanForm({ request, onClose, onAdded }: Omit<AddToPlanDialogProps,
     setSaving(true);
     setError(null);
     try {
-      await addMealPlanRecipes({ data: { date, slot, recipeIds: [request.recipeId] } });
+      await addMealPlanRecipes({ date, slot, recipeIds: [request.recipeId] });
       onAdded(date, slot);
       onClose();
     } catch {

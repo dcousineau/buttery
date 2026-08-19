@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import type { ImportPrefill } from "#/lib/import-payload";
 
 /**
@@ -104,7 +104,7 @@ export const getImportPrefill = createServerFn({ method: "GET" })
     return (row?.parsed as ImportPrefill | null) ?? null;
   });
 
-async function runScrape(did: string, householdId: string, url: string): Promise<ScrapeResult> {
+const runScrape = createServerOnlyFn(async (did: string, householdId: string, url: string): Promise<ScrapeResult> => {
   const started = Date.now();
   const host = hostOf(url);
   const { ulid } = await import("./household/ids");
@@ -189,7 +189,7 @@ async function runScrape(did: string, householdId: string, url: string): Promise
     await log("error", { error: err instanceof Error ? err.message : String(err) });
     return { status: "fetch_failed", message: "Something went wrong reading that page." };
   }
-}
+});
 
 /** Escape a string for safe interpolation into an HTML text node / script body. */
 function escapeForScript(s: string): string {
@@ -197,7 +197,7 @@ function escapeForScript(s: string): string {
   return s.replace(/<\//g, "<\\/");
 }
 
-async function runSubmitImport(did: string, householdId: string, input: SubmitImportInput): Promise<SubmitImportResult> {
+const runSubmitImport = createServerOnlyFn(async (did: string, householdId: string, input: SubmitImportInput): Promise<SubmitImportResult> => {
   const started = Date.now();
   const url = input.url;
   const host = hostOf(url);
@@ -261,7 +261,7 @@ async function runSubmitImport(did: string, householdId: string, input: SubmitIm
     await log("error", { error: err instanceof Error ? err.message : String(err) });
     return { status: "empty" };
   }
-}
+});
 
 function hostOf(url: string): string | null {
   try {

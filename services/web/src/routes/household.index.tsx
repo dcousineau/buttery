@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useHydratedSession } from "#/lib/auth-client";
-import { requireActiveHousehold } from "#/server/household/onboarding";
-import { getMealPlanWeek } from "#/server/meal-plan";
-import { addRecipeToHousehold, listHouseholdRecipes, searchGlobalRecipes, type GlobalRecipeResult } from "#/server/household-recipes";
+import { householdRecipesQuery, keys, mealPlanWeekQuery } from "#/lib/api";
+import { addRecipeToHousehold, searchGlobalRecipes, type GlobalRecipeResult } from "#/lib/api";
+import { ensureActiveHousehold } from "#/lib/offline/active-household";
+import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { Badge } from "#/components/ui/badge";
 import { Toast, ToastViewport, useToasts } from "#/components/ui/toast";
 import { AddRecipeChooser } from "#/components/recipes/create/AddRecipeChooser";
@@ -24,9 +26,19 @@ import { seo } from "#/lib/seo";
  * an authenticated user with an active household — the sidebar-navved home of the
  * app, distinct from the public marketing page at `/`.
  *
- * The loader gates through {@link requireActiveHousehold}: an active-household
+ * The loader gates through {@link ensureActiveHousehold}: an active-household
  * caller renders this overview; a multi-membership caller is redirected to the
  * picker (`/households/switch`), and a caller with no membership to onboarding.
+ * Offline, the guard falls back to the cached household — redirects and real
+ * membership refusals still propagate.
+ *
+ * **This is the PWA's front door** (`start_url: /household` in the manifest), so
+ * it must survive a cold launch in airplane mode. The box and the week are read
+ * through the same query factories the migrated routes use — `ensureQueryData`
+ * serves both from IndexedDB with no network — and the network strip is
+ * best-effort garnish that resolves empty offline, exactly as it does when the
+ * public corpus goes quiet. Only a device that has never loaded the app online
+ * lands on the error boundary, which says so instead of crashing.
  *
  * **Two states, both derived from data — never from a toggle.** A household with
  * an empty recipe box gets "Welcome to the pantry": one card that fills the box
@@ -36,9 +48,14 @@ import { seo } from "#/lib/seo";
  * looks like, not a separate mode.
  */
 export const Route = createFileRoute("/household/")({
-  loader: async () => {
-    const active = await requireActiveHousehold();
-    const recipes = await listHouseholdRecipes();
+  loader: async ({ context }) => {
+    const active = await ensureActiveHousehold();
+    // The same cache entries the recipes and plan routes own, so the pantry
+    // costs no extra requests online and reads from disk offline. The overview
+    // stays a loader-data consumer rather than subscribing via
+    // `useSuspenseQuery`: it is a launchpad, not a live surface, and the routes
+    // it links into own the refetch behaviour.
+    const recipes = await context.queryClient.ensureQueryData(householdRecipesQuery(active.householdId));
 
     // A fresh box means the overview has nothing to overview: the week card, the
     // network strip and their queries are all skipped rather than fetched and
@@ -46,10 +63,11 @@ export const Route = createFileRoute("/household/")({
     if (recipes.length === 0) return { active, recipes, week: null, network: [] as GlobalRecipeResult[] };
 
     const [week, network] = await Promise.all([
-      getMealPlanWeek({ data: {} }),
+      context.queryClient.ensureQueryData(mealPlanWeekQuery(active.householdId, undefined)),
       // Best-effort garnish. The public corpus going quiet (or slow) must not
-      // take the household's own pantry down with it.
-      searchGlobalRecipes({ data: { limit: NETWORK_COUNT } }).then(
+      // take the household's own pantry down with it — and offline it resolves
+      // empty through the same rejection arm.
+      searchGlobalRecipes({ limit: NETWORK_COUNT }).then(
         (r) => r.results,
         () => [] as GlobalRecipeResult[],
       ),
@@ -58,6 +76,9 @@ export const Route = createFileRoute("/household/")({
     return { active, recipes, week, network };
   },
   head: () => ({ meta: seo({ title: "Your pantry · Buttery", description: "Your household's home in Buttery." }) }),
+  // The PWA front door renders what has been cached; when the answer is
+  // "nothing yet", that is a state, not a crash (§4.4).
+  errorComponent: OfflineRouteError,
   component: PantryPage,
 });
 
@@ -69,6 +90,7 @@ const NETWORK_COUNT = 3;
 function PantryPage() {
   const { active, recipes, week, network } = Route.useLoaderData();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { data: session } = useHydratedSession();
 
   const [chooserOpen, setChooserOpen] = useState(false);
@@ -91,18 +113,36 @@ function PantryPage() {
   }
 
   /**
-   * Link a public recipe into the box, then re-read the loader so it moves
-   * sections. Reports whether it landed: the card ignores the answer, but the
-   * preview dialog closes itself on a success (the card behind it is on its way
-   * out of "Not in your box yet") and stays open on a failure so the retry is
-   * still one click away.
+   * What a new box row has to touch, which is two caches rather than one.
+   *
+   * This route is **not** migrated (§4.1): its loader calls `listHouseholdRecipes`
+   * and `getMealPlanWeek` through the transport directly, so `router.invalidate()`
+   * genuinely re-reads it and the pantry's own sections do move. What it cannot
+   * do is reach the *Query* cache — and `/household/recipes` has already moved
+   * there. Without the second line, adding a recipe here and then opening the
+   * recipe box shows a ledger with the new recipe missing, because that route's
+   * loader is `ensureQueryData` (returns the cached list without revalidating)
+   * and its observer only refetches on mount once the 30s `staleTime` has run
+   * out. Two cache owners on one screen is the cost of a partial migration; the
+   * fix is to name both until this route crosses the boundary too.
+   */
+  async function refreshBox() {
+    await Promise.all([router.invalidate(), queryClient.invalidateQueries({ queryKey: keys.household.recipes(active.householdId) })]);
+  }
+
+  /**
+   * Link a public recipe into the box, then re-read so it moves sections.
+   * Reports whether it landed: the card ignores the answer, but the preview
+   * dialog closes itself on a success (the card behind it is on its way out of
+   * "Not in your box yet") and stays open on a failure so the retry is still one
+   * click away.
    */
   async function saveToBox(recipeId: string): Promise<boolean> {
     if (savingRecipeId) return false;
     setSavingRecipeId(recipeId);
     try {
-      await addRecipeToHousehold({ data: { recipeId } });
-      await router.invalidate();
+      await addRecipeToHousehold(recipeId);
+      await refreshBox();
       pushToast("Added to your box");
       return true;
     } catch {
@@ -115,7 +155,7 @@ function PantryPage() {
 
   /** The picker's own add path — same destination, so it gets the same follow-through. */
   async function onPicked() {
-    await router.invalidate();
+    await refreshBox();
     pushToast("Added to your box");
   }
 

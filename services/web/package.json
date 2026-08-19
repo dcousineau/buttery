@@ -22,7 +22,7 @@
     "db:seed:run": "kysely seed run",
     "db:seed:list": "kysely seed list",
     "db:codegen": "kysely-codegen --out-file src/db/types.ts --exclude-pattern \"*.kysely_migration*\"",
-    "typecheck": "pnpm --filter @buttery/lexicons build && tsc"
+    "typecheck": "pnpm --filter @buttery/lexicons build && tsc && tsc -p tsconfig.sw.json"
   },
   "dependencies": {
     "@atproto/lex": "^0.3.6",
@@ -39,6 +39,8 @@
     "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-devtools": "latest",
+    "@tanstack/react-query": "^5.101.4",
+    "@tanstack/react-query-persist-client": "^5.101.4",
     "@tanstack/react-router": "latest",
     "@tanstack/react-router-devtools": "latest",
     "@tanstack/react-router-ssr-query": "latest",
@@ -49,6 +51,7 @@
     "clsx": "^2.1.1",
     "dayjs": "^1.11.22",
     "es-toolkit": "^1.50.0",
+    "idb-keyval": "^6.3.0",
     "ioredis": "^6.0.0",
     "kysely": "^0.29.5",
     "kysely-ctl": "^0.21.0",
@@ -70,6 +73,7 @@
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.20",
     "@tanstack/devtools-vite": "latest",
+    "@tanstack/react-query-devtools": "^5.101.4",
     "@tanstack/router-cli": "^1.167.30",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",

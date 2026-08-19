@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Clock, CookingPot, ExternalLink, UtensilsCrossed, Users } from "lucide-react";
 import { lexiconToSchemaOrg } from "@buttery/recipe-schemas/bridge";
 import type { SchemaOrgRecipe } from "@buttery/recipe-schemas/schema-org";
-import { getRecipe } from "../server/recipes";
+import { getRecipe, type RecipeDetailData } from "#/lib/api";
 import { formatDuration, formatPublished } from "../lib/format";
 import { parseServes } from "../lib/recipe-scale";
 import { seo } from "#/lib/seo";
@@ -14,10 +14,9 @@ import { Button } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
 import { CookModeLauncher } from "#/components/recipes/CookModeLauncher";
 import type { CookRecipe } from "#/components/recipes/cook/CookMode";
-import type { RecipeDetailData } from "../server/recipes";
 
 export const Route = createFileRoute("/recipes/$id")({
-  loader: ({ params }) => getRecipe({ data: params.id }),
+  loader: ({ params }) => getRecipe(params.id),
   head: ({ loaderData }) => ({
     meta: loaderData
       ? [

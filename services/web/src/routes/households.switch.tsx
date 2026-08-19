@@ -1,15 +1,16 @@
 import { useState } from "react";
 import { createFileRoute, Link, redirect, useNavigate } from "@tanstack/react-router";
 import { Check, Users } from "lucide-react";
-import { listMyHouseholds } from "#/server/household/households";
-import { switchActiveHousehold } from "#/server/household/onboarding";
-import { errorMessage } from "#/server/household/pending-invite";
+import { listMyHouseholds } from "#/lib/api";
+import { switchActiveHousehold } from "#/lib/api";
+import { errorMessage } from "#/lib/api";
+import { refreshSession } from "#/lib/auth-client";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent } from "#/components/ui/card";
 import { Spinner } from "#/components/ui/spinner";
 import { seo } from "#/lib/seo";
-import type { HouseholdSummary } from "#/server/household/households";
+import type { HouseholdSummary } from "#/lib/api";
 
 /** The multi-household picker (§5). Reached from the §5 state machine (2+ live
  * memberships, no active) and from the account menu at any time. */
@@ -62,7 +63,15 @@ function PickerCard({ household }: { household: HouseholdSummary }) {
     setError(null);
     setPending(true);
     try {
-      await switchActiveHousehold({ data: { householdId: household.id } });
+      await switchActiveHousehold(household.id);
+      // The server moved `session.active_household_id`; better-auth's client
+      // store has no idea, because this was a plain server function and not one
+      // of its own endpoints. Refresh it *before* navigating: this is an SPA
+      // navigation, so nothing else re-reads the session, and until it lands the
+      // cache partition — and with it the persister's `buster` — still names the
+      // previous household. Anything the new household fetches in that window is
+      // written to disk under the old buster and thrown away unread (§2.4, §4.5).
+      await refreshSession();
       await navigate({ to: "/households" });
     } catch (err) {
       setError(errorMessage(err));

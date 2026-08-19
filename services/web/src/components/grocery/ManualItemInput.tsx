@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { Plus } from "lucide-react";
-import { addManualGroceryItem } from "#/server/grocery";
+import { addManualGroceryItem } from "#/lib/api";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
+import { OFFLINE_WRITE_HINT } from "#/lib/offline/use-online";
 import { cn } from "#/lib/utils";
 
 /**
@@ -28,9 +29,16 @@ export interface ManualItemInputProps {
   onAdded: (text: string, result: { itemId: string; merged: boolean }) => void;
   onError: (message: string) => void;
   className?: string;
+  /**
+   * Offline (§4.1). A manual add stays online-only past M2 as well: the server
+   * MERGES quantities into any live row for the same food, so replaying one
+   * would double them — the one write in the grocery surface that is not
+   * absolute by shape (§5.2). It needs `mutation_log`, which is M3.
+   */
+  disabled?: boolean;
 }
 
-export function ManualItemInput({ onAdded, onError, className }: ManualItemInputProps) {
+export function ManualItemInput({ onAdded, onError, className, disabled = false }: ManualItemInputProps) {
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
   const field = useRef<HTMLInputElement>(null);
@@ -39,7 +47,7 @@ export function ManualItemInput({ onAdded, onError, className }: ManualItemInput
     const trimmed = text.trim();
     if (trimmed === "" || pending) return;
     setPending(true);
-    addManualGroceryItem({ data: { text: trimmed } })
+    addManualGroceryItem(trimmed)
       .then((result) => {
         setText("");
         onAdded(trimmed, result);
@@ -69,9 +77,9 @@ export function ManualItemInput({ onAdded, onError, className }: ManualItemInput
         onChange={(event) => setText(event.target.value)}
         // The placeholder is doing teaching work: an amount and a unit are what
         // let a typed line merge with the same food off a recipe.
-        placeholder="Add an item — “2 limes”, “a bag of ice”"
+        placeholder={disabled ? OFFLINE_WRITE_HINT : "Add an item — “2 limes”, “a bag of ice”"}
         aria-label="Add an item to the list"
-        disabled={pending}
+        disabled={pending || disabled}
         maxLength={200}
       />
       {/*
@@ -86,7 +94,7 @@ export function ManualItemInput({ onAdded, onError, className }: ManualItemInput
         `max-md:px-2.5` override lands the button on a square 36px — matching
         the `h-9` field beside it without hand-setting a height.
       */}
-      <Button type="submit" size="lg" className="max-md:px-2.5" disabled={pending || text.trim() === ""}>
+      <Button type="submit" size="lg" className="max-md:px-2.5" disabled={pending || disabled || text.trim() === ""}>
         <Plus data-icon="inline-start" aria-hidden="true" />
         <span className="sr-only md:not-sr-only">{pending ? "Adding…" : "Add"}</span>
       </Button>

@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, Clock, CookingPot, ExternalLink, Plus, Users, UtensilsCrossed, X } from "lucide-react";
-import type { GlobalRecipeResult } from "#/server/household-recipes";
-import { getRecipe, type RecipeDetailData } from "#/server/recipes";
+import { type GlobalRecipeResult, getRecipe, type RecipeDetailData } from "#/lib/api";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "#/components/ui/dialog";
@@ -67,7 +66,7 @@ export function NetworkRecipePreviewDialog({ recipe, onOpenChange, onSave, savin
     if (!recipe) return;
 
     let live = true;
-    getRecipe({ data: recipe.recipeId }).then(
+    getRecipe(recipe.recipeId).then(
       (detail) => {
         if (live) setAnswer({ row: recipe, state: detail ? { status: "ready", detail } : { status: "missing" } });
       },

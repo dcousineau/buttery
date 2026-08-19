@@ -1,4 +1,4 @@
-import type { RecipeNutrition } from "#/server/household-recipes";
+import type { RecipeNutrition } from "#/lib/api";
 
 /**
  * Per-serving nutrition strip (design handoff). Per-serving values do NOT change

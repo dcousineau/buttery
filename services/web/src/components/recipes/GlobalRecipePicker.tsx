@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Search, UtensilsCrossed } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "#/components/ui/dialog";
 import { Spinner } from "#/components/ui/spinner";
-import { addRecipeToHousehold, type GlobalRecipeResult, searchGlobalRecipes } from "#/server/household-recipes";
+import { addRecipeToHousehold, type GlobalRecipeResult, searchGlobalRecipes } from "#/lib/api";
 import { cn } from "#/lib/utils";
 import { SourceIcon } from "./SourceIcon";
 
@@ -24,7 +24,7 @@ export function GlobalRecipePicker({ open, onOpenChange, onAdded }: { open: bool
     const id = ++reqId.current;
     setLoading(true);
     try {
-      const { results } = await searchGlobalRecipes({ data: { q: query, limit: 25 } });
+      const { results } = await searchGlobalRecipes({ q: query, limit: 25 });
       if (id === reqId.current) setResults(results);
     } catch {
       if (id === reqId.current) setResults([]);
@@ -51,7 +51,7 @@ export function GlobalRecipePicker({ open, onOpenChange, onAdded }: { open: bool
   async function add(recipeId: string) {
     setAdding(recipeId);
     try {
-      await addRecipeToHousehold({ data: { recipeId } });
+      await addRecipeToHousehold(recipeId);
       onAdded(recipeId);
       handleOpenChange(false);
     } finally {

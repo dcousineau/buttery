@@ -1,21 +1,27 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { startTransition, useCallback, useEffect, useOptimistic, useRef, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useRef, useState } from "react";
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { BookOpenText, CalendarCheck, CalendarRange, Check, ChevronLeft, ChevronRight, Copy, PanelLeft } from "lucide-react";
 import * as z from "zod";
 import { useAnalytics } from "#/lib/analytics";
 import {
-  addMealPlanNote,
-  addMealPlanRecipes,
+  addMealPlanRecipesMutation,
+  addRecipeToHousehold,
   copyMealPlanWeek,
-  getMealPlanWeek,
-  moveMealPlanEntry,
-  removeMealPlanEntry,
-  setMealPlanEntryCooked,
-  updateMealPlanNote,
-  type PlanWeek,
-} from "#/server/meal-plan";
-import { addRecipeToHousehold, getHouseholdRecipe, type HouseholdRecipeDetail, type HouseholdRecipeRow } from "#/server/household-recipes";
-import { requireActiveHousehold } from "#/server/household/onboarding";
+  getHouseholdRecipe,
+  type HouseholdRecipeDetail,
+  type HouseholdRecipeRow,
+  keys,
+  mealPlanWeekQuery,
+  moveMealPlanEntryMutation,
+  removeMealPlanEntryMutation,
+  saveMealPlanNoteMutation,
+  setMealPlanEntryCookedMutation,
+} from "#/lib/api";
+import { ensureActiveHousehold } from "#/lib/offline/active-household";
+import { OfflineNotice } from "#/components/offline/OfflineNotice";
+import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
+import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
 import { type MealSlot, type PlanDate, isPlanDate, shiftWeeks, weekStartFor } from "#/lib/plan/week";
 import { formatPlanDate, weekRangeLabel } from "#/lib/plan/labels";
 import { PlanWeekGrid } from "#/components/plan/PlanWeekGrid";
@@ -28,16 +34,7 @@ import { ThisWeekPanel } from "#/components/plan/ThisWeekPanel";
 import { AddPreviewDialog, type AddPreviewRequest } from "#/components/grocery/AddPreviewDialog";
 import { summarizeGroceryAdd } from "#/components/grocery/added-summary";
 import { CookModeFallback, CookModeOverlay } from "#/components/recipes/CookModeOverlay";
-import {
-  findEntry,
-  optimisticNoteEntry,
-  optimisticRecipeEntry,
-  withEntriesAppended,
-  withEntryCooked,
-  withEntryMoved,
-  withEntryRemoved,
-  withNoteBody,
-} from "#/components/plan/optimistic";
+import { findEntry, optimisticNoteEntry, optimisticRecipeEntry } from "#/components/plan/optimistic";
 import { Button } from "#/components/ui/button";
 import { Toast, ToastViewport, useToasts } from "#/components/ui/toast";
 import { useIsMobile } from "#/lib/hooks/use-mobile";
@@ -60,9 +57,11 @@ import { seo } from "#/lib/seo";
  * mistyped a URL. The server recomputes the week start from the household's
  * timezone and week-start preference regardless of what arrives.
  *
- * The route also owns every write (§8): the optimistic patch over the loader's
- * week, the toast, the live-region announcement, and the `router.invalidate()`
- * that reconciles the two. Nothing below it awaits a mutation — see
+ * The route also owns every write (§8): the optimistic patch over the cached
+ * week, the toast, the live-region announcement, and the invalidation that
+ * reconciles the two — the plan *prefix*, never one week's key, because
+ * `"current"` and a dated week are two entries over the same seven days
+ * (`keys.household.planAll`). Nothing below it awaits a mutation — see
  * `components/plan/PlanActions.tsx`.
  */
 
@@ -80,43 +79,50 @@ const searchSchema = z.object({
 export const Route = createFileRoute("/household/plan")({
   validateSearch: searchSchema,
   // ONLY `week`. Adding `view`/`panel` here would make a layout toggle refetch
-  // the whole week for no new data.
+  // the whole week for no new data — and now that the week is a query key, it
+  // would also mint a cache entry per layout toggle.
   loaderDeps: ({ search }) => ({ week: search.week }),
-  loader: async ({ deps }) => {
-    await requireActiveHousehold();
-    return await getMealPlanWeek({ data: { week: deps.week } });
-  },
+  beforeLoad: async () => ({ ...(await ensureActiveHousehold()) }),
+  loader: ({ context, deps }) => context.queryClient.ensureQueryData(mealPlanWeekQuery(context.householdId, deps.week)),
   head: () => ({ meta: seo({ title: "Meal plan · Buttery", description: "What your household is eating this week." }) }),
+  // An offline-capable route renders what has been cached; when the answer is
+  // "nothing yet", that is a state, not a crash (§4.4).
+  errorComponent: OfflineRouteError,
   component: PlanPage,
 });
 
 function PlanPage() {
-  const loaded = Route.useLoaderData();
+  const { householdId } = Route.useRouteContext();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const router = useRouter();
+  const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+  const online = useIsOnline();
   const { toasts, push, dismiss, pauseAll, resumeAll } = useToasts(4000);
   const { posthog } = useAnalytics();
 
   /**
-   * The optimistic overlay (§8.2): the week as it should already look, laid over
-   * the week the loader last returned.
+   * The week, from the query cache.
    *
-   * `useOptimistic` rather than a patch in ordinary state, because React drops
-   * the optimistic value in the same commit that delivers the settled loader
-   * payload. Clearing it by hand cannot: `router.invalidate()` resolves *before*
-   * the router commits its matches (it commits inside a React transition), so a
-   * plain `setState(null)` after the await outranks that pending transition and
-   * paints one frame of pre-write data — a visible flicker on every write.
+   * This replaces a `useOptimistic` overlay laid over the loader's payload, and
+   * with it four pieces of machinery that only existed to bridge two caches: the
+   * transition-scoped patch, the `whenLoaderCommits` promise, the ref that
+   * resolved it on the commit carrying a new payload, and the 1s escape hatch for
+   * a write that produced no new payload at all. All of it was there because
+   * `router.invalidate()` resolves *before* React commits the router's matches,
+   * so there was a window in which the optimistic week had been dropped and the
+   * settled one had not yet arrived — one frame of pre-write data on every write.
    *
-   * The reducer's action is the patch itself, so `run` stays generic. Patches
-   * are no-op-safe against a week they do not belong to (`optimistic.ts`), which
-   * is what makes React's re-application of a still-pending patch on top of a
-   * newer `loaded` harmless — the case the old code needed a `weekStart` guard
-   * for.
+   * Query has no such window: `onMutate` writes the patch into the cache entry
+   * itself, so the "optimistic" and "settled" values are the same value at
+   * different times, and the rollback in `onError` is a write to that same entry.
+   * See `src/lib/api/mutations.ts`.
+   *
+   * The `focus`/`visibilitychange` listener D10 asked for is gone from this file
+   * too: `refetchOnWindowFocus` is on by default on the QueryClient, and
+   * `staleTime` is the throttle the hand-rolled version needed a timestamp for.
    */
-  const [week, applyPatch] = useOptimistic(loaded, (current: PlanWeek, patch: (week: PlanWeek) => PlanWeek) => patch(current));
+  const { data: week } = useSuspenseQuery(mealPlanWeekQuery(householdId, search.week));
   const [announcement, setAnnouncement] = useState("");
   const [addRequest, setAddRequest] = useState<AddEntryRequest | null>(null);
   const [moveRequest, setMoveRequest] = useState<MoveEntryRequest | null>(null);
@@ -138,100 +144,40 @@ function PlanPage() {
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
 
   /**
-   * D10's answer to "two people planning at once": no sockets, just look again
-   * when you come back. Coming back to the tab is the moment a stale week is
-   * most likely and least expensive to fix. Throttled so alt-tabbing does not
-   * hammer the loader.
+   * Every write on the week, as Query mutations, all bound to this week's key.
+   * The optimistic patch functions are the same pure ones as before
+   * (`components/plan/optimistic.ts`, still unit-tested); what changed is who
+   * applies them.
    */
-  useEffect(() => {
-    let last = 0;
-    function refresh() {
-      if (document.visibilityState !== "visible") return;
-      const now = Date.now();
-      if (now - last < 10_000) return;
-      last = now;
-      void router.invalidate();
-    }
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [router]);
+  const move = useMutation(moveMealPlanEntryMutation(queryClient, householdId, search.week));
+  const removeEntryMutation = useMutation(removeMealPlanEntryMutation(queryClient, householdId, search.week));
+  const setCookedMutation = useMutation(setMealPlanEntryCookedMutation(queryClient, householdId, search.week));
+  const addRecipes = useMutation(addMealPlanRecipesMutation(queryClient, householdId, search.week));
+  const saveNote = useMutation(saveMealPlanNoteMutation(queryClient, householdId, search.week));
+
+  /** The one failure message every write on this page shares. */
+  function onWriteFailed(error: unknown) {
+    push({ variant: "destructive", title: error instanceof Error ? error.message : "That didn’t save. Try again." });
+  }
 
   /**
-   * "The fresh week is now on screen" — the signal `run` ends its transition on.
+   * Re-read the plan. Used by the writes that have no honest optimistic patch.
    *
-   * `router.invalidate()` resolves when the loader has re-run, NOT when React
-   * has rendered the result: the router commits its matches inside a transition
-   * of its own. Ending the write's transition on the invalidate alone therefore
-   * lands in a hole — React drops the optimistic week while `loaded` is still
-   * the pre-write payload, and the card paints one frame of stale data before
-   * the router's commit arrives (measured: ~50ms of visible flicker per write).
-   *
-   * This effect runs in the commit that carries the new payload, which is
-   * exactly the moment the optimistic week can be let go.
+   * The whole plan prefix, not `plan(householdId, search.week)`. One week can
+   * sit in the cache under two keys — `"current"` when the URL carries no
+   * `?week=`, and its date when it does — because only the server can map
+   * "this week" onto a week start (household timezone, week-start day). A write
+   * made under `?week=X` that invalidated only that key leaves the `"current"`
+   * entry holding pre-write data, so: Next week, Previous week (which writes an
+   * explicit `?week=`), delete a meal, Today — and the deleted meal is back on
+   * screen for the rest of `staleTime`. `keys.household.planAll` carries the
+   * long version. The preferences save below already reached for this prefix
+   * for its own reason (a week-start change re-buckets every week); it turns
+   * out to be the right blast radius for every plan write, not just that one.
    */
-  const loaderCommitted = useRef<(() => void) | null>(null);
-  useEffect(() => {
-    loaderCommitted.current?.();
-    loaderCommitted.current = null;
-  }, [loaded]);
-
-  const whenLoaderCommits = useCallback(
-    () =>
-      new Promise<void>((resolve) => {
-        loaderCommitted.current?.();
-        loaderCommitted.current = resolve;
-        // Nothing guarantees a *new* payload — a no-op write, or a load the
-        // router dedupes, can leave `loaded` untouched — and a transition that
-        // never ends would pin the optimistic week there for good.
-        setTimeout(() => {
-          if (loaderCommitted.current !== resolve) return;
-          loaderCommitted.current = null;
-          resolve();
-        }, 1000);
-      }),
-    [],
-  );
-
-  /**
-   * One shape for every write: paint, send, then reconcile.
-   *
-   * The whole body runs inside one async transition. That is what licenses the
-   * optimistic paint — `applyPatch` is only legal inside a transition — and the
-   * paint lives exactly as long as the transition does, so the two ends of the
-   * hand-off are the same event: React swaps the optimistic week out in the
-   * same commit that swaps the settled one in.
-   *
-   * The wait is registered before the write, not after it, so a payload that
-   * commits unusually fast cannot land before anyone is listening for it.
-   *
-   * Failure does not try to un-apply the patch — the transition ending drops it.
-   * The loader is the only thing that knows what the week really contains, and
-   * after a failed write it is also the only thing that knows whether the write
-   * half-happened. The `finally` runs on both paths for the same reason.
-   */
-  const run = useCallback(
-    (options: { optimistic?: (week: PlanWeek) => PlanWeek; action: () => Promise<unknown>; toast?: string; announce?: string }) => {
-      startTransition(async () => {
-        if (options.optimistic) applyPatch(options.optimistic);
-        const settled = whenLoaderCommits();
-        try {
-          await options.action();
-          if (options.toast) push({ variant: "success", title: options.toast });
-          if (options.announce) setAnnouncement(options.announce);
-        } catch (error) {
-          push({ variant: "destructive", title: error instanceof Error ? error.message : "That didn’t save. Try again." });
-        } finally {
-          await router.invalidate();
-          await settled;
-        }
-      });
-    },
-    [applyPatch, push, router, whenLoaderCommits],
-  );
+  async function refreshPlan() {
+    await queryClient.invalidateQueries({ queryKey: keys.household.planAll(householdId) });
+  }
 
   /** The label a toast or announcement uses for an entry. */
   function entryLabel(entryId: string): string {
@@ -252,7 +198,7 @@ function PlanPage() {
   function copyWeek(fromWeek: PlanDate, toWeek: PlanDate, mode: "append" | "replace") {
     void (async () => {
       try {
-        const result = await copyMealPlanWeek({ data: { fromWeek, toWeek, mode } });
+        const result = await copyMealPlanWeek({ fromWeek, toWeek, mode });
         if (result.copied === 0) {
           push({ variant: "default", title: "That week is empty — nothing to copy" });
           return;
@@ -263,37 +209,44 @@ function PlanPage() {
         });
         setAnnouncement("Week copied");
       } catch (error) {
-        push({ variant: "destructive", title: error instanceof Error ? error.message : "That didn’t save. Try again." });
+        onWriteFailed(error);
       } finally {
-        await router.invalidate();
+        // Both weeks are in the plan prefix, so the destination is covered
+        // whether or not it happens to be the one on screen — the entries that
+        // are not being observed are simply marked stale and re-read when
+        // someone navigates to them.
+        await refreshPlan();
       }
     })();
   }
 
   function submitRecipes(date: PlanDate, slot: MealSlot, rows: HouseholdRecipeRow[]) {
-    run({
-      optimistic: (current) => withEntriesAppended(current, date, slot, rows.map(optimisticRecipeEntry)),
-      action: () => addMealPlanRecipes({ data: { date, slot, recipeIds: rows.map((row) => row.recipeId) } }),
-      toast: rows.length === 1 ? `${rows[0].title} added` : `${rows.length} recipes added`,
-      announce: `${rows.length} added to ${slot} on ${formatPlanDate(date)}`,
-    });
+    setAnnouncement(`${rows.length} added to ${slot} on ${formatPlanDate(date)}`);
+    addRecipes.mutate(
+      { date, slot, recipeIds: rows.map((row) => row.recipeId), optimisticEntries: rows.map(optimisticRecipeEntry) },
+      {
+        onSuccess: () => push({ variant: "success", title: rows.length === 1 ? `${rows[0].title} added` : `${rows.length} recipes added` }),
+        onError: onWriteFailed,
+      },
+    );
   }
 
   function submitNote(request: AddEntryRequest, body: string) {
     if (request.kind === "edit-note") {
-      run({
-        optimistic: (current) => withNoteBody(current, request.entryId, body),
-        action: () => updateMealPlanNote({ data: { entryId: request.entryId, body } }),
-        toast: body.trim() === "" ? "Note removed" : "Note saved",
-      });
+      saveNote.mutate(
+        { entryId: request.entryId, date: request.date, slot: request.slot, body },
+        {
+          onSuccess: () => push({ variant: "success", title: body.trim() === "" ? "Note removed" : "Note saved" }),
+          onError: onWriteFailed,
+        },
+      );
       return;
     }
-    run({
-      optimistic: (current) => withEntriesAppended(current, request.date, request.slot, [optimisticNoteEntry(body, 0)]),
-      action: () => addMealPlanNote({ data: { date: request.date, slot: request.slot, body } }),
-      toast: "Note added",
-      announce: `Note added to ${request.slot} on ${formatPlanDate(request.date)}`,
-    });
+    setAnnouncement(`Note added to ${request.slot} on ${formatPlanDate(request.date)}`);
+    saveNote.mutate(
+      { date: request.date, slot: request.slot, body, optimisticEntry: optimisticNoteEntry(body, 0) },
+      { onSuccess: () => push({ variant: "success", title: "Note added" }), onError: onWriteFailed },
+    );
   }
 
   /**
@@ -317,7 +270,7 @@ function PlanPage() {
       handle();
     }
 
-    getHouseholdRecipe({ data: { recipeId } })
+    getHouseholdRecipe(recipeId)
       .then((recipe) => {
         settle(() => {
           if (recipe) setCookRecipe(recipe);
@@ -351,37 +304,39 @@ function PlanPage() {
       // one would be a lie, and the server no-ops it anyway.
       if (!found || (found.date === toDate && found.slot === toSlot)) return;
       const label = entryLabel(entryId);
-      run({
-        optimistic: (current) => withEntryMoved(current, entryId, toDate, toSlot),
-        action: () => moveMealPlanEntry({ data: { entryId, toDate, toSlot } }),
-        toast: `Moved to ${toSlot} · ${formatPlanDate(toDate)}`,
-        announce: `${label} moved to ${toSlot} on ${formatPlanDate(toDate)}`,
-      });
+      setAnnouncement(`${label} moved to ${toSlot} on ${formatPlanDate(toDate)}`);
+      move.mutate({ entryId, toDate, toSlot }, { onSuccess: () => push({ variant: "success", title: `Moved to ${toSlot} · ${formatPlanDate(toDate)}` }), onError: onWriteFailed });
     },
     removeEntry: (entryId) => {
       const label = entryLabel(entryId);
-      run({
-        optimistic: (current) => withEntryRemoved(current, entryId),
-        action: () => removeMealPlanEntry({ data: { entryId } }),
-        toast: `${label} removed`,
-        announce: "Entry removed",
-      });
+      setAnnouncement("Entry removed");
+      removeEntryMutation.mutate({ entryId }, { onSuccess: () => push({ variant: "success", title: `${label} removed` }), onError: onWriteFailed });
     },
     setCooked: (entryId, cooked) => {
-      run({
-        optimistic: (current) => withEntryCooked(current, entryId, cooked),
-        action: () => setMealPlanEntryCooked({ data: { entryId, cooked } }),
-        toast: cooked ? "Marked cooked" : "Cooked mark cleared",
-      });
+      setCookedMutation.mutate(
+        { entryId, cooked },
+        { onSuccess: () => push({ variant: "success", title: cooked ? "Marked cooked" : "Cooked mark cleared" }), onError: onWriteFailed },
+      );
     },
     addBackToBox: (entryId) => {
       const found = findEntry(week, entryId);
       if (!found || found.entry.kind !== "recipe") return;
       const { recipeId } = found.entry;
-      // No optimistic patch: `inBox` is the box's answer, not the plan's, and
-      // the invalidate is what re-reads it.
-      run({ action: () => addRecipeToHousehold({ data: { recipeId } }), toast: "Added back to your box" });
+      // No optimistic patch and no mutation factory: `inBox` is the *box's*
+      // answer, not the plan's, so there is nothing honest to paint on the week —
+      // both keys are simply re-read once the server has taken it.
+      void (async () => {
+        try {
+          await addRecipeToHousehold(recipeId);
+          push({ variant: "success", title: "Added back to your box" });
+          await Promise.all([refreshPlan(), queryClient.invalidateQueries({ queryKey: keys.household.recipes(householdId) })]);
+        } catch (error) {
+          onWriteFailed(error);
+        }
+      })();
     },
+    /** M1 writes are online-only (§4.1); the cards disable their own controls. */
+    writable: online,
     draggingId,
     setDraggingId,
     dragOverSlot,
@@ -504,6 +459,11 @@ function PlanPage() {
             </div>
           </div>
 
+          {/* The stated reason every planning control below is disabled. The
+            controls themselves only carry it in `title`, which no phone and no
+            keyboard user can reach — see `OfflineNotice`. */}
+          <OfflineNotice online={online}>You're offline — the plan is readable, but changes need a connection.</OfflineNotice>
+
           {/* Announces the results of planner actions (added, moved, removed).
             Toasts carry the same news visually, but they are `aria-live` on a
             viewport that is also used for failures — this stays the one place a
@@ -523,7 +483,13 @@ function PlanPage() {
                 <p className="m-0 text-[0.8125rem] font-semibold">Nothing planned this week yet. Fill a slot below, or bring last week over and edit it.</p>
                 {/* Straight to the copy, no dialog: the week is empty, so
                   "append or replace?" has one possible answer. */}
-                <Button size="sm" className="ml-auto" onClick={() => copyWeek(shiftWeeks(week.weekStart, -1), week.weekStart, "append")}>
+                <Button
+                  size="sm"
+                  className="ml-auto"
+                  disabled={!online}
+                  title={online ? undefined : OFFLINE_WRITE_HINT}
+                  onClick={() => copyWeek(shiftWeeks(week.weekStart, -1), week.weekStart, "append")}
+                >
                   <Copy data-icon="inline-start" aria-hidden="true" />
                   Copy last week in
                 </Button>
@@ -538,15 +504,17 @@ function PlanPage() {
           week={week}
           open={panelOpen}
           onOpenChange={setPanel}
+          writable={online}
           onCopyWeek={() => setCopyRequest(week.weekStart)}
           onAddWeekToList={() => setListRequest({ planWeek: week.weekStart, label: "this week’s plan" })}
           onNotify={(title) => push({ variant: "success", title })}
           onPreferencesSaved={(title) => {
             push({ variant: "success", title });
             // A week-start or timezone change re-buckets the grid and moves
-            // "today", so the loader has to run again — the panel never patches
-            // the week itself.
-            void router.invalidate();
+            // "today", so the week has to be read again — the panel never
+            // patches it itself. Every week is affected, not just this one,
+            // which is what the plan prefix covers.
+            void refreshPlan();
           }}
           onError={(title) => push({ variant: "destructive", title })}
         />
@@ -555,9 +523,14 @@ function PlanPage() {
       <CopyWeekDialog weekStart={copyRequest} onClose={() => setCopyRequest(null)} onCopy={copyWeek} />
 
       {/*
-        The grocery list is a different route with its own loader, so there is
-        nothing here to invalidate — the toast is the whole feedback loop, and
-        it names where the rows went so the button does not feel like a no-op.
+        The rows land on `/household/list`, and the toast is no longer the whole
+        feedback loop over there. While that route was a plain loader, walking to
+        it re-read it; now that it reads `groceryListQuery` (§4.1), an
+        un-invalidated key means the list still shows its pre-add payload for the
+        next 10s (that factory's `staleTime`) with nothing queued to correct it —
+        on the one screen where a missing row means buying the thing twice. The
+        toast still names where the rows went, so the button never reads as a
+        no-op; it is just not the only thing that happens.
       */}
       <AddPreviewDialog
         request={listRequest}
@@ -565,6 +538,7 @@ function PlanPage() {
         onCommitted={(result) => {
           setListRequest(null);
           push({ variant: "success", title: summarizeGroceryAdd(result.added, result.merged) });
+          void queryClient.invalidateQueries({ queryKey: keys.household.grocery(householdId) });
         }}
         onError={(title) => push({ variant: "destructive", title })}
       />

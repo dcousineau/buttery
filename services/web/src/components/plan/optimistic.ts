@@ -1,5 +1,5 @@
-import type { PlanEntry, PlanRecipeEntry, PlanWeek } from "#/server/meal-plan";
-import type { HouseholdRecipeRow } from "#/server/household-recipes";
+import type { PlanEntry, PlanRecipeEntry, PlanWeek } from "#/lib/api";
+import type { HouseholdRecipeRow } from "#/lib/api";
 import { MEAL_SLOTS, type MealSlot, type PlanDate } from "#/lib/plan/week";
 
 /**

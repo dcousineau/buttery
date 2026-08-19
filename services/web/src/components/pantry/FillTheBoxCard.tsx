@@ -3,7 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Compass, Link2, Pencil } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
 import { cn } from "#/lib/utils";
-import { scrapeRecipe } from "#/server/recipe-scrape";
+import { scrapeRecipe } from "#/lib/api";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/components/ui/card";
 import { Input } from "#/components/ui/input";
@@ -45,7 +45,7 @@ export function FillTheBoxCard({ onNotify, className }: { onNotify?: (message: s
     setFailUrl(trimmed);
     setPhase("fetching");
     try {
-      const res = await scrapeRecipe({ data: { url: trimmed } });
+      const res = await scrapeRecipe({ url: trimmed });
       // Reached the page (full or partial) → open the form prefilled by import id.
       if (res.status === "ok" || res.status === "partial") {
         setPhase(null);

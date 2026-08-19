@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import type { GateState } from "#/lib/api/types";
 
 /**
  * Post-login access gate, backed by the PostHog `invited` feature flag. Every
@@ -12,12 +13,16 @@ import { createServerFn } from "@tanstack/react-start";
  * In dev/test the flag is not consulted at all and every signed-in caller is
  * invited — see {@link import("./posthog-server").isInvited}.
  *
+ * Lives under `src/server/` (it moved there with the offline plan's §4.3 port
+ * boundary): it is a `createServerFn` with a dynamic `import()` prologue, which is
+ * server business logic by the AGENTS.md convention, not a shared client util.
+ *
  * The `posthog-node` SDK and the server-session helper are imported dynamically
  * inside the handler so this module stays browser-safe: `getGateState` is pulled
  * into the client bundle, but neither the SDK nor `auth.api` ever runs there.
  */
 
-export type GateState = { authed: boolean; invited: boolean };
+export type { GateState };
 
 export const getGateState = createServerFn({ method: "GET" }).handler(async (): Promise<GateState> => {
   const { getServerSession } = await import("#/server/household/session");
@@ -25,7 +30,7 @@ export const getGateState = createServerFn({ method: "GET" }).handler(async (): 
   const did = session?.user.did;
   if (!did) return { authed: false, invited: false };
 
-  const { isInvited, identify } = await import("./posthog-server");
+  const { isInvited, identify } = await import("#/lib/posthog-server");
   const handle = session.user.handle ?? undefined;
   const personProperties = handle ? { handle } : undefined;
   // Evaluate the flag and durably attach the handle in parallel; both key on the

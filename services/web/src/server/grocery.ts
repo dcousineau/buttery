@@ -1,14 +1,14 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import type { Kysely } from "kysely";
 import * as z from "zod";
 import type { DB } from "#/db/types";
-import { AISLES, type Aisle, aisleOrder, toAisle } from "#/lib/grocery/aisles";
+import { AISLES, aisleOrder, toAisle } from "#/lib/grocery/aisles";
 import type { MergedRow } from "#/lib/grocery/merge";
-import type { UnitDim } from "#/lib/grocery/units";
 // `units.ts` is pure, tiny and carries no lexicon, so it is a static import
 // while `categorize.ts` and `merge.ts` stay dynamic to keep the JSON lazy.
 import { renderQuantity } from "#/lib/grocery/units";
 import { type PlanDate, isPlanDate, shiftDays, weekStartFor } from "#/lib/plan/week";
+import type { GroceryItemRow, GroceryItemSourceRow, GroceryListPayload, GroceryPreview, GroceryPreviewRow } from "#/lib/api/types";
 
 /**
  * Grocery-list server functions (grocery-list plan §7).
@@ -38,73 +38,14 @@ import { type PlanDate, isPlanDate, shiftDays, weekStartFor } from "#/lib/plan/w
 
 // --- shared shapes -------------------------------------------------------
 
-/** A row as the list renders it. */
-export interface GroceryItemRow {
-  id: string;
-  foodSlug: string | null;
-  displayName: string;
-  aisle: Aisle;
-  /** Rendered total: `1 lb 8 oz`, `2½ cups`, `3 cloves`. `null` when unknown. */
-  quantityDisplay: string | null;
-  /** Raw base-unit total, so the client can re-render after an inline edit. */
-  quantity: number | null;
-  unit: string | null;
-  unitDim: string | null;
-  isManual: boolean;
-  checkedAt: string | null;
-  checkedByHandle: string | null;
-  /** The recipes that put this on the list, resolved to titles. */
-  sources: GroceryItemSourceRow[];
-}
-
-export interface GroceryItemSourceRow {
-  recipeId: string | null;
-  title: string | null;
-  /** The ingredient line, verbatim, as it read when it was added. */
-  rawText: string;
-  scale: number;
-}
-
-export interface GroceryListPayload {
-  items: GroceryItemRow[];
-  /** Server time at read, so the client can apply the TTL without clock skew. */
-  readAt: string;
-  /** How long a checked row stays visible, in seconds (plan D10). */
-  checkedTtlSeconds: number;
-}
-
-/** A candidate row in the confirm-preview dialog (plan D9). Nothing written. */
-export interface GroceryPreviewRow {
-  /** Stable within one preview; the client sends back the ones it wants. */
-  key: string;
-  foodSlug: string | null;
-  nameNorm: string;
-  displayName: string;
-  aisle: Aisle;
-  quantity: number | null;
-  quantityMax: number | null;
-  quantityDisplay: string | null;
-  unit: string | null;
-  /**
-   * Not `string`: a preview row is handed straight back to `commitGroceryAdd`,
-   * whose validator only accepts the three real dimensions. Widening this to
-   * `string` makes that round trip fail to typecheck, which is exactly what
-   * `grocery.db.test.ts` caught.
-   */
-  unitDim: UnitDim;
-  mergeUnit: string | null;
-  /** Shown but unchecked by default (plan D9). */
-  isStaple: boolean;
-  /** True when this food already has a live row that this would merge into. */
-  mergesInto: string | null;
-  sources: Array<{ recipeId: string | null; planEntryId: string | null; rawText: string; scale: number; quantityBase: number | null }>;
-}
-
-export interface GroceryPreview {
-  rows: GroceryPreviewRow[];
-  /** Recipes the preview drew from, for the dialog's header copy. */
-  recipes: Array<{ recipeId: string; title: string; scale: number }>;
-}
+/**
+ * The wire DTOs this module returns are declared in the port's `types.ts` and
+ * imported from there (offline plan §4.3 / §7): the client caches these shapes
+ * in IndexedDB, versions them, and must be able to name them without importing
+ * a server module — so it owns the declaration. Re-exported here for the
+ * server-side callers that already reach for them through this module.
+ */
+export type { GroceryItemRow, GroceryItemSourceRow, GroceryListPayload, GroceryPreview, GroceryPreviewRow };
 
 /** Checked rows stay visible for an hour, then retire from the default view. */
 export const CHECKED_TTL_SECONDS = 60 * 60;
@@ -440,104 +381,106 @@ type CommitRow = z.infer<typeof commitRowInput>;
  * this way is its own household's list, and re-deriving would throw away the
  * edits D9 exists to allow.
  */
-export async function commitGroceryRows(db: Kysely<DB>, did: string, householdId: string, input: { rows: CommitRow[] }): Promise<{ added: number; merged: number }> {
-  const { ulid } = await import("./household/ids");
-  const { sql } = await import("kysely");
+export const commitGroceryRows = createServerOnlyFn(
+  async (db: Kysely<DB>, did: string, householdId: string, input: { rows: CommitRow[] }): Promise<{ added: number; merged: number }> => {
+    const { ulid } = await import("./household/ids");
+    const { sql } = await import("kysely");
 
-  // Provenance is client-supplied and is read back out as a recipe *title*, so
-  // it is gated exactly like preview's is. Without this a caller could attach
-  // any recipe id in the corpus to its own row and read the name off its list.
-  await assertSourcesInHousehold(db, householdId, input.rows);
+    // Provenance is client-supplied and is read back out as a recipe *title*, so
+    // it is gated exactly like preview's is. Without this a caller could attach
+    // any recipe id in the corpus to its own row and read the name off its list.
+    await assertSourcesInHousehold(db, householdId, input.rows);
 
-  return db.transaction().execute(async (trx) => {
-    // The read below finds nothing for an identity nobody has yet, and Postgres
-    // takes no gap lock on a key that does not exist — two shoppers adding the
-    // same food at the same moment would both fall through to the insert and one
-    // would hit `grocery_item_live_identity_key` instead of consolidating. A
-    // transaction-scoped advisory lock per household is the serialization: an
-    // add is rare, one household at a time is free, and the loser waits for the
-    // winner's rows and merges into them the way it meant to.
-    await sql`select pg_advisory_xact_lock(hashtextextended(${`grocery-commit ${householdId}`}, 0))`.execute(trx);
+    return db.transaction().execute(async (trx) => {
+      // The read below finds nothing for an identity nobody has yet, and Postgres
+      // takes no gap lock on a key that does not exist — two shoppers adding the
+      // same food at the same moment would both fall through to the insert and one
+      // would hit `grocery_item_live_identity_key` instead of consolidating. A
+      // transaction-scoped advisory lock per household is the serialization: an
+      // add is rare, one household at a time is free, and the loser waits for the
+      // winner's rows and merges into them the way it meant to.
+      await sql`select pg_advisory_xact_lock(hashtextextended(${`grocery-commit ${householdId}`}, 0))`.execute(trx);
 
-    // One read of the live rows, then every row in this commit decides against
-    // it — a merge target found here is guaranteed live for the transaction.
-    const liveRows = await trx
-      .selectFrom("grocery_item")
-      .select(["id", "food_slug", "name_norm", "unit_dim", "merge_unit", "quantity", "quantity_max", "unit"])
-      .where("household_id", "=", householdId)
-      .where("checked_at", "is", null)
-      .where("cleared_at", "is", null)
-      .forUpdate()
-      .execute();
-
-    const byIdentity = new Map(liveRows.map((row) => [identityOf({ foodSlug: row.food_slug, nameNorm: row.name_norm, unitDim: row.unit_dim, mergeUnit: row.merge_unit }), row]));
-
-    let added = 0;
-    let merged = 0;
-
-    for (const row of input.rows) {
-      const identity = identityOf(row);
-      const target = byIdentity.get(identity);
-
-      if (target) {
-        // Merge into the live row. The existing `unit` anchor is kept so a list
-        // built in pounds keeps reading in pounds.
-        const nextQuantity = row.quantity == null ? toNum(target.quantity) : (toNum(target.quantity) ?? 0) + row.quantity;
-        const nextMax =
-          row.quantityMax == null && target.quantity_max == null ? null : (toNum(target.quantity_max) ?? toNum(target.quantity) ?? 0) + (row.quantityMax ?? row.quantity ?? 0);
-
-        await trx
-          .updateTable("grocery_item")
-          .set({ quantity: nextQuantity, quantity_max: nextMax, updated_at: sql`now()` })
-          .where("id", "=", target.id)
-          .where("household_id", "=", householdId)
-          .execute();
-
-        await insertSources(trx, target.id, did, row);
-        merged += 1;
-        continue;
-      }
-
-      const id = ulid();
-      await trx
-        .insertInto("grocery_item")
-        .values({
-          id,
-          household_id: householdId,
-          food_slug: row.foodSlug,
-          name_norm: row.nameNorm,
-          display_name: row.displayName,
-          aisle: row.aisle,
-          quantity: row.quantity,
-          quantity_max: row.quantityMax,
-          unit: row.unit,
-          unit_dim: row.unitDim,
-          merge_unit: row.mergeUnit,
-          is_manual: false,
-          created_by_did: did,
-        })
+      // One read of the live rows, then every row in this commit decides against
+      // it — a merge target found here is guaranteed live for the transaction.
+      const liveRows = await trx
+        .selectFrom("grocery_item")
+        .select(["id", "food_slug", "name_norm", "unit_dim", "merge_unit", "quantity", "quantity_max", "unit"])
+        .where("household_id", "=", householdId)
+        .where("checked_at", "is", null)
+        .where("cleared_at", "is", null)
+        .forUpdate()
         .execute();
 
-      await insertSources(trx, id, did, row);
-      // Later rows in the same commit must be able to merge into this one.
-      byIdentity.set(identity, {
-        id,
-        food_slug: row.foodSlug,
-        name_norm: row.nameNorm,
-        unit_dim: row.unitDim,
-        merge_unit: row.mergeUnit,
-        quantity: row.quantity == null ? null : String(row.quantity),
-        quantity_max: row.quantityMax == null ? null : String(row.quantityMax),
-        unit: row.unit,
-      });
-      added += 1;
-    }
+      const byIdentity = new Map(liveRows.map((row) => [identityOf({ foodSlug: row.food_slug, nameNorm: row.name_norm, unitDim: row.unit_dim, mergeUnit: row.merge_unit }), row]));
 
-    return { added, merged };
-  });
-}
+      let added = 0;
+      let merged = 0;
 
-async function insertSources(db: Kysely<DB>, itemId: string, did: string, row: CommitRow): Promise<void> {
+      for (const row of input.rows) {
+        const identity = identityOf(row);
+        const target = byIdentity.get(identity);
+
+        if (target) {
+          // Merge into the live row. The existing `unit` anchor is kept so a list
+          // built in pounds keeps reading in pounds.
+          const nextQuantity = row.quantity == null ? toNum(target.quantity) : (toNum(target.quantity) ?? 0) + row.quantity;
+          const nextMax =
+            row.quantityMax == null && target.quantity_max == null ? null : (toNum(target.quantity_max) ?? toNum(target.quantity) ?? 0) + (row.quantityMax ?? row.quantity ?? 0);
+
+          await trx
+            .updateTable("grocery_item")
+            .set({ quantity: nextQuantity, quantity_max: nextMax, updated_at: sql`now()` })
+            .where("id", "=", target.id)
+            .where("household_id", "=", householdId)
+            .execute();
+
+          await insertSources(trx, target.id, did, row);
+          merged += 1;
+          continue;
+        }
+
+        const id = ulid();
+        await trx
+          .insertInto("grocery_item")
+          .values({
+            id,
+            household_id: householdId,
+            food_slug: row.foodSlug,
+            name_norm: row.nameNorm,
+            display_name: row.displayName,
+            aisle: row.aisle,
+            quantity: row.quantity,
+            quantity_max: row.quantityMax,
+            unit: row.unit,
+            unit_dim: row.unitDim,
+            merge_unit: row.mergeUnit,
+            is_manual: false,
+            created_by_did: did,
+          })
+          .execute();
+
+        await insertSources(trx, id, did, row);
+        // Later rows in the same commit must be able to merge into this one.
+        byIdentity.set(identity, {
+          id,
+          food_slug: row.foodSlug,
+          name_norm: row.nameNorm,
+          unit_dim: row.unitDim,
+          merge_unit: row.mergeUnit,
+          quantity: row.quantity == null ? null : String(row.quantity),
+          quantity_max: row.quantityMax == null ? null : String(row.quantityMax),
+          unit: row.unit,
+        });
+        added += 1;
+      }
+
+      return { added, merged };
+    });
+  },
+);
+
+const insertSources = createServerOnlyFn(async (db: Kysely<DB>, itemId: string, did: string, row: CommitRow): Promise<void> => {
   const { ulid } = await import("./household/ids");
   await db
     .insertInto("grocery_item_source")
@@ -554,7 +497,7 @@ async function insertSources(db: Kysely<DB>, itemId: string, did: string, row: C
       })),
     )
     .execute();
-}
+});
 
 // --- §7 addManualGroceryItem ---------------------------------------------
 

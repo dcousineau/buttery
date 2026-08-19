@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { BookOpenText, Check, ChevronRight, Clock, CookingPot, Pencil, Trash2, Users, UtensilsCrossed } from "lucide-react";
 import type { ComponentType } from "react";
-import type { PlanEntry } from "#/server/meal-plan";
+import type { PlanEntry } from "#/lib/api";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
 import { slotDayLine } from "#/lib/plan/labels";
 import { SourceLink } from "#/components/recipes/SourceLink";
@@ -70,7 +70,10 @@ export function PlanEntryPopover({ entry, date, slot, variant, onAction }: PlanE
   const cooked = entry.kind === "recipe" && entry.cookedAt !== null;
   // An entry the server has not confirmed yet has a placeholder id; nothing can
   // be done to it until the invalidate swaps in the real one.
-  const pending = isOptimisticId(entry.id);
+  //
+  // Offline is the same shape of "not now" (offline plan §4.1): every item in
+  // this menu is a write, and none of the plan's writes queue until M2.
+  const pending = isOptimisticId(entry.id) || !plan.writable;
 
   // Same order the comp lists them in; "Add back to your box" only appears when
   // the recipe has left the box (plan §3.4).

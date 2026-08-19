@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useHydratedSession } from "../lib/auth-client";
+import { useSessionSnapshot } from "#/lib/offline/use-household";
 import UserMenu from "./UserMenu";
 import { HeaderTimerIndicator } from "./timers/HeaderTimerIndicator";
 import type { ReactNode, Ref } from "react";
@@ -10,10 +11,14 @@ import type { ReactNode, Ref } from "react";
  * visitor goes to the public marketing home (`/`). */
 function Wordmark() {
   const { data: session } = useHydratedSession();
+  // Offline the live session is absent but the person is still signed in, so the
+  // wordmark must not send them back to marketing (offline plan §4.4).
+  const snapshot = useSessionSnapshot();
+  const signedIn = session !== null || snapshot !== null;
   return (
     // `shrink-0` + `nowrap`: on a 390px phone the menus squeeze this down until
     // the wordmark breaks mid-word ("Butter / y").
-    <Link to={session ? "/household" : "/"} className="flex shrink-0 items-center whitespace-nowrap text-foreground no-underline">
+    <Link to={signedIn ? "/household" : "/"} className="flex shrink-0 items-center whitespace-nowrap text-foreground no-underline">
       <span className="display-title text-lg leading-none">Buttery</span>
     </Link>
   );

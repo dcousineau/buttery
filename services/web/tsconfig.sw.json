@@ -1,0 +1,18 @@
+{
+  // The service worker runs in a different global than the app: `self` is a
+  // `ServiceWorkerGlobalScope`, there is no `window`, and `FetchEvent` /
+  // `ExtendableEvent` only exist under `lib: WebWorker`. Those libs contradict
+  // `DOM` — both declare `self`, with different types — so the worker cannot
+  // share the app's tsconfig, and `src/sw.ts` is excluded there.
+  //
+  // Checked by `pnpm typecheck` alongside the app config, not instead of it: an
+  // untypechecked service worker is one whose bugs only appear on a phone in a
+  // store, which is precisely the situation it exists to prevent.
+  "extends": "../../tsconfig.base.json",
+  "include": ["src/sw.ts"],
+  "compilerOptions": {
+    "lib": ["ES2022", "WebWorker"],
+    "types": [],
+    "noEmit": true
+  }
+}

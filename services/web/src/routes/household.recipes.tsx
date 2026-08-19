@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
 import { createFileRoute, Outlet, useParams, useRouter, useRouterState } from "@tanstack/react-router";
-import { requireActiveHousehold } from "#/server/household/onboarding";
-import { listHouseholdRecipes } from "#/server/household-recipes";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { householdRecipesQuery, keys } from "#/lib/api";
+import { ensureActiveHousehold } from "#/lib/offline/active-household";
+import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
+import { useRecipeMirror } from "#/lib/offline/use-recipe-mirror";
 import { Toast, ToastViewport, useToasts } from "#/components/ui/toast";
 import { RecipeLedger, type LedgerFilters } from "#/components/recipes/RecipeLedger";
 import { GlobalRecipePicker } from "#/components/recipes/GlobalRecipePicker";
@@ -18,20 +21,41 @@ import { seo } from "#/lib/seo";
  * renders in the right pane via <Outlet/> — so selecting a recipe keeps the
  * ledger's scroll/place and never re-fetches it. The loader gates through
  * `requireActiveHousehold` (the stale-active guard) exactly like `/household`, then
- * loads the whole box.
+ * primes the box query.
+ *
+ * **Offline-capable (offline plan §4.1).** The box comes from
+ * `householdRecipesQuery`, so it is persisted to IndexedDB, refetched on
+ * reconnect, and — via `useRecipeMirror` — the work queue the mini-mirror walks
+ * to make every *detail* readable offline too (§4.6). The loader primes the same
+ * cache entry the component then observes, which is what keeps SSR streaming.
+ *
+ * `requireActiveHousehold` is still awaited rather than folded into a query: it
+ * is a redirect, not data — its whole job is to throw before anything renders
+ * when the active household went stale.
  */
 export const Route = createFileRoute("/household/recipes")({
-  loader: async () => {
-    const active = await requireActiveHousehold();
-    const recipes = await listHouseholdRecipes();
-    return { active, recipes };
-  },
+  // The stale-active guard, and the cache partition, in one step. `beforeLoad`
+  // rather than `loader` because its result is *context* — the `$id` child needs
+  // the household id to build its own query key, and a loader's return value is
+  // not visible to a child route.
+  beforeLoad: async () => ({ ...(await ensureActiveHousehold()) }),
+  loader: ({ context }) => context.queryClient.ensureQueryData(householdRecipesQuery(context.householdId)),
   head: () => ({ meta: seo({ title: "Recipes · Buttery", description: "Your household's recipe box." }) }),
+  // An offline-capable route renders what has been cached; when the answer is
+  // "nothing yet", that is a state, not a crash (§4.4).
+  errorComponent: OfflineRouteError,
   component: RecipesLayout,
 });
 
 function RecipesLayout() {
-  const { recipes } = Route.useLoaderData();
+  const { householdId } = Route.useRouteContext();
+  // The hook, not the loader's return value: an unobserved query gets no
+  // refetch-on-reconnect, no invalidation and no gc protection — which is
+  // precisely the machinery offline depends on (§4.1).
+  const { data: recipes } = useSuspenseQuery(householdRecipesQuery(householdId));
+  // Walks the box in idle time so an unvisited recipe still opens in a store.
+  useRecipeMirror(householdId, recipes);
+  const queryClient = useQueryClient();
   const router = useRouter();
   // On a child ($id) route, params.id is the selected recipe; on the index it is
   // undefined. `strict: false` lets this read the child param from the layout.
@@ -56,7 +80,10 @@ function RecipesLayout() {
   }
 
   async function onAdded(recipeId: string) {
-    await router.invalidate();
+    // Prefix-scoped, not `router.invalidate()`: the box gained a row, and
+    // nothing else on screen did (§4.2). The whole-router invalidate this
+    // replaces also re-ran every other loader in the tree.
+    await queryClient.invalidateQueries({ queryKey: keys.household.recipes(householdId) });
     await router.navigate({ to: "/household/recipes/$id", params: { id: recipeId } });
     pushToast("Added to your box");
   }
