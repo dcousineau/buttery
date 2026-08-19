@@ -1,11 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { LogOut, Monitor, Moon, Sun } from "lucide-react";
+import { ArrowLeftRight, Home, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { signOutAndGoHome, useHydratedSession } from "../lib/auth-client";
 import UserAvatar from "./UserAvatar";
 import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
 import { Skeleton } from "#/components/ui/skeleton";
 import { serviceNameFromPds } from "#/lib/atproto/service-name";
+import { useOnboardingVerdict } from "#/lib/hooks/use-onboarding-verdict";
 import { useTheme, type ThemeMode } from "#/lib/hooks/use-theme";
 
 // Single-item theme control: clicking cycles light → dark → auto. The icon and
@@ -17,10 +18,64 @@ const THEME_META: Record<ThemeMode, { label: string; icon: typeof Sun; next: The
 };
 
 /**
+ * The household block inside the account menu: which household you're working
+ * in, then the two things you can do about it. There is no "create" entry — the
+ * switcher screen carries that affordance.
+ *
+ * Renders nothing while the verdict is unknown or the caller has no household
+ * yet (onboarding); a caller with memberships but no active one gets a single
+ * "Choose household" entry instead of an indicator.
+ */
+function HouseholdSection() {
+  const verdict = useOnboardingVerdict();
+  if (!verdict || verdict.kind === "onboard") return null;
+
+  if (verdict.kind === "pick") {
+    return (
+      <>
+        <DropdownMenuItem render={<Link to="/households/switch" />}>
+          <Home aria-hidden="true" />
+          Choose household
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+      </>
+    );
+  }
+
+  return (
+    <>
+      {/* Indicator, not a control: the household this session is working in. */}
+      <div className="flex items-center gap-2.5 px-1.5 py-1.5">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full border-2 border-border bg-secondary text-secondary-foreground">
+          <Home aria-hidden="true" className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <div className="text-xs text-muted-foreground">Household</div>
+          <div className="truncate text-sm font-semibold" title={verdict.name}>
+            {verdict.name}
+          </div>
+        </div>
+      </div>
+
+      <DropdownMenuItem render={<Link to="/households" />}>
+        <Settings aria-hidden="true" />
+        Manage household
+      </DropdownMenuItem>
+      <DropdownMenuItem render={<Link to="/households/switch" />}>
+        <ArrowLeftRight aria-hidden="true" />
+        Switch household
+      </DropdownMenuItem>
+
+      <DropdownMenuSeparator />
+    </>
+  );
+}
+
+/**
  * The account control in the app chrome: an avatar-circle button that opens a
- * dropdown with who you're signed in as (handle + atproto service), a theme
- * picker (light / dark / auto), and sign out. Replaces the old handle badge +
- * separate sign-out and theme buttons.
+ * dropdown with who you're signed in as (handle + atproto service), which
+ * household you're in (plus manage / switch), a theme picker (light / dark /
+ * auto), and sign out.
  *
  * Signed out (or still loading) it shows the sign-in affordance instead, so the
  * header can render it unconditionally.
@@ -76,6 +131,8 @@ export default function UserMenu() {
         </div>
 
         <DropdownMenuSeparator />
+
+        <HouseholdSection />
 
         {/* Cycles light → dark → auto in place; stays open so you can keep tapping. */}
         <DropdownMenuItem closeOnClick={false} onClick={() => setMode(THEME_META[mode].next)}>

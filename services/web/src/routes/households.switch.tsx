@@ -12,7 +12,7 @@ import { seo } from "#/lib/seo";
 import type { HouseholdSummary } from "#/server/household/households";
 
 /** The multi-household picker (§5). Reached from the §5 state machine (2+ live
- * memberships, no active) and from the chrome switcher at any time. */
+ * memberships, no active) and from the account menu at any time. */
 export const Route = createFileRoute("/households/switch")({
   loader: async () => {
     const households = await listMyHouseholds();
@@ -33,7 +33,7 @@ function PickerPage() {
             Your households
           </Badge>
           <h1 className="display-title m-0 text-3xl leading-[1.1] text-foreground sm:text-4xl">Choose a household</h1>
-          <p className="mt-3 mb-0 text-sm text-muted-foreground sm:text-base">Pick which household to work in. You can switch again anytime from the top bar.</p>
+          <p className="mt-3 mb-0 text-sm text-muted-foreground sm:text-base">Pick which household to work in. You can switch again anytime from the account menu.</p>
         </header>
 
         <div className="flex flex-col gap-3">

@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import { useHydratedSession } from "../lib/auth-client";
-import HouseholdSwitcher from "./HouseholdSwitcher";
 import UserMenu from "./UserMenu";
 import { HeaderTimerIndicator } from "./timers/HeaderTimerIndicator";
 import type { ReactNode, Ref } from "react";
@@ -12,8 +11,8 @@ import type { ReactNode, Ref } from "react";
 function Wordmark() {
   const { data: session } = useHydratedSession();
   return (
-    // `shrink-0` + `nowrap`: on a 390px phone the switcher and menus squeeze
-    // this down until the wordmark breaks mid-word ("Butter / y").
+    // `shrink-0` + `nowrap`: on a 390px phone the menus squeeze this down until
+    // the wordmark breaks mid-word ("Butter / y").
     <Link to={session ? "/household" : "/"} className="flex shrink-0 items-center whitespace-nowrap text-foreground no-underline">
       <span className="display-title text-lg leading-none">Buttery</span>
     </Link>
@@ -42,7 +41,6 @@ export default function Header({ ref, leftSlot, hidden = false }: { ref?: Ref<HT
 
         <div className="ml-auto flex min-w-0 items-center gap-2">
           <HeaderTimerIndicator />
-          <HouseholdSwitcher />
           <UserMenu />
         </div>
       </div>
