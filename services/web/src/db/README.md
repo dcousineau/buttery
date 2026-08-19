@@ -35,6 +35,24 @@ every file in `seeds/` on every invocation, so a seed here must be idempotent.
   the timestamp prefix comes from the CLI, same as migrations).
 - `pnpm db:seed:list` — list seed files.
 
+## Resetting user data (`db:reset:users`)
+
+`services/web/scripts/reset-user-data.ts` deletes every account- and
+household-owned row — users, sessions, atproto OAuth sessions, households,
+boxes, meal plans, grocery lists, import history, and `origin = 'local'`
+recipes — while **keeping** the synced atproto corpus (`atproto_*` tables,
+`origin = 'sync'` recipes and their children) and `recipe_vocab*`. Use it to
+re-run onboarding from zero without paying for another `sync:once` sweep.
+
+- `pnpm db:reset:users -- --dry-run` — run the deletes and roll back, printing
+  per-table counts.
+- `pnpm db:reset:users -- --yes` — actually do it.
+
+Refuses a non-loopback `DATABASE_URL` unless `--allow-remote` is also passed,
+and does nothing at all without `--yes`. Manual only, like the seeds: no
+process, hook or task may call it. Blob-storage objects for deleted local
+recipes are orphaned rather than removed.
+
 ## Type generation (kysely-codegen)
 
 `types.ts` is introspected from the live local DB. A **dev-only** dependency —
