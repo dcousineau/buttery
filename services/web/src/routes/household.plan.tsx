@@ -19,6 +19,7 @@ import {
   setMealPlanEntryCookedMutation,
 } from "#/lib/api";
 import { ensureActiveHousehold } from "#/lib/offline/active-household";
+import { OfflineNotice } from "#/components/offline/OfflineNotice";
 import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
 import { type MealSlot, type PlanDate, isPlanDate, shiftWeeks, weekStartFor } from "#/lib/plan/week";
@@ -457,6 +458,11 @@ function PlanPage() {
               )}
             </div>
           </div>
+
+          {/* The stated reason every planning control below is disabled. The
+            controls themselves only carry it in `title`, which no phone and no
+            keyboard user can reach — see `OfflineNotice`. */}
+          <OfflineNotice online={online}>You're offline — the plan is readable, but changes need a connection.</OfflineNotice>
 
           {/* Announces the results of planner actions (added, moved, removed).
             Toasts carry the same news visually, but they are `aria-live` on a

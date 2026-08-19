@@ -38,12 +38,35 @@ import { isForbidden, shouldRetry } from "./lib/api";
  * failures do not reach here as `forbidden` (see `isOffline`, which now checks
  * server answers first), so a phone in a lift never wipes itself.
  */
-function onCacheError(error: unknown): void {
-  if (typeof window === "undefined" || !isForbidden(error)) return;
-  void import("./lib/offline/partition").then(({ wipeCachePartition }) => wipeCachePartition("forbidden"));
-}
 
 export function getRouter() {
+  /**
+   * The in-memory cache is cleared alongside the disk one, and not as a nicety:
+   * the persister writes back to IndexedDB on later cache events, so RAM
+   * entries that survive the wipe re-file the household's rows to disk and
+   * silently undo it. But `clear()` on a cache with mounted observers triggers
+   * refetches, those refetches hit the same 403, and this handler fires again —
+   * an infinite wipe/refetch loop hammering a server that already said no. The
+   * guard makes the wipe once-per-verdict: while it is up, the refetches simply
+   * settle into their error states and the route's boundary takes over.
+   */
+  let wipingForbidden = false;
+  function onCacheError(error: unknown): void {
+    if (typeof window === "undefined" || wipingForbidden || !isForbidden(error)) return;
+    wipingForbidden = true;
+    queryClient.clear();
+    void import("./lib/offline/partition")
+      .then(({ wipeCachePartition }) => wipeCachePartition("forbidden"))
+      .finally(() => {
+        // Long enough to outlive the refetch burst `clear()` causes; short
+        // enough that a *second* removal (new household, removed again) is
+        // still caught. Nothing re-arms sooner because nothing needs to.
+        setTimeout(() => {
+          wipingForbidden = false;
+        }, 30_000);
+      });
+  }
+
   const queryClient = new QueryClient({
     queryCache: new QueryCache({ onError: onCacheError }),
     mutationCache: new MutationCache({ onError: onCacheError }),

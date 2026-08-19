@@ -89,21 +89,21 @@ sw.addEventListener("install", (event) => {
     (async () => {
       const cache = await caches.open(CACHE);
 
-      // Assets are best-effort and individual, not `addAll`: `addAll` is
-      // all-or-nothing, so one hashed chunk 404ing mid-deploy would reject the
-      // whole install. A worker with 103 of 104 chunks is still a useful worker.
-      await Promise.all(PRECACHE.map((url) => cache.add(url).catch(() => undefined)));
-
-      // The shell is NOT best-effort. Without it every offline navigation ends
-      // in `Response.error()` — the browser's own dinosaur — and the worker is
-      // worse than useless, because it looks installed.
+      // Atomic: one failure fails the whole install. This used to be
+      // per-asset best-effort — "a worker with 103 of 104 chunks is still a
+      // useful worker" — and that argument is wrong on its own terms, because
+      // the `activate` handler below *deletes the previous build's complete
+      // shell*. A partial precache does not add a slightly-worse worker; it
+      // replaces a complete cache with a hole-ridden one, and the hole is
+      // invisible until the exact offline navigation that needed that chunk.
       //
-      // This is not hypothetical: an install interrupted partway through left
-      // exactly that worker active in testing (75 of 105 entries, no `/offline`)
-      // and offline navigation failed outright. Letting the rejection escape
-      // fails the install, so the browser keeps the previous working worker and
-      // retries on the next load.
-      await cache.add(OFFLINE_SHELL);
+      // Not hypothetical either way: an install interrupted partway through
+      // left a worker active with 75 of 105 entries and no `/offline`, and
+      // offline navigation failed outright. Letting any rejection escape fails
+      // the install, the browser keeps the previous working worker serving its
+      // intact cache, and retries on the next load — mid-deploy 404s therefore
+      // cost nothing but a delay until the deploy finishes.
+      await cache.addAll([...PRECACHE, OFFLINE_SHELL]);
     })(),
   );
   // Deliberately NO `skipWaiting()`. A new worker waits until every tab running

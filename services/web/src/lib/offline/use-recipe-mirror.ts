@@ -30,10 +30,35 @@
 import { useEffect, useRef } from "react";
 import { useRouter, useRouterState } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
-import { householdRecipeQuery, keys, type HouseholdRecipeRow } from "#/lib/api";
+import { householdRecipeQuery, keys, type HouseholdRecipeDetail, type HouseholdRecipeRow } from "#/lib/api";
 
 /** Two at a time: enough to make progress, few enough to stay out of the way. */
 const CONCURRENCY = 2;
+
+/**
+ * How many hero images one mirror run will request (§4.6: "hero thumbnails …
+ * into the §4.4 image bucket"). Mirrors `IMAGE_CACHE_MAX` in `src/sw.ts` by
+ * value rather than by import (the worker compiles in its own build): the
+ * bucket is a 48-entry LRU, so requesting a 300-recipe box's every hero would
+ * download 300 images to keep the last 48 — pure bandwidth for zero coverage.
+ */
+const HERO_BUDGET = 48;
+
+/**
+ * Ask for a hero so the service worker's image bucket hears about it.
+ *
+ * `prefetchQuery` stores the detail *JSON*; nothing about receiving an image
+ * URL requests the image, so before this the mirror filled IndexedDB while the
+ * image cache stayed empty and every never-opened recipe rendered offline with
+ * a broken hero. `no-cors` is deliberate twice over: it is the shape an
+ * `<img src>` produces (the only mode the SW's bucket accepts — see
+ * `isRecipeImage` in `sw.ts`), and `cdn.bsky.app` sends no CORS header, so a
+ * `cors` request would just fail. Without a controlling worker (dev, first
+ * visit) this is one wasted request; the browser's HTTP cache blunts even that.
+ */
+function requestHero(url: string): void {
+  void fetch(url, { mode: "no-cors" }).catch(() => undefined);
+}
 
 /** Consecutive failures that park the run until the next app open. */
 const FAILURE_BUDGET = 3;
@@ -89,6 +114,7 @@ function startMirror(queryClient: QueryClient, householdId: string, recipeIds: s
   let cancelled = false;
   let scheduled: Scheduled | null = null;
   let failures = 0;
+  let heroes = 0;
 
   const queue = recipeIds.filter((recipeId) => {
     const state = queryClient.getQueryState(keys.household.recipe(householdId, recipeId));
@@ -114,6 +140,17 @@ function startMirror(queryClient: QueryClient, householdId: string, recipeIds: s
         // no `dataUpdatedAt` after a prefetch is the real failure signal.
         const landed = batch.filter((recipeId) => queryClient.getQueryState(keys.household.recipe(householdId, recipeId))?.dataUpdatedAt);
         failures = landed.length > 0 ? 0 : failures + 1;
+        // The offline detail view renders `images[0]` (`DetailPane`), so that is
+        // the URL worth having on disk — fetched by exact string, because the
+        // SW's cache is keyed by URL and a different preset is a different key.
+        for (const recipeId of landed) {
+          if (heroes >= HERO_BUDGET) break;
+          const detail = queryClient.getQueryData<HouseholdRecipeDetail | null>(keys.household.recipe(householdId, recipeId));
+          const url = detail?.images[0]?.url;
+          if (!url) continue;
+          heroes += 1;
+          requestHero(url);
+        }
         pump();
       });
     });

@@ -642,6 +642,12 @@ function DangerZone({ householdId, isOwner, memberCount }: { householdId: string
     setPending(true);
     try {
       await leaveHousehold(householdId);
+      // The server just cleared `active_household_id`; without a refresh the
+      // client store keeps naming a household this person no longer belongs to,
+      // and the cache partition — readable offline — follows the stale answer.
+      // The refreshed session is what lets `useCachePartition` notice the
+      // handover and wipe before the next screen paints.
+      await refreshSession();
       posthog.capture("household_left", { household_id: householdId });
       setLeaveOpen(false);
       await navigate({ to: "/onboarding" });
@@ -657,6 +663,10 @@ function DangerZone({ householdId, isOwner, memberCount }: { householdId: string
     setPending(true);
     try {
       await deleteHousehold(householdId);
+      // Same as leaving: the household no longer exists server-side, so the
+      // session refresh is what evicts it from the client store and lets the
+      // partition wipe fire now rather than at some later window focus.
+      await refreshSession();
       posthog.capture("household_deleted", { household_id: householdId, member_count: memberCount });
       setDeleteOpen(false);
       await navigate({ to: "/onboarding" });

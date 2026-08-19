@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouteContext } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
 import { Spinner } from "#/components/ui/spinner";
-import { addRecipeToHousehold } from "#/lib/api";
+import { addRecipeToHousehold, keys } from "#/lib/api";
 
 /**
  * Shown when publishing an imported URL that an existing PUBLIC record already
@@ -12,6 +13,11 @@ import { addRecipeToHousehold } from "#/lib/api";
  */
 export function DuplicateDialog({ open, onOpenChange, existingRecipeId }: { open: boolean; onOpenChange: (o: boolean) => void; existingRecipeId: string | null }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  // The route context, for the same reason `DetailPane` reads it: this dialog
+  // only renders under `/household/recipes`, whose `beforeLoad` resolved the id
+  // the box query on screen is keyed with.
+  const { householdId } = useRouteContext({ from: "/household/recipes" });
   const [adding, setAdding] = useState(false);
 
   async function open_() {
@@ -25,6 +31,11 @@ export function DuplicateDialog({ open, onOpenChange, existingRecipeId }: { open
     setAdding(true);
     try {
       await addRecipeToHousehold(existingRecipeId);
+      // Same invalidation every other add path does. Without it the ledger —
+      // whose loader is `ensureQueryData` and whose observer never unmounts
+      // under this layout — keeps the pre-add list until some later refetch,
+      // showing a box the recipe just landed in without the recipe.
+      void queryClient.invalidateQueries({ queryKey: keys.household.recipes(householdId) });
       onOpenChange(false);
       await navigate({ to: "/household/recipes/$id", params: { id: existingRecipeId } });
     } finally {

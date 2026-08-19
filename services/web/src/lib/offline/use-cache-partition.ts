@@ -107,6 +107,14 @@ export function useCachePartition(): void {
       // against, which is the §2.7 leak one person further down the chain.
       void wipeCachePartition(key === null ? "sign-out" : samePerson ? "household-switch" : "identity-change").then(() => {
         if (key !== null) rememberPartition(key);
+        // The wipe raced navigation: the new persister was live from the moment
+        // `setPartition` ran above, so anything the new partition fetched while
+        // `clearQueryStore()` was in flight got written to disk and then deleted
+        // by it. RAM still holds those rows — re-file them. (This is safe here
+        // and unsafe before the wipe for the same reason: what matters is whose
+        // rows are in memory, and after `queryClient.clear()` they are all the
+        // new partition's.)
+        persistHydratedQueries(queryClient);
       });
       return;
     }

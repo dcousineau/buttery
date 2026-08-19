@@ -4,6 +4,7 @@ import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-q
 import { BookOpenText, CalendarRange, Check, EllipsisVertical, ListX, Trash2 } from "lucide-react";
 import { type GroceryItemRow, groceryListQuery, grocerySweepMutation, keys, removeGroceryItemMutation, toggleGroceryItemMutation, updateGroceryItemMutation } from "#/lib/api";
 import { ensureActiveHousehold } from "#/lib/offline/active-household";
+import { OfflineNotice } from "#/components/offline/OfflineNotice";
 import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
 import { todayIn } from "#/lib/plan/week";
@@ -313,6 +314,11 @@ function GroceryListPage() {
               </div>
             </div>
           </div>
+
+          {/* The stated reason the input and every row control below are
+            disabled. They only carry it in `title`, which no phone and no
+            keyboard user can reach — see `OfflineNotice`. */}
+          <OfflineNotice online={online}>You're offline — the list is readable, but ticking things off needs a connection.</OfflineNotice>
 
           {/* Pinned above the scroll area: adding four things in a row is how
             this field actually gets used, and scrolling back to the top between

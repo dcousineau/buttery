@@ -43,12 +43,15 @@ function isStandalone(): boolean {
   return (window.navigator as { standalone?: boolean }).standalone === true;
 }
 
-function isIosSafari(): boolean {
+function isIos(): boolean {
   const ua = window.navigator.userAgent;
-  const iOS = /iPad|iPhone|iPod/.test(ua) || (ua.includes("Macintosh") && "ontouchend" in document);
-  // Chrome and Firefox on iOS are Safari underneath but cannot install to the
-  // home screen at all, so pointing them at the share sheet would be a lie.
-  return iOS && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  // No Safari-only carve-out: since iOS/iPadOS 16.4 the share sheet's "Add to
+  // Home Screen" works from third-party browsers too, and installs a standalone
+  // web app that honours the manifest. They are all WebKit underneath, they all
+  // have a share button, so the sheet's two taps are accurate everywhere —
+  // excluding CriOS/FxiOS/EdgiOS (as this used to) silenced the only install
+  // guidance those users would ever see.
+  return /iPad|iPhone|iPod/.test(ua) || (ua.includes("Macintosh") && "ontouchend" in document);
 }
 
 function dismissedRecently(): boolean {
@@ -83,7 +86,7 @@ export function InstallPrompt() {
   // the server or during the hydration pass — which also keeps the
   // `createClientOnlyFn` storage reads from throwing.
   const eligible = hydrated && !dismissed && !isStandalone() && !dismissedRecently();
-  const ios = eligible && isIosSafari();
+  const ios = eligible && isIos();
   const open = eligible && (ios || installEvent !== null);
 
   function dismiss() {
