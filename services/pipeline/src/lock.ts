@@ -3,33 +3,29 @@ import type { Redis } from "ioredis";
 import { log } from "#/log.ts";
 
 /**
- * A Redis mutex, held across the worker fleet.
+ * A Redis mutex, held across the worker fleet — and, unlike the usual shape,
+ * across *executions*.
  *
- * BullMQ stops the *same* job running twice, but it does not stop two
- * *different* jobs on the same queue running at once — which is exactly what an
- * autoscaled fleet plus a slow job produces: the scheduler enqueues the next
- * hourly sweep while the previous one is still going, a second replica picks it
- * up, and two sweeps write the same rows.
+ * BullMQ stops the same job running twice, but it does not stop two different
+ * jobs on the same queue running at once — which is exactly what an hourly
+ * schedule plus a long-running workflow plus two replicas produces. The Railway
+ * cron this replaces got that guarantee from the platform (a scheduled run is
+ * skipped while the previous deployment is still active), so losing it would be
+ * a regression, not a new risk. Hence this.
  *
- * The Railway cron this replaces got that guarantee from the platform (a
- * scheduled run is skipped while the previous deployment is still active), so
- * losing it would be a regression, not a new risk. Hence this.
+ * Acquire and release are split rather than wrapped in a `withLock(fn)` because
+ * the holder is not a function call: it is a graph of jobs. One step takes the
+ * lock, another one — minutes later, on another machine — gives it back, and the
+ * token travels between them in the flow's own job data.
  *
- * The shape is the standard one: SET NX PX with a random token, a compare-and-
- * delete on release so a slow holder cannot free someone else's lock, and a
- * heartbeat that extends the TTL while the work is genuinely still running. The
- * TTL is what makes a crashed holder recoverable; the heartbeat is what keeps
- * the TTL short enough for that to matter without capping how long a job may
- * take.
+ * The shape is otherwise standard: SET NX PX with a random token, and a
+ * compare-and-delete on release so a slow holder cannot free someone else's
+ * lock. Nothing heartbeats it, because there is no process to heartbeat from,
+ * which makes the TTL a plain deadline rather than a liveness check. Size it to
+ * the schedule's period: what it then says is "a run may not start while the
+ * last one is still going, up to one period", and a run that outlasts its own
+ * interval is already the pathological case.
  */
-
-/** Extend the TTL only if we still hold the lock. */
-const RENEW = `
-if redis.call("get", KEYS[1]) == ARGV[1] then
-  return redis.call("pexpire", KEYS[1], ARGV[2])
-end
-return 0
-`;
 
 /** Delete only if we still hold the lock. */
 const RELEASE = `
@@ -39,42 +35,16 @@ end
 return 0
 `;
 
-export interface LockOptions {
-  /** How long the lock survives a holder that stops heartbeating (i.e. crashed). */
-  ttlMs: number;
+/** Take the lock, or return undefined if someone else holds it. */
+export async function acquireLock(redis: Redis, key: string, ttlMs: number): Promise<string | undefined> {
+  const token = randomUUID();
+  const acquired = await redis.set(key, token, "PX", ttlMs, "NX");
+  return acquired === "OK" ? token : undefined;
 }
 
-/**
- * Runs `fn` under `key`, or returns `undefined` without running it if someone
- * else holds the lock. A caller that needs to tell "did not run" from "ran and
- * returned undefined" should have `fn` return something non-undefined.
- */
-export async function withLock<T>(redis: Redis, key: string, options: LockOptions, fn: () => Promise<T>): Promise<T | undefined> {
-  const token = randomUUID();
-  const acquired = await redis.set(key, token, "PX", options.ttlMs, "NX");
-  if (acquired !== "OK") return undefined;
-
-  // A third of the TTL: two heartbeats may be lost to a Redis blip before the
-  // lock is at risk of expiring under a holder that is still working.
-  const heartbeat = setInterval(
-    () => {
-      redis.eval(RENEW, 1, key, token, options.ttlMs).catch((err: unknown) => {
-        // Losing a renewal is not fatal on its own — the next one may land before
-        // the TTL runs out — but it is worth seeing when a lock does expire early.
-        log.warn("lock renewal failed", { key, err: String(err) });
-      });
-    },
-    Math.max(1_000, Math.floor(options.ttlMs / 3)),
-  );
-  heartbeat.unref();
-
-  try {
-    return await fn();
-  } finally {
-    clearInterval(heartbeat);
-    await redis.eval(RELEASE, 1, key, token).catch((err: unknown) => {
-      // The TTL is the backstop: an unreleased lock frees itself.
-      log.warn("lock release failed", { key, err: String(err) });
-    });
-  }
+export async function releaseLock(redis: Redis, key: string, token: string): Promise<void> {
+  await redis.eval(RELEASE, 1, key, token).catch((err: unknown) => {
+    // The TTL is the backstop: an unreleased lock frees itself.
+    log.warn("lock release failed", { key, err: String(err) });
+  });
 }

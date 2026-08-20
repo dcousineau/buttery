@@ -11,7 +11,7 @@ import { WORKFLOWS, findWorkflow } from "#/workflows/index.ts";
 import { log } from "#/log.ts";
 import { closeQueues, getQueues } from "#/queues.ts";
 import { closeRedis } from "#/redis.ts";
-import { reconcileSchedules } from "#/schedules.ts";
+import { reconcileQueues } from "#/reconcile.ts";
 
 /**
  * The `pipeline` service: a Fastify server that hosts the Bull Board UI, exposes
@@ -25,7 +25,7 @@ import { reconcileSchedules } from "#/schedules.ts";
  *   GET  /health          unauthenticated — Railway's healthcheck target
  *   GET  /                redirect to the board
  *   GET  /ui              Bull Board                       (basic auth)
- *   GET  /workflows       what this build can run, and how (basic auth)
+ *   GET  /workflows       the graphs this build can run       (basic auth)
  *   GET  /queues          job counts per queue as JSON     (basic auth)
  *   GET  /autoscale       last autoscaler decision as JSON (basic auth)
  *   POST /jobs/:queue     enqueue one job                  (basic auth)
@@ -105,8 +105,10 @@ async function start(): Promise<void> {
       WORKFLOWS.map((workflow) => ({
         name: workflow.name,
         description: workflow.description,
+        entry: workflow.entry,
         steps: workflow.steps,
         schedule: workflow.schedule?.() ?? null,
+        maxInFlight: workflow.globalConcurrency?.() ?? null,
       })),
     );
 
@@ -128,7 +130,9 @@ async function start(): Promise<void> {
       }
 
       const body = req.body ?? {};
-      const job = await queue.add(body.name ?? workflow.name, body.data ?? {});
+      // A job's name is the step it runs. Default to the graph's root; naming
+      // another step is how you re-run one by hand from the board's payload.
+      const job = await queue.add(body.name ?? workflow.entry, body.data ?? {});
       log.info("job enqueued", { queue: workflow.name, jobId: job.id, name: job.name });
       return reply.status(202).send({ queue: workflow.name, jobId: job.id, name: job.name });
     });
@@ -136,7 +140,7 @@ async function start(): Promise<void> {
 
   // Before listening: a boot that cannot reach Redis should fail as a failed
   // deployment rather than as a healthy service with no schedules.
-  await reconcileSchedules(queues);
+  await reconcileQueues(queues);
 
   await app.listen({ port: config.server.port, host: config.server.host });
   log.info("pipeline server listening", {

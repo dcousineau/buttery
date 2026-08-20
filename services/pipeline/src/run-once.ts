@@ -1,8 +1,8 @@
 import { loadConfig } from "#/config.ts";
 import { log, setLogRole } from "#/log.ts";
 import { closeRedis, getRedis } from "#/redis.ts";
+import type { ChildResults, Workflow } from "#/workflows/define.ts";
 import { consoleHost } from "#/workflows/hosts.ts";
-import { SKIPPED } from "#/workflows/define.ts";
 import { WORKFLOW_NAMES, findWorkflow } from "#/workflows/index.ts";
 
 setLogRole("cli");
@@ -13,18 +13,19 @@ setLogRole("cli");
  *   pnpm --filter @buttery/pipeline run:once <workflow> [--flag] [--flag=value]
  *   pnpm --filter @buttery/pipeline sync:once --dry-run      # the same, for atproto-sync
  *
- * Same workflow, same steps, same `.env` as the queued path — only the host
- * differs (`hosts.ts`), so progress and step logs go to the terminal instead of
- * to a job. That equivalence is the point: iterating on a workflow through
- * Redis and a worker is a slow way to work, and a one-off backfill
- * (`SYNC_MAX_REPOS=25`, `SYNC_ONLY_DID=…`) should not need the dev stack up.
+ * Same workflow, same steps, same graph, same `.env` as the queued path — only
+ * the host differs (`hosts.ts`), so the fan-out runs here instead of on the
+ * fleet, and log lines go to the terminal instead of to a job. That equivalence
+ * is the point: iterating on a workflow through Redis and a worker is a slow way
+ * to work, and a one-off backfill (`SYNC_MAX_REPOS=25`, `SYNC_ONLY_DID=…`)
+ * should not need the dev stack up.
  *
- * Flags become the job payload, so anything the queue can send, a shell can:
- * `--dry-run` is `{"dryRun": true}` and `--label=hello` is `{"label": "hello"}`.
+ * Flags become the entry job's payload, so anything the queue can send, a shell
+ * can: `--dry-run` is `{"dryRun": true}` and `--label=hello` is
+ * `{"label": "hello"}`.
  *
- * Redis is still required, because `exclusive` workflows take their lock here
- * too — a sweep by hand must not run alongside a scheduled one just because a
- * person started it.
+ * Redis is still required: steps take locks on it, and a sweep by hand must not
+ * run alongside a scheduled one just because a person started it.
  */
 
 interface Invocation {
@@ -32,14 +33,13 @@ interface Invocation {
   payload: Record<string, unknown>;
 }
 
-/** `--dry-run` → `dryRun: true`; `--max=3` → `max: "3"`. */
+/** `--dry-run` → `dryRun: true`; `--max-repos=3` → `maxRepos: "3"`. */
 function toPayloadKey(flag: string): string {
   return flag.replace(/^--/, "").replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 }
 
 function parseArgv(argv: string[]): Invocation | undefined {
-  const positional = argv.filter((arg) => !arg.startsWith("--"));
-  const workflow = positional[0];
+  const workflow = argv.filter((arg) => !arg.startsWith("--"))[0];
   if (!workflow) return undefined;
 
   const payload: Record<string, unknown> = {};
@@ -63,17 +63,30 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const redis = getRedis(config.redisUrl);
 
-  try {
-    const result = await workflow.run({
-      payload: invocation.payload,
-      host: consoleHost(workflow.name),
+  // The last step to finish is the graph's outcome — the root of the flow the
+  // entry step submitted, which finishes after everything it waited on. The
+  // entry step's own return value is just what it reported before fanning out.
+  let outcome: { step: string; result: unknown } | undefined;
+
+  // One recursive definition covers the whole graph: a step runs with a host
+  // that knows how to run the steps it fans out to, which is this same function.
+  const runStep = async (target: Workflow, step: string, payload: unknown, children: ChildResults): Promise<unknown> => {
+    const result = await target.run({
+      step,
+      payload,
+      host: consoleHost({ workflow: target, runStep: (s, p, c) => runStep(target, s, p, c), concurrency: config.worker.concurrency }, children),
       redis,
     });
-    // A skipped run is not a failure — the work is already being done elsewhere
-    // — but it is also not the sweep the caller asked for, so say so plainly
-    // rather than let an empty-looking success be mistaken for one.
-    if (result === SKIPPED) log.warn("run skipped — another run holds this workflow's lock", { workflow: workflow.name });
-    else log.info("run complete", { workflow: workflow.name, result });
+    // The entry step returns before the graph it submitted has finished — the
+    // children and the step waiting on them all completed inside that call. So
+    // the entry's own value only counts when nothing deeper produced one.
+    if (step !== target.entry || outcome === undefined) outcome = { step, result };
+    return result;
+  };
+
+  try {
+    await runStep(workflow, workflow.entry, invocation.payload, { values: [], failures: [] });
+    log.info("run complete", { workflow: workflow.name, step: outcome?.step, result: outcome?.result });
   } catch (err) {
     log.error("run failed", { workflow: workflow.name, err: String(err) });
     process.exitCode = 1;

@@ -96,7 +96,9 @@ Its defaults are the real atmosphere (`plc.directory` + the public relay), which
 
 There is a third way to run the same sweep — `POST /jobs/atproto-sync` on the pipeline — and it obeys that same `.env`. It is the one that shows the sweep's five steps, their progress and their failures in the Bull Board UI, and it is what the hourly production schedule uses. Prefer this process for a quick one-off; prefer the queue when you want to watch it.
 
-All three go through the same `Workflow.run`, so they run the same steps and take the same fleet-wide Redis lock: start a sweep while one is already going and the second **skips** rather than running alongside it.
+All three go through the same `Workflow.run`, so they run the same graph — `enumerate` fans out one job per repo, and `finalize` folds them once every one has settled — and take the same fleet-wide Redis lock: start a sweep while one is already going and the second **skips** rather than running alongside it.
+
+Through the queue, a sweep is dozens of jobs rather than one, which is what the board is worth looking at for: `process-compose process scale pipeline-worker 3` and they spread across the replicas, up to the `ATPROTO_SYNC_MAX_IN_FLIGHT` cap.
 
 ## How the dev containers are wired in
 

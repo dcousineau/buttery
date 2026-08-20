@@ -212,6 +212,13 @@ export default defineRailway((ctx) => {
       // Emptying this variable removes the scheduler rather than orphaning it.
       ATPROTO_SYNC_SCHEDULE: "0 * * * *",
 
+      // How many repos one sweep may sweep at once, across the whole fleet.
+      // BullMQ enforces it in Redis rather than per process, which is what makes
+      // it survive the autoscaler moving `pipeline-worker`'s replica count
+      // around underneath it. Read by the SERVER, which reconciles it onto the
+      // queue at boot the same way it does the schedule.
+      ATPROTO_SYNC_MAX_IN_FLIGHT: "8",
+
       // --- autoscaler --------------------------------------------------------
       // The loop is opt-in and OFF until a Railway API token exists.
       //

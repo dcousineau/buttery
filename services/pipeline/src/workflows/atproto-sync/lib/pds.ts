@@ -1,4 +1,4 @@
-import { getJson } from "#/workflows/atproto-sync/http.ts";
+import { getJson } from "#/workflows/atproto-sync/lib/http.ts";
 
 // Record listing straight off a repo's PDS, unauthenticated (plan §1 step 3).
 
