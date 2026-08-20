@@ -1,6 +1,6 @@
 import type { Job, JobsOptions } from "bullmq";
-import { atprotoSyncPipeline } from "#/jobs/atproto-sync.ts";
-import { demoPipeline } from "#/jobs/demo.ts";
+import { atprotoSyncPipeline } from "#/workflows/atproto-sync/index.ts";
+import { demoPipeline } from "#/workflows/demo/index.ts";
 
 /**
  * A pipeline is one BullMQ queue plus the function that drains it. Declaring
@@ -12,7 +12,7 @@ import { demoPipeline } from "#/jobs/demo.ts";
  *   * `worker.ts` builds a `Worker` per definition from `process`,
  *   * `autoscale.ts` sums the backlog across every definition.
  *
- * Adding a pipeline means adding a file under `jobs/` and one entry to
+ * Adding a pipeline means adding a folder under `workflows/` and one entry to
  * `PIPELINES` below. Nothing else in the service is queue-aware.
  *
  * `process` is deliberately typed against an unparameterized `Job`: a payload

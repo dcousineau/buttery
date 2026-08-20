@@ -1,13 +1,13 @@
 import type { Pool } from "pg";
-import type { Config } from "#/config.ts";
-import { RECIPE_COLLECTION } from "#/config.ts";
-import { getPool } from "#/db.ts";
+import type { SyncConfig } from "#/workflows/atproto-sync/config.ts";
+import { RECIPE_COLLECTION } from "#/workflows/atproto-sync/config.ts";
+import { getPool } from "#/workflows/atproto-sync/db.ts";
 import { log } from "#/log.ts";
-import { enumerateDids, enumerateDidsFromPds } from "#/relay.ts";
-import { resolveIdentity } from "#/identity.ts";
-import { getRepoRev, listRecords } from "#/pds.ts";
-import { reconcileDeletes, toRecipeRow, upsertRecipe } from "#/recipe.ts";
-import { deleteRenderedForDid, renderRecipe } from "#/render.ts";
+import { enumerateDids, enumerateDidsFromPds } from "#/workflows/atproto-sync/relay.ts";
+import { resolveIdentity } from "#/workflows/atproto-sync/identity.ts";
+import { getRepoRev, listRecords } from "#/workflows/atproto-sync/pds.ts";
+import { reconcileDeletes, toRecipeRow, upsertRecipe } from "#/workflows/atproto-sync/recipe.ts";
+import { deleteRenderedForDid, renderRecipe } from "#/workflows/atproto-sync/render.ts";
 
 export interface SweepSummary {
   syncRunId: string | null;
@@ -84,7 +84,7 @@ interface RepoOutcome {
   failed: boolean;
 }
 
-async function sweepDid(pool: Pool, config: Config, did: string): Promise<RepoOutcome> {
+async function sweepDid(pool: Pool, config: SyncConfig, did: string): Promise<RepoOutcome> {
   const outcome: RepoOutcome = { upserted: 0, deleted: 0, failed: false };
   try {
     // Resolve identity (PDS + handle), preferring the cached values. Re-resolve
@@ -148,7 +148,7 @@ async function sweepDid(pool: Pool, config: Config, did: string): Promise<RepoOu
 
 // --- orchestration -------------------------------------------------------
 
-export async function runSweep(config: Config): Promise<SweepSummary> {
+export async function runSweep(config: SyncConfig): Promise<SweepSummary> {
   const pool = getPool(config.databaseUrl);
 
   // Enumerate the DIDs to sweep.

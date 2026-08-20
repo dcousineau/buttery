@@ -1,6 +1,6 @@
 import { Queue } from "bullmq";
 import { connectionFor } from "#/redis.ts";
-import { PIPELINES } from "#/jobs/index.ts";
+import { PIPELINES } from "#/workflows/index.ts";
 
 // One `Queue` per pipeline definition, built once per process. Only the server
 // process needs these — a `Queue` is the producer/inspection handle (add jobs,

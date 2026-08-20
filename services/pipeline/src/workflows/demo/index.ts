@@ -1,5 +1,5 @@
 import type { Job } from "bullmq";
-import type { PipelineDefinition } from "#/jobs/index.ts";
+import type { PipelineDefinition } from "#/workflows/index.ts";
 import { log } from "#/log.ts";
 
 /**

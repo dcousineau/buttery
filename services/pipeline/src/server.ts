@@ -7,7 +7,7 @@ import { timingSafeEqual } from "node:crypto";
 import { Autoscaler, DISABLED_STATE } from "#/autoscale.ts";
 import { readBacklog } from "#/backlog.ts";
 import { loadAutoscaleConfig, loadConfig } from "#/config.ts";
-import { PIPELINES, findPipeline } from "#/jobs/index.ts";
+import { PIPELINES, findPipeline } from "#/workflows/index.ts";
 import { log } from "#/log.ts";
 import { closeQueues, getQueues } from "#/queues.ts";
 import { closeRedis } from "#/redis.ts";

@@ -13,7 +13,7 @@ import duration from "dayjs/plugin/duration.js";
 // `node:crypto`: one implementation for browser, web server and cron means the
 // digests cannot drift (§6.6 requires them byte-identical).
 import { contentFingerprint, normalizeSourceUrl } from "@buttery/recipe-schemas/normalize";
-import type { RecipeRow } from "#/recipe.ts";
+import type { RecipeRow } from "#/workflows/atproto-sync/recipe.ts";
 import { log } from "#/log.ts";
 
 dayjs.extend(duration);

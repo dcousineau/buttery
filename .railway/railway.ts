@@ -163,13 +163,16 @@ export default defineRailway((ctx) => {
   // has to stay up, while the worker fleet grows with the backlog and shrinks
   // when it drains. See services/pipeline/README.md.
   //
-  // Both build the same way as the cron sync — install the whole workspace, run
-  // the package's start script, no build step (Node 26 runs the TypeScript
-  // directly) — and share one watchPatterns set, so a change to the package
-  // redeploys the pair together and they never run different code.
+  // Both install the whole workspace and run the package's start script, with no
+  // build step (Node 26 runs the TypeScript directly), and share one
+  // watchPatterns set, so a change to the package redeploys the pair together
+  // and they never run different code. `packages/recipe-schemas/**` is in the
+  // set because the atproto-sync workflow renders records through it — the one
+  // shared package the pipelines read, and a change to it that did not redeploy
+  // them would leave the fleet rendering by yesterday's rules.
   const pipelineBuild = {
     buildCommand: "pnpm install --frozen-lockfile",
-    watchPatterns: ["services/pipeline/**", "pnpm-lock.yaml"],
+    watchPatterns: ["services/pipeline/**", "packages/recipe-schemas/**", "pnpm-lock.yaml"],
   };
 
   // The producer + Bull Board UI. Holds no queue state of its own — everything
@@ -200,8 +203,7 @@ export default defineRailway((ctx) => {
       PIPELINE_AUTH_PASSWORD: { generator: "secret(44)", preserveExisting: true },
 
       // --- schedules ---------------------------------------------------------
-      // Hourly (UTC), the same cadence the retired atproto-cron-sync service ran
-      // on. Cost-optimal default; index-on-write covers Buttery's own writes, so
+      // Hourly (UTC), the same cadence the retired cron service ran on. Cost-optimal default; index-on-write covers Buttery's own writes, so
       // this only reconciles cross-app edits. Tighten to */15 only if freshness
       // demands it (measure a real sweep first).
       //
@@ -250,26 +252,27 @@ export default defineRailway((ctx) => {
     start: "pnpm --filter @buttery/pipeline start:worker",
     env: {
       REDIS_URL: cache.env.REDIS_URL,
-      // Jobs read and write the recipe index. Private networking; web's
+      // Workflows read and write the recipe index. Private networking; web's
       // preDeploy owns the migrations, so this service ships no DDL.
       DATABASE_URL: db.env.DATABASE_URL,
-      // Inherited from the retired atproto-cron-sync service: the `atproto-sync`
-      // pipeline runs that same sweep, and reads its configuration from the same
-      // environment variables.
+      // Read by the `atproto-sync` workflow, which is the retired cron service's
+      // sweep — same code, same variables, now living in @buttery/pipeline.
+      // ATPROTO_PLC_URL is deliberately unset: absent, the sweep resolves DIDs
+      // through plc.directory, which is what production wants.
       RELAY_URL: "https://relay1.us-east.bsky.network",
       NODE_ENV: "production",
     },
   });
 
   // There is no `atproto-cron-sync` service any more. The sweep it ran hourly is
-  // now the `atproto-sync` pipeline, scheduled by BullMQ and drained by
-  // `pipeline-worker` above — see services/pipeline/src/jobs/atproto-sync.ts.
+  // now the `atproto-sync` workflow, scheduled by BullMQ and drained by
+  // `pipeline-worker` above — see services/pipeline/src/workflows/atproto-sync/.
   //
   // Deleting it is a DESTRUCTIVE plan item, so the apply that lands this change
   // needs `railway config apply --confirm-destructive`. Nothing is lost with it:
-  // the service held no volume and no state, its DATABASE_URL and RELAY_URL moved
-  // to `pipeline-worker`, and the sweep code stayed exactly where it was
-  // (@buttery/atproto-cron-sync, still runnable by hand as `sync:once`).
+  // the service held no volume and no state, and its DATABASE_URL and RELAY_URL
+  // moved to `pipeline-worker`. The sweep is still runnable by hand, now as
+  // `pnpm --filter @buttery/pipeline sync:once`.
 
   return project("buttery", {
     resources: [db, cache, uploads, web, pipeline, pipelineWorker],

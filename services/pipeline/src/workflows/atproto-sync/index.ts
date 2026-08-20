@@ -1,9 +1,11 @@
-import { closeDb, loadConfig as loadSyncConfig, runSweep } from "@buttery/atproto-cron-sync";
 import type { Job } from "bullmq";
-import type { PipelineDefinition } from "#/jobs/index.ts";
 import { withLock } from "#/lock.ts";
 import { log } from "#/log.ts";
 import { requireRedis } from "#/redis.ts";
+import { loadSyncConfig } from "#/workflows/atproto-sync/config.ts";
+import { closeDb } from "#/workflows/atproto-sync/db.ts";
+import { runSweep } from "#/workflows/atproto-sync/sweep.ts";
+import type { PipelineDefinition } from "#/workflows/index.ts";
 
 /**
  * Sweep the atproto network and reconcile the Postgres recipe index.
@@ -15,10 +17,15 @@ import { requireRedis } from "#/redis.ts";
  * without touching the dashboard; and it competes for the same autoscaled fleet
  * as every other pipeline instead of booting a container of its own.
  *
- * The sweep itself is unchanged and still lives in @buttery/atproto-cron-sync —
- * this file schedules and supervises it, it does not reimplement it. That
- * package's CLI (`sync:once`) is still the way to run one by hand, and its
- * `.env` is still what decides which network gets swept.
+ * The sweep lives beside this file, in the same folder: `sweep.ts` and the
+ * modules it reads the network with. That is the layout — a workflow is a
+ * folder holding its definition and everything only it uses.
+ *
+ * It used to be its own package, `@buttery/atproto-cron-sync`, back when a
+ * Railway cron service ran it. Nothing consumed it but this workflow, so the
+ * package boundary bought a second `.env`, a second vitest config and a second
+ * logger in exchange for nothing. `pnpm --filter @buttery/pipeline sync:once`
+ * still runs one by hand (`run-once.ts`).
  */
 
 // --- overlap ---------------------------------------------------------------
@@ -46,10 +53,10 @@ function parse(data: unknown): SyncPayload {
 // `process.env` below, and a local `process` would shadow the Node global.
 async function runSweepJob(job: Job): Promise<unknown> {
   const payload = parse(job.data);
-  // Configuration still comes from @buttery/atproto-cron-sync's own environment
-  // — RELAY_URL, SYNC_PDS_URL, SYNC_CONCURRENCY and friends — so a scheduled
-  // sweep and a `sync:once` from a shell read exactly the same settings.
-  const config = { ...loadSyncConfig([]), dryRun: payload.dryRun };
+  // RELAY_URL, SYNC_PDS_URL, SYNC_CONCURRENCY and friends, from
+  // `services/pipeline/.env` — so a scheduled sweep and a `sync:once` from a
+  // shell read exactly the same settings.
+  const config = { ...loadSyncConfig(), dryRun: payload.dryRun };
 
   const result = await withLock(requireRedis(), LOCK_KEY, { ttlMs: LOCK_TTL_MS }, async () => {
     await job.log("sweep started");

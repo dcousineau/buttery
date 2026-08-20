@@ -1,4 +1,4 @@
-import { getJson } from "#/http.ts";
+import { getJson } from "#/workflows/atproto-sync/http.ts";
 
 // Discovery: page com.atproto.sync.listReposByCollection on the relay to find
 // every DID that holds an `exchange.recipe.recipe` record. Served by the new

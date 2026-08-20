@@ -1,13 +1,10 @@
 {
-  // No `compilerOptions.paths` for `#/*`, unlike the sibling services. TypeScript
-  // resolves the `imports` field in each package.json natively under
-  // `moduleResolution: bundler`, and a `paths` entry here is not scoped to this
-  // package — it would also capture the `#/…` imports inside
-  // @buttery/atproto-cron-sync, whose source this package now typechecks, and
-  // silently resolve them to files in `services/pipeline/src`.
   "extends": "../../tsconfig.base.json",
   "include": ["**/*.ts"],
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "#/*": ["./src/*"]
+    }
   }
 }

@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import { loadConfig } from "#/config.ts";
-import { PIPELINES } from "#/jobs/index.ts";
+import { PIPELINES } from "#/workflows/index.ts";
 import { log, setLogRole } from "#/log.ts";
 import { closeRedis, connectionFor } from "#/redis.ts";
 

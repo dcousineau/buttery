@@ -1,5 +1,5 @@
 import type { Queue } from "bullmq";
-import { PIPELINES } from "#/jobs/index.ts";
+import { PIPELINES } from "#/workflows/index.ts";
 import { log } from "#/log.ts";
 
 /**
