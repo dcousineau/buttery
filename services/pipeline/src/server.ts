@@ -7,7 +7,7 @@ import { timingSafeEqual } from "node:crypto";
 import { Autoscaler, DISABLED_STATE } from "#/autoscale.ts";
 import { readBacklog } from "#/backlog.ts";
 import { loadAutoscaleConfig, loadConfig } from "#/config.ts";
-import { PIPELINES, findPipeline } from "#/workflows/index.ts";
+import { WORKFLOWS, findWorkflow } from "#/workflows/index.ts";
 import { log } from "#/log.ts";
 import { closeQueues, getQueues } from "#/queues.ts";
 import { closeRedis } from "#/redis.ts";
@@ -25,6 +25,7 @@ import { reconcileSchedules } from "#/schedules.ts";
  *   GET  /health          unauthenticated — Railway's healthcheck target
  *   GET  /                redirect to the board
  *   GET  /ui              Bull Board                       (basic auth)
+ *   GET  /workflows       what this build can run, and how (basic auth)
  *   GET  /queues          job counts per queue as JSON     (basic auth)
  *   GET  /autoscale       last autoscaler decision as JSON (basic auth)
  *   POST /jobs/:queue     enqueue one job                  (basic auth)
@@ -58,7 +59,7 @@ async function start(): Promise<void> {
 
   // Unauthenticated and outside the board's scope: Railway polls this to decide
   // whether a new deployment is healthy, and it has no credentials.
-  app.get("/health", () => ({ status: "ok", queues: PIPELINES.map((p) => p.name) }));
+  app.get("/health", () => ({ status: "ok", queues: WORKFLOWS.map((workflow) => workflow.name) }));
 
   app.get("/", async (_req, reply) => reply.redirect(BOARD_PATH, 302));
 
@@ -97,27 +98,39 @@ async function start(): Promise<void> {
     // its own links from comes from `setBasePath` above.
     await scope.register(serverAdapter.registerPlugin(), { prefix: BOARD_PATH });
 
+    // What this build knows how to run, straight off the registry: the steps a
+    // workflow will move through and the schedule it is on. The board shows jobs;
+    // this shows the shape they will take before any of them exist.
+    scope.get("/workflows", () =>
+      WORKFLOWS.map((workflow) => ({
+        name: workflow.name,
+        description: workflow.description,
+        steps: workflow.steps,
+        schedule: workflow.schedule?.() ?? null,
+      })),
+    );
+
     scope.get("/queues", async () => {
       const snapshot = await readBacklog(queues.values());
       return {
         ...snapshot,
-        descriptions: Object.fromEntries(PIPELINES.map((p) => [p.name, p.description])),
+        descriptions: Object.fromEntries(WORKFLOWS.map((workflow) => [workflow.name, workflow.description])),
       };
     });
 
     scope.get("/autoscale", () => autoscaler?.state ?? DISABLED_STATE);
 
     scope.post<{ Params: { queue: string }; Body: { name?: string; data?: unknown } | undefined }>("/jobs/:queue", async (req, reply) => {
-      const pipeline = findPipeline(req.params.queue);
+      const workflow = findWorkflow(req.params.queue);
       const queue = queues.get(req.params.queue);
-      if (!pipeline || !queue) {
+      if (!workflow || !queue) {
         return reply.status(404).send({ error: `unknown queue "${req.params.queue}"` });
       }
 
       const body = req.body ?? {};
-      const job = await queue.add(body.name ?? pipeline.name, body.data ?? {});
-      log.info("job enqueued", { queue: pipeline.name, jobId: job.id, name: job.name });
-      return reply.status(202).send({ queue: pipeline.name, jobId: job.id, name: job.name });
+      const job = await queue.add(body.name ?? workflow.name, body.data ?? {});
+      log.info("job enqueued", { queue: workflow.name, jobId: job.id, name: job.name });
+      return reply.status(202).send({ queue: workflow.name, jobId: job.id, name: job.name });
     });
   });
 
@@ -128,7 +141,7 @@ async function start(): Promise<void> {
   await app.listen({ port: config.server.port, host: config.server.host });
   log.info("pipeline server listening", {
     url: `http://${config.server.host}:${config.server.port}${BOARD_PATH}`,
-    queues: PIPELINES.map((p) => p.name),
+    queues: WORKFLOWS.map((workflow) => workflow.name),
     auth: config.server.auth ? "basic" : "none",
   });
 
