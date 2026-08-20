@@ -11,6 +11,7 @@ import { PIPELINES, findPipeline } from "#/jobs/index.ts";
 import { log } from "#/log.ts";
 import { closeQueues, getQueues } from "#/queues.ts";
 import { closeRedis } from "#/redis.ts";
+import { reconcileSchedules } from "#/schedules.ts";
 
 /**
  * The `pipeline` service: a Fastify server that hosts the Bull Board UI, exposes
@@ -119,6 +120,10 @@ async function start(): Promise<void> {
       return reply.status(202).send({ queue: pipeline.name, jobId: job.id, name: job.name });
     });
   });
+
+  // Before listening: a boot that cannot reach Redis should fail as a failed
+  // deployment rather than as a healthy service with no schedules.
+  await reconcileSchedules(queues);
 
   await app.listen({ port: config.server.port, host: config.server.host });
   log.info("pipeline server listening", {

@@ -27,7 +27,7 @@ function start(): void {
   const workers = PIPELINES.map((pipeline) => {
     const worker = new Worker(pipeline.name, (job) => pipeline.process(job), {
       connection,
-      concurrency: config.worker.concurrency,
+      concurrency: pipeline.concurrency ?? config.worker.concurrency,
     });
 
     worker.on("failed", (job, err) => {
@@ -64,6 +64,9 @@ function start(): void {
     shuttingDown = true;
     log.info("draining workers", { signal });
     await Promise.all(workers.map((worker) => worker.close()));
+    // Only after every in-flight job has finished: a pipeline's `close` releases
+    // what its jobs were still using (a pg pool, chiefly).
+    await Promise.all(PIPELINES.map((pipeline) => pipeline.close?.() ?? Promise.resolve()));
     await closeRedis();
     log.info("workers drained", { signal });
   };

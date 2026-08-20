@@ -69,6 +69,12 @@ process-compose process scale pipeline-worker 3   # or the pc_process_scale MCP 
 
 Configuration is `services/pipeline/.env`. The board's basic auth is off locally (blank `PIPELINE_AUTH_PASSWORD`) and mandatory in production — see [the service README](../services/pipeline/README.md), which also covers how the Railway autoscaler decides.
 
+Schedules are off locally too. `ATPROTO_SYNC_SCHEDULE` is blank in the example `.env` so a laptop does not quietly sweep the live atmosphere in the background; on Railway it is `0 * * * *`, which is what replaced the cron service. Set it here and restart `pipeline` to get the same thing locally, or trigger one sweep on demand without any schedule at all:
+
+```bash
+curl -X POST http://127.0.0.1:3002/jobs/atproto-sync -d '{}' -H 'content-type: application/json'
+```
+
 ### The manual `atproto-cron-sync` one-shot
 
 The cron sync is a periodic batch job, not part of the interactive app, so it is defined but never boots: `disabled: true` plus `restart: "no"` make it a **manual one-shot** — `migrate`'s lifecycle with `docs`'s opt-in. Start it from the TUI, or:
@@ -88,6 +94,8 @@ pnpm --filter=@buttery/atproto-cron-sync sync:once [--dry-run]
 
 Its defaults are the real atmosphere (`plc.directory` + the public relay), which is what fills a dev database with real recipes. To sweep the local dev-env instead, set `ATPROTO_PLC_URL=http://localhost:2582` and `SYNC_PDS_URL=http://localhost:2583` in that file. `SYNC_PDS_URL` swaps the relay's `listReposByCollection` for that one PDS's `listRepos`, because dev-env ships no relay and its PDS refuses the former unauthenticated (`AuthMissing`).
 
+There is a third way to run the same sweep — `POST /jobs/atproto-sync` on the pipeline — and it obeys that same `.env`. It is the one that shows progress and failures in the Bull Board UI, and it is what the hourly production schedule uses. Prefer this process for a quick one-off; prefer the queue when you want to watch it.
+
 ## How the dev containers are wired in
 
 Postgres and Redis are defined in a committed [`docker-compose.yml`](../docker-compose.yml) at the repo root — no Railway CLI, no auth, no per-clone generated file. `railway dev` used to write that compose file into machine-local state (`~/.railway/develop/<project-id>/…`) with live production credentials baked in; now the repo owns it outright, with fixed host ports and throwaway local-only credentials (see the compose file's header).
@@ -96,7 +104,7 @@ There is no separate "start the containers" step. The `postgres` and `redis` pro
 
 That single-supervisor arrangement is why `docker-compose.yml` declares no `restart:` policy. With one, docker would try to resurrect a container that compose is simultaneously tearing down after the attached `up` returned.
 
-The ports are fixed and repo-owned: **Postgres on host `55432`, Redis on `56379`** (mapped to the containers' standard 5432/6379). They sit in the high range so a Postgres/Redis you already run on the defaults doesn't collide. `services/web/.env` points `DATABASE_URL`/`REDIS_URL` at them; because we own the ports now, hardcoding them in `.env` is correct rather than fragile (under `railway dev` they were reassigned on every `up`, so nothing downstream could pin them). Each service keeps its own `.env` next to its `.env.example` — `services/web/.env` and `services/atproto-cron-sync/.env` today — and [`scripts/dev/bootstrap-env.mjs`](../scripts/dev/bootstrap-env.mjs) creates any that are missing on `pnpm dev` / `mise install`, never touching one that exists.
+The ports are fixed and repo-owned: **Postgres on host `55432`, Redis on `56379`** (mapped to the containers' standard 5432/6379). They sit in the high range so a Postgres/Redis you already run on the defaults doesn't collide. `services/web/.env` points `DATABASE_URL`/`REDIS_URL` at them; because we own the ports now, hardcoding them in `.env` is correct rather than fragile (under `railway dev` they were reassigned on every `up`, so nothing downstream could pin them). Each service keeps its own `.env` next to its `.env.example` — `services/web/.env`, `services/atproto-cron-sync/.env` and `services/pipeline/.env` today — and [`scripts/dev/bootstrap-env.mjs`](../scripts/dev/bootstrap-env.mjs) creates any that are missing on `pnpm dev` / `mise install`, never touching one that exists.
 
 Two consequences worth remembering:
 

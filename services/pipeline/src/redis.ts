@@ -27,6 +27,17 @@ export function getRedis(url: string): Redis {
   return client;
 }
 
+/**
+ * The shared client, for code that runs after an entrypoint has already created
+ * it and has no business knowing the URL — a job handler, chiefly.
+ */
+export function requireRedis(): Redis {
+  if (!client) {
+    throw new Error("Redis has not been initialised — an entrypoint must call getRedis() first");
+  }
+  return client;
+}
+
 /** BullMQ takes the shared client directly, so nothing here opens a second socket. */
 export function connectionFor(url: string): ConnectionOptions {
   return getRedis(url);

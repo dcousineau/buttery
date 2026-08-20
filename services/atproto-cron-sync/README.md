@@ -1,10 +1,28 @@
 # `@buttery/atproto-cron-sync`
 
-A **cron service** that periodically sweeps the atproto network for
-`exchange.recipe.recipe` records and mirrors them into Buttery's Postgres index
-(`atproto_repo` / `atproto_collection_recipe` / `atproto_sync_run`). Stage 1 of the ingestion strategy:
-index-on-write + cron reconciliation, no Tap yet. See
+Sweeps the atproto network for `exchange.recipe.recipe` records and mirrors them
+into Buttery's Postgres index (`atproto_repo` / `atproto_collection_recipe` /
+`atproto_sync_run`). Stage 1 of the ingestion strategy: index-on-write + periodic
+reconciliation, no Tap yet. See
 [`docs/plans/01-atproto-cron-sync-service.md`](../../docs/plans/01-atproto-cron-sync-service.md).
+
+> **"cron" in the name is historical.** This was a Railway cron service; the
+> schedule now lives in BullMQ as the `atproto-sync` pipeline in
+> [`@buttery/pipeline`](../pipeline/README.md), which imports `runSweep` from
+> here and runs it hourly on the autoscaled worker fleet. The sweep itself did
+> not move, and neither did its configuration: `.env` in this directory still
+> decides which network gets swept, whoever is driving it.
+
+Two ways to run a sweep, and they do the same thing:
+
+- **Scheduled / on demand** — the `atproto-sync` pipeline. Visible in the Bull
+  Board UI while it runs, and triggerable with
+  `curl -X POST http://127.0.0.1:3002/jobs/atproto-sync`.
+- **By hand** — `pnpm --filter @buttery/atproto-cron-sync sync:once`, the CLI in
+  `src/main.ts`. Still the fastest way to iterate on the sweep itself.
+
+`src/index.ts` is the package's public surface (`loadConfig`, `runSweep`,
+`closeDb`); everything else under `src/` is internal.
 
 - Plain Node (`node = 26`), TypeScript run directly via type-stripping — **no
   build step**. Every source file is erasable-only TS (no `enum`/`namespace`/
@@ -23,7 +41,9 @@ index-on-write + cron reconciliation, no Tap yet. See
 3. Page `com.atproto.repo.listRecords` per DID (unauthenticated).
 4. Rev-guarded upsert per record into `atproto_collection_recipe` (raw JSON + projection).
 5. Soft-delete rows absent from a DID's full, successful enumeration.
-6. Write an `atproto_sync_run` summary, end the pool, `exit(0/1)`.
+6. Write an `atproto_sync_run` summary. The CLI then ends the pool and exits;
+   under the pipeline the pool is kept for the next sweep and ended when the
+   worker drains.
 
 ## Local run
 
