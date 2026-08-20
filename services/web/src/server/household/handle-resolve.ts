@@ -16,10 +16,16 @@
  * "couldn't resolve that handle" error). Best-effort by design — a bound invite
  * to an unresolvable handle simply can't be created.
  *
+ * Both hosts are overridable via `#/lib/atproto/endpoints` so a local dev-env
+ * network resolves its own handles: production hits the public appview, dev-env
+ * hits its PDS, which serves the same `resolveHandle` endpoint. Without that,
+ * every bound invite in local dev fails to resolve — the public appview has
+ * never heard of `chef.test`.
+ *
  * Server-only (network fetch); not part of the client bundle.
  */
 
-const APPVIEW = "https://public.api.bsky.app";
+import { handleResolverUrl } from "#/lib/atproto/endpoints";
 
 function normalizeHandle(input: string): string | null {
   const handle = input.trim().replace(/^@/, "").toLowerCase();
@@ -34,7 +40,7 @@ export async function resolveHandleToDid(input: string): Promise<string | null> 
 
   // 1. Appview resolver — the broad, reliable path.
   try {
-    const res = await fetch(`${APPVIEW}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`);
+    const res = await fetch(`${handleResolverUrl()}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`);
     if (res.ok) {
       const body = (await res.json()) as { did?: string };
       if (typeof body.did === "string" && body.did.startsWith("did:")) return body.did;

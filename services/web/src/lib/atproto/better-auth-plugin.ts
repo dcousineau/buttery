@@ -2,6 +2,7 @@ import * as z from "zod";
 import { APIError, createAuthEndpoint, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { ATPROTO_SCOPE, getAtprotoOAuthClient } from "./oauth-node";
+import { didDocumentUrl } from "./endpoints";
 import type { BetterAuthPlugin } from "better-auth";
 
 const APPVIEW = "https://public.api.bsky.app";
@@ -22,15 +23,8 @@ interface DidIdentity {
  */
 async function resolveDidIdentity(did: string): Promise<DidIdentity> {
   try {
-    let docUrl: string;
-    if (did.startsWith("did:plc:")) {
-      docUrl = `https://plc.directory/${did}`;
-    } else if (did.startsWith("did:web:")) {
-      const host = did.slice("did:web:".length).split(":").join("/");
-      docUrl = `https://${decodeURIComponent(host)}/.well-known/did.json`;
-    } else {
-      return { handle: null, pds: null };
-    }
+    const docUrl = didDocumentUrl(did);
+    if (!docUrl) return { handle: null, pds: null };
     const res = await fetch(docUrl);
     if (!res.ok) return { handle: null, pds: null };
     const doc = (await res.json()) as {
