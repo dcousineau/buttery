@@ -1,15 +1,15 @@
 # Buttery
 
-Your recipes, your pantry — kept as portable [atproto](https://atproto.com) records you can take anywhere. Buttery is a [TanStack Start](https://tanstack.com/start) web app backed by Postgres, with a cron service that syncs recipe records from the atmosphere.
+Your recipes, your pantry — kept as portable [atproto](https://atproto.com) records you can take anywhere. Buttery is a [TanStack Start](https://tanstack.com/start) web app backed by Postgres, with a background worker that syncs recipe records from the atmosphere.
 
 The monorepo has two services:
 
 - `services/web` — the app (`@buttery/web`)
-- `services/atproto-cron-sync` — the periodic sync/backfill worker (`@buttery/atproto-cron-sync`)
+- `services/worker` — background workflows on [Temporal](https://temporal.io), including the hourly atproto sweep (`@buttery/worker`)
 
 ## Local development
 
-Requires [Docker](https://www.docker.com/) (for the local Postgres and Redis) and [mise](https://mise.jdx.dev/), which installs the Node and pnpm versions declared in `package.json` (`devEngines.runtime` and `packageManager`) plus the Railway CLI and process-compose versions pinned in `mise.toml`. Local dev runs entirely on the repo's own `docker-compose.yml` — no Railway login or auth is needed to boot the stack (Railway stays for deploys and the remote blob bucket only).
+Requires [Docker](https://www.docker.com/) (for the local Postgres and Redis) and [mise](https://mise.jdx.dev/), which installs the Node and pnpm versions declared in `package.json` (`devEngines.runtime` and `packageManager`) plus the Railway CLI, process-compose and Temporal CLI versions pinned in `mise.toml`. Local dev runs entirely on the repo's own `docker-compose.yml` — no Railway login or auth is needed to boot the stack (Railway stays for deploys and the remote blob bucket only).
 
 ```bash
 # Install mise (macOS/Linux). See https://mise.jdx.dev/installing-mise.html for other options.
@@ -34,7 +34,7 @@ mise run setup:reset
 
 It renames each file it replaces to `<name>.bak.<timestamp>` beside itself (gitignored) before writing, so any hand-edited value is still there to copy back — check the backup for real blob-storage credentials or a pinned secret. `-- --dry-run` shows what it would move; `-- --no-backup` deletes instead. The regenerated `services/web/.env` gets a fresh `BETTER_AUTH_SECRET`, which signs you out of the local dev server.
 
-`pnpm dev` supervises the whole stack — the docker-compose containers (Postgres + Redis), migrations, the atproto dev-env, and the web server — as one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project. In its TUI: arrow keys select a process, `F5` restarts it, `F10` quits.
+`pnpm dev` supervises the whole stack — the docker-compose containers (Postgres + Redis), migrations, the atproto dev-env, the web server, and the Temporal pair (a local cluster with its UI on [127.0.0.1:8233](http://127.0.0.1:8233), plus the worker that polls it) — as one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project. In its TUI: arrow keys select a process, `F5` restarts it, `F10` quits.
 
 Drive the same running stack from another terminal:
 
@@ -71,19 +71,21 @@ See [docs/LOCAL-DEV.md](./docs/LOCAL-DEV.md) for what each process is and how th
 
 ## Backfill / sync
 
-The cron sync pulls recipe records into Postgres. It reads `services/atproto-cron-sync/.env` (created for you by `pnpm dev`), so no wrapper is needed — but the dev stack has to be up.
+The `atproto-sync` workflow pulls recipe records into Postgres — hourly in production, on demand here. It reads `services/worker/.env` (created for you by `pnpm dev`), and the dev stack has to be up: these commands start a workflow and wait, and the `worker` process is what runs it.
 
 ```bash
 # One sweep of the real atmosphere into the local DB (writes)
-pnpm --filter=@buttery/atproto-cron-sync sync:once
+pnpm --filter=@buttery/worker sync:once
 
 # Fetch + log without writing
-pnpm --filter=@buttery/atproto-cron-sync sync:once --dry-run
+pnpm --filter=@buttery/worker sync:once --dry-run
 
 # One sweep of the LOCAL atproto dev-env instead — a disabled process-compose
 # one-shot; run it after publishing a recipe locally
-process-compose process start atproto-cron-sync
+process-compose process start atproto-sync
 ```
+
+Watch either of them run, step by step, at [127.0.0.1:8233](http://127.0.0.1:8233). See [services/worker/README.md](./services/worker/README.md) for the workflow layout and what Temporal costs and buys here.
 
 ## License
 

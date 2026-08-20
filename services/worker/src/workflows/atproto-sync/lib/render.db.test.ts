@@ -28,7 +28,7 @@ const GOLDEN = {
  * that a re-render REPLACES them rather than leaving keys describing content
  * that no longer exists, and that a key which goes away leaves no row behind.
  *
- *   pnpm --filter @buttery/atproto-cron-sync test:db
+ *   pnpm --filter @buttery/worker test:db
  *
  * With no reachable database the suite SKIPS with a message rather than
  * failing, so `pnpm test` stays green on a machine that has never booted the
@@ -47,7 +47,7 @@ let skipReason = "";
 function announceSkip(reason: string): void {
   skipReason = reason;
   process.stderr.write(
-    `\nSKIPPING atproto-cron-sync render DB tests — ${reason}.\nRun them with \`pnpm --filter @buttery/atproto-cron-sync test:db\` (railway run injects DATABASE_URL).\n\n`,
+    `\nSKIPPING atproto-sync render DB tests — ${reason}.\nRun them with \`pnpm --filter @buttery/worker test:db\` (DATABASE_URL comes from services/worker/.env).\n\n`,
   );
 }
 

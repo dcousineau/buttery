@@ -606,7 +606,8 @@ describe.skipIf(!db)(db ? "meal planner DB integration (§13)" : `meal planner D
   // --- §3.4/§7.3 the RESTRICT FK and the sweep guard ----------------------
 
   describe("ON DELETE RESTRICT and the cron sweep guard (§3.4, §7.3, acceptance 12)", () => {
-    // Copied verbatim from `services/atproto-cron-sync/src/render.ts:340`
+    // Copied verbatim from
+    // `services/worker/src/workflows/atproto-sync/lib/render.ts:340`
     // (`PLANNED_GUARD`). If that string ever changes, this test is the alarm.
     const PLANNED_GUARD = `not exists (select 1 from meal_plan_entry mpe where mpe.recipe_id = recipe.id)`;
     const BOX_GUARD = `not exists (select 1 from household_recipe hr where hr.recipe_id = recipe.id)`;

@@ -144,7 +144,7 @@ export function resolveAttribution(record: RecipeRecordInput, sourceUrl: string 
   return record.attribution;
 }
 
-// --- normalization (mirror services/atproto-cron-sync/src/render.ts) -----
+// --- normalization (mirror services/worker/src/workflows/atproto-sync/lib/render.ts) ---
 
 function durationSeconds(v: string | null | undefined): number | null {
   if (!v || v[0] !== "P") return null;
