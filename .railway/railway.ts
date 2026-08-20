@@ -153,42 +153,135 @@ export default defineRailway((ctx) => {
   // Future services live in this same monorepo and are added as sibling
   // service() entries, each with its own narrow watchPatterns so they build
   // independently of web:
-  //   - a dedicated api service      → filter @buttery/api...,    watch services/api/** + shared packages
-  //   - atproto sync listeners/workers → filter @buttery/worker..., long-running
+  //   - a dedicated api service → filter @buttery/api..., watch services/api/** + shared packages
   // Shared code they consume (lexicons today; db later) goes under packages/.
 
-  // Cron: sweep the atproto network and reconcile the Postgres recipe index.
-  // A cron service's container is stopped between runs (true scale-to-zero,
-  // $0 idle) — do NOT enable the Serverless/app-sleeping toggle here (that's
-  // for always-on HTTP services and adds cold-boot 502s). See plan §5.
+  // --- Data pipelines (BullMQ) ---------------------------------------------
   //
-  // No build step: Node 26 runs the TypeScript directly. Same monorepo build
-  // model as web — install the whole workspace, run the package's start. It's
-  // a pure DB writer, so it owns no migrations (web's preDeploy ships the DDL).
-  const sync = service("atproto-cron-sync", {
+  // One package (@buttery/pipeline), deployed as two services because the two
+  // halves scale for different reasons: exactly one dashboard is enough and it
+  // has to stay up, while the worker fleet grows with the backlog and shrinks
+  // when it drains. See services/pipeline/README.md.
+  //
+  // Both install the whole workspace and run the package's start script, with no
+  // build step (Node 26 runs the TypeScript directly), and share one
+  // watchPatterns set, so a change to the package redeploys the pair together
+  // and they never run different code. `packages/recipe-schemas/**` is in the
+  // set because the atproto-sync workflow renders records through it — the one
+  // shared package the pipelines read, and a change to it that did not redeploy
+  // them would leave the fleet rendering by yesterday's rules.
+  const pipelineBuild = {
+    buildCommand: "pnpm install --frozen-lockfile",
+    watchPatterns: ["services/pipeline/**", "packages/recipe-schemas/**", "pnpm-lock.yaml"],
+  };
+
+  // The producer + Bull Board UI. Holds no queue state of its own — everything
+  // it shows lives in Redis — so it is a plain stateless HTTP service.
+  //
+  // It has NO generated domain in this file: Railway domains are created by the
+  // platform and `railway config pull` deliberately omits them. Give it one with
+  //   railway domain --service pipeline
+  // (or add a custom subdomain to `domains:` here once its DNS exists). The board
+  // is behind basic auth either way — see PIPELINE_AUTH_PASSWORD below.
+  const pipeline = service("pipeline", {
     source: github("dcousineau/buttery"),
-    build: {
-      buildCommand: "pnpm install --frozen-lockfile",
-      watchPatterns: ["services/atproto-cron-sync/**", "pnpm-lock.yaml"],
-    },
-    start: "pnpm --filter @buttery/atproto-cron-sync start",
-    deploy: {
-      // Hourly (UTC). Cost-optimal default; index-on-write covers Buttery's own
-      // writes, so this only reconciles cross-app edits. Tighten to */15 only
-      // if freshness demands (measure the first real sweep first — plan §8).
-      cronSchedule: "0 * * * *",
-      // A completed cron must not be restarted into a loop. Use ON_FAILURE with
-      // a small maxRetries only if you want auto-retry before the next run.
-      restartPolicyType: "NEVER",
-    },
+    build: pipelineBuild,
+    start: "pnpm --filter @buttery/pipeline start",
+    // Gates zero-downtime deploys, and matters more here than usual: the
+    // autoscaler lives in this service, so a container that is up but not
+    // serving is also a fleet that has stopped being resized.
+    healthcheck: "/health",
     env: {
-      // Private networking; reuse the same Postgres (ingress not billed as egress).
-      DATABASE_URL: db.env.DATABASE_URL,
-      RELAY_URL: "https://relay1.us-east.bsky.network",
+      REDIS_URL: cache.env.REDIS_URL,
+      // Read by the service to require a board password and to bind 0.0.0.0.
+      NODE_ENV: "production",
+      PIPELINE_AUTH_USER: "buttery",
+      // The board shows every job payload and can retry, promote and delete
+      // jobs, so it is never public. Railway generates this on first apply and
+      // preserveExisting keeps it thereafter; read the value out of the service's
+      // variables in the dashboard to log in.
+      PIPELINE_AUTH_PASSWORD: { generator: "secret(44)", preserveExisting: true },
+
+      // --- schedules ---------------------------------------------------------
+      // Hourly (UTC), the same cadence the retired cron service ran on. Cost-optimal default; index-on-write covers Buttery's own writes, so
+      // this only reconciles cross-app edits. Tighten to */15 only if freshness
+      // demands it (measure a real sweep first).
+      //
+      // Read by the SERVER, not the workers: the server reconciles BullMQ's job
+      // schedulers at boot, and it is the one process there is exactly one of.
+      // Emptying this variable removes the scheduler rather than orphaning it.
+      ATPROTO_SYNC_SCHEDULE: "0 * * * *",
+
+      // How many repos one sweep may sweep at once, across the whole fleet.
+      // BullMQ enforces it in Redis rather than per process, which is what makes
+      // it survive the autoscaler moving `pipeline-worker`'s replica count
+      // around underneath it. Read by the SERVER, which reconciles it onto the
+      // queue at boot the same way it does the schedule.
+      ATPROTO_SYNC_MAX_IN_FLIGHT: "8",
+
+      // --- autoscaler --------------------------------------------------------
+      // The loop is opt-in and OFF until a Railway API token exists.
+      //
+      // `RAILWAY_API_TOKEN` is deliberately NOT declared here. IaC cannot mint a
+      // token, and a declared-but-empty variable would either clobber a
+      // hand-set one on the next apply or need a preserve() for a value that
+      // may not exist yet. Create a *project* token scoped to this environment
+      // (project settings → Tokens) and set RAILWAY_API_TOKEN on this service in
+      // the dashboard. Until then the fleet simply stays where it is set.
+      AUTOSCALE_TARGET_SERVICE: "pipeline-worker",
+      AUTOSCALE_MIN_REPLICAS: "1",
+      AUTOSCALE_MAX_REPLICAS: "5",
+      AUTOSCALE_BACKLOG_PER_REPLICA: "25",
+      AUTOSCALE_INTERVAL_SECONDS: "60",
+      AUTOSCALE_SCALE_DOWN_COOLDOWN_SECONDS: "300",
+      // Flip to "true" for the first run after setting the token: the loop then
+      // logs every decision it would have made without touching the fleet.
+      AUTOSCALE_DRY_RUN: "false",
     },
   });
 
+  // The consumer fleet. Stateless by construction — no HTTP, nothing kept
+  // between jobs — which is the precondition for Railway adding and removing
+  // replicas underneath it. A removed replica is drained rather than killed, and
+  // `worker.close()` finishes its in-flight jobs before exiting.
+  //
+  // NOTE: `replicas` is deliberately absent. The autoscaler owns that number at
+  // runtime via serviceInstanceUpdate, and declaring it here would make every
+  // `railway config apply` yank the fleet back to a hardcoded count — including
+  // in the middle of a backlog. The bounds live in the autoscaler's
+  // AUTOSCALE_MIN/MAX_REPLICAS above, which is the only place they belong.
+  //
+  // No healthcheck either: there is no server to probe. Railway treats a
+  // long-running process with no healthcheck path as healthy once it starts.
+  const pipelineWorker = service("pipeline-worker", {
+    source: github("dcousineau/buttery"),
+    build: pipelineBuild,
+    start: "pnpm --filter @buttery/pipeline start:worker",
+    env: {
+      REDIS_URL: cache.env.REDIS_URL,
+      // Workflows read and write the recipe index. Private networking; web's
+      // preDeploy owns the migrations, so this service ships no DDL.
+      DATABASE_URL: db.env.DATABASE_URL,
+      // Read by the `atproto-sync` workflow, which is the retired cron service's
+      // sweep — same code, same variables, now living in @buttery/pipeline.
+      // ATPROTO_PLC_URL is deliberately unset: absent, the sweep resolves DIDs
+      // through plc.directory, which is what production wants.
+      RELAY_URL: "https://relay1.us-east.bsky.network",
+      NODE_ENV: "production",
+    },
+  });
+
+  // There is no `atproto-cron-sync` service any more. The sweep it ran hourly is
+  // now the `atproto-sync` workflow, scheduled by BullMQ and drained by
+  // `pipeline-worker` above — see services/pipeline/src/workflows/atproto-sync/.
+  //
+  // Deleting it is a DESTRUCTIVE plan item, so the apply that lands this change
+  // needs `railway config apply --confirm-destructive`. Nothing is lost with it:
+  // the service held no volume and no state, and its DATABASE_URL and RELAY_URL
+  // moved to `pipeline-worker`. The sweep is still runnable by hand, now as
+  // `pnpm --filter @buttery/pipeline sync:once`.
+
   return project("buttery", {
-    resources: [db, cache, uploads, web, sync],
+    resources: [db, cache, uploads, web, pipeline, pipelineWorker],
   });
 });

@@ -78,7 +78,7 @@ RECORD <rkey>\t<name>\t<updatedAt>
 pnpm --filter @buttery/atproto-dev-env seed -- --name "Assertable Name"
 ```
 
-Re-run `records`, assert name appears and `COUNT` incremented. Seeder writes same collection + required fields as app, so read helper and `@buttery/atproto-cron-sync` treat it identically.
+Re-run `records`, assert name appears and `COUNT` incremented. Seeder writes same collection + required fields as app, so read helper and the `atproto-sync` workflow treat it identically.
 
 ## Confirm it reaches Postgres (via cron)
 
@@ -86,7 +86,7 @@ Re-run `records`, assert name appears and `COUNT` incremented. Seeder writes sam
 DID=$(pnpm -s --filter @buttery/atproto-dev-env records | sed -n 's/^DID //p')
 railway run --service buttery -- env \
   ATPROTO_PLC_URL=http://localhost:2582 SYNC_ONLY_DID="$DID" \
-  node services/atproto-cron-sync/src/main.ts --once
+  pnpm --filter=@buttery/pipeline sync:once
 ```
 
 Check row via `postgres` MCP (`mcp__postgres__execute_sql`).

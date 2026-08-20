@@ -1,11 +1,11 @@
 # Buttery
 
-Your recipes, your pantry — kept as portable [atproto](https://atproto.com) records you can take anywhere. Buttery is a [TanStack Start](https://tanstack.com/start) web app backed by Postgres, with a cron service that syncs recipe records from the atmosphere.
+Your recipes, your pantry — kept as portable [atproto](https://atproto.com) records you can take anywhere. Buttery is a [TanStack Start](https://tanstack.com/start) web app backed by Postgres, with a background pipeline that syncs recipe records from the atmosphere.
 
-The monorepo has two services:
+The monorepo has two deployed services:
 
 - `services/web` — the app (`@buttery/web`)
-- `services/atproto-cron-sync` — the periodic sync/backfill worker (`@buttery/atproto-cron-sync`)
+- `services/pipeline` — the BullMQ workflows, their Bull Board UI, and the autoscaled worker fleet (`@buttery/pipeline`)
 
 ## Local development
 
@@ -34,7 +34,7 @@ mise run setup:reset
 
 It renames each file it replaces to `<name>.bak.<timestamp>` beside itself (gitignored) before writing, so any hand-edited value is still there to copy back — check the backup for real blob-storage credentials or a pinned secret. `-- --dry-run` shows what it would move; `-- --no-backup` deletes instead. The regenerated `services/web/.env` gets a fresh `BETTER_AUTH_SECRET`, which signs you out of the local dev server.
 
-`pnpm dev` supervises the whole stack — the docker-compose containers (Postgres + Redis), migrations, the atproto dev-env, and the web server — as one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project. In its TUI: arrow keys select a process, `F5` restarts it, `F10` quits.
+`pnpm dev` supervises the whole stack — the docker-compose containers (Postgres + Redis), migrations, the atproto dev-env, the web server, and the BullMQ pipeline pair — as one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project. In its TUI: arrow keys select a process, `F5` restarts it, `F10` quits.
 
 Drive the same running stack from another terminal:
 
@@ -69,21 +69,42 @@ pnpm test:db     # *.db.test.ts integration suites against the dev Postgres (sta
 
 See [docs/LOCAL-DEV.md](./docs/LOCAL-DEV.md) for what each process is and how the pieces fit together.
 
+## Data pipelines
+
+Background jobs run on [BullMQ](https://docs.bullmq.io) over the same Redis the app uses. The stack boots a producer + [Bull Board](https://github.com/felixmosh/bull-board) UI on <http://127.0.0.1:3002/ui> and a worker that drains every queue; on Railway those are two services, and the worker fleet is autoscaled on queue depth.
+
+```bash
+# Enqueue a demo job and watch it move through the board
+curl -X POST http://127.0.0.1:3002/jobs/demo \
+  -H 'content-type: application/json' \
+  -d '{"data": {"durationMs": 5000, "label": "hello"}}'
+
+# Run several workers against one queue, the way replicas do on Railway
+process-compose process scale pipeline-worker 3
+```
+
+See [services/pipeline/README.md](./services/pipeline/README.md) for how to add a workflow and how the autoscaler decides.
+
 ## Backfill / sync
 
-The cron sync pulls recipe records into Postgres. It reads `services/atproto-cron-sync/.env` (created for you by `pnpm dev`), so no wrapper is needed — but the dev stack has to be up.
+The atproto sweep pulls recipe records into Postgres. In production it runs hourly as the `atproto-sync` BullMQ workflow (there is no Railway cron service any more); locally it stays manual. Every way of running it reads `services/pipeline/.env` (created for you by `pnpm dev`), so no wrapper is needed — but the dev stack has to be up.
 
 ```bash
 # One sweep of the real atmosphere into the local DB (writes)
-pnpm --filter=@buttery/atproto-cron-sync sync:once
+pnpm --filter=@buttery/pipeline sync:once
 
 # Fetch + log without writing
-pnpm --filter=@buttery/atproto-cron-sync sync:once --dry-run
+pnpm --filter=@buttery/pipeline sync:once --dry-run
 
 # One sweep of the LOCAL atproto dev-env instead — a disabled process-compose
 # one-shot; run it after publishing a recipe locally
-process-compose process start atproto-cron-sync
+process-compose process start atproto-sync
+
+# The same sweep through the queue, so you can watch it in the Bull Board UI
+curl -X POST http://127.0.0.1:3002/jobs/atproto-sync -d '{}' -H 'content-type: application/json'
 ```
+
+To run it on a clock locally too, set `ATPROTO_SYNC_SCHEDULE` in `services/pipeline/.env` and restart the `pipeline` process.
 
 ## License
 

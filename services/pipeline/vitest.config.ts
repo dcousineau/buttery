@@ -15,20 +15,16 @@ try {
  * Two vitest projects, split by what a test needs to exist — the same split as
  * `services/web/vitest.config.ts`, for the same reason.
  *
- * - `unit` — pure function tests. No database, no network. Green on a fresh
- *   clone with nothing running.
+ * - `unit` — pure function tests: the scaling policy, the backlog arithmetic,
+ *   the step runner, the sweep's rendering. No database, no network, no Redis,
+ *   so `pnpm test` stays green on a fresh clone with nothing running.
  * - `db` — `*.db.test.ts` integration suites against a real migrated Postgres.
- *   They SKIP (never fail) when there isn't one, so `pnpm test` stays green on
- *   a machine that has never booted the dev stack.
+ *   They SKIP (never fail) when there isn't one.
  *
- *   pnpm --filter @buttery/atproto-cron-sync test:db   # = vitest run --project db
- *
- * `DATABASE_URL` comes from `services/web/.env` (loaded above), which points at
- * the docker-compose Postgres the `pnpm dev` stack runs — so the stack has to
- * be up, but no `railway run` wrapper is involved.
+ *   pnpm --filter @buttery/pipeline test:db   # = vitest run --project db
  *
  * Tests import through the `#/*` subpath imports declared in `package.json`,
- * which Vite resolves natively — the same arrangement the web package uses.
+ * which Vite resolves natively — the same arrangement the other packages use.
  */
 export default defineConfig({
   test: {

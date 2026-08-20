@@ -6,7 +6,7 @@
  * Both default to production, so an unset environment behaves exactly as the
  * hardcoded values they replaced. The override names are the ones already in
  * `.env.example` and already honoured by `oauth-node.ts` (`plcDirectoryUrl`) and
- * `services/atproto-cron-sync/src/identity.ts` — this module exists so the
+ * the `atproto-sync` workflow's `identity.ts` — this module exists so the
  * remaining call sites stop each hardcoding `https://plc.directory` and
  * `https://public.api.bsky.app` privately.
  *
