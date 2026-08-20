@@ -1,4 +1,4 @@
-import { getJson } from "#/http.ts";
+import { getJson } from "#/workflows/atproto-sync/lib/http.ts";
 
 // DID → PDS endpoint + handle resolution. Ported (not imported) from
 // services/web/src/lib/atproto/recipes.ts `resolvePds` — different package, no
@@ -10,7 +10,14 @@ import { getJson } from "#/http.ts";
 // instead of the real one. Unset → plc.directory (prod, unchanged).
 
 // Trailing-slash tolerant: plc.directory and dev-env's PLC both accept `/<did>`.
-const PLC_DIRECTORY_URL = (process.env.ATPROTO_PLC_URL ?? "https://plc.directory").replace(/\/+$/, "");
+//
+// Read per call rather than once at module load: this module is pulled in by an
+// activity, and whether `services/worker/.env` has been read by then is decided
+// by the import graph, not by this file. A module-level constant here would
+// freeze whatever `process.env` happened to hold at import time.
+function plcDirectoryUrl(): string {
+  return (process.env.ATPROTO_PLC_URL ?? "https://plc.directory").replace(/\/+$/, "");
+}
 
 interface DidDocument {
   alsoKnownAs?: string[];
@@ -34,7 +41,7 @@ function handleFromDoc(doc: DidDocument): string | null {
 export async function resolveIdentity(did: string): Promise<ResolvedIdentity> {
   let docUrl: string;
   if (did.startsWith("did:plc:")) {
-    docUrl = `${PLC_DIRECTORY_URL}/${did}`;
+    docUrl = `${plcDirectoryUrl()}/${did}`;
   } else if (did.startsWith("did:web:")) {
     const host = did.slice("did:web:".length).split(":").join("/");
     docUrl = `https://${decodeURIComponent(host)}/.well-known/did.json`;

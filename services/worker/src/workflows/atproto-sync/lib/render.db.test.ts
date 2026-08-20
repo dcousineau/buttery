@@ -1,8 +1,8 @@
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { contentFingerprint, normalizeSourceUrl } from "@buttery/recipe-schemas/normalize";
-import type { RecipeRow } from "#/recipe.ts";
-import { renderRecipe } from "#/render.ts";
+import type { RecipeRow } from "#/workflows/atproto-sync/lib/recipe.ts";
+import { renderRecipe } from "#/workflows/atproto-sync/lib/render.ts";
 
 /**
  * The same golden vector as `render.test.ts` and

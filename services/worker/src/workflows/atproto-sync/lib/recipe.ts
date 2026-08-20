@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg";
-import type { PdsRecord } from "#/pds.ts";
+import type { PdsRecord } from "#/workflows/atproto-sync/lib/pds.ts";
 
 // Record projection, lightweight validation, and the two write statements.
 // All network input is untrusted (plan §1): store the raw record as jsonb,
