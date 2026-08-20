@@ -6,6 +6,9 @@
   "imports": {
     "#/*": "./src/*"
   },
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "start": "node src/main.ts",
     "sync:once": "node src/main.ts --once",

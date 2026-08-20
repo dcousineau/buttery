@@ -196,6 +196,9 @@ importers:
       '@bull-board/fastify':
         specifier: ^8.6.1
         version: 8.6.1(bullmq@6.1.2(ioredis@6.0.0(supports-color@10.2.2))(pg@8.23.0))
+      '@buttery/atproto-cron-sync':
+        specifier: workspace:*
+        version: link:../atproto-cron-sync
       '@fastify/basic-auth':
         specifier: ^6.3.0
         version: 6.3.0

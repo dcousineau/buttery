@@ -199,6 +199,17 @@ export default defineRailway((ctx) => {
       // variables in the dashboard to log in.
       PIPELINE_AUTH_PASSWORD: { generator: "secret(44)", preserveExisting: true },
 
+      // --- schedules ---------------------------------------------------------
+      // Hourly (UTC), the same cadence the retired atproto-cron-sync service ran
+      // on. Cost-optimal default; index-on-write covers Buttery's own writes, so
+      // this only reconciles cross-app edits. Tighten to */15 only if freshness
+      // demands it (measure a real sweep first).
+      //
+      // Read by the SERVER, not the workers: the server reconciles BullMQ's job
+      // schedulers at boot, and it is the one process there is exactly one of.
+      // Emptying this variable removes the scheduler rather than orphaning it.
+      ATPROTO_SYNC_SCHEDULE: "0 * * * *",
+
       // --- autoscaler --------------------------------------------------------
       // The loop is opt-in and OFF until a Railway API token exists.
       //
@@ -242,42 +253,25 @@ export default defineRailway((ctx) => {
       // Jobs read and write the recipe index. Private networking; web's
       // preDeploy owns the migrations, so this service ships no DDL.
       DATABASE_URL: db.env.DATABASE_URL,
+      // Inherited from the retired atproto-cron-sync service: the `atproto-sync`
+      // pipeline runs that same sweep, and reads its configuration from the same
+      // environment variables.
+      RELAY_URL: "https://relay1.us-east.bsky.network",
       NODE_ENV: "production",
     },
   });
 
-  // Cron: sweep the atproto network and reconcile the Postgres recipe index.
-  // A cron service's container is stopped between runs (true scale-to-zero,
-  // $0 idle) — do NOT enable the Serverless/app-sleeping toggle here (that's
-  // for always-on HTTP services and adds cold-boot 502s). See plan §5.
+  // There is no `atproto-cron-sync` service any more. The sweep it ran hourly is
+  // now the `atproto-sync` pipeline, scheduled by BullMQ and drained by
+  // `pipeline-worker` above — see services/pipeline/src/jobs/atproto-sync.ts.
   //
-  // No build step: Node 26 runs the TypeScript directly. Same monorepo build
-  // model as web — install the whole workspace, run the package's start. It's
-  // a pure DB writer, so it owns no migrations (web's preDeploy ships the DDL).
-  const sync = service("atproto-cron-sync", {
-    source: github("dcousineau/buttery"),
-    build: {
-      buildCommand: "pnpm install --frozen-lockfile",
-      watchPatterns: ["services/atproto-cron-sync/**", "pnpm-lock.yaml"],
-    },
-    start: "pnpm --filter @buttery/atproto-cron-sync start",
-    deploy: {
-      // Hourly (UTC). Cost-optimal default; index-on-write covers Buttery's own
-      // writes, so this only reconciles cross-app edits. Tighten to */15 only
-      // if freshness demands (measure the first real sweep first — plan §8).
-      cronSchedule: "0 * * * *",
-      // A completed cron must not be restarted into a loop. Use ON_FAILURE with
-      // a small maxRetries only if you want auto-retry before the next run.
-      restartPolicyType: "NEVER",
-    },
-    env: {
-      // Private networking; reuse the same Postgres (ingress not billed as egress).
-      DATABASE_URL: db.env.DATABASE_URL,
-      RELAY_URL: "https://relay1.us-east.bsky.network",
-    },
-  });
+  // Deleting it is a DESTRUCTIVE plan item, so the apply that lands this change
+  // needs `railway config apply --confirm-destructive`. Nothing is lost with it:
+  // the service held no volume and no state, its DATABASE_URL and RELAY_URL moved
+  // to `pipeline-worker`, and the sweep code stayed exactly where it was
+  // (@buttery/atproto-cron-sync, still runnable by hand as `sync:once`).
 
   return project("buttery", {
-    resources: [db, cache, uploads, web, sync, pipeline, pipelineWorker],
+    resources: [db, cache, uploads, web, pipeline, pipelineWorker],
   });
 });

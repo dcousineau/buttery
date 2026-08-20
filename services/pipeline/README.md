@@ -69,6 +69,49 @@ Set `defaultJobOptions.removeOnComplete` / `removeOnFail` on every pipeline.
 BullMQ keeps finished jobs in Redis forever by default, and an unbounded queue
 quietly becomes the largest thing in the instance.
 
+## The pipelines
+
+| Queue          | What it does                                                                   |
+| -------------- | ------------------------------------------------------------------------------ |
+| `atproto-sync` | Sweeps the atproto network and reconciles the Postgres recipe index. Hourly.   |
+| `demo`         | No-op with progress reporting — proves the queue, workers and board are wired. |
+
+`atproto-sync` runs the sweep from
+[`@buttery/atproto-cron-sync`](../atproto-cron-sync/README.md) — it schedules and
+supervises that code, it does not reimplement it, and the sweep still reads its
+own `.env` for which network to read. That package's `sync:once` CLI is still
+there for running one by hand.
+
+## Schedules
+
+A pipeline that should run on a clock declares `schedule: () => pattern`, read
+from the environment at boot. `atproto-sync` reads `ATPROTO_SYNC_SCHEDULE`:
+`0 * * * *` on Railway, blank locally, because a laptop should not quietly sweep
+the live atmosphere in the background.
+
+The server reconciles those declarations into BullMQ **job schedulers** at boot —
+one durable Redis record that produces the next job on a cron pattern, kept
+running by whichever worker is around. That is what makes "run this hourly" a
+property of the queue rather than of a container that has to stay up, and it is
+why the sweep no longer needs a Railway cron service.
+
+Reconcile, not register: schedulers outlive deployments, so a pipeline whose
+schedule was removed has its scheduler **deleted**. Emptying the variable
+actually turns the schedule off instead of orphaning a job that keeps firing
+from a config nothing in the repo mentions any more. The server does this because
+it is the one process there is exactly one of; workers would race on every
+scale-up.
+
+Everything is UTC. A schedule that quietly shifts twice a year with a container's
+local DST is its own kind of bug.
+
+**Overlap.** BullMQ stops the same job running twice, not two different jobs on
+one queue — which is exactly what an hourly schedule plus a sweep that runs long
+plus two replicas produces. The Railway cron this replaced got that guarantee
+from the platform, so `atproto-sync` takes a Redis mutex ([`src/lock.ts`](src/lock.ts))
+and a second sweep skips rather than fails: the work is already being done, and
+failing would only buy a retry that hits the same lock.
+
 ## Autoscaling
 
 Railway has no built-in autoscaler. It grows each container's CPU and memory

@@ -1,4 +1,5 @@
 import type { Job, JobsOptions } from "bullmq";
+import { atprotoSyncPipeline } from "#/jobs/atproto-sync.ts";
 import { demoPipeline } from "#/jobs/demo.ts";
 
 /**
@@ -31,10 +32,28 @@ export interface PipelineDefinition {
    * largest thing in the instance.
    */
   defaultJobOptions?: JobsOptions;
+  /**
+   * Jobs one worker process runs at once for this queue. Defaults to the
+   * service-wide `PIPELINE_WORKER_CONCURRENCY`. Set it to 1 for a pipeline whose
+   * jobs must not interleave *within* a process — and note that is only half the
+   * story once there is more than one replica, where a cross-process lock is the
+   * only thing that serialises anything (see `lock.ts`).
+   */
+  concurrency?: number;
+  /**
+   * Cron pattern (UTC) this pipeline runs on, or `undefined` for "only when
+   * something enqueues it". A function rather than a value because it is read
+   * from the environment, and module evaluation order should not decide whether
+   * that environment has been loaded yet. Reconciled into BullMQ's job
+   * schedulers at server boot — see `schedules.ts`.
+   */
+  schedule?: () => string | undefined;
   process: (job: Job) => Promise<unknown>;
+  /** Released when a worker drains: a database pool, an open file, a client. */
+  close?: () => Promise<void>;
 }
 
-export const PIPELINES: readonly PipelineDefinition[] = [demoPipeline];
+export const PIPELINES: readonly PipelineDefinition[] = [atprotoSyncPipeline, demoPipeline];
 
 export const PIPELINE_NAMES: readonly string[] = PIPELINES.map((p) => p.name);
 

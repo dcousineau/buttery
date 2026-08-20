@@ -88,7 +88,7 @@ See [services/pipeline/README.md](./services/pipeline/README.md) for how to add 
 
 ## Backfill / sync
 
-The cron sync pulls recipe records into Postgres. It reads `services/atproto-cron-sync/.env` (created for you by `pnpm dev`), so no wrapper is needed — but the dev stack has to be up.
+The atproto sweep pulls recipe records into Postgres. In production it runs hourly as the `atproto-sync` BullMQ pipeline (there is no Railway cron service any more); locally it stays manual. Either way it reads `services/atproto-cron-sync/.env` (created for you by `pnpm dev`), so no wrapper is needed — but the dev stack has to be up.
 
 ```bash
 # One sweep of the real atmosphere into the local DB (writes)
@@ -100,7 +100,12 @@ pnpm --filter=@buttery/atproto-cron-sync sync:once --dry-run
 # One sweep of the LOCAL atproto dev-env instead — a disabled process-compose
 # one-shot; run it after publishing a recipe locally
 process-compose process start atproto-cron-sync
+
+# The same sweep through the queue, so you can watch it in the Bull Board UI
+curl -X POST http://127.0.0.1:3002/jobs/atproto-sync -d '{}' -H 'content-type: application/json'
 ```
+
+To run it on a clock locally too, set `ATPROTO_SYNC_SCHEDULE` in `services/pipeline/.env` and restart the `pipeline` process.
 
 ## License
 
