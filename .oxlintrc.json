@@ -51,9 +51,8 @@
     ],
 
     // ── React ────────────────────────────────────────────────────────────────
-    // Neither hooks rule is in a category: `rules-of-hooks` sits in the
-    // `react-hooks` namespace outside them, and the React Compiler checks below
-    // are `nursery`.
+    // `rules-of-hooks` is `pedantic` and `exhaustive-deps` is `correctness`, so
+    // both are listed: one to turn on, one to hold at warn.
     "react/rules-of-hooks": "error",
     "react/exhaustive-deps": "warn",
     // The React Compiler checks. oxlint 1.78 shipped these as ONE experimental
@@ -71,8 +70,8 @@
     //     failing to lower our syntax ("Handle TryStatement with a finalizer"),
     //     which is a statement about the compiler, not about the code. 17 hits,
     //     almost all of them ordinary `try`/`finally`. Nothing to fix.
-    //   * the three `warn`s are a real backlog (2 extra effect deps, 1 setState in
-    //     an effect, 1 stale suppression) in files unrelated to whatever change
+    //   * the two `warn`s are a real backlog (2 extra effect deps, 1 suppression
+    //     the compiler cannot see through) in files unrelated to whatever change
     //     first hit this. Visible on every run, not blocking, not silently dropped.
     //   * everything else is `error` and clean today.
     "react/capitalized-calls": "error",
@@ -89,7 +88,7 @@
     "react/purity": "error",
     "react/refs": "error",
     "react/rule-suppression": "warn",
-    "react/set-state-in-effect": "warn",
+    "react/set-state-in-effect": "error",
     "react/set-state-in-render": "error",
     "react/static-components": "error",
     "react/syntax": "error",
