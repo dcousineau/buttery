@@ -353,6 +353,8 @@ export interface PendingInvite {
   householdName: string;
   inviterHandle: string | null;
   role: Role;
+  /** ISO timestamp the invite was created — the chooser dates it ("· 2 days ago"). */
+  createdAt: string;
 }
 
 /**
@@ -456,12 +458,11 @@ export type AttributionChoice =
   /** A site the user supplied a URL for by hand (e.g. a bare "Tiktok" source string). */
   | { kind: "website"; name: string; url: string };
 
-// --- the access gate ----------------------------------------------------
-
 /**
- * The post-login gate verdict. Cached offline (§4.4): an installed app with no
- * network renders the shell from the last known value rather than blanking, and
- * the fallback deliberately fails *open* — the gate is chrome, the server
- * functions are the security boundary.
+ * The first-run nudges the pantry may show. Derived per request rather than
+ * stored as flags: `inviteNudge` is "one live member, nobody has dismissed it",
+ * so a household that grows past one member stops showing it with no cleanup.
  */
-export type GateState = { authed: boolean; invited: boolean };
+export interface HouseholdNudges {
+  inviteNudge: boolean;
+}

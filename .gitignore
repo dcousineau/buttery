@@ -17,6 +17,8 @@ todos.json
 # Deleting it resets the dev-env and mints a new did:plc for the seed account.
 .dev-data
 .mcp.json
+# Timestamped copies of the rendered config `mise run setup:reset` replaces.
+*.bak.[0-9]*
 .pnpm-store
 # Snapshots / screenshots / traces the Playwright MCP writes into the project.
 .playwright-mcp

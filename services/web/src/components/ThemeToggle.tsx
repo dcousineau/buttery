@@ -4,7 +4,7 @@ import { Moon, Sun, SunMoon } from "lucide-react";
 
 /**
  * Standalone single-button theme cycler (light → dark → auto). Used on the
- * public marketing + waitlist holding pages, where there's no account menu to fold it
+ * public marketing pages, where there's no account menu to fold it
  * into. The in-app chrome uses the explicit picker inside `UserMenu` instead;
  * both share theme state via `useTheme()`.
  */

@@ -72,7 +72,7 @@ function PickerCard({ household }: { household: HouseholdSummary }) {
       // previous household. Anything the new household fetches in that window is
       // written to disk under the old buster and thrown away unread (§2.4, §4.5).
       await refreshSession();
-      await navigate({ to: "/households" });
+      await navigate({ to: "/household" });
     } catch (err) {
       setError(errorMessage(err));
       setPending(false);
@@ -81,7 +81,7 @@ function PickerCard({ household }: { household: HouseholdSummary }) {
 
   return (
     <Card>
-      <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
+      <CardContent className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="m-0 flex items-center gap-2 text-base font-bold text-foreground">
             {household.name}

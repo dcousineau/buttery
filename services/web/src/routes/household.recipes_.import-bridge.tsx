@@ -39,7 +39,7 @@ function ImportBridge() {
   useEffect(() => {
     const opener = window.opener as Window | null;
     if (!opener) {
-      // oxlint-disable-next-line react/react-compiler -- terminal one-shot state (no opener == dead popup), not a render loop. (oxlint ships the react-hooks compiler checks, `set-state-in-effect` among them, as the single `react/react-compiler` rule.)
+      // oxlint-disable-next-line react/set-state-in-effect -- terminal one-shot state (no opener == dead popup), not a render loop.
       setFailed(true);
       return;
     }

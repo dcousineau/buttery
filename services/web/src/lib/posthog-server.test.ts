@@ -40,9 +40,9 @@ describe("posthog-server gate", () => {
   // The exact value that turns PostHog on is the string "true" and nothing else.
   for (const enabled of [undefined, "", "false", "TRUE", "1", "yes", "production"]) {
     it(`writes nothing when POSTHOG_ENABLED is ${JSON.stringify(enabled)}`, async () => {
-      const { identify } = await loadModule({ POSTHOG_ENABLED: enabled, POSTHOG_PROJECT_TOKEN: TOKEN });
+      const { captureServerEvent } = await loadModule({ POSTHOG_ENABLED: enabled, POSTHOG_PROJECT_TOKEN: TOKEN });
 
-      await identify("did:plc:local-dev", { handle: "chef.test" });
+      await captureServerEvent("did:plc:local-dev", "recipe_import_completed", { recipes: 1 });
 
       expect(fetchSpy).not.toHaveBeenCalled();
     });
@@ -72,11 +72,11 @@ describe("posthog-server gate", () => {
   });
 
   it("still writes when enabled, so the gate has not simply broken production", async () => {
-    const { identify } = await loadModule({ POSTHOG_ENABLED: "true", POSTHOG_PROJECT_TOKEN: TOKEN });
+    const { captureServerEvent } = await loadModule({ POSTHOG_ENABLED: "true", POSTHOG_PROJECT_TOKEN: TOKEN });
 
-    await identify("did:plc:someone", { handle: "chef.example" });
+    await captureServerEvent("did:plc:someone", "recipe_import_completed", { recipes: 1 });
 
-    // flushAt: 1 — the identify is flushed rather than batched.
+    // flushAt: 1 — the capture is flushed rather than batched.
     await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled());
   });
 });

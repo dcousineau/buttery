@@ -25,7 +25,6 @@
  * client-side cache partition only, and lives in the query keys.
  */
 
-import { getGateState } from "#/server/gate";
 import {
   addRecipeToHousehold as addRecipeToHouseholdFn,
   getHouseholdRecipe as getHouseholdRecipeFn,
@@ -90,6 +89,7 @@ import {
   supportedTimezones as supportedTimezones_,
   updateHouseholdPreferences as updateHouseholdPreferencesFn,
 } from "#/server/household/preferences";
+import { dismissInviteNudge as dismissInviteNudgeFn, getHouseholdNudges as getHouseholdNudgesFn } from "#/server/household/settings";
 import { clearPendingInvite as clearPendingInviteFn, errorMessage as errorMessage_, stashPendingInvite as stashPendingInviteFn } from "#/server/household/pending-invite";
 import { getRecipe as getRecipeFn, listRecentRecipes as listRecentRecipesFn } from "#/server/recipes";
 import { publishRecipe as publishRecipeFn, saveRecipe as saveRecipeFn } from "#/server/recipes-write";
@@ -107,7 +107,6 @@ import {
 import type {
   CopiedWeek,
   CreatedPlanEntry,
-  GateState,
   GlobalRecipeResult,
   GroceryListPayload,
   GroceryCommitRow,
@@ -115,6 +114,7 @@ import type {
   GroceryPreview,
   GroceryPreviewInput,
   HouseholdMemberView,
+  HouseholdNudges,
   HouseholdPreferences,
   HouseholdRecipeDetail,
   HouseholdRecipeNoteView,
@@ -143,12 +143,6 @@ export const errorMessage = errorMessage_;
 /** Cookie writes, not round trips — the pending-invite handoff is client-side. */
 export const stashPendingInvite = stashPendingInviteFn;
 export const clearPendingInvite = clearPendingInviteFn;
-
-// --- gate ---------------------------------------------------------------
-
-export function fetchGateState(): Promise<GateState> {
-  return getGateState();
-}
 
 // --- the household recipe box -------------------------------------------
 
@@ -362,6 +356,19 @@ export function acceptBoundInviteById(inviteId: string) {
 
 export function declineBoundInviteById(inviteId: string) {
   return declineBoundInviteByIdFn({ data: { inviteId } });
+}
+
+/**
+ * The pantry's first-run nudges. Takes the household id explicitly (unlike most
+ * fns here) because the pantry loader already holds it and the server would
+ * otherwise re-derive the same value from the session.
+ */
+export function getHouseholdNudges(householdId: string): Promise<HouseholdNudges> {
+  return getHouseholdNudgesFn({ data: { householdId } });
+}
+
+export function dismissInviteNudge(householdId: string): Promise<{ ok: true }> {
+  return dismissInviteNudgeFn({ data: { householdId } });
 }
 
 export function getHouseholdPreferences(): Promise<HouseholdPreferences> {

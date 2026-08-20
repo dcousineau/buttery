@@ -2,8 +2,7 @@ import { xrpc } from "@atproto/lex";
 import * as recipeLex from "@buttery/lexicons/exchange/recipe/recipe";
 import getRecord, { $params as getRecordParams } from "@buttery/lexicons/com/atproto/repo/getRecord";
 import resolveHandleQuery, { $params as resolveHandleParams } from "@buttery/lexicons/com/atproto/identity/resolveHandle";
-
-const APPVIEW = "https://public.api.bsky.app";
+import { didDocumentUrl, handleResolverUrl } from "./endpoints";
 
 export const RECIPE_COLLECTION = "exchange.recipe.recipe";
 
@@ -55,21 +54,14 @@ export function parseRecipeRef(input: string): ParsedAtUri {
 export async function resolveHandle(handle: string) {
   // `.parse` validates the raw handle and returns lex's branded param type —
   // the honest boundary conversion, no `as`. Throws if the handle is malformed.
-  const { payload } = await xrpc(APPVIEW, resolveHandleQuery, { params: resolveHandleParams.parse({ handle }) });
+  const { payload } = await xrpc(handleResolverUrl(), resolveHandleQuery, { params: resolveHandleParams.parse({ handle }) });
   return payload.body.did;
 }
 
 /** Resolve a DID document and extract the PDS service endpoint. */
 export async function resolvePds(did: string): Promise<string> {
-  let docUrl: string;
-  if (did.startsWith("did:plc:")) {
-    docUrl = `https://plc.directory/${did}`;
-  } else if (did.startsWith("did:web:")) {
-    const host = did.slice("did:web:".length).split(":").join("/");
-    docUrl = `https://${decodeURIComponent(host)}/.well-known/did.json`;
-  } else {
-    throw new Error(`Unsupported DID method: ${did}`);
-  }
+  const docUrl = didDocumentUrl(did);
+  if (!docUrl) throw new Error(`Unsupported DID method: ${did}`);
   const res = await fetch(docUrl);
   if (!res.ok) throw new Error(`Failed to resolve DID document for ${did}`);
   const doc = (await res.json()) as {

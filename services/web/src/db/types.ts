@@ -32,6 +32,7 @@ export interface Account {
   createdAt: Generated<Timestamp>;
   id: string;
   idToken: string | null;
+  issuer: string;
   password: string | null;
   providerId: string;
   refreshToken: string | null;
@@ -134,6 +135,7 @@ export interface Household {
   deleted_at: Timestamp | null;
   id: string;
   name: string;
+  settings: Generated<Json>;
   updated_at: Generated<Timestamp>;
 }
 
