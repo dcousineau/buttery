@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node src/worker.ts",
-    "dev": "node --watch --watch-preserve-output src/worker.ts",
+    "dev": "node src/worker.ts",
     "schedules:sync": "node src/schedules-sync.ts",
     "run:once": "node src/run-once.ts",
     "sync:once": "node src/run-once.ts atproto-sync",

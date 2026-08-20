@@ -51,6 +51,17 @@ async function alreadyRunning(client: Client, workflow: WorkflowRegistration): P
   return false;
 }
 
+/** `WorkflowFailedError: … → ActivityFailure: … → Error: connect ECONNREFUSED`. */
+function causeChain(err: unknown): string {
+  const messages: string[] = [];
+  let current: unknown = err;
+  while (current instanceof Error && messages.length < 5) {
+    messages.push(`${current.name}: ${current.message}`);
+    current = current.cause;
+  }
+  return messages.length > 0 ? messages.join(" → ") : String(err);
+}
+
 const [name, ...rest] = process.argv.slice(2);
 if (!name) usage();
 
@@ -89,7 +100,11 @@ await withClient(async (client) => {
       log.warn("skipped — a run of this workflow is already in flight", { workflow: workflow.name });
       return;
     }
-    log.error("workflow failed", { workflow: workflow.name, err: String(err) });
+    // Unwrapped, because the top of the chain says almost nothing: a failed
+    // workflow surfaces as "WorkflowFailedError: Workflow execution failed",
+    // and the sentence a person actually needs — which activity, and why — is
+    // two `cause` links down.
+    log.error("workflow failed", { workflow: workflow.name, err: causeChain(err) });
     process.exitCode = 1;
   }
 });

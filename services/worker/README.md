@@ -145,6 +145,11 @@ process-compose process scale worker 3   # several workers, one task queue
 temporal workflow list                   # the CLI defaults to 127.0.0.1:7233
 ```
 
+The `worker` process does not hot-reload: `node --watch` kills the SDK's
+workflow sandbox on boot with `RangeError: Invalid atomic access index` (Node
+26.7, reproducible, gone without the flag). Restart it instead —
+`process-compose process restart worker`.
+
 `run:once` starts a workflow and waits; the `worker` process runs it. That is a
 real difference from a queue library's one-shot, which did the work in your
 shell — here the stack has to be up. What it buys is that a run by hand and a

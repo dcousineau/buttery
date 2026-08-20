@@ -260,6 +260,13 @@ processes:
   # count. Scale the local fleet with `process-compose process scale worker 3`
   # (or the `pc_process_scale` MCP tool) to watch several workers share one task
   # queue — one is the right default, more just multiplies idle log lines.
+  #
+  # No `node --watch`, deliberately, and not for taste: under it the SDK's
+  # workflow sandbox dies on boot with `RangeError: Invalid atomic access index`
+  # from inside its worker-thread VM, reproducibly on Node 26.7 and never without
+  # the flag. Restart the process to pick up a code change
+  # (`process-compose process restart worker`), which takes about as long as the
+  # workflow bundle does to build.
   worker:
     description: "Temporal worker — runs every workflow and activity this build declares"
     command: "pnpm --filter=@buttery/worker dev"
