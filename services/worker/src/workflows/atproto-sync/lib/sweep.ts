@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import type { SyncConfig } from "#/workflows/atproto-sync/lib/config.ts";
 import { RECIPE_COLLECTION } from "#/workflows/atproto-sync/lib/config.ts";
-import type { BatchOutcome, SweepSummary } from "#/workflows/atproto-sync/types.ts";
+import type { RepoOutcome, SweepSummary } from "#/workflows/atproto-sync/types.ts";
 import { log } from "#/log.ts";
 import { resolveIdentity } from "#/workflows/atproto-sync/lib/identity.ts";
 import { getRepoRev, listRecords } from "#/workflows/atproto-sync/lib/pds.ts";
@@ -82,11 +82,6 @@ export async function closeSyncRun(pool: Pool, syncRunId: string | null, summary
     });
 }
 
-/** Record every discovered DID, which also clears any `missing_since` on it. */
-export async function registerRepos(pool: Pool, dids: string[]): Promise<void> {
-  for (const did of dids) await pool.query(UPSERT_REPO_SQL, [did]);
-}
-
 /**
  * Flag DIDs that dropped out of enumeration. Candidates for later cleanup —
  * enumeration is best-available, not provably complete, so this is a flag and
@@ -97,31 +92,27 @@ export async function markMissingRepos(pool: Pool, dids: string[]): Promise<numb
   return missing.rowCount ?? 0;
 }
 
-// --- concurrency pool ----------------------------------------------------
-
-/** Run `worker` over `items` with at most `concurrency` in flight. */
-export async function runPool<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
-  let next = 0;
-  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++;
-      await worker(items[i]);
-    }
-  });
-  await Promise.all(runners);
-}
-
 // --- per-DID sweep -------------------------------------------------------
 
-export interface RepoOutcome {
-  upserted: number;
-  deleted: number;
-  failed: boolean;
-}
-
+/**
+ * Sweep one repo: register it, page its records, upsert them, reconcile its
+ * deletes.
+ *
+ * It **throws** when the repo cannot be swept, rather than reporting a failure
+ * in its return value, because the caller is an activity: throwing is how you
+ * ask Temporal for a retry, and a PDS that is briefly unreachable is exactly
+ * what a retry is for. The error is recorded in `atproto_repo.last_error` on the
+ * way out, so the row still says what went wrong even on an attempt that will be
+ * tried again. Whether a repo that has exhausted its retries fails the whole
+ * sweep is the workflow's call, not this function's — and it does not.
+ */
 export async function sweepDid(pool: Pool, config: SyncConfig, did: string): Promise<RepoOutcome> {
-  const outcome: RepoOutcome = { upserted: 0, deleted: 0, failed: false };
+  const outcome: RepoOutcome = { upserted: 0, deleted: 0 };
   try {
+    // Record the DID before doing anything with it, which also clears any
+    // `missing_since` a previous sweep set: it is here, now.
+    if (!config.dryRun) await pool.query(UPSERT_REPO_SQL, [did]);
+
     // Resolve identity (PDS + handle), preferring the cached values. Re-resolve
     // when either is missing so a repo cached before handles were tracked
     // backfills its handle on the next sweep.
@@ -170,47 +161,13 @@ export async function sweepDid(pool: Pool, config: SyncConfig, did: string): Pro
 
     log.info("repo synced", { did, records: records.length, upserted: outcome.upserted, deleted: outcome.deleted });
   } catch (err) {
-    outcome.failed = true;
     const message = String(err);
     log.error("repo sweep failed", { did, err: message });
     if (!config.dryRun) {
       // Best-effort; don't let bookkeeping failure mask the real error.
       await pool.query(MARK_REPO_ERROR_SQL, [did, message]).catch(() => {});
     }
+    throw err;
   }
-  return outcome;
-}
-
-// --- one batch of repos --------------------------------------------------
-
-/**
- * Sweep a slice of the network: register the DIDs, then page and upsert each
- * one, `SYNC_CONCURRENCY` at a time.
- *
- * A repo that fails does not fail the batch. Its error goes to
- * `atproto_repo.last_error` and its count to `reposFailed`, because one repo
- * whose PDS is down should not cost the reconciliation of every other repo — and
- * an hourly sweep that fails whenever any one of thousands of servers is
- * unreachable would simply always be failing. What *does* fail the batch is the
- * database going away underneath it, which is exactly the case worth retrying.
- *
- * `onRepo` is called after each DID. The activity uses it to heartbeat, which is
- * how Temporal tells "still working through 200 repos" from "the worker died
- * ten minutes ago".
- */
-export async function sweepRepos(pool: Pool, config: SyncConfig, dids: string[], onRepo?: (done: number, total: number) => void): Promise<BatchOutcome> {
-  const outcome: BatchOutcome = { recordsUpserted: 0, recordsDeleted: 0, reposFailed: 0 };
-  if (!config.dryRun) await registerRepos(pool, dids);
-
-  let done = 0;
-  await runPool(dids, config.concurrency, async (did) => {
-    const repo = await sweepDid(pool, config, did);
-    outcome.recordsUpserted += repo.upserted;
-    outcome.recordsDeleted += repo.deleted;
-    if (repo.failed) outcome.reposFailed++;
-    done++;
-    onRepo?.(done, dids.length);
-  });
-
   return outcome;
 }

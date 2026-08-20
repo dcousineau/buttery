@@ -63,11 +63,11 @@ the names.
 The split the whole service holds to:
 
 - **The environment** says what this deployment is — which cluster, which relay,
-  which PDS, how many DIDs at a time. `config.ts` and `lib/config.ts`, read
+  which PDS, how big this worker may get. `config.ts` and `lib/config.ts`, read
   inside activities only. A workflow that read `process.env` would be
   non-deterministic on replay.
 - **A workflow argument** says what one run should do differently — `dryRun`,
-  `maxRepos`, `onlyDid`, `batchSize`. One JSON object, typed in `types.ts`, and
+  `maxRepos`, `onlyDid`, `parallelism`. One JSON object, typed in `types.ts`, and
   every field optional with an environment fallback.
 
 ```bash
@@ -77,24 +77,37 @@ temporal workflow execute --type atprotoSync --task-queue buttery \
 
 ## The atproto sweep
 
-`enumerateRepos → openSyncRun → indexRepoBatch × N → reconcileMissingRepos →
+`enumerateRepos → openSyncRun → syncRepo × N → reconcileMissingRepos →
 closeSyncRun`. Each `await` in `workflow.ts` is a point the run resumes from: a
-worker that dies mid-sweep costs the batch in flight, not the hour.
+worker that dies mid-sweep costs the repos in flight, not the hour.
 
-Three details worth knowing:
+**One repo is one activity**, which makes the repo the unit of three separate
+things:
 
-- **Batching is the one structural decision.** One activity for the whole network
-  puts a multi-thousand-repo retry behind one failure; one activity per repo puts
-  thousands of events in the history. A batch is the middle, and is the unit of
-  both retry and progress.
-- **`dids` lives in workflow state, which means it lives in the history.** A few
-  thousand DIDs is ~150 KB against a 2 MB payload limit — fine now, not fine
-  forever. `workflow.ts` documents the fix (page enumeration behind a cursor,
-  reconcile from the run's start timestamp, `continueAsNew`).
-- **A repo that fails does not fail the sweep.** Its error goes to
-  `atproto_repo.last_error`; an hourly sweep that failed whenever one of
-  thousands of PDSes was unreachable would simply always be failing. What _does_
-  fail a batch is our own database going away, which is the case worth retrying.
+- **Retry.** A PDS that times out costs that repo three attempts, not everyone
+  else's work. `sweepDid` throws rather than swallowing, because throwing is how
+  an activity asks for the retry it deserves; the error still lands in
+  `atproto_repo.last_error` on the way out.
+- **Failure.** A repo that exhausts its retries is counted and stepped over —
+  the workflow runs each window through `Promise.allSettled`, so one dead PDS
+  never ends a sweep. An hourly sweep that failed whenever one of thousands of
+  servers was unreachable would simply always be failing.
+- **Distribution.** Repos go through the task queue, so a fleet shares them
+  instead of one worker looping alone. How many are in flight from a run is the
+  workflow's `parallelism` input; how many a worker will actually execute is
+  `WORKER_MAX_CONCURRENT_ACTIVITIES`.
+
+What it costs is history — roughly three events per repo against a 10k-event
+soft warning and a 50k hard cap. So the loop watches `continueAsNewSuggested` and
+hands the remaining DIDs plus its cursor to a fresh execution when the server
+says the history is getting long. That also bounds the other growth worth
+watching: `dids` is carried in workflow state, so it is carried in the history,
+at ~150 KB per few thousand DIDs against a 2 MB payload limit.
+
+`continueAsNew` reports itself by throwing, which means the sweep's `catch` sees
+it — and must let it through untouched, or a handover becomes a failure and the
+run row gets closed under a sweep that is still going. That is the one piece of
+Temporal trivia this file could not do without.
 
 ## Schedules
 

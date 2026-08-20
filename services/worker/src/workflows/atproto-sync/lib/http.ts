@@ -1,11 +1,19 @@
 import { log } from "#/log.ts";
 
 // Polite network citizen (plan §1 "Concurrency & ordering"): short per-request
-// timeout, bounded retries with exponential backoff on 429/5xx and transient
-// network errors. Everything the sweep fetches is public and unauthenticated.
+// timeout, one retry with a short backoff on 429/5xx and transient network
+// errors. Everything the sweep fetches is public and unauthenticated.
+//
+// Deliberately shallow, because this is the INNER of two retry loops: the
+// activity calling it has a retry policy of its own, and that is the one worth
+// having — it is visible on the timeline, it backs off in minutes rather than
+// milliseconds, and it survives the worker dying. Four attempts here against
+// three there meant a hung host cost twelve 15-second timeouts before anyone
+// gave up. One retry covers the packet that got dropped; anything longer-lived
+// is Temporal's to wait out.
 
 const DEFAULT_TIMEOUT_MS = 15_000;
-const MAX_ATTEMPTS = 4;
+const MAX_ATTEMPTS = 2;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -53,7 +61,7 @@ export async function getJson<T>(url: string, timeoutMs = DEFAULT_TIMEOUT_MS): P
     }
 
     if (attempt < MAX_ATTEMPTS) {
-      const backoff = 250 * 2 ** (attempt - 1); // 250, 500, 1000 ms
+      const backoff = 250 * 2 ** (attempt - 1); // 250 ms
       log.warn("http retry", { url, attempt, backoff, err: String(lastErr) });
       await sleep(backoff);
     }

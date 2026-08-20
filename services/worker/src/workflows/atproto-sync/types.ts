@@ -30,17 +30,35 @@ export interface SweepScope {
 /** The `atprotoSync` workflow's one argument. */
 export interface AtprotoSyncInput extends SweepScope {
   /**
-   * DIDs per `indexRepoBatch` activity. The batch size is the unit of retry and
-   * the unit of progress: smaller batches mean a failed PDS costs less work and
-   * the timeline moves more often, at the cost of one more history event each.
+   * How many `syncRepo` activities are in flight at once. This is the workflow's
+   * share of the decision; how many a single worker will actually execute in
+   * parallel is `WORKER_MAX_CONCURRENT_ACTIVITIES`, and across a fleet it is that
+   * times the replica count.
    */
-  batchSize?: number;
+  parallelism?: number;
+  /**
+   * Set by `continueAsNew` and by nothing else — see `workflow.ts`. A sweep long
+   * enough to outgrow one execution's history hands its remaining work to a
+   * fresh execution through this field.
+   */
+  continuation?: SweepContinuation;
+}
+
+/** The tail of a sweep, handed to the next execution. */
+export interface SweepContinuation {
+  /** Every DID this sweep is working through, in the order it enumerated them. */
+  dids: string[];
+  /** How many of them are already done. */
+  cursor: number;
+  fullSweep: boolean;
+  syncRunId: string | null;
+  summary: SweepSummary;
 }
 
 export type EnumerateInput = SweepScope;
 export type RunInput = SweepScope;
-export interface IndexBatchInput extends SweepScope {
-  dids: string[];
+export interface SyncRepoInput extends SweepScope {
+  did: string;
 }
 export interface ReconcileInput {
   dids: string[];
@@ -62,11 +80,10 @@ export interface EnumerateResult {
   fullSweep: boolean;
 }
 
-/** What one `indexRepoBatch` did, folded across its DIDs. */
-export interface BatchOutcome {
-  recordsUpserted: number;
-  recordsDeleted: number;
-  reposFailed: number;
+/** What sweeping one repo did. A repo that could not be swept has no outcome — it throws. */
+export interface RepoOutcome {
+  upserted: number;
+  deleted: number;
 }
 
 /** The workflow's return value, and the shape of the `atproto_sync_run` row. */

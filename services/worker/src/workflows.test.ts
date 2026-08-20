@@ -39,6 +39,6 @@ describe("the activity registry", () => {
     // workflows exporting the same name would silently register one
     // implementation for both.
     const activities = createActivities({ pool: {} as never });
-    expect(Object.keys(activities).sort()).toEqual(["closeSyncRun", "demoStep", "enumerateRepos", "indexRepoBatch", "openSyncRun", "reconcileMissingRepos"]);
+    expect(Object.keys(activities).sort()).toEqual(["closeSyncRun", "demoStep", "enumerateRepos", "openSyncRun", "reconcileMissingRepos", "syncRepo"]);
   });
 });

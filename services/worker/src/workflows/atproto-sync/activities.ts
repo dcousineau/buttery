@@ -1,9 +1,11 @@
 import { heartbeat } from "@temporalio/activity";
+import { ApplicationFailure } from "@temporalio/common";
 import type { Pool } from "pg";
 import { loadSyncConfig, RECIPE_COLLECTION } from "#/workflows/atproto-sync/lib/config.ts";
+import { HttpError } from "#/workflows/atproto-sync/lib/http.ts";
 import { enumerateDids, enumerateDidsFromPds } from "#/workflows/atproto-sync/lib/relay.ts";
-import { closeSyncRun, markMissingRepos, openSyncRun, sweepRepos } from "#/workflows/atproto-sync/lib/sweep.ts";
-import type { CloseRunInput, EnumerateInput, EnumerateResult, IndexBatchInput, ReconcileInput, RunInput } from "#/workflows/atproto-sync/types.ts";
+import { closeSyncRun, markMissingRepos, openSyncRun, sweepDid } from "#/workflows/atproto-sync/lib/sweep.ts";
+import type { CloseRunInput, EnumerateInput, EnumerateResult, ReconcileInput, RepoOutcome, RunInput, SyncRepoInput } from "#/workflows/atproto-sync/types.ts";
 import { log } from "#/log.ts";
 
 /**
@@ -60,10 +62,29 @@ export function createAtprotoSyncActivities({ pool }: { pool: Pool }) {
       return openSyncRun(pool, loadSyncConfig(input));
     },
 
-    /** Page and upsert one slice of the network. See `lib/sweep.ts`. */
-    async indexRepoBatch(input: IndexBatchInput) {
-      const config = loadSyncConfig(input);
-      return sweepRepos(pool, config, input.dids, (done, total) => heartbeat({ done, total }));
+    /**
+     * Sweep one repo: page its records, upsert them, reconcile its deletes. See
+     * `lib/sweep.ts`, which throws when the repo cannot be swept — which is how
+     * an activity asks for the retry it deserves.
+     *
+     * Short enough not to need a heartbeat: a repo is seconds of network and a
+     * handful of writes, well inside its five-minute timeout.
+     *
+     * The one judgement call is which failures deserve a retry at all. A PDS
+     * that times out or 500s will probably answer next time. A PDS that answers
+     * `400` for a DID — a deactivated or migrated repo, which the live network
+     * has a few of — will answer 400 forever, and retrying it three times with
+     * backoff spends a minute to learn nothing. `nonRetryable` is how you say so.
+     */
+    async syncRepo(input: SyncRepoInput): Promise<RepoOutcome> {
+      try {
+        return await sweepDid(pool, loadSyncConfig(input), input.did);
+      } catch (err) {
+        if (err instanceof HttpError && err.status !== undefined && err.status !== 429 && err.status >= 400 && err.status < 500) {
+          throw ApplicationFailure.nonRetryable(`${input.did}: ${err.message}`, "PermanentRepoError");
+        }
+        throw err;
+      }
     },
 
     /** Flag DIDs that dropped out of enumeration. The workflow decides when this applies. */

@@ -15,7 +15,6 @@ import type { SweepScope } from "#/workflows/atproto-sync/types.ts";
 
 export interface SyncConfig {
   relayUrl: string;
-  concurrency: number;
   dryRun: boolean;
   maxRepos: number | undefined;
   onlyDid: string | undefined;
@@ -46,7 +45,6 @@ export function loadSyncConfig(scope: SweepScope = {}): SyncConfig {
 
   return {
     relayUrl: process.env.RELAY_URL ?? RELAY_DEFAULT,
-    concurrency: positiveInt(process.env.SYNC_CONCURRENCY) ?? 8,
     dryRun: scope.dryRun === true,
     maxRepos,
     onlyDid: onlyDid || undefined,
