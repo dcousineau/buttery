@@ -86,9 +86,10 @@ export default function CookMode({ recipe, onClose }: { recipe: CookRecipe; onCl
 
   useWakeLock(phase === "cook" && resume !== "pending");
 
-  // Close the support chat if it is open — it is a fixed panel and would sit on
-  // top of the immersive surface. Nothing to restore on exit: support is opened
-  // from the account menu, never on its own (see `lib/support`).
+  // Close the support dialog if it is open — cook mode is the fullscreen dialog
+  // variant, and two stacked dialogs would fight over the screen and the focus
+  // trap. Nothing to restore on exit: support is opened from the account menu,
+  // never on its own (see `lib/support`).
   useEffect(() => {
     closeSupport();
   }, [closeSupport]);

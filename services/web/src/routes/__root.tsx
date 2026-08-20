@@ -8,7 +8,7 @@ import { useEffect, useRef } from "react";
 import { authClient } from "../lib/auth-client";
 import AppShell from "../components/AppShell";
 import { POSTHOG_CLIENT_CONFIG, useAnalytics } from "../lib/analytics";
-import { useSupport } from "../lib/support";
+import { SupportDialog } from "../components/SupportDialog";
 import { useCachePartition } from "#/lib/offline/use-cache-partition";
 import { absolute, seo } from "../lib/seo";
 
@@ -75,24 +75,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   }),
   shellComponent: RootDocument,
 });
-
-/** Keeps PostHog's Conversations widget off the page.
- *
- * The widget mounts itself in the bottom-right corner as soon as the bundle
- * loads. Buttery reaches support through the "Help & support" item in the
- * account menu instead, so this unmounts the auto-mounted one and leaves the
- * account menu to mount and open it on demand (see `lib/support`).
- *
- * Mounted at the root rather than in the app shell because the auto-mount
- * happens on every page, marketing and legal ones included — and because the
- * account menu's popup, the other consumer, only exists while it is open.
- *
- * Production-only, like the rest of analytics: outside production
- * `conversations` is permanently undefined and this component does nothing. */
-function PostHogSupportWidget() {
-  useSupport();
-  return null;
-}
 
 function PostHogIdentity() {
   const { posthog } = useAnalytics();
@@ -164,7 +146,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             }}
           >
             <PostHogIdentity />
-            <PostHogSupportWidget />
+            {/* The support conversation, opened from the account menu. At the
+                root because the menu's popup is unmounted the instant the item
+                is clicked, so it cannot host what it opens (see `lib/support`). */}
+            <SupportDialog />
             {app}
           </PostHogProvider>
         ) : (

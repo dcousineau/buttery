@@ -1,206 +1,143 @@
-import { useCallback, useEffect, useSyncExternalStore } from "react";
-import type { PostHog } from "posthog-js";
+import { useEffect, useSyncExternalStore } from "react";
+import type { Message, PostHog, SendMessageResponse, UserProvidedTraits } from "posthog-js";
 import { useAnalytics } from "./analytics";
 
 /**
- * "Help & support" — Buttery's one support channel, driven from the account
- * menu instead of a floating bubble.
+ * "Help & support" — Buttery's one support channel, opened from the account
+ * menu.
  *
- * The channel is PostHog Conversations. Its widget wants to live as a fixed
- * button in the bottom-right corner of every page, which collides with the
- * cook-mode controls, the timer tray, and the install prompt, and which is a
- * permanent visual tax for a thing people need twice a year. So this module
- * keeps the widget UNMOUNTED and hands `UserMenu` a menu item that mounts and
- * opens it on demand.
+ * The channel is PostHog Support (its SDK namespace is `conversations`). PostHog
+ * ships a drop-in widget for this, and Buttery does not use it: it is a fixed
+ * bubble in the bottom-right corner of every page, colliding with cook mode's
+ * controls, the timer tray and the install prompt, and it is styled as PostHog
+ * rather than as Buttery. So this module drives the JSON API underneath it —
+ * `sendMessage` / `getMessages` / `markAsRead` — and `components/SupportDialog`
+ * renders the conversation with the app's own primitives.
+ *
+ * That is the arrangement PostHog documents for exactly this case ("build a
+ * custom chat UI while disabling the default widget", Support JavaScript API).
+ * Two consequences worth knowing:
+ *
+ *   - **The widget's domain allowlist does not apply.** It gates rendering, not
+ *     the API, so support works on localhost and preview deploys as well as on
+ *     buttery.recipes — which is also the only reason any of this is testable
+ *     outside production.
+ *   - **The bundle loads on Support being enabled, not on the widget being
+ *     enabled.** Turning the in-app widget off in PostHog's settings leaves
+ *     everything here working and stops anything from auto-mounting.
  *
  * Production-only, like the rest of analytics: outside production
  * `posthog.conversations` is permanently undefined, {@link useSupport} reports
  * `available: false`, and the menu item is not rendered (see `./analytics`).
- *
- * ## Why this pokes at the DOM
- *
- * posthog-js exposes `show()` (mount the widget, restoring its saved
- * open/closed state) and `hide()` (unmount it) — and nothing that opens the
- * chat panel. The panel is opened by the user clicking the launcher bubble,
- * whose handler is private to the widget's Preact tree. So "open the panel"
- * here means: mount the widget, then click the launcher we never wanted to
- * show. The two selectors below are the whole surface of that coupling.
- *
- * They are also how we read the widget's state: it renders EITHER the launcher
- * OR the panel, so "is the launcher in the DOM" is "is the panel closed"
- * (`isVisible()` only answers whether the widget is mounted at all).
- *
- * If PostHog renames either selector the failure is soft and visible: the
- * launcher stops being suppressed and the app is back to today's floating
- * bubble, which still opens support when clicked.
  */
-
-/** The element the Conversations bundle appends to `<body>` when it mounts. */
-export const SUPPORT_CONTAINER_ID = "ph-conversations-widget-container";
-
-/**
- * The closed-state launcher bubble. Prefix match because the label carries an
- * unread count when an agent has replied (`Open chat (2 unread)`).
- */
-export const SUPPORT_LAUNCHER_SELECTOR = 'button[aria-label^="Open chat"]';
 
 /** The slice of posthog-js's conversations API this module drives. */
-export type SupportConversations = Pick<NonNullable<PostHog["conversations"]>, "show" | "hide" | "isAvailable" | "getUnavailableReason">;
+export type SupportConversations = Pick<
+  NonNullable<PostHog["conversations"]>,
+  "isAvailable" | "getUnavailableReason" | "hide" | "sendMessage" | "getMessages" | "markAsRead" | "getCurrentTicketId"
+>;
 
 /**
- * Reasons the widget is not available *yet* rather than not at all. Everything
+ * Reasons support is not available *yet* rather than not at all. Everything
  * else — disabled in the project, remote config rejected, bundle blocked by a
  * content blocker — is terminal, and hides the menu item rather than offering a
- * support channel that cannot open.
+ * channel that cannot send.
  */
 const TRANSIENT_UNAVAILABLE = new Set<string>(["remote_config_pending", "initializing", "not_loaded"]);
 
-/** How long to wait for the widget to mount after `show()` before giving up. */
-const OPEN_TIMEOUT_MS = 5_000;
-/** How long the bundle gets to load before support is called unavailable. */
+/** How long the lazily-loaded bundle gets before support is called unavailable. */
 const AVAILABILITY_TIMEOUT_MS = 20_000;
 const POLL_MS = 250;
 
-export type SupportAvailability = "pending" | "ready" | "unavailable";
+export type SupportStatus = "pending" | "ready" | "unavailable";
 
-/**
- * Mounts, opens, and unmounts the Conversations widget.
- *
- * A plain object rather than component state: the menu item that calls `open()`
- * lives inside the account menu's popup, which Base UI unmounts the instant the
- * item is clicked. Anything watching for the panel to close has to outlive it.
- *
- * Exported for its tests; the app gets one via {@link useSupport}.
- */
-export function createSupportController(conversations: SupportConversations, doc: Document = document) {
-  /** Whether the widget is mounted because someone asked for support. While
-   * false, any widget that appears is one PostHog auto-mounted on load. */
-  let requested = false;
-  let openTimer: ReturnType<typeof setInterval> | null = null;
-  let openDeadline: ReturnType<typeof setTimeout> | null = null;
-  let closeWatcher: MutationObserver | null = null;
+export type SupportSnapshot = {
+  status: SupportStatus;
+  /** Whether the support dialog is open. Lives here because the account menu
+   * that opens it is unmounted by Base UI the instant the item is clicked. */
+  open: boolean;
+  /** Replies from the team that this browser has not seen yet. */
+  unread: number;
+};
 
-  const container = (): HTMLElement | null => doc.getElementById(SUPPORT_CONTAINER_ID);
-  const launcher = (): HTMLElement | null => container()?.querySelector<HTMLElement>(SUPPORT_LAUNCHER_SELECTOR) ?? null;
+const INITIAL: SupportSnapshot = Object.freeze({ status: "pending", open: false, unread: 0 });
 
-  function stopOpening() {
-    if (openTimer) clearInterval(openTimer);
-    if (openDeadline) clearTimeout(openDeadline);
-    openTimer = null;
-    openDeadline = null;
-  }
-
-  /**
-   * The widget mounts itself on load whenever the project has it enabled, and
-   * remounts on `reset()`. This is what takes it back off the page — the one
-   * behaviour change this module exists for.
-   */
-  const autoMountWatcher = new MutationObserver(() => {
-    if (requested || !container()) return;
-    conversations.hide();
-  });
-  autoMountWatcher.observe(doc.body, { childList: true });
-  if (container()) conversations.hide(); // already mounted before we got here
-
-  /** Unmount once the user closes the panel, so the bubble does not linger. */
-  function watchForClose() {
-    const el = container();
-    if (!el || closeWatcher) return;
-    closeWatcher = new MutationObserver(() => {
-      if (!launcher()) return; // still open (or gone entirely)
-      close();
-    });
-    closeWatcher.observe(el, { childList: true, subtree: true });
-  }
-
-  function open() {
-    requested = true;
-    stopOpening();
-    // Mounts the widget in whatever state it was last left in. No-op — with a
-    // console warning — until the bundle has loaded, hence the retry below.
-    conversations.show();
-
-    const attempt = (): boolean => {
-      // Re-issue `show()` while the widget is not mounted: the first one may
-      // have landed before the bundle did, when it is only a console warning.
-      if (!container() && conversations.isAvailable()) conversations.show();
-      if (!container()) return false;
-      // Launcher present ⇒ the panel is closed ⇒ this is the click the user
-      // came for. Absent ⇒ it restored itself open, nothing to click.
-      launcher()?.click();
-      watchForClose();
-      return true;
-    };
-
-    if (attempt()) return;
-    openTimer = setInterval(() => {
-      if (attempt()) stopOpening();
-    }, POLL_MS);
-    openDeadline = setTimeout(stopOpening, OPEN_TIMEOUT_MS);
-  }
-
-  function close() {
-    requested = false;
-    stopOpening();
-    closeWatcher?.disconnect();
-    closeWatcher = null;
-    conversations.hide();
-  }
-
-  function dispose() {
-    stopOpening();
-    closeWatcher?.disconnect();
-    closeWatcher = null;
-    autoMountWatcher.disconnect();
-  }
-
-  return { open, close, dispose };
-}
-
-export type SupportController = ReturnType<typeof createSupportController>;
-
-/**
- * One controller per page, not per component. Both consumers — the root, which
- * mounts it so the auto-mounted widget is suppressed everywhere, and the
- * account menu, which opens it — share this instance.
- */
-let controller: SupportController | null = null;
-let availability: SupportAvailability = "pending";
-let availabilityTimer: ReturnType<typeof setInterval> | null = null;
+let snapshot: SupportSnapshot = INITIAL;
+let conversations: SupportConversations | null = null;
+let attached = false;
+let waitTimer: ReturnType<typeof setInterval> | null = null;
 const listeners = new Set<() => void>();
 
-function setAvailability(next: SupportAvailability) {
-  if (availability === next) return;
-  availability = next;
+function update(patch: Partial<SupportSnapshot>) {
+  const next = { ...snapshot, ...patch };
+  if (next.status === snapshot.status && next.open === snapshot.open && next.unread === snapshot.unread) return;
+  snapshot = next;
   for (const listener of listeners) listener();
 }
 
-function start(posthog: PostHog) {
-  const conversations = posthog.conversations;
-  if (!conversations) {
-    // No live client (every environment but production): nothing to mount, and
-    // nothing for the menu to offer.
-    setAvailability("unavailable");
+function stopWaiting() {
+  if (waitTimer) clearInterval(waitTimer);
+  waitTimer = null;
+}
+
+/**
+ * Attaches to the live client and waits for the conversations bundle to land.
+ *
+ * The wait is bounded and it ends in an answer either way: `ready` once the API
+ * reports itself available, `unavailable` on a terminal reason or on running out
+ * of patience. There is no third state where the menu item offers a channel that
+ * cannot send.
+ */
+export function attachSupport(api: SupportConversations | null) {
+  if (attached) return;
+  attached = true;
+  if (!api) {
+    // No live client (every environment but production).
+    update({ status: "unavailable" });
     return;
   }
-  if (controller) return;
-  controller = createSupportController(conversations);
+  conversations = api;
 
   const started = Date.now();
-  const check = () => {
-    if (conversations.isAvailable()) {
-      setAvailability("ready");
-    } else {
-      const reason = conversations.getUnavailableReason();
-      const waiting = (!reason || TRANSIENT_UNAVAILABLE.has(reason)) && Date.now() - started < AVAILABILITY_TIMEOUT_MS;
-      if (waiting) return;
-      setAvailability("unavailable");
+  const tick = () => {
+    if (api.isAvailable()) {
+      stopWaiting();
+      // Belt and braces for the "Enable widget" project setting: with it off
+      // nothing mounts and this is a no-op, and with it on this is what takes
+      // the floating bubble back off the page. Unmounting the widget does not
+      // touch the API the dialog talks to.
+      api.hide();
+      update({ status: "ready" });
+      void refreshUnread();
+      return;
     }
-    if (availabilityTimer) clearInterval(availabilityTimer);
-    availabilityTimer = null;
+    const reason = api.getUnavailableReason();
+    const waiting = (!reason || TRANSIENT_UNAVAILABLE.has(reason)) && Date.now() - started < AVAILABILITY_TIMEOUT_MS;
+    if (waiting) return;
+    stopWaiting();
+    update({ status: "unavailable" });
   };
-  check();
-  if (availability === "pending") availabilityTimer = setInterval(check, POLL_MS * 2);
+
+  tick();
+  if (snapshot.status === "pending") waitTimer = setInterval(tick, POLL_MS);
+}
+
+/**
+ * How many replies are waiting, for the badge on the menu item.
+ *
+ * Costs nothing for the overwhelming majority who have never opened support:
+ * with no ticket on this browser there is nothing to fetch, and
+ * `getCurrentTicketId()` answers that from local state without a request. A
+ * failure leaves the count at zero — the badge is a courtesy, not the channel.
+ */
+async function refreshUnread() {
+  if (!conversations?.getCurrentTicketId()) return;
+  try {
+    const response = await conversations.getMessages();
+    update({ unread: response?.unread_count ?? 0 });
+  } catch {
+    /* ignored: see above */
+  }
 }
 
 function subscribe(listener: () => void): () => void {
@@ -208,38 +145,104 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/** The store's current value — the `getSnapshot` half of the pair below. */
+export function getSupportSnapshot(): SupportSnapshot {
+  return snapshot;
+}
+
+/** Open the support dialog. A module function, so its identity is stable. */
+export function openSupport() {
+  update({ open: true, unread: 0 });
+}
+
+/** Close it — e.g. cook mode taking the screen. */
+export function closeSupport() {
+  update({ open: false });
+}
+
+/**
+ * Whether support can be talked to *right now*, read live rather than from the
+ * store.
+ *
+ * The two differ: `posthog.reset()` tears the conversations manager down and
+ * posthog-js never rebuilds it (remote config is not re-fetched), so a page that
+ * was `ready` a moment ago can be dead by the time someone opens the dialog. The
+ * dialog checks this on open and says so, instead of failing silently.
+ */
+export function isSupportReady(): boolean {
+  return conversations?.isAvailable() ?? false;
+}
+
+/** Every message on this browser's ticket, oldest first. Empty when there is no ticket yet. */
+export async function loadSupportThread(): Promise<Message[]> {
+  if (!conversations?.getCurrentTicketId()) return [];
+  const response = await conversations.getMessages();
+  return response?.messages ?? [];
+}
+
+/**
+ * Send one message, starting a ticket if this browser has none.
+ *
+ * `name` and `email` ride along from the person properties PostHog already
+ * holds when they are not passed — Buttery sets `name` at identify time and has
+ * no email to give.
+ *
+ * Rejects when the API is not available or the request fails, which is the
+ * whole reason the dialog can report a failure at all.
+ */
+export async function sendSupportMessage(body: string, traits?: UserProvidedTraits): Promise<SendMessageResponse> {
+  if (!conversations) throw new Error("Support is not loaded.");
+  // Resolves to null instead of throwing when the API is not available.
+  const response = await conversations.sendMessage(body, traits);
+  if (!response) throw new Error("Support is not loaded.");
+  return response;
+}
+
+/** Clear the unread count on the server once the thread has been looked at. */
+export async function markSupportRead(): Promise<void> {
+  if (!conversations?.getCurrentTicketId()) return;
+  try {
+    await conversations.markAsRead();
+  } catch {
+    /* ignored: an unread count that stays stale is not worth an error state */
+  }
+}
+
 export type Support = {
-  /** Whether a support conversation can actually be opened. False everywhere
-   * but production, and in production until the bundle has loaded. */
+  /** Whether support can be offered at all. False everywhere but production,
+   * and in production until the bundle has loaded. */
   available: boolean;
-  /** Mount and open the chat panel. */
+  /** Replies waiting on this browser's ticket. */
+  unread: number;
+  /** Whether the support dialog is open. */
+  isOpen: boolean;
   open: () => void;
-  /** Close and unmount it — e.g. entering an immersive surface. */
   close: () => void;
 };
 
 /**
- * The app's handle on support. Mount it at the root to keep PostHog's
- * auto-mounted widget off the page; call it in the account menu to render and
- * drive the "Help & support" item.
+ * The app's handle on support. `UserMenu` renders and opens the item from it;
+ * the root mounts `SupportDialog` from it; cook mode closes it.
  */
 export function useSupport(): Support {
   const { posthog, enabled } = useAnalytics();
 
-  // In an effect, not in render: `start` touches `document` and installs a
-  // MutationObserver, neither of which exists during SSR.
+  // In an effect rather than in render: attaching reaches into the live client
+  // and schedules timers, neither of which belongs in an SSR pass.
   useEffect(() => {
-    if (enabled) start(posthog);
+    attachSupport(enabled ? (posthog.conversations ?? null) : null);
   }, [enabled, posthog]);
 
-  const state = useSyncExternalStore(
-    subscribe,
-    () => availability,
-    () => "pending" as const,
-  );
+  const state = useSyncExternalStore(subscribe, getSupportSnapshot, () => INITIAL);
 
-  const open = useCallback(() => controller?.open(), []);
-  const close = useCallback(() => controller?.close(), []);
+  return { available: state.status === "ready", unread: state.unread, isOpen: state.open, open: openSupport, close: closeSupport };
+}
 
-  return { available: state === "ready", open, close };
+/** Test seam: drops every module-level singleton so each test starts clean. */
+export function resetSupportForTests() {
+  stopWaiting();
+  conversations = null;
+  attached = false;
+  snapshot = INITIAL;
+  listeners.clear();
 }
