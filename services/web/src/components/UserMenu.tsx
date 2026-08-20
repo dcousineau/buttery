@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowLeftRight, Home, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
+import { ArrowLeftRight, Home, LifeBuoy, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { signOutAndGoHome, useHydratedSession } from "../lib/auth-client";
 import { useSessionSnapshot } from "#/lib/offline/use-household";
 import UserAvatar from "./UserAvatar";
@@ -9,6 +9,7 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { serviceNameFromPds } from "#/lib/atproto/service-name";
 import { useOnboardingVerdict } from "#/lib/hooks/use-onboarding-verdict";
 import { useTheme, type ThemeMode } from "#/lib/hooks/use-theme";
+import { useSupport } from "#/lib/support";
 import type { OnboardingVerdict } from "#/lib/api";
 
 // Single-item theme control: clicking cycles light → dark → auto. The icon and
@@ -102,6 +103,11 @@ export default function UserMenu() {
   const snapshot = useSessionSnapshot();
   const verdict = useOnboardingVerdict();
   const { mode, setMode } = useTheme();
+  // The only way into support: PostHog's chat widget is mounted and opened from
+  // the item below instead of floating over every page (see `lib/support`).
+  // `available` is false outside production and until the widget has loaded, and
+  // the item is left out rather than offering a dead end.
+  const support = useSupport();
 
   if (isPending) {
     return <Skeleton className="size-9 rounded-full" />;
@@ -157,6 +163,13 @@ export default function UserMenu() {
           <ThemeIcon aria-hidden="true" />
           Theme: {THEME_META[mode].label}
         </DropdownMenuItem>
+
+        {support.available ? (
+          <DropdownMenuItem onClick={support.open}>
+            <LifeBuoy aria-hidden="true" />
+            Help &amp; support
+          </DropdownMenuItem>
+        ) : null}
 
         <DropdownMenuSeparator />
 

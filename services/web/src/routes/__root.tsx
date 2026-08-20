@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 import { authClient } from "../lib/auth-client";
 import AppShell from "../components/AppShell";
 import { POSTHOG_CLIENT_CONFIG, useAnalytics } from "../lib/analytics";
+import { useSupport } from "../lib/support";
 import { useCachePartition } from "#/lib/offline/use-cache-partition";
 import { absolute, seo } from "../lib/seo";
 
@@ -75,51 +76,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   shellComponent: RootDocument,
 });
 
-/** Route prefixes for the signed-in app surfaces. The PostHog support widget
- * (Conversations) is shown only here — never on marketing, legal, or public
- * share pages (`/`, `/login`, `/recipes/*`, `/invite/*`, …). */
-const LOGGED_IN_ROUTE_PREFIXES = ["/household", "/households", "/onboarding"];
-
-function isLoggedInRoute(pathname: string): boolean {
-  return LOGGED_IN_ROUTE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-}
-
-/** Shows PostHog's Conversations "support widget" on signed-in app routes only.
- * The widget auto-loads from remote config; we `show()` it on app routes and
- * `hide()` it everywhere else. Calls are client-only (guarded by `useEffect`)
- * and no-op until conversations finish loading, so we poll briefly to still hide
- * an auto-shown widget once it lands on a marketing/legal page.
+/** Keeps PostHog's Conversations widget off the page.
  *
- * Production-only, like the rest of analytics: outside production `conversations`
- * is permanently undefined and this component does nothing (see `lib/analytics`). */
+ * The widget mounts itself in the bottom-right corner as soon as the bundle
+ * loads. Buttery reaches support through the "Help & support" item in the
+ * account menu instead, so this unmounts the auto-mounted one and leaves the
+ * account menu to mount and open it on demand (see `lib/support`).
+ *
+ * Mounted at the root rather than in the app shell because the auto-mount
+ * happens on every page, marketing and legal ones included — and because the
+ * account menu's popup, the other consumer, only exists while it is open.
+ *
+ * Production-only, like the rest of analytics: outside production
+ * `conversations` is permanently undefined and this component does nothing. */
 function PostHogSupportWidget() {
-  const { posthog } = useAnalytics();
-  const loggedIn = useRouterState({ select: (s) => isLoggedInRoute(s.location.pathname) });
-
-  useEffect(() => {
-    const conversations = posthog.conversations;
-    if (!conversations) return;
-    const apply = () => {
-      if (loggedIn) {
-        // show() also kicks off the async load when conversations aren't ready.
-        conversations.show();
-        return true;
-      }
-      if (!conversations.isAvailable()) return false; // nothing rendered to hide yet
-      conversations.hide();
-      return true;
-    };
-    if (apply()) return;
-    const timer = setInterval(() => {
-      if (apply()) clearInterval(timer);
-    }, 500);
-    const stop = setTimeout(() => clearInterval(timer), 10_000);
-    return () => {
-      clearInterval(timer);
-      clearTimeout(stop);
-    };
-  }, [posthog, loggedIn]);
-
+  useSupport();
   return null;
 }
 
