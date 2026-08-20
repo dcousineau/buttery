@@ -33,6 +33,8 @@ Editing the `mcp_server:` block needs a full project restart (`process-compose d
 | `migrate`           | `db:migrate:up`, gated on Postgres reporting ready                                          |
 | `atproto-dev-env`   | Isolated PDS + local PLC on `localhost:2583` / `:2582`, probed on `/xrpc/_health`           |
 | `web`               | TanStack Start dev server on port 3000, gated on migrations, Redis, and the atproto dev-env |
+| `pipeline`          | BullMQ producer + Bull Board UI on port 3002, probed on `/health`                           |
+| `pipeline-worker`   | BullMQ worker — drains every queue the pipeline declares                                    |
 | `atproto-cron-sync` | One atproto → Postgres sync sweep — **manual one-shot**, boots `Disabled`                   |
 | `docs`              | Docusaurus site on port 3001 — **opt-in**, boots `Disabled` (see below)                     |
 
@@ -50,6 +52,22 @@ pnpm dev docs                             # docs + its dependencies only
 The last two are worth distinguishing. The env var flips the `disabled` default, so the stack boots exactly as usual plus `docs`. Naming a process on `up` instead overrides `disabled` for that process _and_ narrows the boot to it and its dependency closure — handy for a docs-only session, but no `web`.
 
 `vars:` + `{{ .X }}` templating does **not** work for this: templated values stay strings and `disabled` is a bool, so the config fails to parse. Plain `${VAR:-default}` expansion does.
+
+### The `pipeline` pair
+
+`pipeline` and `pipeline-worker` are one package (`@buttery/pipeline`) run as two processes, which is exactly how they deploy: the producer + Bull Board UI on one side, the worker fleet on the other. Splitting them locally is not ceremony — it is the only arrangement in which a "board is up but nothing drains the queue" bug shows up on a laptop instead of in production.
+
+Both boot with the stack rather than opting in like `docs`. The queues are empty until something enqueues, so an idle pair costs two Node processes and no Redis traffic beyond BullMQ's blocking read, and having them up means the board at <http://127.0.0.1:3002/ui> is always there to look at.
+
+`pipeline` depends only on `redis` — the queue itself. `pipeline-worker` also waits on `migrate`, because the jobs it runs write tables the migrations create.
+
+To watch several workers compete for one queue the way Railway replicas do, scale the process:
+
+```bash
+process-compose process scale pipeline-worker 3   # or the pc_process_scale MCP tool
+```
+
+Configuration is `services/pipeline/.env`. The board's basic auth is off locally (blank `PIPELINE_AUTH_PASSWORD`) and mandatory in production — see [the service README](../services/pipeline/README.md), which also covers how the Railway autoscaler decides.
 
 ### The manual `atproto-cron-sync` one-shot
 

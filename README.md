@@ -2,10 +2,11 @@
 
 Your recipes, your pantry — kept as portable [atproto](https://atproto.com) records you can take anywhere. Buttery is a [TanStack Start](https://tanstack.com/start) web app backed by Postgres, with a cron service that syncs recipe records from the atmosphere.
 
-The monorepo has two services:
+The monorepo has three services:
 
 - `services/web` — the app (`@buttery/web`)
 - `services/atproto-cron-sync` — the periodic sync/backfill worker (`@buttery/atproto-cron-sync`)
+- `services/pipeline` — the BullMQ job queues, their Bull Board UI, and the autoscaled worker fleet (`@buttery/pipeline`)
 
 ## Local development
 
@@ -34,7 +35,7 @@ mise run setup:reset
 
 It renames each file it replaces to `<name>.bak.<timestamp>` beside itself (gitignored) before writing, so any hand-edited value is still there to copy back — check the backup for real blob-storage credentials or a pinned secret. `-- --dry-run` shows what it would move; `-- --no-backup` deletes instead. The regenerated `services/web/.env` gets a fresh `BETTER_AUTH_SECRET`, which signs you out of the local dev server.
 
-`pnpm dev` supervises the whole stack — the docker-compose containers (Postgres + Redis), migrations, the atproto dev-env, and the web server — as one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project. In its TUI: arrow keys select a process, `F5` restarts it, `F10` quits.
+`pnpm dev` supervises the whole stack — the docker-compose containers (Postgres + Redis), migrations, the atproto dev-env, the web server, and the BullMQ pipeline pair — as one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project. In its TUI: arrow keys select a process, `F5` restarts it, `F10` quits.
 
 Drive the same running stack from another terminal:
 
@@ -68,6 +69,22 @@ pnpm test:db     # *.db.test.ts integration suites against the dev Postgres (sta
 `pnpm test` skips the DB suites when there is no database rather than failing.
 
 See [docs/LOCAL-DEV.md](./docs/LOCAL-DEV.md) for what each process is and how the pieces fit together.
+
+## Data pipelines
+
+Background jobs run on [BullMQ](https://docs.bullmq.io) over the same Redis the app uses. The stack boots a producer + [Bull Board](https://github.com/felixmosh/bull-board) UI on <http://127.0.0.1:3002/ui> and a worker that drains every queue; on Railway those are two services, and the worker fleet is autoscaled on queue depth.
+
+```bash
+# Enqueue a demo job and watch it move through the board
+curl -X POST http://127.0.0.1:3002/jobs/demo \
+  -H 'content-type: application/json' \
+  -d '{"data": {"durationMs": 5000, "label": "hello"}}'
+
+# Run several workers against one queue, the way replicas do on Railway
+process-compose process scale pipeline-worker 3
+```
+
+See [services/pipeline/README.md](./services/pipeline/README.md) for how to add a pipeline and how the autoscaler decides.
 
 ## Backfill / sync
 
