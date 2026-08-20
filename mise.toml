@@ -49,6 +49,16 @@ run = "node scripts/dev/bootstrap-env.mjs"
 description = "Render .mcp.json from .mcp.json.example with the dev DATABASE_URL (services/web/.env)"
 run = "node scripts/dev/render-mcp.mjs"
 
+# Re-render the files `setup:env` / `setup:mcp` refuse to touch once they exist:
+# both are bootstrap-only by design, so a template that gains a key leaves every
+# existing checkout's rendered file stale and silently short that key. This is
+# the deliberate "regenerate from the templates" — run it after pulling a change
+# to a `.env.example` or `.mcp.json.example`. Replaced files are renamed to
+# `*.bak.<timestamp>` beside themselves (gitignored) first, so nothing is lost.
+[tasks."setup:reset"]
+description = "Back up and re-render the .env files and .mcp.json from their templates"
+run = "node scripts/dev/reset-config.mjs"
+
 [hooks]
 # `;` not `&&`: the later steps must run even where railway-skills fails (cloud
 # sessions have no Railway CLI / GitHub API), so the next session boots with

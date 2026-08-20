@@ -26,6 +26,14 @@ pnpm dev
 
 `services/web/.env` holds the web service's configuration. `mise install` and `pnpm dev` both create it from `services/web/.env.example` when it is missing, generating a throwaway `BETTER_AUTH_SECRET`; the `DATABASE_URL` / `REDIS_URL` defaults already match `docker-compose.yml`, so a first boot needs nothing else. An existing `.env` is never overwritten. To do it by hand instead: `cp services/web/.env.example services/web/.env`, then set `BETTER_AUTH_SECRET` to `openssl rand -base64 32`.
 
+**Regenerating config after a pull.** Because an existing `.env` is never overwritten, a pull that adds a key to a `.env.example` leaves your rendered file stale and quietly missing that key. To re-render everything from the committed templates — both services' `.env` and `.mcp.json`:
+
+```sh
+mise run setup:reset
+```
+
+It renames each file it replaces to `<name>.bak.<timestamp>` beside itself (gitignored) before writing, so any hand-edited value is still there to copy back — check the backup for real blob-storage credentials or a pinned secret. `-- --dry-run` shows what it would move; `-- --no-backup` deletes instead. The regenerated `services/web/.env` gets a fresh `BETTER_AUTH_SECRET`, which signs you out of the local dev server.
+
 `pnpm dev` supervises the whole stack — the docker-compose containers (Postgres + Redis), migrations, the atproto dev-env, and the web server — as one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project. In its TUI: arrow keys select a process, `F5` restarts it, `F10` quits.
 
 Drive the same running stack from another terminal:
