@@ -7,12 +7,13 @@
 // minting a throwaway `BETTER_AUTH_SECRET` for the one that asks for it.
 //
 // Two files today, one per service that reads config from disk:
-//   * services/web/.env               — the app: datastores, auth, blobs, atproto
-//   * services/atproto-cron-sync/.env — the sweep: its database + which atproto
-//                                       network to read
+//   * services/web/.env    — the app: datastores, auth, blobs, atproto
+//   * services/worker/.env — Temporal (address, namespace, task queue, schedules)
+//                            and the workflows it runs, including which atproto
+//                            network a sweep reads
 // They are deliberately separate rather than one root `.env`: each is loaded by
-// its own service (vite.config.ts / kysely.config.ts, and the cron's
-// src/config.ts), and the cron's file is what decides live-vs-local sweeping,
+// its own service (vite.config.ts / kysely.config.ts, and the worker's
+// src/env.ts), and the worker's file is what decides live-vs-local sweeping,
 // which has no business being a repo-wide setting.
 //
 // Everything the stack needs to boot is already correct in the examples — the
@@ -43,7 +44,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // Every service whose `.env.example` should be materialized. Add a service here
 // when it grows a `.env.example`; nothing else in the script is service-aware.
-const SERVICES = [join(root, "services", "web"), join(root, "services", "atproto-cron-sync")];
+const SERVICES = [join(root, "services", "web"), join(root, "services", "worker")];
 
 let failed = false;
 

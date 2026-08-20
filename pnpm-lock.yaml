@@ -86,34 +86,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
-  services/atproto-cron-sync:
-    dependencies:
-      '@buttery/recipe-schemas':
-        specifier: workspace:*
-        version: link:../../packages/recipe-schemas
-      dayjs:
-        specifier: ^1.11.23
-        version: 1.11.23
-      es-toolkit:
-        specifier: ^1.51.0
-        version: 1.51.0
-      pg:
-        specifier: ^8.23.0
-        version: 8.23.0
-    devDependencies:
-      '@types/node':
-        specifier: ^26.2.0
-        version: 26.2.0
-      '@types/pg':
-        specifier: ^8.23.1
-        version: 8.23.1
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-      vitest:
-        specifier: ^4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(jsdom@30.0.1(@noble/hashes@2.2.0))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0))
-
   services/atproto-dev-env:
     dependencies:
       '@atproto/api':
@@ -368,6 +340,52 @@ importers:
       vite:
         specifier: ^8.2.1
         version: 8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(jsdom@30.0.1(@noble/hashes@2.2.0))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0))
+
+  services/worker:
+    dependencies:
+      '@buttery/recipe-schemas':
+        specifier: workspace:*
+        version: link:../../packages/recipe-schemas
+      '@temporalio/activity':
+        specifier: ^1.22.0
+        version: 1.22.0
+      '@temporalio/client':
+        specifier: ^1.22.0
+        version: 1.22.0
+      '@temporalio/common':
+        specifier: ^1.22.0
+        version: 1.22.0
+      '@temporalio/worker':
+        specifier: ^1.22.0
+        version: 1.22.0(@swc/html@1.15.47)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.25))(csso@5.0.5)(esbuild@0.28.1)(html-minifier-terser@7.2.0)(lightningcss@1.33.0)(postcss@8.5.25)(tslib@2.8.1)(uglify-js@3.19.3)
+      '@temporalio/workflow':
+        specifier: ^1.22.0
+        version: 1.22.0
+      dayjs:
+        specifier: ^1.11.23
+        version: 1.11.23
+      es-toolkit:
+        specifier: ^1.51.0
+        version: 1.51.0
+      pg:
+        specifier: ^8.23.0
+        version: 8.23.0
+    devDependencies:
+      '@temporalio/testing':
+        specifier: ^1.22.0
+        version: 1.22.0(@swc/html@1.15.47)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.25))(csso@5.0.5)(esbuild@0.28.1)(html-minifier-terser@7.2.0)(lightningcss@1.33.0)(postcss@8.5.25)(tslib@2.8.1)(uglify-js@3.19.3)
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(jsdom@30.0.1(@noble/hashes@2.2.0))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0))
@@ -2071,9 +2089,6 @@ packages:
 
   '@emnapi/core@2.0.0-alpha.3':
     resolution: {integrity: sha512-AZypUeJ/yByuxyS7BlSNRDOMLMlROYtjYdIAuBmJssVz1UJDSeYxLrdizhXCFYhedC5bqd/ASy8EuNXbVVXp9g==}
-
-  '@emnapi/runtime@1.11.1':
-    resolution: {integrity: sha512-vgj7R3y3Wgx24IQaGPA/R6YFXLHVMOZ0uVEyIQPaWs+rd1AzfEMXlAC22FYwO1XkKR6NPsq7mUandH8oIRdZFw==}
 
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
@@ -4818,6 +4833,42 @@ packages:
     resolution: {integrity: sha512-uhOeFyxLcU41HzvrxsGpiWdcMbScY1EDgbZ5K7DVRMYInbLYWAC0EA/kx9wXAoSM8q82bUG2hRl8+EAjE6XAbA==}
     engines: {node: '>=20.19'}
 
+  '@temporalio/activity@1.22.0':
+    resolution: {integrity: sha512-hrPeELIMloFWVrwmDfG1lh3uFNkaYp1ZHpcpWmJniTeSyxqCqLdil4lBOv11FByb6HeKxE6rsvOOUohulyVhRg==}
+    engines: {node: '>= 20.3.0'}
+
+  '@temporalio/client@1.22.0':
+    resolution: {integrity: sha512-b02ty0uDly6/ZRKlbavs5GjXVTry/GB4tkq0v1NH4H7x+nTo/OK0u5Ms8Nni8D+aar3xff9lzIpXNwu/Dp3P3w==}
+    engines: {node: '>= 20.3.0'}
+
+  '@temporalio/common@1.22.0':
+    resolution: {integrity: sha512-1NpQpo/y6XU1ULbo/bXgBEhl6qQnOeB79NrsSJdjI38/hfXPom2IYGJcIxOFfsQICQ0zePEKzB9Yyo31KNpIxA==}
+    engines: {node: '>= 20.3.0'}
+
+  '@temporalio/core-bridge@1.22.0':
+    resolution: {integrity: sha512-mJ5agqtfW+GBPYl+ivYLrBpKJ3oFOw8ogcoizNrxYCzwJeprGFiEgHDb/jzyvECR4HAy5s9zQFJYNyTruXXFMw==}
+    engines: {node: '>= 20.3.0'}
+
+  '@temporalio/nexus@1.22.0':
+    resolution: {integrity: sha512-4S1ZZdSNjrO9IUyhWxweIidvNn1X/ihEl+P2fOn/Ky38YRx9G+8wtV6g6lqG8zUrtEv//uqFw+HsRMziE2y4tg==}
+    engines: {node: '>= 20.3.0'}
+
+  '@temporalio/proto@1.22.0':
+    resolution: {integrity: sha512-X7NVa0Z6HK3l9irZR48FKwZ9w9YXetCdF2z2KCIRr0W7Kul64Wt9o5hwvSXShAtrZuCEEHH8WO/ffHTXxJieLg==}
+    engines: {node: '>= 20.3.0'}
+
+  '@temporalio/testing@1.22.0':
+    resolution: {integrity: sha512-LWIVkJZHLKsuuXLeTZ9VuN6Sjt79BJTl9KKTQ84dOysPj+tMGTET8TEZasBhCuocS0qFGrh00c5e4RzXjfnLLA==}
+    engines: {node: '>= 20.3.0'}
+
+  '@temporalio/worker@1.22.0':
+    resolution: {integrity: sha512-axRHhUsovFlqDtXZxUnhRLV7WmC6qOMUCij13lw4glT5yRH62k8wIZqcT3naEfvLSzoDxjt2xM7me3VvTRSaow==}
+    engines: {node: '>= 20.3.0'}
+
+  '@temporalio/workflow@1.22.0':
+    resolution: {integrity: sha512-31Ax529+TvfH2RCexOhiCyM3lARJJoVzrnRUS1gX+jl+mka+pRRnEUx4B572mZz0oOlCCxbiztHZF72wwwWZDA==}
+    engines: {node: '>= 20.3.0'}
+
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
     engines: {node: '>=18'}
@@ -6698,6 +6749,9 @@ packages:
     resolution: {integrity: sha512-EQsFzMUJkCKGr1ePqlYADkIUmHW1s3ZXr5Yqy6wbGrfUCphpl2maM/kyOIRA2HpP3AaFQTZXD4ldjek+nccddA==}
     engines: {node: '>=14.14'}
 
+  fs-monkey@1.1.0:
+    resolution: {integrity: sha512-QMUezzXWII9EV5aTFXW1UBVUO77wYPpjqIF8/AviUCThNeSYZykpoTixUeaNNBwmCev0AMDWMAni+f8Hxb1IFw==}
+
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
@@ -6890,6 +6944,10 @@ packages:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
     hasBin: true
 
+  heap-js@2.7.1:
+    resolution: {integrity: sha512-EQfezRg0NCZGNlhlDR3Evrw1FVL2G3LhU7EgPoxufQKruNBSYA8MiRPHeWbU+36o+Fhel0wMwM+sLEiBAlNLJA==}
+    engines: {node: '>=10.0.0'}
+
   hex-rgb@4.3.0:
     resolution: {integrity: sha512-Ox1pJVrDCyGHMG9CFg1tmrRUMRPRsAWYc/PinY0XzJU4K7y7vjNoLKIQ7BR5UJMCxNN8EM1MNDmHWA/B3aZUuw==}
     engines: {node: '>=6'}
@@ -7011,6 +7069,10 @@ packages:
 
   iconv-lite@0.4.24:
     resolution: {integrity: sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==}
+    engines: {node: '>=0.10.0'}
+
+  iconv-lite@0.6.3:
+    resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
     engines: {node: '>=0.10.0'}
 
   icss-utils@5.1.0:
@@ -7993,6 +8055,10 @@ packages:
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
+  ms@3.0.0-canary.1:
+    resolution: {integrity: sha512-kh8ARjh8rMN7Du2igDRO9QJnqCb2xYTJxyQYK7vJJS4TvLLmsbyhiKpSW+t+y26gyOyMd0riphX0GeWKU3ky5g==}
+    engines: {node: '>=12.13'}
+
   multicast-dns@7.2.5:
     resolution: {integrity: sha512-2eznPJP8z2BFLX50tf0LuODrpINqP1RVIm/CObbTcBRITQgmC/TjcREF1NeTBzIcR5XO/ukWo+YHOjBbFwIupg==}
     hasBin: true
@@ -8031,6 +8097,10 @@ packages:
 
   neo-async@2.6.2:
     resolution: {integrity: sha512-Yd3UES5mWCSqR+qNT93S3UoYUkqAZ9lLg8a7g9rimsWmYGK8cVToA4/sF3RrshdyV3sAGMXVUmpMYOw+dLpOuw==}
+
+  nexus-rpc@0.0.2:
+    resolution: {integrity: sha512-IWjIExdVYlmwXuzHdY/Q3lXCv1gbqoAXPazQhy2w4Xgtgha3H0OOujEESVPQcFUFMWm+pAk2gKnb57g8S41JZg==}
+    engines: {node: '>= 20.0.0'}
 
   no-case@3.0.4:
     resolution: {integrity: sha512-fgAN3jGAh+RoxUGZHTSOLJIqUc2wmoBwGR4tbpNAKmmovFoWq0OdRkb0VkldReO2a2iBT/OEulG9XSUc10r3zg==}
@@ -8916,6 +8986,10 @@ packages:
   proto-list@1.2.4:
     resolution: {integrity: sha512-vtK/94akxsTMhe0/cbfpR+syPuszcuwhqVjJq26CuNDgFGj682oRBXOP5MJpv2r7JtE8MsiepGIqvvOTBwn2vA==}
 
+  proto3-json-serializer@2.0.2:
+    resolution: {integrity: sha512-SAzp/O4Yh02jGdRc+uIrGoe87dkN/XtwxfZ4ZyafJHymd79ozp5VG5nyZ7ygqPM5+cpLDjjGnYFUkngonyDPOQ==}
+    engines: {node: '>=14.0.0'}
+
   protobufjs@7.6.5:
     resolution: {integrity: sha512-/FPD0nUc9jH6rfFjji9IBqOz4pcSE3CsT1m7Ep6Mdb0LxSUMj8hgl6GomOvZzpNpAqqGaXA0P3VSrZLFzIhQrw==}
     engines: {node: '>=12.0.0'}
@@ -9472,6 +9546,12 @@ packages:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
 
+  source-map-loader@5.0.0:
+    resolution: {integrity: sha512-k2Dur7CbSLcAH73sBcIkV5xjPV4SzqO1NJ7+XaQl8if3VODDUj3FNchNGpqgJSKbvUfJuhVdv8K2Eu8/TNl2eA==}
+    engines: {node: '>= 18.12.0'}
+    peerDependencies:
+      webpack: ^5.72.1
+
   source-map-support@0.5.21:
     resolution: {integrity: sha512-uBHU3L3czsIyYXKX88fdrGovxdSCoTGDRZ6SYXtSRxLZUzHg5P/66Ht6uoUlHu9EZod+inXhKo3qQgwXUT/y1w==}
 
@@ -9896,10 +9976,6 @@ packages:
     resolution: {integrity: sha512-HvltHd7avK13QIw/oLe4qoOLyoVSoafqJ2jYOrtMRBkbYT31eiBQ8O0ehRKZiEZCMEyLFQNIADpgCWC5fALvYQ==}
     engines: {node: '>=22.19.0'}
 
-  undici@8.9.0:
-    resolution: {integrity: sha512-aWZpUj7XoGonMClx4gdDRfgBjqeA+F473aDmROQQbM9n6PRfK/u1q/a0X4wMTgcHfT8H6fpbt98PFuDUwFg2YA==}
-    engines: {node: '>=22.19.0'}
-
   unicode-canonical-property-names-ecmascript@2.0.1:
     resolution: {integrity: sha512-dA8WbNeb2a6oQzAQ55YlT5vQAWGV9WXOsi3SskE3bcCdM0P4SDd+24zS/OCacdRq5BkdsRj9q3Pg6YyQoxIGqg==}
     engines: {node: '>=4'}
@@ -9928,6 +10004,9 @@ packages:
 
   unified@11.0.5:
     resolution: {integrity: sha512-xKvGhPWw3k84Qjh8bI3ZeJjqnyadK+GEFtazSfZv/rKeTkTjOJho6mFqh2SM96iIcZokxiOpg78GazTSg8+KHA==}
+
+  unionfs@4.6.0:
+    resolution: {integrity: sha512-fJAy3gTHjFi5S3TP5EGdjs/OUMFFvI/ady3T8qVuZfkv8Qi8prV/Q8BuFEgODJslhZTT2z2qdD2lGdee9qjEnA==}
 
   unique-string@3.0.0:
     resolution: {integrity: sha512-VGXBUVwxKMBUznyffQweQABPRRW1vHZAbadFZud4pLFAqRGvv/96vafgjWFqzourzr8YonlQiPgH0YCJfawoGQ==}
@@ -10033,6 +10112,10 @@ packages:
   utils-merge@1.0.1:
     resolution: {integrity: sha512-pMZTvIkT1d+TFGvDOqodOclx0QWkkgi6Tdoa8gC8ffGAAqz9pzPTZWAybbsHHoED/ztMtkv/VoYTYyShUn81hA==}
     engines: {node: '>= 0.4.0'}
+
+  uuid@11.1.1:
+    resolution: {integrity: sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ==}
+    hasBin: true
 
   uuid@8.3.2:
     resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
@@ -13601,11 +13684,6 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@emnapi/runtime@1.11.1':
-    dependencies:
-      tslib: 2.8.1
-    optional: true
-
   '@emnapi/runtime@1.11.3':
     dependencies:
       tslib: 2.8.1
@@ -14111,7 +14189,7 @@ snapshots:
   '@napi-rs/wasm-runtime@1.0.7':
     dependencies:
       '@emnapi/core': 1.11.1
-      '@emnapi/runtime': 1.11.1
+      '@emnapi/runtime': 1.11.3
       '@tybys/wasm-util': 0.10.3
     optional: true
 
@@ -16265,6 +16343,116 @@ snapshots:
 
   '@tanstack/virtual-file-routes@1.162.0': {}
 
+  '@temporalio/activity@1.22.0':
+    dependencies:
+      '@temporalio/client': 1.22.0
+      '@temporalio/common': 1.22.0
+
+  '@temporalio/client@1.22.0':
+    dependencies:
+      '@grpc/grpc-js': 1.14.4
+      '@temporalio/common': 1.22.0
+      '@temporalio/proto': 1.22.0
+      abort-controller: 3.0.0
+      long: 5.3.2
+      nexus-rpc: 0.0.2
+      uuid: 11.1.1
+
+  '@temporalio/common@1.22.0':
+    dependencies:
+      '@temporalio/proto': 1.22.0
+      long: 5.3.2
+      ms: 3.0.0-canary.1
+      nexus-rpc: 0.0.2
+      proto3-json-serializer: 2.0.2
+
+  '@temporalio/core-bridge@1.22.0':
+    dependencies:
+      '@grpc/grpc-js': 1.14.4
+      '@temporalio/common': 1.22.0
+
+  '@temporalio/nexus@1.22.0':
+    dependencies:
+      '@temporalio/client': 1.22.0
+      '@temporalio/common': 1.22.0
+      '@temporalio/proto': 1.22.0
+      long: 5.3.2
+      nexus-rpc: 0.0.2
+
+  '@temporalio/proto@1.22.0':
+    dependencies:
+      long: 5.3.2
+      protobufjs: 7.6.5
+
+  '@temporalio/testing@1.22.0(@swc/html@1.15.47)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.25))(csso@5.0.5)(esbuild@0.28.1)(html-minifier-terser@7.2.0)(lightningcss@1.33.0)(postcss@8.5.25)(tslib@2.8.1)(uglify-js@3.19.3)':
+    dependencies:
+      '@temporalio/activity': 1.22.0
+      '@temporalio/client': 1.22.0
+      '@temporalio/common': 1.22.0
+      '@temporalio/core-bridge': 1.22.0
+      '@temporalio/proto': 1.22.0
+      '@temporalio/worker': 1.22.0(@swc/html@1.15.47)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.25))(csso@5.0.5)(esbuild@0.28.1)(html-minifier-terser@7.2.0)(lightningcss@1.33.0)(postcss@8.5.25)(tslib@2.8.1)(uglify-js@3.19.3)
+      '@temporalio/workflow': 1.22.0
+    transitivePeerDependencies:
+      - '@minify-html/node'
+      - '@swc/css'
+      - '@swc/helpers'
+      - '@swc/html'
+      - clean-css
+      - cssnano
+      - csso
+      - esbuild
+      - html-minifier-terser
+      - lightningcss
+      - postcss
+      - tslib
+      - uglify-js
+      - webpack-cli
+
+  '@temporalio/worker@1.22.0(@swc/html@1.15.47)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.25))(csso@5.0.5)(esbuild@0.28.1)(html-minifier-terser@7.2.0)(lightningcss@1.33.0)(postcss@8.5.25)(tslib@2.8.1)(uglify-js@3.19.3)':
+    dependencies:
+      '@grpc/grpc-js': 1.14.4
+      '@swc/core': 1.15.47
+      '@temporalio/activity': 1.22.0
+      '@temporalio/client': 1.22.0
+      '@temporalio/common': 1.22.0
+      '@temporalio/core-bridge': 1.22.0
+      '@temporalio/nexus': 1.22.0
+      '@temporalio/proto': 1.22.0
+      '@temporalio/workflow': 1.22.0
+      heap-js: 2.7.1
+      memfs: 4.64.0(tslib@2.8.1)
+      nexus-rpc: 0.0.2
+      protobufjs: 7.6.5
+      rxjs: 7.8.2
+      source-map: 0.7.6
+      source-map-loader: 5.0.0(webpack@5.109.2(@swc/core@1.15.47)(@swc/html@1.15.47)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.25))(csso@5.0.5)(esbuild@0.28.1)(html-minifier-terser@7.2.0)(lightningcss@1.33.0)(postcss@8.5.25)(uglify-js@3.19.3))
+      supports-color: 8.1.1
+      swc-loader: 0.2.7(@swc/core@1.15.47)(webpack@5.109.2(@swc/core@1.15.47)(@swc/html@1.15.47)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.25))(csso@5.0.5)(esbuild@0.28.1)(html-minifier-terser@7.2.0)(lightningcss@1.33.0)(postcss@8.5.25)(uglify-js@3.19.3))
+      unionfs: 4.6.0
+      webpack: 5.109.2(@swc/core@1.15.47)(@swc/html@1.15.47)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.25))(csso@5.0.5)(esbuild@0.28.1)(html-minifier-terser@7.2.0)(lightningcss@1.33.0)(postcss@8.5.25)(uglify-js@3.19.3)
+    transitivePeerDependencies:
+      - '@minify-html/node'
+      - '@swc/css'
+      - '@swc/helpers'
+      - '@swc/html'
+      - clean-css
+      - cssnano
+      - csso
+      - esbuild
+      - html-minifier-terser
+      - lightningcss
+      - postcss
+      - tslib
+      - uglify-js
+      - webpack-cli
+
+  '@temporalio/workflow@1.22.0':
+    dependencies:
+      '@temporalio/common': 1.22.0
+      '@temporalio/proto': 1.22.0
+      nexus-rpc: 0.0.2
+
   '@testing-library/dom@10.4.1':
     dependencies:
       '@babel/code-frame': 7.29.7
@@ -16720,6 +16908,10 @@ snapshots:
   acorn-jsx@5.3.2(acorn@8.17.0):
     dependencies:
       acorn: 8.17.0
+
+  acorn-jsx@5.3.2(acorn@8.18.0):
+    dependencies:
+      acorn: 8.18.0
 
   acorn-walk@8.3.5:
     dependencies:
@@ -17863,7 +18055,7 @@ snapshots:
   esast-util-from-js@2.0.1:
     dependencies:
       '@types/estree-jsx': 1.0.5
-      acorn: 8.17.0
+      acorn: 8.18.0
       esast-util-from-estree: 2.0.0
       vfile-message: 4.0.3
 
@@ -18186,6 +18378,8 @@ snapshots:
       jsonfile: 6.2.1
       universalify: 2.0.1
 
+  fs-monkey@1.1.0: {}
+
   fsevents@2.3.3:
     optional: true
 
@@ -18457,6 +18651,8 @@ snapshots:
 
   he@1.2.0: {}
 
+  heap-js@2.7.1: {}
+
   hex-rgb@4.3.0: {}
 
   history@4.10.1:
@@ -18618,6 +18814,10 @@ snapshots:
   hyperdyperid@1.2.0: {}
 
   iconv-lite@0.4.24:
+    dependencies:
+      safer-buffer: 2.1.2
+
+  iconv-lite@0.6.3:
     dependencies:
       safer-buffer: 2.1.2
 
@@ -18872,7 +19072,7 @@ snapshots:
       saxes: 6.0.0
       symbol-tree: 3.2.4
       tough-cookie: 6.0.2
-      undici: 8.9.0
+      undici: 8.10.0
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -19499,8 +19699,8 @@ snapshots:
 
   micromark-extension-mdxjs@3.0.0:
     dependencies:
-      acorn: 8.17.0
-      acorn-jsx: 5.3.2(acorn@8.17.0)
+      acorn: 8.18.0
+      acorn-jsx: 5.3.2(acorn@8.18.0)
       micromark-extension-mdx-expression: 3.0.1
       micromark-extension-mdx-jsx: 3.0.2
       micromark-extension-mdx-md: 2.0.0
@@ -19765,6 +19965,8 @@ snapshots:
 
   ms@2.1.3: {}
 
+  ms@3.0.0-canary.1: {}
+
   multicast-dns@7.2.5:
     dependencies:
       dns-packet: 5.6.1
@@ -19789,6 +19991,8 @@ snapshots:
   negotiator@0.6.4: {}
 
   neo-async@2.6.2: {}
+
+  nexus-rpc@0.0.2: {}
 
   no-case@3.0.4:
     dependencies:
@@ -20809,6 +21013,10 @@ snapshots:
 
   proto-list@1.2.4: {}
 
+  proto3-json-serializer@2.0.2:
+    dependencies:
+      protobufjs: 7.6.5
+
   protobufjs@7.6.5:
     dependencies:
       '@protobufjs/aspromise': 1.1.2
@@ -21265,7 +21473,6 @@ snapshots:
   rxjs@7.8.2:
     dependencies:
       tslib: 2.8.1
-    optional: true
 
   safe-buffer@5.1.2: {}
 
@@ -21551,6 +21758,12 @@ snapshots:
   sort-css-media-queries@2.2.0: {}
 
   source-map-js@1.2.1: {}
+
+  source-map-loader@5.0.0(webpack@5.109.2(@swc/core@1.15.47)(@swc/html@1.15.47)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.25))(csso@5.0.5)(esbuild@0.28.1)(html-minifier-terser@7.2.0)(lightningcss@1.33.0)(postcss@8.5.25)(uglify-js@3.19.3)):
+    dependencies:
+      iconv-lite: 0.6.3
+      source-map-js: 1.2.1
+      webpack: 5.109.2(@swc/core@1.15.47)(@swc/html@1.15.47)(clean-css@5.3.3)(cssnano@6.1.2(postcss@8.5.25))(csso@5.0.5)(esbuild@0.28.1)(html-minifier-terser@7.2.0)(lightningcss@1.33.0)(postcss@8.5.25)(uglify-js@3.19.3)
 
   source-map-support@0.5.21:
     dependencies:
@@ -21933,8 +22146,6 @@ snapshots:
 
   undici@8.10.0: {}
 
-  undici@8.9.0: {}
-
   unicode-canonical-property-names-ecmascript@2.0.1: {}
 
   unicode-emoji-modifier-base@1.0.0: {}
@@ -21964,6 +22175,10 @@ snapshots:
       is-plain-obj: 4.1.0
       trough: 2.2.0
       vfile: 6.0.3
+
+  unionfs@4.6.0:
+    dependencies:
+      fs-monkey: 1.1.0
 
   unique-string@3.0.0:
     dependencies:
@@ -22059,6 +22274,8 @@ snapshots:
   utility-types@3.11.0: {}
 
   utils-merge@1.0.1: {}
+
+  uuid@11.1.1: {}
 
   uuid@8.3.2: {}
 
@@ -22251,7 +22468,7 @@ snapshots:
       browserslist: 4.28.6
       chrome-trace-event: 1.0.4
       enhanced-resolve: 5.24.5
-      es-module-lexer: 2.3.1
+      es-module-lexer: 2.3.2
       eslint-scope: 5.1.1
       events: 3.3.0
       graceful-fs: 4.2.11
@@ -22287,7 +22504,7 @@ snapshots:
       browserslist: 4.28.6
       chrome-trace-event: 1.0.4
       enhanced-resolve: 5.24.5
-      es-module-lexer: 2.3.1
+      es-module-lexer: 2.3.2
       eslint-scope: 5.1.1
       events: 3.3.0
       graceful-fs: 4.2.11

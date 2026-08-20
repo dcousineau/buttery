@@ -21,9 +21,9 @@ try {
  *   They SKIP (never fail) when there isn't one, so `pnpm test` stays green on
  *   a machine that has never booted the dev stack.
  *
- *   pnpm --filter @buttery/atproto-cron-sync test:db   # = vitest run --project db
+ *   pnpm --filter @buttery/worker test:db   # = vitest run --project db
  *
- * `DATABASE_URL` comes from `services/web/.env` (loaded above), which points at
+ * `DATABASE_URL` comes from `services/worker/.env` (loaded above), which points at
  * the docker-compose Postgres the `pnpm dev` stack runs — so the stack has to
  * be up, but no `railway run` wrapper is involved.
  *

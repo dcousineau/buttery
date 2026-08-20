@@ -26,15 +26,18 @@ Editing the `mcp_server:` block needs a full project restart (`process-compose d
 
 ## The processes
 
-| Process             | What it is                                                                                  |
-| ------------------- | ------------------------------------------------------------------------------------------- |
-| `postgres`          | The Postgres container — attached `docker compose up`, probed with `pg_isready`             |
-| `redis`             | The Redis container — attached `docker compose up`, probed with `redis-cli ping`            |
-| `migrate`           | `db:migrate:up`, gated on Postgres reporting ready                                          |
-| `atproto-dev-env`   | Isolated PDS + local PLC on `localhost:2583` / `:2582`, probed on `/xrpc/_health`           |
-| `web`               | TanStack Start dev server on port 3000, gated on migrations, Redis, and the atproto dev-env |
-| `atproto-cron-sync` | One atproto → Postgres sync sweep — **manual one-shot**, boots `Disabled`                   |
-| `docs`              | Docusaurus site on port 3001 — **opt-in**, boots `Disabled` (see below)                     |
+| Process              | What it is                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------- |
+| `postgres`           | The Postgres container — attached `docker compose up`, probed with `pg_isready`             |
+| `redis`              | The Redis container — attached `docker compose up`, probed with `redis-cli ping`            |
+| `migrate`            | `db:migrate:up`, gated on Postgres reporting ready                                          |
+| `atproto-dev-env`    | Isolated PDS + local PLC on `localhost:2583` / `:2582`, probed on `/xrpc/_health`           |
+| `web`                | TanStack Start dev server on port 3000, gated on migrations, Redis, and the atproto dev-env |
+| `temporal`           | Local Temporal cluster (`temporal server start-dev`) on 7233, Web UI on 8233                |
+| `worker`             | The Temporal worker — runs every workflow `@buttery/worker` declares                        |
+| `temporal-schedules` | Reconciles Temporal Schedules from `services/worker/.env` — one-shot, runs on every boot    |
+| `atproto-sync`       | One atproto → Postgres sync sweep — **manual one-shot**, boots `Disabled`                   |
+| `docs`               | Docusaurus site on port 3001 — **opt-in**, boots `Disabled` (see below)                     |
 
 ### The opt-in `docs` process
 
@@ -51,22 +54,40 @@ The last two are worth distinguishing. The env var flips the `disabled` default,
 
 `vars:` + `{{ .X }}` templating does **not** work for this: templated values stay strings and `disabled` is a bool, so the config fails to parse. Plain `${VAR:-default}` expansion does.
 
-### The manual `atproto-cron-sync` one-shot
+### The Temporal pair
 
-The cron sync is a periodic batch job, not part of the interactive app, so it is defined but never boots: `disabled: true` plus `restart: "no"` make it a **manual one-shot** — `migrate`'s lifecycle with `docs`'s opt-in. Start it from the TUI, or:
+`temporal` is the whole Temporal server in one binary — the CLI's `start-dev`, backed by a SQLite file under `.dev-data/temporal/` so workflow history survives a restart, serving gRPC on 7233 and its Web UI on [127.0.0.1:8233](http://127.0.0.1:8233). Production is a different topology (Postgres-backed, three containers; see `.railway/railway.ts`) but the same server and the same API.
 
-```bash
-process-compose process start atproto-cron-sync   # against a running stack
-pnpm dev atproto-cron-sync                        # from cold: it, migrate, and the dev-env
-```
+`worker` is our code: one process polling the `buttery` task queue, running every workflow and activity `@buttery/worker` declares. Both boot with the stack, deliberately — with only one of them up, a workflow starts and then sits at zero progress forever, and that is a failure worth seeing on a laptop.
 
-Each run is one idempotent sweep that ends `Completed`; start it again after every publish to pull the new record into the `recipe` tables.
-
-The process declares no environment of its own. **Which network gets swept is `services/atproto-cron-sync/.env`'s call** — the same file a shell run reads, so both do the same thing:
+Watching a run is the UI's job, not this repo's: every workflow, its input, its result, each activity attempt and each retry are already there.
 
 ```bash
-pnpm --filter=@buttery/atproto-cron-sync sync:once [--dry-run]
+process-compose process scale worker 3   # several workers sharing one task queue
+temporal workflow list                   # the CLI talks to 127.0.0.1:7233 by default
 ```
+
+`temporal-schedules` runs `schedules:sync` on every boot: it reconciles the schedules declared in `services/worker/.env` onto the cluster — creating, updating, and **removing** any this build no longer declares. `ATPROTO_SYNC_SCHEDULE` is blank in `.env.example` on purpose, so locally that is usually a no-op; a laptop should not quietly sweep the live atmosphere in the background. On Railway the same command is the worker service's `preDeploy`.
+
+### The manual `atproto-sync` one-shot
+
+The sweep is a periodic batch job, not part of the interactive app, so it is defined but never boots: `disabled: true` plus `restart: "no"` make it a **manual one-shot** — `migrate`'s lifecycle with `docs`'s opt-in. Start it from the TUI, or:
+
+```bash
+process-compose process start atproto-sync   # against a running stack
+pnpm dev atproto-sync                        # from cold: it, the worker, migrate, and the dev-env
+```
+
+It does not do the work itself: it starts the `atproto-sync` workflow and waits for the result, and `worker` runs it — which is why the sweep shows up in the UI whether a person or the schedule started it. Each run is one idempotent sweep that ends `Completed`; start it again after every publish to pull the new record into the `recipe` tables.
+
+The process is the Temporal CLI, not a script in this repo — starting a workflow is `temporal workflow execute`, and `--input` is where one run's arguments go:
+
+```bash
+temporal workflow execute --namespace buttery --task-queue buttery \
+  --type atprotoSync --workflow-id atproto-sync --input '{"dryRun":true}'
+```
+
+**Which network gets swept is `services/worker/.env`'s call** — the same file the worker reads, so a scheduled sweep and a hand-started one read the same settings; only the input differs. The fixed `--workflow-id` is the interlock: Temporal will not start a second running execution under an id that already has one.
 
 Its defaults are the real atmosphere (`plc.directory` + the public relay), which is what fills a dev database with real recipes. To sweep the local dev-env instead, set `ATPROTO_PLC_URL=http://localhost:2582` and `SYNC_PDS_URL=http://localhost:2583` in that file. `SYNC_PDS_URL` swaps the relay's `listReposByCollection` for that one PDS's `listRepos`, because dev-env ships no relay and its PDS refuses the former unauthenticated (`AuthMissing`).
 
@@ -78,7 +99,7 @@ There is no separate "start the containers" step. The `postgres` and `redis` pro
 
 That single-supervisor arrangement is why `docker-compose.yml` declares no `restart:` policy. With one, docker would try to resurrect a container that compose is simultaneously tearing down after the attached `up` returned.
 
-The ports are fixed and repo-owned: **Postgres on host `55432`, Redis on `56379`** (mapped to the containers' standard 5432/6379). They sit in the high range so a Postgres/Redis you already run on the defaults doesn't collide. `services/web/.env` points `DATABASE_URL`/`REDIS_URL` at them; because we own the ports now, hardcoding them in `.env` is correct rather than fragile (under `railway dev` they were reassigned on every `up`, so nothing downstream could pin them). Each service keeps its own `.env` next to its `.env.example` — `services/web/.env` and `services/atproto-cron-sync/.env` today — and [`scripts/dev/bootstrap-env.mjs`](../scripts/dev/bootstrap-env.mjs) creates any that are missing on `pnpm dev` / `mise install`, never touching one that exists.
+The ports are fixed and repo-owned: **Postgres on host `55432`, Redis on `56379`** (mapped to the containers' standard 5432/6379). They sit in the high range so a Postgres/Redis you already run on the defaults doesn't collide. `services/web/.env` points `DATABASE_URL`/`REDIS_URL` at them; because we own the ports now, hardcoding them in `.env` is correct rather than fragile (under `railway dev` they were reassigned on every `up`, so nothing downstream could pin them). Each service keeps its own `.env` next to its `.env.example` — `services/web/.env` and `services/worker/.env` today — and [`scripts/dev/bootstrap-env.mjs`](../scripts/dev/bootstrap-env.mjs) creates any that are missing on `pnpm dev` / `mise install`, never touching one that exists.
 
 Two consequences worth remembering:
 

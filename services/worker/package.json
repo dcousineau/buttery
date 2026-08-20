@@ -1,5 +1,5 @@
 {
-  "name": "@buttery/atproto-cron-sync",
+  "name": "@buttery/worker",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,19 +7,26 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "start": "node src/main.ts",
-    "sync:once": "node src/main.ts --once",
+    "start": "node src/worker.ts",
+    "dev": "node src/worker.ts",
+    "schedules:sync": "node src/schedules-sync.ts",
     "test": "vitest run",
     "test:db": "vitest run --project db",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@buttery/recipe-schemas": "workspace:*",
+    "@temporalio/activity": "^1.22.0",
+    "@temporalio/client": "^1.22.0",
+    "@temporalio/common": "^1.22.0",
+    "@temporalio/worker": "^1.22.0",
+    "@temporalio/workflow": "^1.22.0",
     "dayjs": "^1.11.23",
     "es-toolkit": "^1.51.0",
     "pg": "^8.23.0"
   },
   "devDependencies": {
+    "@temporalio/testing": "^1.22.0",
     "@types/node": "^26.2.0",
     "@types/pg": "^8.23.1",
     "typescript": "^7.0.2",

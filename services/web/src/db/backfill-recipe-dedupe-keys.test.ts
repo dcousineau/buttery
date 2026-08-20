@@ -13,7 +13,8 @@ import { dedupeMetaRowsFor } from "./migrations/1786332588495_backfill_recipe_de
  *
  * ── THE GOLDEN VECTOR IS THE CROSS-PATH ASSERTION (§6.6, §14) ─────────────
  * The same literals are asserted, verbatim and independently, in
- * `services/atproto-cron-sync/src/render.test.ts` and `render.db.test.ts` —
+ * `services/worker/src/workflows/atproto-sync/lib/render.test.ts` and its
+ * `render.db.test.ts` —
  * the cron render path, which is the third writer of these keys. Comparing the
  * two paths only to each other would pass happily if both drifted together, so
  * each pins itself to a constant instead.

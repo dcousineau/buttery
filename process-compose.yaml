@@ -1,15 +1,16 @@
 # Local dev supervisor. One command (`pnpm dev`) boots the whole app: the
-# docker-compose dev containers, migrations, the atproto dev-env, and the web
-# server — each as its own restartable, individually-logged process.
+# docker-compose dev containers, migrations, the atproto dev-env, the web
+# server, and the Temporal pair (a local cluster and the worker that polls it) —
+# each as its own restartable, individually-logged process.
 #
 # process-compose owns the containers outright: `postgres` and `redis` run
 # `docker compose up` attached, so the whole stack starts and stops together
 # (`pnpm dev:down`). Data lives in named volumes and survives; wiping it is
 # `docker compose down -v`.
 #
-# The cron sync is here but does not boot — it's a manual one-shot. Which
-# network it sweeps into Postgres is `services/atproto-cron-sync/.env`'s call,
-# not this file's.
+# The atproto sweep is here but does not boot — it's a manual one-shot that
+# starts the same workflow the schedule does. Which network it sweeps into
+# Postgres is `services/worker/.env`'s call, not this file's.
 #
 # Humans: `pnpm dev` for the TUI (arrow keys to switch process, F5 restart,
 # F10 quit). Agents: drive the running instance through the `pc_*` MCP tools
@@ -219,18 +220,114 @@ processes:
     log_location: ./.dev-logs/web.log
     log_configuration: *log_config
 
+  # ---------------------------------------------------------------------------
+  # Temporal. Two processes: the cluster and the worker that polls it — the same
+  # split as production, where the cluster is a container Railway runs from
+  # temporalio/auto-setup and the worker is our own service. Running both here is
+  # not ceremony: it is the only arrangement where "the cluster is up but nothing
+  # is polling the task queue" shows up on a laptop instead of in production,
+  # and that failure looks exactly like a workflow that starts and never moves.
+  # ---------------------------------------------------------------------------
+
+  # `start-dev` is the whole Temporal server in one binary, backed by a SQLite
+  # file under .dev-data (so workflow history survives a restart, like the rest
+  # of the local stack) and serving its own Web UI. Not the production topology —
+  # that is Postgres-backed and is three services — but the same server code and
+  # the same API, which is what the worker and the CLI actually talk to.
+  #
+  # The UI on :8233 shows every run, its input, its result, each activity attempt
+  # and each retry, with no code in this repo behind it.
+  temporal:
+    description: "Temporal dev cluster + Web UI (http://127.0.0.1:8233)"
+    # `--namespace buttery` creates it at launch: Buttery's workflows, schedules
+    # and task queue live there rather than in `default`, exactly as they do on
+    # Railway, and a worker refuses to start against a namespace that is missing.
+    command: "temporal server start-dev --ip 127.0.0.1 --port 7233 --ui-port 8233 --namespace buttery --db-filename ./.dev-data/temporal/dev.db --log-format json"
+    working_dir: "."
+    availability: *app_availability
+    readiness_probe:
+      exec:
+        # The frontend's own health RPC, not a TCP connect: the port is open
+        # well before the history and matching services are ready to accept a
+        # workflow, and a worker that starts polling in that window logs a wall
+        # of connection errors before settling.
+        command: "temporal operator cluster health --address 127.0.0.1:7233 --namespace buttery"
+      initial_delay_seconds: 2
+      period_seconds: 2
+      failure_threshold: 60
+    log_location: ./.dev-logs/temporal.log
+    log_configuration: *log_config
+
+  # The service. One process locally; on Railway the same process with a replica
+  # count. Scale the local fleet with `process-compose process scale worker 3`
+  # (or the `pc_process_scale` MCP tool) to watch several workers share one task
+  # queue — one is the right default, more just multiplies idle log lines.
+  #
+  # No `node --watch`, deliberately, and not for taste: under it the SDK's
+  # workflow sandbox dies on boot with `RangeError: Invalid atomic access index`
+  # from inside its worker-thread VM, reproducibly on Node 26.7 and never without
+  # the flag. Restart the process to pick up a code change
+  # (`process-compose process restart worker`), which takes about as long as the
+  # workflow bundle does to build.
+  worker:
+    description: "Temporal worker — runs every workflow and activity this build declares"
+    command: "pnpm --filter=@buttery/worker dev"
+    depends_on:
+      temporal:
+        condition: process_healthy
+      # Activities write the tables `migrate` creates, so the schema has to be
+      # current before one can pick up a task.
+      migrate:
+        condition: process_completed_successfully
+    availability: *app_availability
+    log_location: ./.dev-logs/worker.log
+    log_configuration: *log_config
+
+  # Schedules live in the cluster and outlive every process here, so they are
+  # reconciled rather than registered — see services/worker/src/schedules.ts.
+  # Locally that almost always means "there is nothing to do": ATPROTO_SYNC_SCHEDULE
+  # is blank in .env.example on purpose, because a laptop should not quietly sweep
+  # the live atmosphere in the background. It runs on every boot anyway, which is
+  # what makes the removal path (blank variable → schedule deleted) something the
+  # stack exercises rather than something only production ever runs.
+  #
+  # On Railway this is the worker service's preDeploy — once per deploy, before
+  # any new container serves.
+  temporal-schedules:
+    description: "Reconcile Temporal Schedules from services/worker/.env — one-shot"
+    command: "pnpm --filter=@buttery/worker schedules:sync"
+    depends_on:
+      temporal:
+        condition: process_healthy
+    availability:
+      restart: "no"
+    log_location: ./.dev-logs/temporal-schedules.log
+    log_configuration: *log_config
+
   # A sweep is a batch job, not a service: it runs to completion (`restart: "no"`
   # — `on_failure` would re-run a failed network sweep in a loop) and boots
   # `Disabled`, because sweeping is something you ask for, not part of having the
   # app up. `disabled` is a plain literal rather than `docs`'s ${VAR:-…} knob:
   # there is no "boot the whole stack and also run one sweep" case worth a flag.
   #
-  # No `environment:` block, deliberately — which network a sweep reads is
-  # `services/atproto-cron-sync/.env`'s call and nothing else's, so this process
-  # and a shell run do the same thing.
-  atproto-cron-sync:
+  # It is the Temporal CLI, not a script in this repo: starting a workflow is
+  # `temporal workflow execute`, and `--input` is where a run's arguments go
+  # (`--input '{"dryRun":true}'` for a sweep that writes nothing). `execute`
+  # blocks until the workflow finishes and prints its result; the `worker`
+  # process is what actually runs it, which is why it is a dependency.
+  #
+  # The fixed `--workflow-id` is the interlock: Temporal refuses to start a
+  # second running execution under an id that already has one, so two of these
+  # cannot overlap. To respect the schedule's overlap policy as well, trigger the
+  # schedule instead: `temporal schedule trigger --schedule-id atproto-sync`.
+  #
+  # No `environment:` block, deliberately — which network gets swept is
+  # `services/worker/.env`'s call and nothing else's, so this process and the
+  # scheduled workflow read the same settings.
+  atproto-sync:
     description: "One atproto → Postgres sync sweep — manual one-shot, starts Disabled"
-    command: "pnpm --filter=@buttery/atproto-cron-sync sync:once"
+    command: "temporal workflow execute --address 127.0.0.1:7233 --namespace buttery --task-queue buttery --type atprotoSync --workflow-id atproto-sync --input '{}'"
+    working_dir: "."
     # It writes tables `migrate` creates. `atproto-dev-env` is in here because a
     # `.env` pointed at the local dev-env needs it up, and against the real
     # atmosphere it costs only a wait that has already happened.
@@ -239,10 +336,12 @@ processes:
         condition: process_completed_successfully
       atproto-dev-env:
         condition: process_healthy
+      worker:
+        condition: process_started
     disabled: true
     availability:
       restart: "no"
-    log_location: ./.dev-logs/atproto-cron-sync.log
+    log_location: ./.dev-logs/atproto-sync.log
     log_configuration: *log_config
 
   # Opt-in. Docusaurus is a slow, memory-hungry second bundler and nothing else

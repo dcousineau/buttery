@@ -14,7 +14,7 @@ import type { JsonObject, JsonValue } from "@buttery/recipe-extract/import";
  *
  * ── NEVER PUBLISHED (§2.3) ────────────────────────────────────────────────
  * `recipe_meta` and `household_recipe_meta` are read by Buttery and by NOTHING
- * ELSE. Nothing in `lib/atproto/recipe-writes` or `services/atproto-cron-sync`
+ * ELSE. Nothing in `lib/atproto/recipe-writes` or `services/worker`
  * may read them, and no value in either table may ever appear in an
  * `exchange.recipe.recipe` record. The sidecar is where facts live that are
  * true for us and are nobody else's business — a source URL key, a content

@@ -11,14 +11,19 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 # A fresh clone has no per-service `.env` files, and every process that touches
-# the database or the web server reads one (services/web/.env, and
-# services/atproto-cron-sync/.env for the sync one-shot). Create them from their
-# examples (no-op once they exist) so the stack boots instead of dying inside
-# `migrate` on an undefined DATABASE_URL.
+# the database, the web server or Temporal reads one (services/web/.env, and
+# services/worker/.env for the worker and the sweep it runs). Create them from
+# their examples (no-op once they exist) so the stack boots instead of dying
+# inside `migrate` on an undefined DATABASE_URL.
 node scripts/dev/bootstrap-env.mjs
 
 # process-compose writes per-process logs here and won't create the directory.
 mkdir -p .dev-logs
+
+# The Temporal dev server's SQLite file. `--db-filename` creates the file but
+# not the directory it lives in, and a missing directory kills `temporal` on
+# boot with a bare "unable to open database file".
+mkdir -p .dev-data/temporal
 
 if process-compose project state >/dev/null 2>&1; then
   echo "Dev stack already running — attaching. (Quitting the TUI leaves it running; \`pnpm dev:down\` stops it.)"

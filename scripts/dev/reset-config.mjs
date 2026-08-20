@@ -23,9 +23,9 @@
 // destroyed. `--no-backup` deletes instead, for when the backups are the mess.
 //
 // What it touches — exactly the rendered files, never the templates:
-//   * services/web/.env               (from .env.example)
-//   * services/atproto-cron-sync/.env (from .env.example)
-//   * .mcp.json                       (from .mcp.json.example)
+//   * services/web/.env    (from .env.example)
+//   * services/worker/.env (from .env.example)
+//   * .mcp.json            (from .mcp.json.example)
 //
 // Note that a regenerated `services/web/.env` carries a freshly minted
 // `BETTER_AUTH_SECRET`, which signs out the local dev server. That is local-only
@@ -49,7 +49,7 @@ const noBackup = args.has("--no-backup");
 const dryRun = args.has("--dry-run");
 
 /** The rendered files, in the order the renderers below recreate them. */
-const TARGETS = [join(root, "services", "web", ".env"), join(root, "services", "atproto-cron-sync", ".env"), join(root, ".mcp.json")];
+const TARGETS = [join(root, "services", "web", ".env"), join(root, "services", "worker", ".env"), join(root, ".mcp.json")];
 
 /** `20260819-231500-482` — sortable, millisecond-resolution, filename-safe. */
 function stamp() {

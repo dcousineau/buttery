@@ -1,4 +1,4 @@
-import { bucket, defineRailway, github, postgres, project, redis, ref, service, type VariableValue } from "railway/iac";
+import { bucket, defineRailway, github, image, postgres, project, redis, ref, service, type VariableValue } from "railway/iac";
 
 export default defineRailway((ctx) => {
   const db = postgres("postgres");
@@ -153,42 +153,218 @@ export default defineRailway((ctx) => {
   // Future services live in this same monorepo and are added as sibling
   // service() entries, each with its own narrow watchPatterns so they build
   // independently of web:
-  //   - a dedicated api service      → filter @buttery/api...,    watch services/api/** + shared packages
-  //   - atproto sync listeners/workers → filter @buttery/worker..., long-running
+  //   - a dedicated api service → filter @buttery/api..., watch services/api/** + shared packages
   // Shared code they consume (lexicons today; db later) goes under packages/.
 
-  // Cron: sweep the atproto network and reconcile the Postgres recipe index.
-  // A cron service's container is stopped between runs (true scale-to-zero,
-  // $0 idle) — do NOT enable the Serverless/app-sleeping toggle here (that's
-  // for always-on HTTP services and adds cold-boot 502s). See plan §5.
+  // --- Temporal ------------------------------------------------------------
   //
-  // No build step: Node 26 runs the TypeScript directly. Same monorepo build
-  // model as web — install the whole workspace, run the package's start. It's
-  // a pure DB writer, so it owns no migrations (web's preDeploy ships the DDL).
-  const sync = service("atproto-cron-sync", {
-    source: github("dcousineau/buttery"),
-    build: {
-      buildCommand: "pnpm install --frozen-lockfile",
-      watchPatterns: ["services/atproto-cron-sync/**", "pnpm-lock.yaml"],
-    },
-    start: "pnpm --filter @buttery/atproto-cron-sync start",
-    deploy: {
-      // Hourly (UTC). Cost-optimal default; index-on-write covers Buttery's own
-      // writes, so this only reconciles cross-app edits. Tighten to */15 only
-      // if freshness demands (measure the first real sweep first — plan §8).
-      cronSchedule: "0 * * * *",
-      // A completed cron must not be restarted into a loop. Use ON_FAILURE with
-      // a small maxRetries only if you want auto-retry before the next run.
-      restartPolicyType: "NEVER",
-    },
+  // A self-hosted Temporal cluster, modelled on Railway's own
+  // "Temporal | Durable Workflows, No Elasticsearch" template
+  // (railway.com/deploy/temporal-or-durable-workflows-no-elastic): the server,
+  // its Postgres, the Web UI, and a basic-auth proxy in front of the UI. No
+  // Elasticsearch — visibility runs on Postgres, which costs full-text search
+  // over workflow attributes and saves ~650 MiB of memory. For the volumes this
+  // project has, that is the right trade.
+  //
+  // This is the honest price of durable workflows: four services that exist
+  // before a single one of ours runs.
+
+  // Temporal's own database, holding both the main and the visibility schemas.
+  // Deliberately NOT the app's `postgres` above: auto-setup creates databases
+  // and runs schema migrations on boot, its visibility tables take a write on
+  // every workflow state transition, and neither belongs in the database serving
+  // the app. Collapsing the two would save a service if cost ever demands it —
+  // point POSTGRES_SEEDS/USER/PWD at `db` and give the schemas their own names.
+  const temporalDb = postgres("temporal-postgres");
+
+  // The server: frontend, history, matching and worker roles in one container,
+  // which is what `auto-setup` is for. It also creates the databases, applies the
+  // schema and registers the namespace on first boot, so there is no separate
+  // admin-tools step to run by hand.
+  //
+  // Pinned by digest-less tag on purpose — a Temporal server upgrade is a schema
+  // migration, and it should be a deliberate edit to this line rather than
+  // something a redeploy picks up.
+  const temporal = service("temporal", {
+    source: image("temporalio/auto-setup:1.29.7"),
     env: {
-      // Private networking; reuse the same Postgres (ingress not billed as egress).
-      DATABASE_URL: db.env.DATABASE_URL,
-      RELAY_URL: "https://relay1.us-east.bsky.network",
+      // `postgres12` is the driver name for every modern Postgres, not a version
+      // claim about the server. `_pgx` is the alternative driver; the default is
+      // the one the template and Temporal's own compose files use.
+      DB: "postgres12",
+      POSTGRES_SEEDS: temporalDb.env.PGHOST,
+      DB_PORT: temporalDb.env.PGPORT,
+      POSTGRES_USER: temporalDb.env.PGUSER,
+      POSTGRES_PWD: temporalDb.env.PGPASSWORD,
+      DBNAME: "temporal",
+      VISIBILITY_DBNAME: "temporal_visibility",
+
+      // Visibility on Postgres. The variable is what keeps auto-setup from
+      // expecting an Elasticsearch cluster it would otherwise wait for forever.
+      ENABLE_ES: "false",
+
+      // Set once, at creation, and unchangeable afterwards: the shard count is
+      // baked into how history is distributed, and changing it means a new
+      // cluster and a migration. 512 is the template's choice and is generous
+      // for this workload — the cost of picking too high is memory, the cost of
+      // picking too low is a migration nobody wants to do.
+      NUM_HISTORY_SHARDS: "512",
+
+      // Railway's private network is IPv6-only. Without this the server binds
+      // 0.0.0.0 and every private-network client — the UI, the worker — gets
+      // connection refused against a port that is demonstrably open.
+      BIND_ON_IP: "::",
+
+      // Buttery's namespace, created by auto-setup on first boot. A namespace is
+      // Temporal's isolation boundary — schedules, task queues, workflow ids and
+      // retention all scope to one — and the worker refuses to start against a
+      // namespace that does not exist, so this and TEMPORAL_NAMESPACE below must
+      // agree. 72 hours of history retention: long enough to debug last night's
+      // sweep, short enough that the visibility tables do not grow without bound.
+      DEFAULT_NAMESPACE: "buttery",
+      DEFAULT_NAMESPACE_RETENTION: "72h",
     },
   });
 
+  // gRPC on 7233 over a public TCP proxy, so the `temporal` CLI on a laptop can
+  // reach this cluster — `temporal --address <proxy host>:<proxy port> workflow
+  // list`. The deployed worker does NOT use it; it dials
+  // temporal.railway.internal over private networking.
+  //
+  // Assigned as a property rather than passed to `service()`, which silently
+  // drops a `networking` key from its config (verified against railway@3.10.0 by
+  // compiling the graph both ways) — the same reason `db.networking` above is
+  // written this way.
+  //
+  // Note what this is: an unauthenticated gRPC endpoint on the public internet.
+  // A self-hosted Temporal has no authentication of its own — that is what
+  // Temporal Cloud sells — so anyone who finds the host:port can start and
+  // terminate workflows. Acceptable only because the port is randomly assigned
+  // and unadvertised; if that stops being good enough, delete this and reach the
+  // cluster through `railway ssh` instead.
+  temporal.networking = { tcpProxies: { "7233": {} } };
+
+  // The Web UI: every workflow, its input, its result, each activity attempt and
+  // each retry, with a "start workflow" button — a container and one variable.
+  //
+  // No public domain of its own — it is only reachable through `temporal-auth`
+  // below, because the UI has no login and can terminate any workflow in the
+  // cluster.
+  const temporalUi = service("temporal-ui", {
+    source: image("temporalio/ui:2.53.1"),
+    env: {
+      // Private DNS is `<service name>.railway.internal`, always.
+      TEMPORAL_ADDRESS: "temporal.railway.internal:7233",
+      TEMPORAL_UI_PORT: "8080",
+      // Which namespace the UI opens on. Without it every visit starts in
+      // `default`, which is empty here and looks like a broken cluster.
+      TEMPORAL_DEFAULT_NAMESPACE: "buttery",
+      // The UI serves an API for its own frontend; without an allowed origin it
+      // rejects the browser's requests. Point it at the auth proxy's domain once
+      // one exists (see the note on `temporalAuth`).
+      TEMPORAL_CORS_ORIGINS: "",
+    },
+  });
+
+  // Basic auth in front of the UI. The same image the Railway template uses: a
+  // Caddy reverse proxy whose only job is to demand a password before passing
+  // traffic to a private service.
+  //
+  // It has NO generated domain in this file: Railway owns generated domains and
+  // `railway config pull` deliberately omits them. Give it one with
+  //   railway domain --service temporal-auth
+  // and then set TEMPORAL_CORS_ORIGINS on `temporal-ui` to that origin.
+  const temporalAuth = service("temporal-auth", {
+    source: image("ghcr.io/brody192/railway-caddy-basic-auth:main"),
+    env: {
+      PROXY_PASS: "http://temporal-ui.railway.internal:8080",
+      USERNAME: "buttery",
+      // Generated by Railway on first apply; preserveExisting keeps it
+      // thereafter. Read the value out of this service's variables to log in.
+      PASSWORD: { generator: "secret(32)", preserveExisting: true },
+    },
+  });
+
+  // --- The worker ----------------------------------------------------------
+  //
+  // Our code: one process that polls the `buttery` task queue and runs every
+  // workflow and activity in @buttery/worker. No HTTP, no state, nothing kept
+  // between tasks — so a replica can be added or removed at any time, and a
+  // draining one finishes its in-flight activities before it exits.
+  //
+  // `packages/recipe-schemas/**` is in watchPatterns because the atproto-sync
+  // workflow renders records through it, and a change there that did not
+  // redeploy the fleet would leave it rendering by yesterday's rules.
+  const worker = service("worker", {
+    source: github("dcousineau/buttery"),
+    build: {
+      // No build step: Node 26 runs the TypeScript directly. The worker bundles
+      // its own workflow code at boot (see services/worker/src/worker.ts).
+      buildCommand: "pnpm install --frozen-lockfile",
+      watchPatterns: ["services/worker/**", "packages/recipe-schemas/**", "pnpm-lock.yaml"],
+    },
+    start: "pnpm --filter @buttery/worker start",
+
+    // Schedules live in the cluster, not in this repo, so they are reconciled on
+    // every deploy: created, updated, and REMOVED when nothing declares them any
+    // more. preDeploy is exactly the right place — it runs once per deploy, in
+    // the built image, before any new container serves, and a non-zero exit
+    // aborts the deploy and keeps the old containers up. Nothing has to stay
+    // running to own the schedule.
+    preDeploy: "pnpm --filter @buttery/worker schedules:sync",
+
+    // A worker pulls tasks when it has capacity, so a backlog waits in Temporal
+    // instead of piling into a process: depth is absorbed by
+    // WORKER_MAX_CONCURRENT_ACTIVITIES first and only then by this number. Raise
+    // it when the task queue's schedule-to-start latency says so — visible in
+    // `temporal task-queue describe` and in the UI.
+    replicas: 1,
+
+    // No healthcheck: there is no server to probe. Railway treats a long-running
+    // process with no healthcheck path as healthy once it starts.
+    env: {
+      TEMPORAL_ADDRESS: "temporal.railway.internal:7233",
+      TEMPORAL_NAMESPACE: "buttery",
+      TEMPORAL_TASK_QUEUE: "buttery",
+
+      // Workflows read and write the recipe index in the APP's database (not
+      // Temporal's). Private networking; web's preDeploy owns the migrations, so
+      // this service ships no DDL.
+      DATABASE_URL: db.env.DATABASE_URL,
+
+      // Read by the `atproto-sync` workflow, which is the retired cron service's
+      // sweep — same code, same variables, now living in @buttery/worker.
+      // ATPROTO_PLC_URL is deliberately unset: absent, the sweep resolves DIDs
+      // through plc.directory, which is what production wants.
+      RELAY_URL: "https://relay1.us-east.bsky.network",
+
+      // Hourly (UTC), the same cadence the retired cron service ran on.
+      // Cost-optimal default; index-on-write covers Buttery's own writes, so this
+      // only reconciles cross-app edits. Tighten to */15 only if freshness
+      // demands it (measure a real sweep first).
+      //
+      // Read by preDeploy, not by the running worker: emptying this variable and
+      // redeploying REMOVES the schedule rather than orphaning one that keeps
+      // firing from a config nothing in the repo mentions.
+      ATPROTO_SYNC_SCHEDULE: "0 * * * *",
+
+      NODE_ENV: "production",
+    },
+  });
+
+  // There is no `atproto-cron-sync` service any more. The sweep it ran hourly is
+  // now the `atproto-sync` workflow, scheduled by Temporal and run by `worker`
+  // above — see services/worker/src/workflows/atproto-sync/.
+  //
+  // Deleting it is a DESTRUCTIVE plan item, so the apply that lands this change
+  // needs `railway config apply --confirm-destructive`. Nothing is lost with it:
+  // the service held no volume and no state, and its DATABASE_URL and RELAY_URL
+  // moved to `worker`. The sweep is still runnable by hand, now with the CLI:
+  //   temporal workflow execute --namespace buttery --task-queue buttery \
+  //     --type atprotoSync --workflow-id atproto-sync --input '{}'
+  // against whichever cluster `--address` names.
+
   return project("buttery", {
-    resources: [db, cache, uploads, web, sync],
+    resources: [db, cache, uploads, web, temporalDb, temporal, temporalUi, temporalAuth, worker],
   });
 });
