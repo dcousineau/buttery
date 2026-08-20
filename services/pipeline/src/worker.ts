@@ -1,13 +1,14 @@
 import { Worker } from "bullmq";
 import { loadConfig } from "#/config.ts";
-import { PIPELINES } from "#/workflows/index.ts";
+import { WORKFLOWS } from "#/workflows/index.ts";
+import { jobHost } from "#/workflows/hosts.ts";
 import { log, setLogRole } from "#/log.ts";
-import { closeRedis, connectionFor } from "#/redis.ts";
+import { closeRedis, connectionFor, getRedis } from "#/redis.ts";
 
 setLogRole("worker");
 
 /**
- * The `pipeline-worker` service: one `Worker` per pipeline, nothing else.
+ * The `pipeline-worker` service: one `Worker` per workflow, nothing else.
  *
  * It runs no HTTP server and holds no state between jobs, which is what makes it
  * safe for Railway to add and remove replicas underneath it (see
@@ -23,16 +24,21 @@ setLogRole("worker");
 function start(): void {
   const config = loadConfig();
   const connection = connectionFor(config.redisUrl);
+  // The same shared client BullMQ is using. Workflows that declare `exclusive`
+  // take their lock on it, so nothing here opens a second socket.
+  const redis = getRedis(config.redisUrl);
 
-  const workers = PIPELINES.map((pipeline) => {
-    const worker = new Worker(pipeline.name, (job) => pipeline.process(job), {
+  const workers = WORKFLOWS.map((workflow) => {
+    // Every job is a workflow run: the kernel drives the steps, keeps the
+    // progress bar and the job log honest, and decides what a retry does.
+    const worker = new Worker(workflow.name, (job) => workflow.run({ payload: job.data, host: jobHost(job), redis }), {
       connection,
-      concurrency: pipeline.concurrency ?? config.worker.concurrency,
+      concurrency: workflow.concurrency ?? config.worker.concurrency,
     });
 
     worker.on("failed", (job, err) => {
       log.error("job failed", {
-        queue: pipeline.name,
+        queue: workflow.name,
         jobId: job?.id,
         name: job?.name,
         attempt: job?.attemptsMade,
@@ -43,14 +49,14 @@ function start(): void {
     // A worker that loses Redis logs and keeps retrying; it must not take the
     // process down, or Railway would restart-loop the whole fleet on a blip.
     worker.on("error", (err) => {
-      log.error("worker error", { queue: pipeline.name, err: String(err) });
+      log.error("worker error", { queue: workflow.name, err: String(err) });
     });
 
     return worker;
   });
 
   log.info("pipeline worker started", {
-    queues: PIPELINES.map((p) => p.name),
+    queues: WORKFLOWS.map((workflow) => workflow.name),
     concurrency: config.worker.concurrency,
   });
 
@@ -64,9 +70,9 @@ function start(): void {
     shuttingDown = true;
     log.info("draining workers", { signal });
     await Promise.all(workers.map((worker) => worker.close()));
-    // Only after every in-flight job has finished: a pipeline's `close` releases
+    // Only after every in-flight job has finished: a workflow's `close` releases
     // what its jobs were still using (a pg pool, chiefly).
-    await Promise.all(PIPELINES.map((pipeline) => pipeline.close?.() ?? Promise.resolve()));
+    await Promise.all(WORKFLOWS.map((workflow) => workflow.close?.() ?? Promise.resolve()));
     await closeRedis();
     log.info("workers drained", { signal });
   };

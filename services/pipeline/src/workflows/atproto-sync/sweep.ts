@@ -1,13 +1,16 @@
 import type { Pool } from "pg";
 import type { SyncConfig } from "#/workflows/atproto-sync/config.ts";
 import { RECIPE_COLLECTION } from "#/workflows/atproto-sync/config.ts";
-import { getPool } from "#/workflows/atproto-sync/db.ts";
 import { log } from "#/log.ts";
-import { enumerateDids, enumerateDidsFromPds } from "#/workflows/atproto-sync/relay.ts";
 import { resolveIdentity } from "#/workflows/atproto-sync/identity.ts";
 import { getRepoRev, listRecords } from "#/workflows/atproto-sync/pds.ts";
 import { reconcileDeletes, toRecipeRow, upsertRecipe } from "#/workflows/atproto-sync/recipe.ts";
 import { deleteRenderedForDid, renderRecipe } from "#/workflows/atproto-sync/render.ts";
+
+/**
+ * The mechanics of a sweep: what happens to one repo, and the bookkeeping rows
+ * that record a sweep happened. The order these are called in is `steps.ts`.
+ */
 
 export interface SweepSummary {
   syncRunId: string | null;
@@ -62,10 +65,46 @@ update atproto_sync_run set
 where id = $1
 `;
 
+/** Open the run row. Returns its id, or null on a dry run (which writes nothing). */
+export async function openSyncRun(pool: Pool, config: SyncConfig): Promise<string | null> {
+  if (config.dryRun) return null;
+  const started = await pool.query<{ id: string }>(START_RUN_SQL);
+  return started.rows[0].id;
+}
+
+/**
+ * Close the run row. Safe to call with a null id (a dry run, or a failure before
+ * the row was opened) and never throws — bookkeeping must not be the thing that
+ * turns a finished sweep into a failed job, nor mask the error that got here.
+ */
+export async function closeSyncRun(pool: Pool, syncRunId: string | null, summary: SweepSummary, error: string | null): Promise<void> {
+  if (!syncRunId) return;
+  await pool
+    .query(FINISH_RUN_SQL, [syncRunId, error ? "error" : "ok", summary.reposSeen, summary.recordsUpserted, summary.recordsDeleted, summary.reposFailed, error])
+    .catch((err: unknown) => {
+      log.error("failed to close sync run row", { syncRunId, err: String(err) });
+    });
+}
+
+/** Record every discovered DID, which also clears any `missing_since` on it. */
+export async function registerRepos(pool: Pool, dids: string[]): Promise<void> {
+  for (const did of dids) await pool.query(UPSERT_REPO_SQL, [did]);
+}
+
+/**
+ * Flag DIDs that dropped out of enumeration. Candidates for later cleanup —
+ * enumeration is best-available, not provably complete, so this is a flag and
+ * not a purge (plan §2 atproto_repo notes). Full sweeps only; the caller decides.
+ */
+export async function markMissingRepos(pool: Pool, dids: string[]): Promise<number> {
+  const missing = await pool.query(MARK_MISSING_SQL, [dids]);
+  return missing.rowCount ?? 0;
+}
+
 // --- concurrency pool ----------------------------------------------------
 
 /** Run `worker` over `items` with at most `concurrency` in flight. */
-async function runPool<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
+export async function runPool<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
   let next = 0;
   const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
     while (next < items.length) {
@@ -78,13 +117,13 @@ async function runPool<T>(items: T[], concurrency: number, worker: (item: T) => 
 
 // --- per-DID sweep -------------------------------------------------------
 
-interface RepoOutcome {
+export interface RepoOutcome {
   upserted: number;
   deleted: number;
   failed: boolean;
 }
 
-async function sweepDid(pool: Pool, config: SyncConfig, did: string): Promise<RepoOutcome> {
+export async function sweepDid(pool: Pool, config: SyncConfig, did: string): Promise<RepoOutcome> {
   const outcome: RepoOutcome = { upserted: 0, deleted: 0, failed: false };
   try {
     // Resolve identity (PDS + handle), preferring the cached values. Re-resolve
@@ -144,83 +183,4 @@ async function sweepDid(pool: Pool, config: SyncConfig, did: string): Promise<Re
     }
   }
   return outcome;
-}
-
-// --- orchestration -------------------------------------------------------
-
-export async function runSweep(config: SyncConfig): Promise<SweepSummary> {
-  const pool = getPool(config.databaseUrl);
-
-  // Enumerate the DIDs to sweep.
-  const dids: string[] = [];
-  if (config.onlyDid) {
-    dids.push(config.onlyDid);
-    log.info("single-did sweep", { did: config.onlyDid });
-  } else if (config.pdsListUrl) {
-    // Local dev: one PDS's repo list stands in for the relay (see relay.ts).
-    for await (const did of enumerateDidsFromPds(config.pdsListUrl, config.maxRepos)) {
-      dids.push(did);
-    }
-    log.info("enumerated repos from pds", { pds: config.pdsListUrl, count: dids.length });
-  } else {
-    for await (const did of enumerateDids(config.relayUrl, RECIPE_COLLECTION, config.maxRepos)) {
-      dids.push(did);
-    }
-    log.info("enumerated repos", { count: dids.length });
-  }
-
-  // A partial sweep (onlyDid / maxRepos / a single PDS) must NOT drive
-  // missing/delete-wide reconciliation — it hasn't observed the whole network.
-  const fullSweep = !config.onlyDid && !config.maxRepos && !config.pdsListUrl;
-
-  let syncRunId: string | null = null;
-  if (!config.dryRun) {
-    const started = await pool.query<{ id: string }>(START_RUN_SQL);
-    syncRunId = started.rows[0].id;
-  }
-
-  const summary: SweepSummary = {
-    syncRunId,
-    status: "ok",
-    reposSeen: dids.length,
-    recordsUpserted: 0,
-    recordsDeleted: 0,
-    reposFailed: 0,
-    dryRun: config.dryRun,
-  };
-
-  try {
-    // Upsert every discovered DID before sweeping (clears missing_since).
-    if (!config.dryRun) {
-      for (const did of dids) await pool.query(UPSERT_REPO_SQL, [did]);
-    }
-
-    await runPool(dids, config.concurrency, async (did) => {
-      const outcome = await sweepDid(pool, config, did);
-      summary.recordsUpserted += outcome.upserted;
-      summary.recordsDeleted += outcome.deleted;
-      if (outcome.failed) summary.reposFailed++;
-    });
-
-    // Mark DIDs that dropped out of enumeration this full sweep (candidates
-    // for later cleanup — enumeration is best-available, not provably complete,
-    // so this is a flag, not a purge; plan §2 atproto_repo notes).
-    if (fullSweep && !config.dryRun) {
-      const missing = await pool.query(MARK_MISSING_SQL, [dids]);
-      log.info("marked missing repos", { count: missing.rowCount ?? 0 });
-    }
-
-    if (!config.dryRun && syncRunId) {
-      await pool.query(FINISH_RUN_SQL, [syncRunId, "ok", summary.reposSeen, summary.recordsUpserted, summary.recordsDeleted, summary.reposFailed, null]);
-    }
-  } catch (err) {
-    summary.status = "error";
-    const message = String(err);
-    if (!config.dryRun && syncRunId) {
-      await pool.query(FINISH_RUN_SQL, [syncRunId, "error", summary.reposSeen, summary.recordsUpserted, summary.recordsDeleted, summary.reposFailed, message]).catch(() => {});
-    }
-    throw err;
-  }
-
-  return summary;
 }

@@ -1,43 +1,30 @@
-import type { Job } from "bullmq";
-import { withLock } from "#/lock.ts";
-import { log } from "#/log.ts";
-import { requireRedis } from "#/redis.ts";
-import { loadSyncConfig } from "#/workflows/atproto-sync/config.ts";
+import { defineWorkflow } from "#/workflows/define.ts";
+import { getPool } from "#/workflows/atproto-sync/db.ts";
 import { closeDb } from "#/workflows/atproto-sync/db.ts";
-import { runSweep } from "#/workflows/atproto-sync/sweep.ts";
-import type { PipelineDefinition } from "#/workflows/index.ts";
+import { loadSyncConfig } from "#/workflows/atproto-sync/config.ts";
+import { markRunFailed, steps, type SyncState } from "#/workflows/atproto-sync/steps.ts";
 
 /**
  * Sweep the atproto network and reconcile the Postgres recipe index.
  *
- * This was a Railway cron service. It is a scheduled BullMQ job now, which buys
- * three things the cron did not have: the sweep is visible in the Bull Board UI
- * while it runs (progress, logs, duration, failures) rather than only in a log
- * stream; a sweep can be triggered on demand with `POST /jobs/atproto-sync`
- * without touching the dashboard; and it competes for the same autoscaled fleet
- * as every other pipeline instead of booting a container of its own.
+ * This was a Railway cron service. It is a scheduled BullMQ workflow now, which
+ * buys three things the cron did not have: the sweep is visible in the Bull
+ * Board UI while it runs — step by step, with progress, logs, durations and
+ * failures — rather than only in a log stream; a sweep can be triggered on
+ * demand with `POST /jobs/atproto-sync` without touching the dashboard; and it
+ * competes for the same autoscaled fleet as every other workflow instead of
+ * booting a container of its own.
  *
- * The sweep lives beside this file, in the same folder: `sweep.ts` and the
- * modules it reads the network with. That is the layout — a workflow is a
- * folder holding its definition and everything only it uses.
+ * Everything it needs is in this folder:
  *
- * It used to be its own package, `@buttery/atproto-cron-sync`, back when a
- * Railway cron service ran it. Nothing consumed it but this workflow, so the
- * package boundary bought a second `.env`, a second vitest config and a second
- * logger in exchange for nothing. `pnpm --filter @buttery/pipeline sync:once`
- * still runs one by hand (`run-once.ts`).
+ *   steps.ts     the five phases, in order — this file's `steps`
+ *   sweep.ts     what happens to one repo, and the run/repo bookkeeping rows
+ *   config.ts    which network to read and where to write it
+ *   relay.ts     DID discovery      pds.ts       record listing
+ *   identity.ts  DID → PDS + handle http.ts      the retrying fetch under those
+ *   recipe.ts    the raw upsert     render.ts    the normalized/search layer
+ *   db.ts        the shared pg pool cli.ts       one sweep from a shell
  */
-
-// --- overlap ---------------------------------------------------------------
-
-const LOCK_KEY = "pipeline:lock:atproto-sync";
-
-// Generous, because it only ever matters when a holder has *stopped*
-// heartbeating: a live sweep extends it every ~5 minutes for as long as it
-// needs, and a crashed one blocks at most this long before the next attempt.
-const LOCK_TTL_MS = 15 * 60_000;
-
-// --- the job ---------------------------------------------------------------
 
 interface SyncPayload {
   /** `--dry-run`: fetch and log, write nothing. */
@@ -49,52 +36,59 @@ function parse(data: unknown): SyncPayload {
   return { dryRun: raw.dryRun === true };
 }
 
-// Named for what it does rather than for the field it fills: this module reads
-// `process.env` below, and a local `process` would shadow the Node global.
-async function runSweepJob(job: Job): Promise<unknown> {
-  const payload = parse(job.data);
-  // RELAY_URL, SYNC_PDS_URL, SYNC_CONCURRENCY and friends, from
-  // `services/pipeline/.env` — so a scheduled sweep and a `sync:once` from a
-  // shell read exactly the same settings.
-  const config = { ...loadSyncConfig(), dryRun: payload.dryRun };
-
-  const result = await withLock(requireRedis(), LOCK_KEY, { ttlMs: LOCK_TTL_MS }, async () => {
-    await job.log("sweep started");
-    const summary = await runSweep(config);
-    log.info("sweep complete", { jobId: job.id, ...summary });
-    await job.log(`sweep complete: ${JSON.stringify(summary)}`);
-    return summary;
-  });
-
-  if (!result) {
-    // Not a failure: the work is being done right now by someone else, and
-    // failing would only add a retry that hits the same lock. Skipping one
-    // hourly sweep costs nothing — the next one reconciles everything the
-    // skipped one would have.
-    log.warn("sweep skipped — another sweep holds the lock", { jobId: job.id });
-    await job.log("skipped: another sweep is already running");
-    return { status: "skipped" };
-  }
-
-  // The sweep reports a failed status rather than throwing when individual repos
-  // fail; surface that as a failed job so it shows up in the board's failed tab.
-  if (result.status !== "ok") {
-    throw new Error(`sweep finished with status "${result.status}" (${result.reposFailed} repos failed)`);
-  }
-
-  return result;
-}
-
-export const atprotoSyncPipeline: PipelineDefinition = {
+export const atprotoSync = defineWorkflow<SyncState>({
   name: "atproto-sync",
   description: "Sweep the atproto network and reconcile the Postgres recipe index",
-  // One sweep per process. Combined with the Redis lock above, that is one
-  // sweep across the whole fleet.
+
+  start: (payload) => {
+    // RELAY_URL, SYNC_PDS_URL, SYNC_CONCURRENCY and friends, from
+    // `services/pipeline/.env` — so a scheduled sweep, a sweep triggered from
+    // the board and `sync:once` from a shell all read the same settings. Only
+    // `dryRun` comes from the payload, because only it is per-run.
+    const config = { ...loadSyncConfig(), dryRun: parse(payload).dryRun };
+    return {
+      config,
+      pool: getPool(config.databaseUrl),
+      dids: [],
+      fullSweep: false,
+      syncRunId: null,
+      summary: {
+        syncRunId: null,
+        status: "ok",
+        reposSeen: 0,
+        recordsUpserted: 0,
+        recordsDeleted: 0,
+        reposFailed: 0,
+        dryRun: config.dryRun,
+      },
+    };
+  },
+
+  steps,
+  result: (state) => state.summary,
+  onFailure: markRunFailed,
+
+  // Deliberately NOT resumable. `index` and `reconcile` both need the DID list
+  // that `enumerate` produced, and that list is in memory: it can run to
+  // thousands of DIDs, which has no business being round-tripped through Redis
+  // on every step boundary. Restarting is cheap in correctness terms anyway —
+  // every write in the sweep is a rev-guarded idempotent upsert, so a second
+  // pass over a half-swept network converges to the same rows.
+  resumeOnRetry: false,
+
+  // One sweep at a time across the whole fleet. `concurrency: 1` gets that
+  // within a process; this gets it between replicas, which is what an hourly
+  // schedule plus a sweep that runs long actually needs. The TTL is generous
+  // because it only matters once a holder has STOPPED heartbeating: a live sweep
+  // extends it as long as it needs, a crashed one blocks at most this long.
+  exclusive: { key: "pipeline:lock:atproto-sync", ttlMs: 15 * 60_000 },
   concurrency: 1,
+
   // Hourly on Railway (see .railway/railway.ts), unset locally — a dev machine
   // should not quietly sweep the live atmosphere in the background. Set
   // ATPROTO_SYNC_SCHEDULE in services/pipeline/.env to turn it on.
   schedule: () => process.env.ATPROTO_SYNC_SCHEDULE || undefined,
+
   defaultJobOptions: {
     // A sweep is long and network-bound; two retries with a long backoff cover a
     // relay hiccup without hammering it. A third attempt would land inside the
@@ -104,8 +98,8 @@ export const atprotoSyncPipeline: PipelineDefinition = {
     removeOnComplete: { count: 50 },
     removeOnFail: { count: 50 },
   },
-  process: runSweepJob,
+
   // The sweep opens a pg pool on first use and reuses it across runs. Ending it
   // on drain is what lets a scaled-down replica's process actually exit.
   close: closeDb,
-};
+});
