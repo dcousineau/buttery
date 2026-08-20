@@ -32,6 +32,7 @@ export interface Account {
   createdAt: Generated<Timestamp>;
   id: string;
   idToken: string | null;
+  issuer: string;
   password: string | null;
   providerId: string;
   refreshToken: string | null;

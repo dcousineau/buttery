@@ -7,6 +7,20 @@ import type { BetterAuthPlugin } from "better-auth";
 
 const APPVIEW = "https://public.api.bsky.app";
 
+/**
+ * The `account.issuer` half of the account key better-auth 1.7 recognizes an
+ * external account by (the other half is `accountId`, the DID). `local:` rather
+ * than `local:oauth:` follows better-auth's own SIWE plugin: this plugin resolves
+ * the identity itself instead of registering an OAuth provider with better-auth.
+ * A real atproto issuer would be the entryway/PDS, which moves when an account
+ * migrates hosts, while the DID never does.
+ *
+ * Existing rows were backfilled with this exact string by migration
+ * 1787189370526_add_account_issuer — change the two together or sign-in stops
+ * matching existing accounts.
+ */
+const ATPROTO_ACCOUNT_ISSUER = "local:atproto";
+
 /** What we learn about an account from its DID document. Both fields are
  * best-effort — the DID alone is enough to sign in. */
 interface DidIdentity {
@@ -111,24 +125,31 @@ export const atprotoPlugin = () => {
         const [{ handle, pds }, image] = await Promise.all([resolveDidIdentity(did), fetchAvatarUrl(did)]);
         const { internalAdapter } = ctx.context;
 
-        const account = await internalAdapter.findAccountByProviderId(did, "atproto");
+        const account = await internalAdapter.findAccountByKey({ issuer: ATPROTO_ACCOUNT_ISSUER, accountId: did });
         let user = account ? await internalAdapter.findUserById(account.userId) : null;
 
         if (!user) {
-          user = await internalAdapter.createUser({
-            // better-auth requires a unique email; atproto has none, so
-            // derive a non-routable placeholder from the DID.
-            email: `${did.replaceAll(":", ".")}@atproto.invalid`,
-            emailVerified: true,
-            name: handle ?? did,
-            did,
-            handle,
-            image,
-            pds,
-          });
+          user = await internalAdapter.createUser(
+            {
+              // better-auth requires a unique email; atproto has none, so
+              // derive a non-routable placeholder from the DID.
+              email: `${did.replaceAll(":", ".")}@atproto.invalid`,
+              emailVerified: true,
+              name: handle ?? did,
+              did,
+              handle,
+              image,
+              pds,
+            },
+            // Provisioning origin, recorded by better-auth's creation seam and
+            // passed to any `validateUserInfo` gate. atproto sign-in is OAuth,
+            // and this plugin's id is the provider it came from.
+            { method: "oauth", oauth: { providerId: "atproto" } },
+          );
           await internalAdapter.createAccount({
             userId: user.id,
             providerId: "atproto",
+            issuer: ATPROTO_ACCOUNT_ISSUER,
             accountId: did,
           });
         } else {
