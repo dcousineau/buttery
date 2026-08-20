@@ -50,8 +50,8 @@ type Tab = "join" | "create" | null;
 
 const JOIN_PANEL_ID = "onboarding-panel-join";
 const CREATE_PANEL_ID = "onboarding-panel-create";
-const JOIN_TAB_ID = "onboarding-tab-join";
-const CREATE_TAB_ID = "onboarding-tab-create";
+const JOIN_CHIP_ID = "onboarding-chip-join";
+const CREATE_CHIP_ID = "onboarding-chip-create";
 
 /** The hairline between rows inside a card — the system's one sanctioned 1px rule. */
 const HAIRLINE = "h-px bg-border/60";
@@ -79,15 +79,23 @@ function OnboardingPage() {
           </p>
         </header>
 
-        <div role="tablist" aria-label="How you're getting in" className="flex flex-wrap gap-3">
+        {/* Disclosure buttons, NOT a `tablist`. The ARIA tabs pattern promises
+            keyboard behaviour this widget does not have (arrow-key navigation, a
+            roving tabindex) and, more fundamentally, it has no room for the state
+            this screen depends on: a tablist always has exactly one selected tab,
+            while "nothing chosen yet" is the default here whenever no invite is
+            waiting. `aria-expanded` describes each chip honestly in all three
+            states, needs no JS key handling, and leaves both chips tabbable. */}
+        <div role="group" aria-label="How you're getting in" className="flex flex-wrap gap-3">
           <Button
-            id={JOIN_TAB_ID}
-            role="tab"
+            id={JOIN_CHIP_ID}
             type="button"
             size="lg"
             variant={tab === "join" ? "secondary" : "outline"}
-            aria-selected={tab === "join"}
-            aria-controls={JOIN_PANEL_ID}
+            aria-expanded={tab === "join"}
+            // Only while the panel exists — `aria-controls` pointing at an id
+            // that is not in the document is worse than saying nothing.
+            aria-controls={tab === "join" ? JOIN_PANEL_ID : undefined}
             onClick={() => setTab("join")}
             className={tab === "join" ? "rounded-full shadow-pop-sm" : "rounded-full"}
           >
@@ -100,13 +108,12 @@ function OnboardingPage() {
             ) : null}
           </Button>
           <Button
-            id={CREATE_TAB_ID}
-            role="tab"
+            id={CREATE_CHIP_ID}
             type="button"
             size="lg"
             variant={tab === "create" ? "secondary" : "outline"}
-            aria-selected={tab === "create"}
-            aria-controls={CREATE_PANEL_ID}
+            aria-expanded={tab === "create"}
+            aria-controls={tab === "create" ? CREATE_PANEL_ID : undefined}
             onClick={() => setTab("create")}
             // Nothing chosen AND nothing waiting: creating is the only way
             // forward, so the chip wears the butter-pale nudge fill until it is
@@ -121,7 +128,7 @@ function OnboardingPage() {
         {tab === null ? <NoChoiceYetCard onChooseCreate={() => setTab("create")} /> : null}
 
         {tab === "join" ? (
-          <div id={JOIN_PANEL_ID} role="tabpanel" aria-labelledby={JOIN_TAB_ID} tabIndex={-1} className="flex flex-col gap-4 focus-visible:outline-none">
+          <div id={JOIN_PANEL_ID} role="region" aria-labelledby={JOIN_CHIP_ID} className="flex flex-col gap-4">
             {pendingInvites.map((invite) => (
               <PendingInviteCard key={invite.inviteId} invite={invite} />
             ))}
@@ -130,7 +137,7 @@ function OnboardingPage() {
         ) : null}
 
         {tab === "create" ? (
-          <div id={CREATE_PANEL_ID} role="tabpanel" aria-labelledby={CREATE_TAB_ID} tabIndex={-1} className="focus-visible:outline-none">
+          <div id={CREATE_PANEL_ID} role="region" aria-labelledby={CREATE_CHIP_ID}>
             <CreateHouseholdCard />
           </div>
         ) : null}

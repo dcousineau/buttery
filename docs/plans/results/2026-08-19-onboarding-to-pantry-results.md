@@ -63,6 +63,18 @@ jsonb_build_object(...)`). Both use the dynamic-`import()`-inside-the-handler pa
 
 ## 2. Deliberate deviations from the plan
 
+0. **The chips are disclosure buttons, not a `tablist`.** §5 specifies
+   `role="tablist"` / `role="tab"` / `aria-selected`. Those roles promise the ARIA
+   tabs pattern — arrow-key navigation between tabs and a roving tabindex — which
+   this screen does not implement, and, more fundamentally, the pattern has no room
+   for the state the screen is built around: a tablist always has exactly one
+   selected tab, while "nothing chosen yet" is the default here whenever no invite
+   is waiting. The chips carry `aria-expanded` + `aria-controls` instead (the
+   latter only while its panel is mounted, so it never dangles), the panels are
+   `role="region"` labelled by their chip, and the container is a labelled
+   `role="group"`. Honest in all three states, no JS key handling, both chips stay
+   tabbable. Raised by Copilot on the PR; the zero-selected argument is the reason
+   the fix went to disclosure rather than to a full roving-tabindex tabs widget.
 1. **The handle row hides on a bare DID.** §5 says the handle comes from
    `session.user.handle ?? session.user.name` and to "render nothing when both are null". In
    practice `name` falls back to the **DID** whenever the auth plugin could not read a handle
@@ -131,6 +143,14 @@ account created on the dev PDS — resolves and mints.
 key. `scripts/dev/reset-config.mjs` (task `setup:reset`) re-renders both services' `.env`
 and `.mcp.json` from the committed templates, delegating to those two scripts rather than
 duplicating them.
+
+Backup paths are collision-proof: a millisecond-resolution stamp, plus an `existsSync`
+counter (`…-2`, `…-3`) because `renameSync` does **not** refuse an existing destination — on
+POSIX it silently replaces it. Two resets landing on one suffix would therefore not fail
+loudly; the second would quietly overwrite the first's backup, and since the first reset has
+already replaced the original, what gets destroyed is the only copy of the developer's real
+values. Raised by Copilot on the PR, which predicted a throw; the measured behaviour is the
+worse one, silent loss.
 
 Backups over a prompt: a prompt cannot be answered by CI, a hook or an agent, and "are you
 sure?" is a poor guard for a file that may hold the only copy of real blob-storage

@@ -51,15 +51,38 @@ const dryRun = args.has("--dry-run");
 /** The rendered files, in the order the renderers below recreate them. */
 const TARGETS = [join(root, "services", "web", ".env"), join(root, "services", "atproto-cron-sync", ".env"), join(root, ".mcp.json")];
 
-/** `20260819-231500` — sortable, second-resolution, filename-safe. */
+/** `20260819-231500-482` — sortable, millisecond-resolution, filename-safe. */
 function stamp() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  const date = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+  const time = `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  return `${date}-${time}-${String(d.getMilliseconds()).padStart(3, "0")}`;
+}
+
+/**
+ * A backup path that does not already exist.
+ *
+ * `renameSync` does NOT refuse a destination that is already there — on POSIX it
+ * silently replaces it. So two resets landing on the same suffix would not fail
+ * loudly; the second would quietly overwrite the first's backup, and since the
+ * first reset has already replaced the original file, what gets destroyed is the
+ * only copy of the developer's real values. That is the precise thing these
+ * backups exist to prevent, so the path is checked rather than assumed unique.
+ *
+ * Milliseconds make a collision unlikely; the counter makes it impossible.
+ */
+function freeBackupPath(target, suffix) {
+  const base = `${target}.bak.${suffix}`;
+  if (!existsSync(base)) return base;
+  for (let n = 2; ; n++) {
+    const candidate = `${base}-${n}`;
+    if (!existsSync(candidate)) return candidate;
+  }
 }
 
 // One stamp for the whole run, so a reset's backups sort together rather than
-// splitting across a second boundary mid-loop.
+// splitting across a millisecond boundary mid-loop.
 const suffix = stamp();
 let moved = 0;
 
@@ -78,7 +101,7 @@ for (const target of TARGETS) {
     rmSync(target);
     console.log(`reset-config: deleted ${label}.`);
   } else {
-    const backup = `${target}.bak.${suffix}`;
+    const backup = freeBackupPath(target, suffix);
     renameSync(target, backup);
     console.log(`reset-config: ${label} → ${relative(root, backup)}`);
   }
