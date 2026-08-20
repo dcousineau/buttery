@@ -1,206 +1,152 @@
 import type { Redis } from "ioredis";
 import { describe, expect, it } from "vitest";
-import { SKIPPED, defineWorkflow, type Step, type WorkflowHost } from "#/workflows/define.ts";
+import { consoleHost } from "#/workflows/hosts.ts";
+import { defineWorkflow, flowJobFor, type ChildResults, type StepSpec, type Workflow } from "#/workflows/define.ts";
 
 /**
- * The kernel, on its own. Everything here is in-memory: a recording host stands
- * in for a BullMQ job, and a two-method stub stands in for Redis, so the ordering
- * and resume rules every workflow inherits are pinned without a running stack.
+ * The kernel, on its own. Everything here is in-memory: the console host runs a
+ * graph in this process, so the ordering and folding rules every workflow
+ * inherits are pinned without a Redis under them.
  */
 
-interface Recorded {
-  host: WorkflowHost;
-  lines: string[];
-  progress: number[];
-  cursorWrites: string[];
+const NO_REDIS = {} as Redis;
+const EMPTY: ChildResults = { values: [], failures: [] };
+
+/** Runs a whole graph the way `run-once.ts` does. Returns the entry step's value. */
+function runInline(workflow: Workflow, payload: unknown = {}): Promise<unknown> {
+  const runStep = (step: string, data: unknown, children: ChildResults): Promise<unknown> =>
+    workflow.run({
+      step,
+      payload: data,
+      host: consoleHost({ workflow, runStep, concurrency: 4 }, children),
+      redis: NO_REDIS,
+    });
+  return runStep(workflow.entry, payload, EMPTY);
 }
 
-function recordingHost(cursor?: string): Recorded {
-  const lines: string[] = [];
-  const progress: number[] = [];
-  const cursorWrites: string[] = [];
-  let current = cursor;
-  return {
-    lines,
-    progress,
-    cursorWrites,
-    host: {
-      runId: "test",
-      log: (message) => {
-        lines.push(message.trim());
-        return Promise.resolve();
-      },
-      progress: (fraction) => {
-        progress.push(fraction);
-        return Promise.resolve();
-      },
-      readCursor: () => current,
-      writeCursor: (step) => {
-        cursorWrites.push(step);
-        current = step;
-        return Promise.resolve();
-      },
-    },
-  };
-}
-
-/** Enough of ioredis for `withLock`: SET NX PX, and the two eval'd scripts. */
-function fakeRedis(acquires: boolean): Redis {
-  return {
-    set: () => Promise.resolve(acquires ? "OK" : null),
-    eval: () => Promise.resolve(1),
-  } as unknown as Redis;
-}
-
-interface Trace {
-  ran: string[];
-}
-
-function tracer(name: string, run?: (state: Trace) => Promise<void>): Step<Trace> {
-  return {
-    name,
-    run: async ({ state }) => {
-      state.ran.push(name);
-      await run?.(state);
-    },
-  };
-}
-
-function threeSteps(overrides: Partial<Parameters<typeof defineWorkflow<Trace>>[0]> = {}) {
-  return defineWorkflow<Trace>({
-    name: "test",
-    description: "test workflow",
-    start: () => ({ ran: [] }),
-    steps: [tracer("one"), tracer("two"), tracer("three")],
-    result: (state) => state.ran,
-    ...overrides,
-  });
+function step(name: string, run: StepSpec["run"], jobOptions?: StepSpec["jobOptions"]): StepSpec {
+  return { name, description: name, run, jobOptions };
 }
 
 describe("defineWorkflow", () => {
-  it("runs every step in order and returns what `result` shapes", async () => {
-    const recorded = recordingHost();
-    const result = await threeSteps().run({ payload: {}, host: recorded.host, redis: fakeRedis(true) });
-
-    expect(result).toEqual(["one", "two", "three"]);
+  it("refuses to define a workflow whose entry step does not exist", () => {
+    expect(() =>
+      defineWorkflow({
+        name: "broken",
+        description: "",
+        entry: "nope",
+        steps: [step("real", () => Promise.resolve())],
+      }),
+    ).toThrow(/names "nope" as its entry step/);
   });
 
-  it("advances progress to 1 across the steps, scaling what a step reports", async () => {
-    const recorded = recordingHost();
-    const workflow = defineWorkflow<Trace>({
+  it("dispatches a job to the step its name picks out", async () => {
+    const workflow = defineWorkflow({
       name: "test",
-      description: "test workflow",
-      start: () => ({ ran: [] }),
-      // The first step reports halfway through itself: half of one step out of
-      // two is a quarter of the job.
-      steps: [{ name: "one", run: async ({ progress }) => progress(0.5) }, tracer("two")],
+      description: "",
+      entry: "one",
+      steps: [step("one", () => Promise.resolve("first")), step("two", () => Promise.resolve("second"))],
     });
 
-    await workflow.run({ payload: {}, host: recorded.host, redis: fakeRedis(true) });
-
-    expect(recorded.progress).toEqual([0.25, 0.5, 1]);
+    await expect(workflow.run({ step: "two", payload: {}, host: consoleHost({ workflow, runStep: () => Promise.resolve(), concurrency: 1 }), redis: NO_REDIS })).resolves.toBe(
+      "second",
+    );
   });
 
-  it("exposes step names for `/workflows` without exposing the steps themselves", () => {
-    expect(threeSteps().steps).toEqual(["one", "two", "three"]);
+  it("fails loudly on a job naming a step this build does not have", async () => {
+    const workflow = defineWorkflow({ name: "test", description: "", entry: "one", steps: [step("one", () => Promise.resolve())] });
+
+    await expect(workflow.run({ step: "gone", payload: {}, host: consoleHost({ workflow, runStep: () => Promise.resolve(), concurrency: 1 }), redis: NO_REDIS })).rejects.toThrow(
+      /has no step "gone"/,
+    );
   });
 
-  it("rethrows the original error and runs `onFailure` first", async () => {
-    const boom = new Error("boom");
-    const failures: unknown[] = [];
-    const workflow = defineWorkflow<Trace>({
+  describe("the graph", () => {
+    /** entry fans out `n` children, then a parent that folds what they returned. */
+    function fanOutWorkflow(onChild: (index: number) => Promise<unknown>) {
+      const ran: string[] = [];
+      const workflow = defineWorkflow({
+        name: "test",
+        description: "",
+        entry: "start",
+        steps: [
+          step("start", async ({ payload, flow }) => {
+            const count = (payload as { count?: number }).count ?? 3;
+            await flow({
+              step: "collect",
+              data: { count },
+              children: Array.from({ length: count }, (_, i) => ({ step: "work", data: { index: i } })),
+            });
+            return "dispatched";
+          }),
+          step("work", ({ payload }) => {
+            const index = (payload as { index: number }).index;
+            ran.push(`work:${index}`);
+            return onChild(index);
+          }),
+          step("collect", async ({ children }) => {
+            ran.push("collect");
+            const results = await children();
+            return { completed: results.values.length, failed: results.failures.length };
+          }),
+        ],
+      });
+      return { workflow, ran };
+    }
+
+    it("runs every child before the step waiting on them", async () => {
+      const { workflow, ran } = fanOutWorkflow((i) => Promise.resolve(i));
+      await runInline(workflow, { count: 3 });
+
+      expect(ran.filter((r) => r.startsWith("work:"))).toHaveLength(3);
+      expect(ran.at(-1)).toBe("collect");
+    });
+
+    it("counts a child that failed for good and carries on", async () => {
+      const collected: unknown[] = [];
+      const { workflow } = fanOutWorkflow((i) => (i === 1 ? Promise.reject(new Error("child boom")) : Promise.resolve(i)));
+
+      // The entry step returns its own value; the fold is what the parent saw.
+      const runStep = (s: string, data: unknown, children: ChildResults): Promise<unknown> =>
+        workflow.run({ step: s, payload: data, host: consoleHost({ workflow, runStep, concurrency: 4 }, children), redis: NO_REDIS }).then((value) => {
+          if (s === "collect") collected.push(value);
+          return value;
+        });
+      await runStep(workflow.entry, { count: 3 }, EMPTY);
+
+      expect(collected).toEqual([{ completed: 2, failed: 1 }]);
+    });
+  });
+
+  describe("flowJobFor", () => {
+    const workflow = defineWorkflow({
       name: "test",
-      description: "test workflow",
-      start: () => ({ ran: [] }),
-      steps: [
-        tracer("one"),
-        tracer("two", () => {
-          throw boom;
-        }),
-        tracer("three"),
-      ],
-      onFailure: (state, err) => {
-        // The state as it stood when the step failed, not a fresh one.
-        failures.push({ ran: [...state.ran], err });
-        return Promise.resolve();
-      },
+      description: "",
+      entry: "parent",
+      steps: [step("parent", () => Promise.resolve(), { attempts: 1 }), step("child", () => Promise.resolve(), { attempts: 5 })],
     });
 
-    const recorded = recordingHost();
-    await expect(workflow.run({ payload: {}, host: recorded.host, redis: fakeRedis(true) })).rejects.toBe(boom);
-    expect(failures).toEqual([{ ran: ["one", "two"], err: boom }]);
-    expect(recorded.lines).toContain('step "two" FAILED: Error: boom');
-  });
+    it("gives every node its step's job options, and keeps the whole tree on one queue", () => {
+      const tree = flowJobFor(workflow, "test", { step: "parent", children: [{ step: "child" }] }, false);
 
-  it("does not let a failing `onFailure` replace the failure that caused it", async () => {
-    const boom = new Error("boom");
-    const workflow = threeSteps({
-      steps: [
-        tracer("one", () => {
-          throw boom;
-        }),
-      ],
-      onFailure: () => Promise.reject(new Error("cleanup also failed")),
+      expect(tree.queueName).toBe("test");
+      expect(tree.opts?.attempts).toBe(1);
+      expect(tree.children?.[0].queueName).toBe("test");
+      expect(tree.children?.[0].opts?.attempts).toBe(5);
     });
 
-    const recorded = recordingHost();
-    await expect(workflow.run({ payload: {}, host: recorded.host, redis: fakeRedis(true) })).rejects.toBe(boom);
-  });
+    it("makes children ignorable on failure, so a dead child does not kill its parent", () => {
+      const tree = flowJobFor(workflow, "test", { step: "parent", children: [{ step: "child" }] }, false);
 
-  describe("resumeOnRetry", () => {
-    it("writes a cursor per step and resumes at it", async () => {
-      const first = recordingHost();
-      await threeSteps({ resumeOnRetry: true }).run({ payload: {}, host: first.host, redis: fakeRedis(true) });
-      expect(first.cursorWrites).toEqual(["one", "two", "three"]);
-
-      // A retry of a job that died on "two" picks up there.
-      const retry = recordingHost("two");
-      const result = await threeSteps({ resumeOnRetry: true }).run({ payload: {}, host: retry.host, redis: fakeRedis(true) });
-      expect(result).toEqual(["two", "three"]);
+      expect(tree.opts?.ignoreDependencyOnFailure).toBeUndefined();
+      expect(tree.children?.[0].opts?.ignoreDependencyOnFailure).toBe(true);
     });
 
-    it("starts over when the cursor names a step this build no longer has", async () => {
-      const recorded = recordingHost("a-step-that-was-renamed");
-      const result = await threeSteps({ resumeOnRetry: true }).run({ payload: {}, host: recorded.host, redis: fakeRedis(true) });
+    it("lets a node override what the kernel defaulted", () => {
+      const tree = flowJobFor(workflow, "test", { step: "parent", children: [{ step: "child", opts: { failParentOnFailure: true, ignoreDependencyOnFailure: false } }] }, false);
 
-      expect(result).toEqual(["one", "two", "three"]);
-    });
-
-    it("is off by default: an existing cursor is neither read nor written", async () => {
-      const recorded = recordingHost("two");
-      const result = await threeSteps().run({ payload: {}, host: recorded.host, redis: fakeRedis(true) });
-
-      expect(result).toEqual(["one", "two", "three"]);
-      expect(recorded.cursorWrites).toEqual([]);
-    });
-  });
-
-  describe("exclusive", () => {
-    const exclusive = { key: "test:lock", ttlMs: 1_000 };
-
-    it("runs when it takes the lock", async () => {
-      const recorded = recordingHost();
-      const result = await threeSteps({ exclusive }).run({ payload: {}, host: recorded.host, redis: fakeRedis(true) });
-
-      expect(result).toEqual(["one", "two", "three"]);
-    });
-
-    it("skips rather than fails when someone else holds it", async () => {
-      const recorded = recordingHost();
-      const result = await threeSteps({ exclusive }).run({ payload: {}, host: recorded.host, redis: fakeRedis(false) });
-
-      expect(result).toBe(SKIPPED);
-      expect(recorded.lines.at(-1)).toBe('skipped: another run of "test" holds the lock');
-    });
-
-    it("tells a run that legitimately returned nothing apart from a skipped one", async () => {
-      const recorded = recordingHost();
-      // No `result`, so the run resolves to undefined — which is exactly what
-      // `withLock` returns when it could not acquire. The two must not collide.
-      const result = await threeSteps({ exclusive, result: undefined }).run({ payload: {}, host: recorded.host, redis: fakeRedis(true) });
-
-      expect(result).toBeUndefined();
-      expect(result).not.toBe(SKIPPED);
+      expect(tree.children?.[0].opts?.failParentOnFailure).toBe(true);
+      expect(tree.children?.[0].opts?.ignoreDependencyOnFailure).toBe(false);
     });
   });
 });

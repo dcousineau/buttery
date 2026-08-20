@@ -1,142 +1,139 @@
-import type { JobsOptions } from "bullmq";
+import type { FlowJob, JobsOptions } from "bullmq";
 import type { Redis } from "ioredis";
-import { withLock } from "#/lock.ts";
-import { log } from "#/log.ts";
 
 /**
- * The workflow kernel: what a pipeline is, and what running one means.
+ * The workflow kernel: what a workflow is, and what running one means.
  *
- * A **workflow** is one BullMQ queue plus an ordered list of **steps** that
- * drain it. Both halves are declared in one place — `defineWorkflow` — because
- * three processes have to agree about a queue and none of them should learn
- * about it from a constants file that can drift:
+ * A **workflow** is one BullMQ queue and the **steps** that drain it. A step is
+ * a job — not a phase inside one — and a workflow is the graph those jobs form:
+ * a step declares the work that must finish before it runs, and BullMQ keeps it
+ * in `waiting-children` until that work has. That graph is a
+ * [flow](https://docs.bullmq.io/guide/flows), which is BullMQ's own name for the
+ * shape, and `flow()` below is the only thing in this service that builds one.
  *
- *   * `server.ts` builds a `Queue` per workflow, so the Bull Board UI lists it
- *     and `POST /jobs/:queue` can enqueue into it,
- *   * `worker.ts` builds a `Worker` per workflow and hands each job to `run`,
- *   * `autoscale.ts` sums the backlog across every queue there is.
+ * One job per step, rather than one job per workflow, is what makes each step
+ * its own unit of:
  *
- * Steps are BullMQ's own vocabulary, not an invention here: the library's
- * documented pattern for a job with phases is to keep a cursor in the job's data
- * and switch on it, so an interrupted job picks up where it left off instead of
- * starting over. This module is that pattern with the bookkeeping factored out —
- * each step gets its progress slice, its log lines and its share of the cursor
- * for free, and a workflow file is left holding only the work.
+ *   * **retry** — a step declares its own `attempts` and backoff, so a repo
+ *     whose PDS times out costs that repo its retries and nobody else's work;
+ *   * **failure** — a child that exhausts its attempts is stepped over and
+ *     counted by its parent, instead of taking the whole run down;
+ *   * **distribution** — every step goes through the queue, so a fleet of
+ *     workers shares them instead of one worker looping alone; and
+ *   * **visibility** — the board shows each step as a job, with its own payload,
+ *     log, duration, return value and place in the tree.
  *
- * What steps buy, in the order they matter:
+ * A step that is waiting on children occupies no worker while it waits, which is
+ * the property that makes fanning a sweep out over thousands of repos reasonable
+ * rather than a way to pin a process for an hour.
  *
- *   1. A job stops being opaque. The board shows which of five named phases a
- *      sweep is in, how long each took, and which one a failure came out of.
- *   2. Progress is real. The runner advances the job through the steps, so the
- *      bar in the UI means something without a workflow computing percentages.
- *   3. A retry can resume — see `resumeOnRetry`, which is off by default because
- *      it is only sound for some workflows.
- *
- * Not a BullMQ *flow* (`FlowProducer`, parent/child jobs across queues). A flow
- * is the right shape for fan-out where each child is worth its own job, its own
- * retry and its own place in the backlog. The steps of one sweep are none of
- * those: they are strictly sequential, they share an in-memory context, and
- * turning the per-repo loop into thousands of child jobs would multiply Redis
- * traffic and drown the autoscaler's queue-depth signal in bookkeeping.
+ * The whole graph lives on **one queue**, named for the workflow, with the job's
+ * `name` naming the step. Flows can span queues and sometimes should; keeping
+ * one workflow's steps together means the board groups them, `/queues` counts
+ * them as one backlog, and adding a step does not add a deployment concern.
  */
 
-/**
- * Where the step cursor lives inside a job's data. Reserved: a payload of its
- * own with this key would be overwritten. `$` keeps it visually separate from
- * the payload in the board's data tab.
- */
-export const STEP_CURSOR_KEY = "$step";
+/** A node in a flow: one step, plus whatever must finish before it. */
+export interface FlowNode {
+  /** Which step this job runs. */
+  step: string;
+  data?: unknown;
+  /** Merged over the step's own `jobOptions`. */
+  opts?: JobsOptions;
+  /** Jobs that must all settle before this one runs. */
+  children?: readonly FlowNode[];
+}
 
-/** What a step is handed. Everything else it needs comes from `state`. */
-export interface StepContext<S> {
-  /**
-   * The run's working memory, built once by `start()` and threaded through every
-   * step. In-memory only — it is NOT persisted between attempts (see
-   * `resumeOnRetry`).
-   */
-  state: S;
+/** What the children of a step returned, once they have all settled. */
+export interface ChildResults {
+  /** Return values of the children that completed, in no particular order. */
+  values: unknown[];
+  /** Messages from the children that exhausted their attempts and were stepped over. */
+  failures: string[];
+}
+
+/** What a step is handed. */
+export interface StepContext {
+  /** This job's data. Narrow it — it is whatever JSON was in Redis. */
+  payload: unknown;
+  /** Identifies this job in the service's own logs. */
+  runId: string;
   /** A line in this job's log, visible in the board's per-job log tab. */
   log: (message: string) => Promise<void>;
-  /**
-   * Progress *within this step*, 0..1. The runner scales it into the job's
-   * overall progress, so a step never needs to know how many steps there are.
-   * Optional: a step that reports nothing still advances the bar when it ends.
-   */
+  /** 0..1, for a step long enough that a bar means something. */
   progress: (fraction: number) => Promise<void>;
+  /**
+   * What this step's children returned. Available to any step that has some;
+   * empty for a step with none.
+   */
+  children: () => Promise<ChildResults>;
+  /**
+   * Submit downstream work: a step, and the steps that must finish first. One
+   * call, one flow — BullMQ creates the whole tree atomically, so there is no
+   * window where half a fan-out exists.
+   *
+   * Children are created with `ignoreDependencyOnFailure`, which is what "the
+   * parent counts the failure and carries on" means: a child that fails for good
+   * leaves the parent's dependencies instead of failing it. A step that wants
+   * the opposite says so with `opts.failParentOnFailure`.
+   */
+  flow: (node: FlowNode) => Promise<void>;
+  /** For a step that needs one — `lock.ts`, chiefly. */
+  redis: Redis;
 }
 
-export interface Step<S> {
-  /** Stable identifier. It is the cursor value, so renaming one ends a resume. */
+export interface StepSpec {
+  /** Names the step, and names the jobs that run it. */
   name: string;
-  run: (ctx: StepContext<S>) => Promise<void>;
+  /** One line, shown in `/workflows`. */
+  description: string;
+  /** The work. What it returns is the job's return value, and its parent's input. */
+  run: (ctx: StepContext) => Promise<unknown>;
+  /**
+   * Applied to every job of this step. This is where a step's retry policy lives:
+   * `attempts` and `backoff` are per-job in BullMQ, which is exactly what makes a
+   * step a retry boundary of its own.
+   */
+  jobOptions?: JobsOptions;
 }
 
-export interface WorkflowSpec<S> {
+export interface WorkflowSpec {
   /** Queue name. Also the URL segment in `POST /jobs/:queue`. */
   name: string;
   /** Shown in `/workflows`, the board and the README — keep it to one line. */
   description: string;
+  /** The step a bare enqueue runs: the root of the graph, and what the schedule fires. */
+  entry: string;
+  steps: readonly StepSpec[];
   /**
-   * Build the run's working memory from the job payload. This is where a
-   * workflow parses `job.data`: a payload is whatever JSON was in Redis, possibly
-   * enqueued by an older deployment, so it is narrowed here rather than trusted
-   * through a generic that proves nothing at runtime.
-   */
-  start: (payload: unknown) => S | Promise<S>;
-  /** Run in order. Each one owns a phase; none of them own the plumbing. */
-  steps: readonly Step<S>[];
-  /**
-   * What the job returns — shown in the board's job detail. Without it a job
-   * completes with `undefined`. Never return `state` wholesale: it usually holds
-   * configuration, and configuration usually holds a connection string.
-   */
-  result?: (state: S) => unknown;
-  /**
-   * Called when a step throws, before the error propagates. For releasing or
-   * finalizing whatever earlier steps opened — a database row marked `running`
-   * that would otherwise stay that way forever. It cannot swallow the failure;
-   * the original error is always rethrown.
-   */
-  onFailure?: (state: S, err: unknown) => Promise<void>;
-  /**
-   * Resume at the cursor when a retry picks the job back up, instead of running
-   * from the first step.
-   *
-   * Off by default, and the default is the safe one. `state` is rebuilt by
-   * `start()` on every attempt, so resuming skips the steps that would have
-   * filled it in — which is only correct when each step can work from `start()`'s
-   * state plus whatever earlier steps wrote somewhere durable. A workflow whose
-   * steps hand each other data in memory must restart, and most do.
-   */
-  resumeOnRetry?: boolean;
-  /**
-   * Hold this Redis key for the length of a run, fleet-wide. A run that cannot
-   * take the lock SKIPS — it completes with `{ status: "skipped" }` rather than
-   * failing, because the work is already being done and failing would only buy a
-   * retry that hits the same lock.
-   *
-   * BullMQ stops the *same* job running twice; it does not stop two *different*
-   * jobs on one queue, which is exactly what a schedule plus a long job plus two
-   * replicas produces. See `lock.ts`.
-   */
-  exclusive?: { key: string; ttlMs: number };
-  /**
-   * Applied to every job added to this queue. Retention (`removeOnComplete` /
-   * `removeOnFail`) matters more than it looks: BullMQ keeps finished jobs in
-   * Redis forever by default, so an unbounded queue slowly becomes the largest
-   * thing in the instance.
+   * Applied to every job on this queue, under each step's own options. Retention
+   * (`removeOnComplete` / `removeOnFail`) matters more than it looks: BullMQ keeps
+   * finished jobs in Redis forever by default, and a fanned-out workflow produces
+   * a job per item, so an unbounded queue becomes the largest thing in the
+   * instance faster than you would expect.
    */
   defaultJobOptions?: JobsOptions;
   /**
-   * Jobs one worker process runs at once for this queue. Defaults to the
-   * service-wide `PIPELINE_WORKER_CONCURRENCY`. Set it to 1 for a workflow whose
-   * jobs must not interleave *within* a process — and note that is only half the
-   * story once there is more than one replica, where `exclusive` is the only
-   * thing that serialises anything.
+   * Jobs one worker process runs at once from this queue. Defaults to the
+   * service-wide `PIPELINE_WORKER_CONCURRENCY`. It covers every step, since they
+   * share a queue — size it for the step there are most of.
    */
   concurrency?: number;
   /**
-   * Cron pattern (UTC) this workflow runs on, or `undefined` for "only when
+   * The most jobs of this workflow that may be **active at once across the whole
+   * fleet**, or `undefined` for no cap. A function for the same reason `schedule`
+   * is one: it is read from the environment. Reconciled into the queue's meta at
+   * server boot — see `reconcile.ts`, which explains why this and a worker's
+   * `concurrency` are different limits and why a fan-out needs this one.
+   *
+   * It covers every step, since they share a queue. That is usually what you
+   * want — the step there are thousands of is the one worth bounding — and it
+   * cannot deadlock a graph: a step waiting on children is not active, so it
+   * holds no slot while it waits.
+   */
+  globalConcurrency?: () => number | undefined;
+  /**
+   * Cron pattern (UTC) the entry step runs on, or `undefined` for "only when
    * something enqueues it". A function rather than a value because it is read
    * from the environment, and module evaluation order should not decide whether
    * that environment has been loaded yet. Reconciled into BullMQ's job schedulers
@@ -148,135 +145,100 @@ export interface WorkflowSpec<S> {
 }
 
 /**
- * What a run reports to. Two implementations (`hosts.ts`): a BullMQ job, and a
- * console for the one-shot CLI. The kernel talks to this instead of to `Job` so
- * that running a workflow by hand is the same code path as running it from the
- * queue, rather than a second one that can quietly diverge.
+ * What a step reports to, and submits flows through. Two implementations
+ * (`hosts.ts`): a BullMQ job, and a terminal for the one-shot CLI. The kernel
+ * talks to this instead of to `Job` so that running a workflow by hand is the
+ * same code path as running it from the queue, rather than a second one that can
+ * quietly diverge.
  */
 export interface WorkflowHost {
-  /** Identifies this run in the service's own logs. */
   runId: string;
   log: (message: string) => Promise<void>;
-  /** Overall progress, 0..1. */
   progress: (fraction: number) => Promise<void>;
-  /** The persisted step cursor, or `undefined` if there is none / none is possible. */
-  readCursor: () => string | undefined;
-  writeCursor: (step: string) => Promise<void>;
+  children: () => Promise<ChildResults>;
+  flow: (node: FlowNode) => Promise<void>;
 }
 
 export interface WorkflowRun {
+  /** Which step to run. A job's `name`; defaults to the workflow's entry step. */
+  step?: string;
   payload: unknown;
   host: WorkflowHost;
-  /** For `exclusive`. Both drivers already have a client; neither opens one here. */
   redis: Redis;
 }
 
-/**
- * A workflow, with its state type erased. The registry holds these, so nothing
- * downstream of `defineWorkflow` is generic — the state type lives entirely
- * inside the closure `defineWorkflow` builds.
- */
+/** A workflow, as the registry and the four processes that read it see one. */
 export interface Workflow {
   name: string;
   description: string;
-  /** Step names in order, for `/workflows` and the docs. */
-  steps: readonly string[];
+  entry: string;
+  steps: readonly { name: string; description: string }[];
   defaultJobOptions?: JobsOptions;
   concurrency?: number;
+  globalConcurrency?: () => number | undefined;
   schedule?: () => string | undefined;
   close?: () => Promise<void>;
+  /** Job options for one step, for whoever is creating the job. */
+  jobOptionsFor: (step: string) => JobsOptions | undefined;
   run: (run: WorkflowRun) => Promise<unknown>;
 }
 
-/** Returned instead of a result when `exclusive` is held by another run. */
-export const SKIPPED = { status: "skipped" } as const;
-
-function clamp01(n: number): number {
-  if (!Number.isFinite(n)) return 0;
-  return Math.min(Math.max(n, 0), 1);
+/**
+ * Turn a node into what `FlowProducer.add` wants, recursively. Exported for the
+ * console host, which walks the same tree without a Redis under it.
+ */
+export function flowJobFor(workflow: Workflow, queueName: string, node: FlowNode, isChild: boolean): FlowJob {
+  return {
+    name: node.step,
+    queueName,
+    data: node.data ?? {},
+    opts: {
+      ...workflow.jobOptionsFor(node.step),
+      // A child that fails for good is stepped over, not fatal to its parent.
+      // Last, so a step that means the opposite can say so in its own options.
+      ...(isChild ? { ignoreDependencyOnFailure: true } : {}),
+      ...node.opts,
+    },
+    children: node.children?.map((child) => flowJobFor(workflow, queueName, child, true)),
+  };
 }
 
-async function runSteps<S>(spec: WorkflowSpec<S>, run: WorkflowRun): Promise<unknown> {
-  const { host } = run;
-  const steps = spec.steps;
-
-  let first = 0;
-  const cursor = spec.resumeOnRetry ? host.readCursor() : undefined;
-  if (cursor) {
-    const at = steps.findIndex((step) => step.name === cursor);
-    if (at >= 0) {
-      first = at;
-      await host.log(`resuming at step "${cursor}"`);
-    } else {
-      // A deployment renamed or removed the step this job was on. Starting over
-      // is the only defensible reading — guessing an index would run the wrong
-      // work, and failing would strand a job nothing can retry.
-      await host.log(`step cursor "${cursor}" is not a step of this workflow — starting over`);
-    }
+export function defineWorkflow(spec: WorkflowSpec): Workflow {
+  const byName = new Map(spec.steps.map((step) => [step.name, step]));
+  if (!byName.has(spec.entry)) {
+    // A typo here would otherwise surface as a 404 from an hourly schedule at
+    // three in the morning. Module load is a better time to find out.
+    throw new Error(`workflow "${spec.name}" names "${spec.entry}" as its entry step, which it does not define`);
   }
 
-  const state = await spec.start(run.payload);
-
-  for (let i = first; i < steps.length; i++) {
-    const step = steps[i];
-    if (spec.resumeOnRetry) await host.writeCursor(step.name);
-
-    const startedAt = Date.now();
-    await host.log(`step ${i + 1}/${steps.length} "${step.name}" started`);
-
-    try {
-      await step.run({
-        state,
-        log: (message) => host.log(`  [${step.name}] ${message}`),
-        progress: (fraction) => host.progress((i + clamp01(fraction)) / steps.length),
-      });
-    } catch (err) {
-      // Naming the step here, rather than wrapping the error, is deliberate: the
-      // board's failed tab shows `err.message` and the original stack, and a
-      // wrapper would cost both to add a word the log line already carries.
-      await host.log(`step "${step.name}" FAILED: ${String(err)}`);
-      log.error("workflow step failed", { workflow: spec.name, run: host.runId, step: step.name, err: String(err) });
-      if (spec.onFailure) {
-        await spec.onFailure(state, err).catch((cleanupErr: unknown) => {
-          // A failed cleanup must not replace the failure that caused it.
-          log.error("workflow onFailure hook failed", { workflow: spec.name, run: host.runId, err: String(cleanupErr) });
-        });
-      }
-      throw err;
-    }
-
-    await host.progress((i + 1) / steps.length);
-    await host.log(`step "${step.name}" done in ${Date.now() - startedAt}ms`);
-  }
-
-  return spec.result ? spec.result(state) : undefined;
-}
-
-export function defineWorkflow<S>(spec: WorkflowSpec<S>): Workflow {
   return {
     name: spec.name,
     description: spec.description,
-    steps: spec.steps.map((step) => step.name),
+    entry: spec.entry,
+    steps: spec.steps.map((step) => ({ name: step.name, description: step.description })),
     defaultJobOptions: spec.defaultJobOptions,
     concurrency: spec.concurrency,
+    globalConcurrency: spec.globalConcurrency,
     schedule: spec.schedule,
     close: spec.close,
+    jobOptionsFor: (step) => byName.get(step)?.jobOptions,
     run: async (run) => {
-      if (!spec.exclusive) return runSteps(spec, run);
-
-      // Boxed, because `withLock` returns undefined both for "someone else holds
-      // it" and for "ran, returned undefined" — and a workflow with no `result`
-      // does exactly the latter.
-      const held = await withLock(run.redis, spec.exclusive.key, { ttlMs: spec.exclusive.ttlMs }, async () => ({
-        value: await runSteps(spec, run),
-      }));
-
-      if (!held) {
-        await run.host.log(`skipped: another run of "${spec.name}" holds the lock`);
-        log.warn("workflow run skipped — another run holds the lock", { workflow: spec.name, run: run.host.runId });
-        return SKIPPED;
+      const name = run.step ?? spec.entry;
+      const step = byName.get(name);
+      if (!step) {
+        // Reachable in exactly one way: a job enqueued by a deployment that had
+        // a step this one does not. Failing loudly beats silently doing nothing.
+        throw new Error(`workflow "${spec.name}" has no step "${name}"`);
       }
-      return held.value;
+      return step.run({
+        payload: run.payload,
+        runId: run.host.runId,
+        log: run.host.log,
+        progress: run.host.progress,
+        children: run.host.children,
+        flow: run.host.flow,
+        redis: run.redis,
+      });
     },
   };
 }

@@ -1,5 +1,5 @@
 import "#/env.ts";
-import { getJson } from "#/workflows/atproto-sync/http.ts";
+import { getJson } from "#/workflows/atproto-sync/lib/http.ts";
 
 // DID → PDS endpoint + handle resolution. Ported (not imported) from
 // services/web/src/lib/atproto/recipes.ts `resolvePds` — different package, no

@@ -4,8 +4,19 @@ import { log } from "#/log.ts";
 // timeout, bounded retries with exponential backoff on 429/5xx and transient
 // network errors. Everything the sweep fetches is public and unauthenticated.
 
-const DEFAULT_TIMEOUT_MS = 15_000;
-const MAX_ATTEMPTS = 4;
+// Sized off a measured sweep rather than a guess: a healthy repo answers in
+// ~700ms (p50) and ~1s (p90), so eight seconds is generous for anything that is
+// going to answer at all. What it is really protecting against is the host that
+// accepts the connection and then hangs — there are a few on the live network —
+// which under a fifteen-second timeout was costing half a minute per repo.
+const DEFAULT_TIMEOUT_MS = 8_000;
+
+// Two, not four, because this is no longer the only retry in the stack: one repo
+// is one job with its own `attempts` and backoff (see `steps.ts`). These cover
+// the blip that a second request fixes; a host that is genuinely down is the
+// job's problem, and multiplying the two retry budgets together is how a single
+// dead PDS ends up costing minutes.
+const MAX_ATTEMPTS = 2;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -53,7 +64,7 @@ export async function getJson<T>(url: string, timeoutMs = DEFAULT_TIMEOUT_MS): P
     }
 
     if (attempt < MAX_ATTEMPTS) {
-      const backoff = 250 * 2 ** (attempt - 1); // 250, 500, 1000 ms
+      const backoff = 250 * 2 ** (attempt - 1); // 250 ms
       log.warn("http retry", { url, attempt, backoff, err: String(lastErr) });
       await sleep(backoff);
     }

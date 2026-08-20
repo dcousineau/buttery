@@ -3,6 +3,7 @@ import { loadConfig } from "#/config.ts";
 import { WORKFLOWS } from "#/workflows/index.ts";
 import { jobHost } from "#/workflows/hosts.ts";
 import { log, setLogRole } from "#/log.ts";
+import { closeQueues, getFlowProducer } from "#/queues.ts";
 import { closeRedis, connectionFor, getRedis } from "#/redis.ts";
 
 setLogRole("worker");
@@ -14,7 +15,8 @@ setLogRole("worker");
  * safe for Railway to add and remove replicas underneath it (see
  * `autoscale.ts`). Every replica runs this same file and competes for the same
  * queues; BullMQ's Redis-side locking is what keeps a job from being handled
- * twice.
+ * twice. A fanned-out workflow is what makes that worth having: the repos of one
+ * sweep are thousands of independent jobs, and the fleet splits them.
  *
  * `concurrency` and replica count are two different dials. Concurrency is how
  * many jobs one process interleaves — right for I/O-bound work, useless for
@@ -27,11 +29,13 @@ function start(): void {
   // The same shared client BullMQ is using. Workflows that declare `exclusive`
   // take their lock on it, so nothing here opens a second socket.
   const redis = getRedis(config.redisUrl);
+  // A step submits the next stage of its own graph, so a worker is a producer
+  // too — of flows, not of plain jobs.
+  const flows = getFlowProducer(config.redisUrl);
 
   const workers = WORKFLOWS.map((workflow) => {
-    // Every job is a workflow run: the kernel drives the steps, keeps the
-    // progress bar and the job log honest, and decides what a retry does.
-    const worker = new Worker(workflow.name, (job) => workflow.run({ payload: job.data, host: jobHost(job), redis }), {
+    // A job's name is the step it runs; the kernel looks it up and calls it.
+    const worker = new Worker(workflow.name, (job) => workflow.run({ step: job.name, payload: job.data, host: jobHost(job, workflow, flows), redis }), {
       connection,
       concurrency: workflow.concurrency ?? config.worker.concurrency,
     });
@@ -73,6 +77,7 @@ function start(): void {
     // Only after every in-flight job has finished: a workflow's `close` releases
     // what its jobs were still using (a pg pool, chiefly).
     await Promise.all(WORKFLOWS.map((workflow) => workflow.close?.() ?? Promise.resolve()));
+    await closeQueues();
     await closeRedis();
     log.info("workers drained", { signal });
   };

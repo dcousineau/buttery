@@ -42,28 +42,45 @@ loopback-only.
 
 ## Workflows and steps
 
-A **workflow** is one queue plus an ordered list of **steps** that drain it, and
-it lives in one folder under `src/workflows/`:
+A **workflow** is one queue and the **steps** that drain it. A step is a _job_ —
+not a phase inside one — and a workflow is the graph those jobs form: a step
+declares the work that must finish before it runs, and BullMQ keeps it in
+`waiting-children` until that work has. That graph is a
+[flow](https://docs.bullmq.io/guide/flows), and `ctx.flow()` is the only thing in
+this service that builds one.
+
+Each workflow lives in one folder under `src/workflows/`:
 
 ```
 src/workflows/
   define.ts             the kernel: what a workflow is, and what running one means
-  hosts.ts              where a run reports to — a BullMQ job, or a terminal
+  hosts.ts              where a step reports to — a BullMQ job, or a terminal
   index.ts              the registry: WORKFLOWS
   demo/index.ts         the reference implementation, in one file
-  atproto-sync/         a workflow with real code: index.ts, steps.ts, and the rest
+  atproto-sync/         a workflow with real code: steps.ts, plan.ts, types.ts, lib/
 ```
 
 ```ts
 // src/workflows/my-thing/index.ts
-export const myThing = defineWorkflow<MyState>({
+export const myThing = defineWorkflow({
   name: "my-thing",
   description: "One line, shown in /workflows and /queues",
-  start: (payload) => ({ …parse(payload) }),
-  steps: [fetchIt, transformIt, writeIt],
-  result: (state) => state.summary,
-  defaultJobOptions: { attempts: 3, removeOnComplete: { count: 50 } },
+  entry: "fetch",
+  steps: [fetchIt, transformOne, writeAll],
 });
+
+const fetchIt: StepSpec = {
+  name: "fetch",
+  description: "Find the work, then fan it out",
+  run: async ({ payload, flow }) => {
+    const items = await discover(payload);
+    await flow({
+      step: "write-all",
+      data: { count: items.length },
+      children: items.map((item) => ({ step: "transform-one", data: item })),
+    });
+  },
+};
 ```
 
 Add it to `WORKFLOWS` in [`src/workflows/index.ts`](src/workflows/index.ts) and
@@ -72,72 +89,93 @@ you are done: the server builds a `Queue` so the board lists it and
 starts counting its backlog, and `run:once my-thing` runs it from a shell.
 Nothing else in the service is queue-aware.
 
-### Why steps
+### One job per step
 
-Steps are BullMQ's own vocabulary — the library's documented pattern for a job
-with phases is a cursor in the job's data and a switch on it.
-[`define.ts`](src/workflows/define.ts) is that pattern with the bookkeeping
-factored out, so a workflow file holds the work and nothing else. What you get:
+Every step of every workflow is a job on the workflow's own queue, with the job's
+`name` naming the step. That is what makes a step its own unit of:
 
-- **A job stops being opaque.** The board shows which of five named phases a
-  sweep is in, how long each took, and which one a failure came out of.
-- **Progress is real.** The kernel advances the job across the steps and scales
-  whatever a step reports within its own slice, so the bar means something
-  without a workflow computing percentages.
-- **A retry can resume**, if the workflow says so — see below.
+- **retry** — a step declares its own `attempts` and backoff in `jobOptions`, so
+  a repo whose PDS times out costs that repo its retries and nobody else's work;
+- **failure** — a child that exhausts its attempts is stepped over and _counted_
+  by its parent, instead of taking the whole run down;
+- **distribution** — every step goes through the queue, so the fleet shares them
+  instead of one worker looping alone; and
+- **visibility** — the board shows each step as a job, with its own payload, log,
+  duration, return value and place in the tree.
 
-`start` is where a workflow parses its payload: a payload is whatever JSON was in
-Redis, possibly enqueued by an older deployment, so it is narrowed once, up
-front, rather than trusted through a generic that proves nothing at runtime.
+A step waiting on children occupies no worker while it waits, which is what makes
+fanning a sweep out over thousands of repos reasonable rather than a way to pin a
+process for an hour.
 
-This is not a BullMQ **flow** (`FlowProducer`, parent/child jobs). A flow is
-right for fan-out where each child deserves its own job, retry and place in the
-backlog. The steps of one sweep are none of those — strictly sequential, sharing
-an in-memory context — and turning the per-repo loop into thousands of child jobs
-would multiply Redis traffic and drown the autoscaler's queue-depth signal in
-bookkeeping.
+The whole graph lives on **one queue**, named for the workflow. Flows can span
+queues and sometimes should; keeping one workflow's steps together means the
+board groups them, `/queues` counts them as one backlog, and adding a step is not
+a deployment concern.
 
-### Resuming
+### Fanning out, and how many run at once
 
-`resumeOnRetry` makes a retry pick up at the step the last attempt died on. It is
-**off by default**, and the default is the safe one: `state` is rebuilt by
-`start()` on every attempt, so resuming skips the steps that would have filled it
-in. Only turn it on when every step can work from `start()`'s state plus whatever
-earlier steps wrote somewhere durable.
+`ctx.flow(node)` submits a step and everything that must finish first, in one
+atomic call, so there is never a window where half a fan-out exists. Children get
+`ignoreDependencyOnFailure`, which is what "counted, not fatal" means: a child
+that fails for good leaves the parent's dependencies instead of failing it. A
+step that wants the opposite says `opts: { failParentOnFailure: true }`.
 
-`demo` is on, and shows what it buys: a `fail: true` job's second attempt skips
-the sleeps and fails in milliseconds. `atproto-sync` is off, because `index`
-needs the DID list `enumerate` built and that list runs to thousands of entries —
-which have no business round-tripping through Redis on every step boundary.
-Restarting a sweep is cheap anyway: every write in it is a rev-guarded idempotent
-upsert.
+**Nothing throttles the producer.** A step fans out every job it has and the
+queue holds them — a queue that is a buffer is the point of having one. How many
+actually run is `globalConcurrency`, a cap BullMQ enforces in Redis across every
+worker there is:
 
-### Two other things worth declaring
+| Limit                             | Bounds                             | Set by                             |
+| --------------------------------- | ---------------------------------- | ---------------------------------- |
+| `PIPELINE_WORKER_CONCURRENCY`     | one process                        | the environment, per service       |
+| `globalConcurrency` on a workflow | the whole fleet, however it scales | the workflow, from the environment |
 
-`exclusive: { key, ttlMs }` holds a Redis mutex for the length of a run,
-fleet-wide. A run that cannot take it **skips** — completes with
-`{"status": "skipped"}` rather than failing, because the work is already being
-done and failing would only buy a retry that hits the same lock.
+The fleet-wide one is the limit with no other home: a worker's concurrency
+protects a machine, but "do not point fifty requests at the atmosphere from this
+sweep" has to hold across replicas, and the autoscaler moves the replica count
+around underneath it. `atproto-sync` sets it from `ATPROTO_SYNC_MAX_IN_FLIGHT`
+(default 8) — verified: with three replicas and four slots each, twelve jobs
+could have been active and exactly eight were.
 
-`onFailure` runs when a step throws, before the error propagates: for finalizing
-whatever earlier steps opened. `atproto-sync` uses it to mark its
-`atproto_sync_run` row failed, so a sweep that dies mid-flight does not leave a
-row saying `running` forever.
+Like the schedules, it is reconciled onto the queue at server boot rather than
+registered, so a workflow that stops declaring a cap has it removed.
 
-Set `defaultJobOptions.removeOnComplete` / `removeOnFail` on every workflow.
-BullMQ keeps finished jobs in Redis forever by default, and an unbounded queue
-quietly becomes the largest thing in the instance.
+### Overlap
+
+BullMQ stops the same job running twice; it does not stop two _different_ jobs on
+a queue, which is exactly what an hourly schedule plus a sweep that runs long
+produces. The Railway cron this replaced got that from the platform, so losing it
+would be a regression.
+
+`atproto-sync` takes a Redis mutex ([`src/lock.ts`](src/lock.ts)) in `enumerate`
+and releases it in `finalize` — so it spans the whole graph, not one job. A sweep
+that cannot take it **skips**: it completes with `{"status": "skipped"}` rather
+than failing, because the work is already being done and failing would only buy a
+retry that hits the same lock. `sync:once` takes the same lock, so a sweep by hand
+cannot run alongside a scheduled one.
+
+Nothing heartbeats the lock — the holder is a graph, not a process — so the TTL is
+a plain deadline, set to the schedule's own period. What it promises is "a sweep
+may not start while the last one is still going, up to one period", and freeing it
+then beats wedging the schedule forever if `finalize` never runs.
+
+Set `jobOptions.removeOnComplete` / `removeOnFail` on every step. BullMQ keeps
+finished jobs in Redis forever by default, and a fanned-out workflow produces a
+job per item, so an unbounded queue becomes the largest thing in the instance
+faster than you would expect.
 
 ## The workflows
 
-| Queue          | Steps                                                | What it does                                      |
-| -------------- | ---------------------------------------------------- | ------------------------------------------------- |
-| `atproto-sync` | enumerate → open-run → index → reconcile → close-run | Sweeps the atproto network into the recipe index  |
-| `demo`         | warm-up → work → finish                              | No-op — proves queue, workers and board are wired |
+| Queue          | Graph                                | What it does                                     |
+| -------------- | ------------------------------------ | ------------------------------------------------ |
+| `atproto-sync` | enumerate → sync-repo × N → finalize | Sweeps the atproto network into the recipe index |
+| `demo`         | start → task × N → report            | No-op fan-out — proves the whole path is wired   |
 
 `atproto-sync` is the whole of the old `@buttery/atproto-cron-sync` package:
-`sweep.ts` and the modules it reads the network with live in that folder now, and
-`services/pipeline/.env` is the one file that says which atmosphere gets swept.
+`lib/sweep.ts` and the modules it reads the network with live in that folder now,
+and `services/pipeline/.env` is the one file that says which atmosphere gets
+swept. `enumerate` finds the repos and fans them out; each repo is a job of its
+own; `finalize` folds what they returned into the `atproto_sync_run` row.
 `GET /workflows` reports the same table off the live registry.
 
 ## Schedules
@@ -163,12 +201,8 @@ scale-up.
 Everything is UTC. A schedule that quietly shifts twice a year with a container's
 local DST is its own kind of bug.
 
-**Overlap.** BullMQ stops the same job running twice, not two different jobs on
-one queue — which is exactly what an hourly schedule plus a sweep that runs long
-plus two replicas produces. The Railway cron this replaced got that guarantee
-from the platform, so `atproto-sync` declares `exclusive` and takes a Redis mutex
-([`src/lock.ts`](src/lock.ts)). `sync:once` takes the same lock: a sweep started
-by hand must not run alongside a scheduled one just because a person started it.
+A schedule fires the graph's **entry** step, and the rest follows from there.
+Overlap between one firing and the last is covered above.
 
 ## Autoscaling
 
@@ -181,7 +215,9 @@ Public API — that is [`src/autoscale.ts`](src/autoscale.ts), running inside th
 that is always up) is already there.
 
 The load signal is **queue depth**: `waiting + active`, summed across every
-workflow. Delayed jobs are excluded — a job scheduled for 3am is not work the
+workflow. Fanning out is what makes that signal mean something: a sweep is
+thousands of repo jobs waiting, which is a backlog the autoscaler can act on,
+where one monolithic sweep job would have been a backlog of 1. Delayed jobs are excluded — a job scheduled for 3am is not work the
 fleet can do now, and counting it would hold replicas open all night.
 
 ```
@@ -215,7 +251,8 @@ Concurrency and replicas are **different dials**. `PIPELINE_WORKER_CONCURRENCY`
 is how many jobs one process interleaves — right for I/O-bound work, useless for
 CPU-bound work, since it is all one event loop. Replicas add actual CPUs. Raise
 concurrency first for a workflow that mostly waits on the network; raise replicas
-for one that mostly computes.
+for one that mostly computes. A workflow's `globalConcurrency` is the third and
+it caps both: see [One job per step](#one-job-per-step) above.
 
 ## Local development
 
@@ -224,15 +261,16 @@ Both processes boot with `pnpm dev` (see
 <http://127.0.0.1:3002/ui>.
 
 ```bash
-# Enqueue a demo job and watch it move through the board.
+# Fan out four demo tasks and watch the graph move through the board.
 curl -X POST http://127.0.0.1:3002/jobs/demo \
   -H 'content-type: application/json' \
-  -d '{"data": {"durationMs": 5000, "label": "hello"}}'
+  -d '{"data": {"tasks": 4, "durationMs": 1500, "label": "hello"}}'
 
-# Make one fail, to exercise retries and the board's failed tab.
+# Make every task fail, to watch the retries and then `report` count them
+# rather than fail with them.
 curl -X POST http://127.0.0.1:3002/jobs/demo \
   -H 'content-type: application/json' \
-  -d '{"data": {"fail": true}}'
+  -d '{"data": {"tasks": 3, "fail": true}}'
 
 # Run several workers against one queue, the way replicas do on Railway.
 process-compose process scale pipeline-worker 3
@@ -242,17 +280,20 @@ pnpm --filter @buttery/pipeline sync:once --dry-run
 pnpm --filter @buttery/pipeline run:once demo --label=hello
 ```
 
-`run:once` turns flags into the job payload (`--dry-run` is `{"dryRun": true}`,
-`--label=hello` is `{"label": "hello"}`) and goes through the same
-`Workflow.run` the worker does, so a run by hand and a queued run cannot drift.
-It is also how the disabled `atproto-sync` process-compose one-shot runs.
+`run:once` turns flags into the entry step's payload (`--dry-run` is
+`{"dryRun": true}`, `--max-repos=25` is `{"maxRepos": "25"}`) and goes through the
+same `Workflow.run` the worker does, so a run by hand and a queued run cannot
+drift. Fanning out has nowhere to fan out _to_, so the children run in that same
+process — which is the one honest difference between the two: a queue is how work
+reaches other machines, and a shell command has no other machines. It is also how
+the disabled `atproto-sync` process-compose one-shot runs.
 
 Config lives in `services/pipeline/.env`, created from `.env.example` by
 `pnpm dev` when missing — one file for the queue system and for the workflows,
 including which atproto network a sweep reads. Queue state lives in the dev
 Redis; `docker compose down -v` wipes it.
 
-`pnpm --filter @buttery/pipeline test` covers the step kernel, the scaling policy,
-the backlog arithmetic and the sweep's rendering — all pure, so no Redis and no
+`pnpm --filter @buttery/pipeline test` covers the graph kernel, the summary
+folding, the scaling policy, the backlog arithmetic and the sweep's rendering — all pure, so no Redis and no
 database are required. `test:db` adds the render suite against a real migrated
 Postgres, and skips itself when there is not one.
