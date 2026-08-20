@@ -1,0 +1,30 @@
+{
+  "name": "@buttery/pipeline",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "start": "node src/server.ts",
+    "start:worker": "node src/worker.ts",
+    "dev": "node --watch src/server.ts",
+    "dev:worker": "node --watch src/worker.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bull-board/api": "^8.6.1",
+    "@bull-board/fastify": "^8.6.1",
+    "@fastify/basic-auth": "^6.3.0",
+    "bullmq": "^6.1.2",
+    "fastify": "^5.12.1",
+    "ioredis": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}
