@@ -32,9 +32,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content: "width=device-width, initial-scale=1, viewport-fit=cover",
       },
       // iOS reads none of the web app manifest for home-screen installs — it
-      // has its own decade-old meta vocabulary, and these three are what make an
+      // has its own decade-old meta vocabulary, and these are what make an
       // installed Buttery open chrome-less with a warm status bar instead of as
       // a Safari tab with a white bar (§9.1).
+      //
+      // `mobile-web-app-capable` is the standardized name and the one Chrome
+      // wants; Safari still only reads the `apple-` prefixed spelling, so both
+      // ship. Dropping the Apple one to silence Chrome's console warning would
+      // cost us the standalone iOS window the warning is not even about.
+      { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-title", content: "Buttery" },
       { name: "apple-mobile-web-app-status-bar-style", content: "default" },
