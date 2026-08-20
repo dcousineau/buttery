@@ -1,23 +1,17 @@
-// Environment + CLI-flag parsing for a sweep. Node runs this `.ts` directly
+// Environment parsing for a sweep. Node runs this `.ts` directly
 // (type-stripping) — keep everything erasable (no enum/namespace/param-props).
+//
+// This is the workflow's own configuration, separate from the service's
+// (`#/config.ts`): it answers "which network does a sweep read, and where does
+// it write", which is a property of the sweep and not of the queue system
+// hosting it. Both read the one `services/pipeline/.env`.
+import "#/env.ts";
 
-// Local dev config comes from this package's `.env` (see `.env.example`) —
-// there is no `railway run` wrapper injecting it. Resolved relative to this
-// file, not the cwd, so a run from the repo root behaves the same; note
-// `process.loadEnvFile()` does NOT walk up looking for a `.env`. Absent on
-// Railway, where the platform's environment stands alone — and an already-set
-// var always wins, since loadEnvFile never overwrites one.
-try {
-  process.loadEnvFile(new URL("../.env", import.meta.url));
-} catch {
-  // No .env file present — rely on the ambient environment.
-}
-
-export interface Config {
+export interface SyncConfig {
   databaseUrl: string;
   relayUrl: string;
   concurrency: number;
-  /** `--dry-run`: fetch + log, never write. */
+  /** Fetch + log, never write. Comes from the job payload, not the environment. */
   dryRun: boolean;
   /** `SYNC_MAX_REPOS` — stop after N DIDs (0 / unset = all). */
   maxRepos: number | undefined;
@@ -28,7 +22,7 @@ export interface Config {
    * instead of the relay's `listReposByCollection`. Local dev only: the atproto
    * dev-env has no relay, and its PDS answers `listReposByCollection` with
    * `AuthMissing`, so this is the only unauthenticated way to discover the
-   * handful of repos living on it. Treated as a partial sweep (see sweep.ts).
+   * handful of repos living on it. Treated as a partial sweep (see steps.ts).
    */
   pdsListUrl: string | undefined;
 }
@@ -36,9 +30,7 @@ export interface Config {
 const RELAY_DEFAULT = "https://relay1.us-east.bsky.network";
 export const RECIPE_COLLECTION = "exchange.recipe.recipe";
 
-export function loadConfig(argv: string[]): Config {
-  const flags = new Set(argv);
-
+export function loadSyncConfig(): SyncConfig {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is not set");
@@ -54,7 +46,8 @@ export function loadConfig(argv: string[]): Config {
     databaseUrl,
     relayUrl: process.env.RELAY_URL ?? RELAY_DEFAULT,
     concurrency,
-    dryRun: flags.has("--dry-run"),
+    // Overridden per run from the job payload; see `start()` in index.ts.
+    dryRun: false,
     maxRepos,
     onlyDid: process.env.SYNC_ONLY_DID || undefined,
     pdsListUrl: process.env.SYNC_PDS_URL || undefined,

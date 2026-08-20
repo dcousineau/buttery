@@ -6,16 +6,15 @@
 // Creates each service's `.env` from its `.env.example` when it is missing,
 // minting a throwaway `BETTER_AUTH_SECRET` for the one that asks for it.
 //
-// Three files today, one per service that reads config from disk:
-//   * services/web/.env               — the app: datastores, auth, blobs, atproto
-//   * services/atproto-cron-sync/.env — the sweep: its database + which atproto
-//                                       network to read
-//   * services/pipeline/.env          — the job queues: Redis, the board's port
-//                                       and its basic-auth credentials
+// Two files today, one per service that reads config from disk:
+//   * services/web/.env      — the app: datastores, auth, blobs, atproto
+//   * services/pipeline/.env — the queue system (Redis, the board's port and its
+//                              basic-auth credentials) and the workflows it runs,
+//                              including which atproto network a sweep reads
 // They are deliberately separate rather than one root `.env`: each is loaded by
-// its own service (vite.config.ts / kysely.config.ts, and the cron's and
-// pipeline's src/config.ts), and the cron's file is what decides live-vs-local
-// sweeping, which has no business being a repo-wide setting.
+// its own service (vite.config.ts / kysely.config.ts, and the pipeline's
+// src/env.ts), and the pipeline's file is what decides live-vs-local sweeping,
+// which has no business being a repo-wide setting.
 //
 // Everything the stack needs to boot is already correct in the examples — the
 // DATABASE_URL / REDIS_URL defaults match the fixed ports in the repo's
@@ -45,7 +44,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // Every service whose `.env.example` should be materialized. Add a service here
 // when it grows a `.env.example`; nothing else in the script is service-aware.
-const SERVICES = [join(root, "services", "web"), join(root, "services", "atproto-cron-sync"), join(root, "services", "pipeline")];
+const SERVICES = [join(root, "services", "web"), join(root, "services", "pipeline")];
 
 let failed = false;
 

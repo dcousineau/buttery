@@ -2,16 +2,10 @@
 // this `.ts` directly (type-stripping) — keep everything erasable (no enum /
 // namespace / parameter properties).
 
-// Local dev config comes from this package's `.env` (see `.env.example`). It is
-// resolved relative to this file rather than the cwd so a run from the repo root
-// behaves the same — `process.loadEnvFile()` does NOT walk up looking for one.
-// Absent on Railway, where the platform's environment stands alone, and an
-// already-set variable always wins because loadEnvFile never overwrites.
-try {
-  process.loadEnvFile(new URL("../.env", import.meta.url));
-} catch {
-  // No .env file present — rely on the ambient environment.
-}
+// Local dev config comes from this package's `.env` (see `.env.example`), read
+// once by `#/env.ts` — including the variables the workflows themselves consume
+// (DATABASE_URL, RELAY_URL, SYNC_*), which used to live in a `.env` of their own.
+import "#/env.ts";
 
 function int(name: string, fallback: number): number {
   const raw = process.env[name];
