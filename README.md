@@ -1,12 +1,11 @@
 # Buttery
 
-Your recipes, your pantry — kept as portable [atproto](https://atproto.com) records you can take anywhere. Buttery is a [TanStack Start](https://tanstack.com/start) web app backed by Postgres, with a cron service that syncs recipe records from the atmosphere.
+Your recipes, your pantry — kept as portable [atproto](https://atproto.com) records you can take anywhere. Buttery is a [TanStack Start](https://tanstack.com/start) web app backed by Postgres, with a background pipeline that syncs recipe records from the atmosphere.
 
-The monorepo has three services:
+The monorepo has two deployed services:
 
 - `services/web` — the app (`@buttery/web`)
-- `services/atproto-cron-sync` — the periodic sync/backfill worker (`@buttery/atproto-cron-sync`)
-- `services/pipeline` — the BullMQ job queues, their Bull Board UI, and the autoscaled worker fleet (`@buttery/pipeline`)
+- `services/pipeline` — the BullMQ workflows, their Bull Board UI, and the autoscaled worker fleet (`@buttery/pipeline`)
 
 ## Local development
 
@@ -84,22 +83,22 @@ curl -X POST http://127.0.0.1:3002/jobs/demo \
 process-compose process scale pipeline-worker 3
 ```
 
-See [services/pipeline/README.md](./services/pipeline/README.md) for how to add a pipeline and how the autoscaler decides.
+See [services/pipeline/README.md](./services/pipeline/README.md) for how to add a workflow and how the autoscaler decides.
 
 ## Backfill / sync
 
-The atproto sweep pulls recipe records into Postgres. In production it runs hourly as the `atproto-sync` BullMQ pipeline (there is no Railway cron service any more); locally it stays manual. Either way it reads `services/atproto-cron-sync/.env` (created for you by `pnpm dev`), so no wrapper is needed — but the dev stack has to be up.
+The atproto sweep pulls recipe records into Postgres. In production it runs hourly as the `atproto-sync` BullMQ workflow (there is no Railway cron service any more); locally it stays manual. Every way of running it reads `services/pipeline/.env` (created for you by `pnpm dev`), so no wrapper is needed — but the dev stack has to be up.
 
 ```bash
 # One sweep of the real atmosphere into the local DB (writes)
-pnpm --filter=@buttery/atproto-cron-sync sync:once
+pnpm --filter=@buttery/pipeline sync:once
 
 # Fetch + log without writing
-pnpm --filter=@buttery/atproto-cron-sync sync:once --dry-run
+pnpm --filter=@buttery/pipeline sync:once --dry-run
 
 # One sweep of the LOCAL atproto dev-env instead — a disabled process-compose
 # one-shot; run it after publishing a recipe locally
-process-compose process start atproto-cron-sync
+process-compose process start atproto-sync
 
 # The same sweep through the queue, so you can watch it in the Bull Board UI
 curl -X POST http://127.0.0.1:3002/jobs/atproto-sync -d '{}' -H 'content-type: application/json'

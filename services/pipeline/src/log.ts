@@ -1,11 +1,11 @@
 // Structured console logging. One JSON object per line so Railway's log viewer
 // (and any downstream ingestion) can parse fields without a format — the same
-// shape @buttery/atproto-cron-sync emits, deliberately: both feed one log
-// stream per environment and there is no reason for them to disagree.
+// shape @buttery/web emits, deliberately: both feed one log stream per
+// environment and there is no reason for them to disagree.
 //
-// `role` distinguishes the two deployments of this one package (the API/board
-// service vs. a worker replica) and `replica` carries Railway's per-replica id,
-// which is the only way to tell autoscaled worker containers apart in the logs.
+// `role` distinguishes the ways this one package runs — the API/board service, a
+// worker replica, the one-shot CLI — and `replica` carries Railway's per-replica
+// id, which is the only way to tell autoscaled worker containers apart.
 
 type Fields = Record<string, unknown>;
 
