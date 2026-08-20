@@ -36,8 +36,8 @@ describe("no-op PostHog", () => {
     // The whole reason this is not a bare chaining proxy: every object is truthy,
     // so a chainable stand-in here would read as ENABLED and fail open.
     expect(posthog.isFeatureEnabled("atproto-publishing-enabled")).toBeUndefined();
-    expect(posthog.getFeatureFlag("invited")).toBeUndefined();
-    expect(posthog.getFeatureFlagPayload("invited")).toBeUndefined();
+    expect(posthog.getFeatureFlag("atproto-publishing-enabled")).toBeUndefined();
+    expect(posthog.getFeatureFlagPayload("atproto-publishing-enabled")).toBeUndefined();
     expect(posthog.has_opted_in_capturing()).toBeUndefined();
   });
 

@@ -3,11 +3,11 @@ import type { PostHog } from "posthog-node";
 /**
  * Server-side PostHog for feature-flag evaluation and person identification.
  *
- * This module is server-only: it is dynamically imported inside the `getGateState`
- * server-fn handler (see `./gate`) so `posthog-node` never lands in the client
- * bundle. The client keeps using `@posthog/react` / `posthog-js` for capture and
- * client-side identify (see `src/routes/__root.tsx`); both sides key the person
- * on the atproto DID so the server writes and client events describe one person.
+ * This module is server-only: every consumer imports it dynamically inside a
+ * server-fn handler so `posthog-node` never lands in the client bundle. The
+ * client keeps using `@posthog/react` / `posthog-js` for capture and client-side
+ * identify (see `src/routes/__root.tsx`); both sides key the person on the
+ * atproto DID so the server writes and client events describe one person.
  *
  * Config comes from runtime env (NOT the `VITE_` client vars): `POSTHOG_PROJECT_TOKEN`
  * and `POSTHOG_HOST`. Talks to PostHog's ingestion host directly — server-to-server,
@@ -17,10 +17,10 @@ import type { PostHog } from "posthog-node";
  * Outside production no client is constructed at all, so nothing is written and no
  * flag is evaluated — note that evaluating a flag is itself a write, since
  * posthog-node captures a `$feature_flag_called` event per evaluation.
+ *
+ * The `invited` access flag that used to live here is GONE: the post-login
+ * waitlist gate was removed and every signed-in user goes straight into the app.
  */
-
-/** The PostHog flag that gates the post-login experience. */
-export const INVITED_FLAG = "invited";
 
 /**
  * The PostHog flag that gates atproto publishing (writing recipe records to a
@@ -72,50 +72,6 @@ async function getClient(): Promise<PostHog | null> {
 }
 
 /**
- * True only when explicitly running dev or test. Unknown/unset `NODE_ENV` is NOT
- * dev — an allowlist, not `!== "production"`, so a misconfigured production
- * server can never take a dev-only bypass.
- */
-function isDevOrTest(): boolean {
-  const env = process.env.NODE_ENV;
-  return env === "development" || env === "test";
-}
-
-/**
- * Whether the person behind `did` is invited (the `invited` flag serves `true`).
- *
- * Fail direction is deliberately closed: when PostHog is configured but the flag
- * is unreachable or undefined, the gate stays up (returns `false`).
- *
- * DEV/TEST bypasses the gate entirely and never consults PostHog. Local dev signs
- * in through the local atproto dev-env (see services/atproto-dev-env), which mints
- * a brand-new throwaway `did:plc` on every restart — no such DID can be on the
- * invite list, so honoring the flag would lock every local session behind the
- * waitlist screen. It would also be unanswerable: outside production there is no
- * client to ask (see {@link isEnabled}) — `railway run` injects `POSTHOG_PROJECT_TOKEN`
- * locally, but a token is not evidence of production and no longer builds a client.
- *
- * Any other environment (production, or an unset `NODE_ENV`) fails CLOSED, with or
- * without a token, so a missing prod token can't silently open the gate.
- *
- * `personProperties` (e.g. `{ handle }`) are passed for flag targeting only; they
- * are not persisted here — {@link identify} does the durable person write.
- */
-export async function isInvited(did: string, personProperties?: Record<string, string>): Promise<boolean> {
-  if (isDevOrTest()) return true;
-
-  const client = await getClient();
-  if (!client) return false; // configured for prod but no token → fail closed
-  try {
-    const value = await client.isFeatureEnabled(INVITED_FLAG, did, { personProperties });
-    return value === true; // `undefined` (unreachable / missing) fails closed
-  } catch (err) {
-    console.warn("[posthog] invited flag eval failed; gating", err);
-    return false;
-  }
-}
-
-/**
  * Whether the person behind `did` may publish recipes to their atproto PDS.
  *
  * Fail-closed kill switch (see {@link ATPROTO_PUBLISH_FLAG}): returns `true` ONLY
@@ -138,24 +94,6 @@ export async function isAtprotoPublishEnabled(did: string, personProperties?: Re
   } catch (err) {
     console.warn("[posthog] atproto publish flag eval failed; blocking publish", err);
     return false;
-  }
-}
-
-/**
- * Durably attach person properties (notably `handle`) to the DID-keyed person so
- * PostHog is filterable by handle, not just the opaque DID. Fire-and-forget: the
- * write is queued and flushed asynchronously; failures are logged, never thrown.
- *
- * No-op outside production — dev sign-ins mint throwaway DIDs, and a person row
- * per local restart is exactly the noise the gate exists to keep out.
- */
-export async function identify(did: string, properties: Record<string, string>): Promise<void> {
-  const client = await getClient();
-  if (!client) return;
-  try {
-    client.identify({ distinctId: did, properties });
-  } catch (err) {
-    console.warn("[posthog] identify failed", err);
   }
 }
 

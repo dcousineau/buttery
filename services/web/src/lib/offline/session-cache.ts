@@ -2,34 +2,29 @@
  * The two root-level reads that must answer offline (offline plan §4.4).
  *
  * Everything else the app renders is a household-scoped query with a key, a
- * persister and an invalidation story. These two are neither:
+ * persister and an invalidation story. This one is neither:
  *
- * - `__root.tsx`'s gate loader (`fetchGateState`) runs on **every** page. Offline
- *   it throws, and a throwing root loader takes the whole tree down — the
- *   installed app shows an error screen instead of a shopping list.
  * - `authClient.useSession()` is a network call owned by better-auth. Offline it
  *   never resolves to a user, so the header, the household name and the active
  *   household id all blank out, and `useActiveHouseholdId()` — the thing every
  *   query key is partitioned by — returns null, which would make the cached rows
  *   unreachable even though they are sitting right there in IndexedDB.
  *
- * **Both fall back to the last known good value, and both fail _open_.** That is
- * a deliberate security posture, not an oversight: neither value authorizes
- * anything. The gate decides whether to render a waitlist screen; the session
- * snapshot decides what name to show and which cache partition to read. Every
- * actual authorization happens server-side, in `assertMember` and the session
- * lookup, on a request that by definition reached the server. A user who is
- * offline holding a stale "invited: true" sees a shell whose every write is
- * disabled — which is exactly what they should see.
+ * **It falls back to the last known good value, and it fails _open_.** That is a
+ * deliberate security posture, not an oversight: the value authorizes nothing —
+ * the snapshot decides what name to show and which cache partition to read.
+ * Every actual authorization happens server-side, in `assertMember` and the
+ * session lookup, on a request that by definition reached the server. A user who
+ * is offline holding a stale snapshot sees a shell whose every write is disabled
+ * — which is exactly what they should see.
  *
- * localStorage, not IndexedDB, and synchronous on purpose: both values are read
+ * localStorage, not IndexedDB, and synchronous on purpose: the value is read
  * during the first render pass, before any async restore could have completed,
- * and both are tiny. They ride on the same `createClientOnlyFn` helpers as the
- * timer store (`src/lib/timers/storage.ts`).
+ * and it is tiny. It rides on the same `createClientOnlyFn` helpers as the timer
+ * store (`src/lib/timers/storage.ts`).
  */
 
 import { OFFLINE_FALLBACK_KEYS } from "#/lib/api";
-import type { GateState } from "#/lib/api";
 import { readJSON, removeKey, writeJSON } from "#/lib/timers/storage";
 import { clearCachedActiveHousehold } from "./active-household";
 
@@ -67,30 +62,6 @@ function read<T>(key: string): T | null {
 
 function write<T>(key: string, value: T): void {
   writeJSON(key, { version: SNAPSHOT_VERSION, savedAt: Date.now(), value } satisfies Snapshot<T>);
-}
-
-// --- the gate -----------------------------------------------------------
-
-export function readCachedGateState(): GateState | null {
-  return read<GateState>(OFFLINE_FALLBACK_KEYS.gate);
-}
-
-export function cacheGateState(gate: GateState): void {
-  write(OFFLINE_FALLBACK_KEYS.gate, gate);
-}
-
-/**
- * The gate loader's offline arm.
- *
- * The fallback order is: what the server just said → what it last said → **fail
- * open**. The last step is the one worth defending: an uninvited visitor's
- * cached shell is not a security boundary (the server functions are), whereas a
- * *signed-in, invited* user being shown a waitlist screen because their phone
- * lost signal in a kitchen is a real failure of the feature this plan exists to
- * build. Erring toward the app is the correct direction here.
- */
-export function gateStateOffline(): GateState {
-  return readCachedGateState() ?? { authed: true, invited: true };
 }
 
 // --- the session --------------------------------------------------------
@@ -150,15 +121,14 @@ export function rememberPartition(key: string | null): void {
 }
 
 /**
- * Drop every snapshot. Called from `wipeCachePartition` on sign-out, membership
- * failure and schema bump — **not** on a household switch, which keeps the
+ * Drop the snapshot and the partition marker. Called from `wipeCachePartition`
+ * on sign-out, membership failure and schema bump — **not** on a household switch, which keeps the
  * identity it has just re-written for the new household (see the reason branch
  * there). A session snapshot that outlived a sign-out would keep the previous
  * user's name and avatar on a shared iPad's header, which is the exact thing
  * §2.7 refuses.
  */
 export function clearOfflineFallbacks(): void {
-  removeKey(OFFLINE_FALLBACK_KEYS.gate);
   removeKey(OFFLINE_FALLBACK_KEYS.session);
   removeKey(PARTITION_KEY);
   clearCachedActiveHousehold();

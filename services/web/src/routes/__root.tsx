@@ -7,10 +7,7 @@ import { PostHogProvider } from "@posthog/react";
 import { useEffect, useRef } from "react";
 import { authClient } from "../lib/auth-client";
 import AppShell from "../components/AppShell";
-import Waitlist from "../components/Waitlist";
 import { POSTHOG_CLIENT_CONFIG, useAnalytics } from "../lib/analytics";
-import { fetchGateState, isOffline, type GateState } from "#/lib/api";
-import { cacheGateState, gateStateOffline } from "#/lib/offline/session-cache";
 import { useCachePartition } from "#/lib/offline/use-cache-partition";
 import { absolute, seo } from "../lib/seo";
 
@@ -18,39 +15,7 @@ import appCss from "../styles.css?url";
 
 const THEME_INIT_SCRIPT = `(function(){try{var stored=window.localStorage.getItem('theme');var mode=(stored==='light'||stored==='dark'||stored==='auto')?stored:'auto';var prefersDark=window.matchMedia('(prefers-color-scheme: dark)').matches;var resolved=mode==='auto'?(prefersDark?'dark':'light'):mode;var root=document.documentElement;root.classList.remove('light','dark');root.classList.add(resolved);if(mode==='auto'){root.removeAttribute('data-theme')}else{root.setAttribute('data-theme',mode)}root.style.colorScheme=resolved;}catch(e){}})();`;
 
-/**
- * The gate verdict, with the offline arm §4.4 requires.
- *
- * This loader runs on **every** page in the app, and before this change it was
- * the single point that took the whole tree down without a network: a throwing
- * root loader means an error screen, not a degraded one, so an installed Buttery
- * in airplane mode showed nothing at all.
- *
- * On the server a failure still throws — there is no cache to fall back to and a
- * broken gate is a real bug worth surfacing. On the client it falls back to the
- * last known verdict, and to "authed and invited" when there is none, because the
- * gate is chrome (it picks between the app and a waitlist screen) and every
- * actual authorization is a server function that by definition reached the
- * server. §4.4 argues the direction at length: the failure mode of erring open
- * is a stranger seeing an empty shell; the failure mode of erring closed is the
- * household being locked out of its own shopping list in a store.
- */
-async function loadGateState(): Promise<GateState> {
-  try {
-    return await fetchGateState();
-  } catch (error) {
-    if (typeof window === "undefined") throw error;
-    // Not narrowed to `isOffline` alone: a service-worker-served shell, an
-    // aborted navigation and a captive portal all fail differently, and none of
-    // them is a reason to blank the app. The distinction is kept only so that a
-    // genuinely broken gate still reaches the console.
-    if (!isOffline(error)) console.warn("[gate] falling back to the cached verdict", error);
-    return gateStateOffline();
-  }
-}
-
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  loader: () => loadGateState(),
   head: () => ({
     meta: [
       {
@@ -103,10 +68,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   }),
   shellComponent: RootDocument,
 });
-
-/** Pages that stay reachable for a signed-in-but-not-invited user (legal /
- * transparency), so the waitlist takeover never traps them away from these. */
-const UNGATED_ROUTES = new Set(["/terms", "/privacy", "/ai-usage", "/acknowledgements"]);
 
 /** Route prefixes for the signed-in app surfaces. The PostHog support widget
  * (Conversations) is shown only here — never on marketing, legal, or public
@@ -167,8 +128,7 @@ function PostHogIdentity() {
     if (identifiedDid.current && identifiedDid.current !== did) posthog.reset();
     // DID is the primary lookup id (distinct_id); handle rides along as a person
     // property so PostHog is filterable by handle, not just the opaque DID. Keep
-    // `handle` the real atproto handle (server does the same in src/server/gate.ts);
-    // `name` is the separate display fallback.
+    // `handle` the real atproto handle; `name` is the separate display fallback.
     posthog.identify(did, {
       ...(session.user.handle ? { handle: session.user.handle } : {}),
       name: session.user.name,
@@ -189,33 +149,17 @@ function PostHogIdentity() {
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
-  const gate = Route.useLoaderData();
-  // Snapshot the verdict from the *render*, not from the loader.
-  //
-  // On a cold page load the root loader runs on the server and its result is
-  // dehydrated into the HTML — the client-side loader never executes, so a
-  // `cacheGateState` call inside it writes nothing in the browser. (Verified:
-  // after a full online session the session and active-household snapshots were
-  // in localStorage and the gate's was not.) Rendering is the one place that
-  // sees the value on both paths.
-  useEffect(() => {
-    cacheGateState(gate);
-  }, [gate]);
-
   // Keeps the IndexedDB partition pointed at the signed-in household, and wipes
   // it when that changes (§2.7). Mounted at the root because a household switch
   // navigates, and any component below could unmount mid-switch.
   useCachePartition();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // A signed-in user without the `invited` flag gets the waitlist takeover,
-  // except on the ungated legal pages so they can still read them / sign out.
-  const gated = gate.authed && !gate.invited && !UNGATED_ROUTES.has(pathname);
   // Canonical / og:url are per-page; derive both from the current path so every
   // route gets them without per-route wiring. Query/hash are intentionally dropped.
   const canonical = absolute(pathname);
   // PostHog wraps the app in PRODUCTION ONLY; everywhere else the same tree
   // renders bare and posthog-js is never initialized (see `lib/analytics`).
-  const app = gated ? <Waitlist /> : <AppShell>{children}</AppShell>;
+  const app = <AppShell>{children}</AppShell>;
   return (
     <html lang="en" suppressHydrationWarning>
       <head>

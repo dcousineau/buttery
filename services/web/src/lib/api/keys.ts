@@ -82,15 +82,14 @@ export const keys = {
 } as const;
 
 /**
- * The gate verdict and the session snapshot are *not* in this namespace.
+ * The session snapshot is *not* in this namespace.
  *
- * Both are root-level, both must answer offline before any household is known,
- * and both are read through `authClient` / a bare server fn rather than through
- * a `queryOptions` factory — so they get their own IDB keys in
- * `src/lib/offline/session-cache.ts` rather than a partitioned query key. §4.4
- * spells out why they fail *open* rather than blocking the shell.
+ * It is root-level, it must answer offline before any household is known, and it
+ * is read through `authClient` rather than through a `queryOptions` factory — so
+ * it gets its own key in `src/lib/offline/session-cache.ts` rather than a
+ * partitioned query key. §4.4 spells out why it fails *open* rather than
+ * blocking the shell.
  */
 export const OFFLINE_FALLBACK_KEYS = {
-  gate: "buttery:offline:gate",
   session: "buttery:offline:session",
 } as const;

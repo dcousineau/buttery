@@ -58,8 +58,6 @@ curl -s -X POST http://127.0.0.1:3000/api/auth/atproto/sign-in \
 
 `{"url":"http://localhost:2583/oauth/authorize?…"}` response means server side fine, problem in browser step.
 
-Post-login `invited` gate does not apply in dev: `isInvited` returns true whenever `NODE_ENV` is `development` or `test`, no PostHog consult. Any signed-in dev account reaches app.
-
 ## Verify a publish (read-only)
 
 ```sh
