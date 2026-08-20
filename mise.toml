@@ -11,6 +11,16 @@ experimental = true
 [tools]
 railway = "latest"
 process-compose = "latest"
+# The Temporal CLI. `temporal server start-dev` is the local cluster the dev
+# stack runs (process-compose `temporal`): one binary, a SQLite file under
+# .dev-data, and the Web UI on :8233. The same binary is how you talk to the
+# deployed cluster — `temporal --address <railway tcp proxy> workflow list`.
+#
+# Spelled with its backend rather than as a bare `temporal`, because mise's
+# registry maps that name to temporalio/temporal — the SERVER repo, which ships
+# temporal-server and the schema tools and no `temporal` binary at all. The CLI
+# lives in temporalio/cli.
+"aqua:temporalio/cli" = "latest"
 
 [monorepo]
 config_roots = ["services/*", "packages/*"]
@@ -31,7 +41,7 @@ run = "railway skills install"
 
 # Create each service's .env from its .env.example (with a generated
 # BETTER_AUTH_SECRET for web) when it's missing: services/web and
-# services/atproto-cron-sync. Runs before `setup:mcp` in the postinstall hook so
+# services/worker. Runs before `setup:mcp` in the postinstall hook so
 # the render has a real DATABASE_URL to bake in rather than the example's
 # placeholder. Per-file no-op once a .env exists — it never overwrites.
 [tasks."setup:env"]
