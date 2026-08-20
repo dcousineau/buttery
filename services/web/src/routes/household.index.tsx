@@ -4,7 +4,7 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useHydratedSession } from "#/lib/auth-client";
 import { householdRecipesQuery, keys, mealPlanWeekQuery } from "#/lib/api";
-import { addRecipeToHousehold, searchGlobalRecipes, type GlobalRecipeResult } from "#/lib/api";
+import { addRecipeToHousehold, getHouseholdNudges, searchGlobalRecipes, type GlobalRecipeResult } from "#/lib/api";
 import { ensureActiveHousehold } from "#/lib/offline/active-household";
 import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { Badge } from "#/components/ui/badge";
@@ -13,6 +13,7 @@ import { AddRecipeChooser } from "#/components/recipes/create/AddRecipeChooser";
 import { GlobalRecipePicker } from "#/components/recipes/GlobalRecipePicker";
 import { RecipesViewContext } from "#/components/recipes/context";
 import { FillTheBoxCard } from "#/components/pantry/FillTheBoxCard";
+import { InviteYourHouseCard } from "#/components/pantry/InviteYourHouseCard";
 import { FreshInYourBox } from "#/components/pantry/FreshInYourBox";
 import { LockedFeaturesStrip } from "#/components/pantry/LockedFeaturesStrip";
 import { NetworkRecipePreviewDialog } from "#/components/pantry/NetworkRecipePreviewDialog";
@@ -57,10 +58,16 @@ export const Route = createFileRoute("/household/")({
     // it links into own the refetch behaviour.
     const recipes = await context.queryClient.ensureQueryData(householdRecipesQuery(active.householdId));
 
+    // Best-effort, exactly like the network strip below: the pantry is the PWA
+    // front door and has to cold-launch offline, where this call cannot answer.
+    // An absent nudge is a non-event — the card simply doesn't render — never an
+    // error that takes the front door down with it.
+    const nudges = await getHouseholdNudges(active.householdId).catch(() => null);
+
     // A fresh box means the overview has nothing to overview: the week card, the
     // network strip and their queries are all skipped rather than fetched and
     // thrown away. `recipes` is already ordered `added_at desc` by the server.
-    if (recipes.length === 0) return { active, recipes, week: null, network: [] as GlobalRecipeResult[] };
+    if (recipes.length === 0) return { active, recipes, nudges, week: null, network: [] as GlobalRecipeResult[] };
 
     const [week, network] = await Promise.all([
       context.queryClient.ensureQueryData(mealPlanWeekQuery(active.householdId, undefined)),
@@ -73,7 +80,7 @@ export const Route = createFileRoute("/household/")({
       ),
     ]);
 
-    return { active, recipes, week, network };
+    return { active, recipes, nudges, week, network };
   },
   head: () => ({ meta: seo({ title: "Your pantry · Buttery", description: "Your household's home in Buttery." }) }),
   // The PWA front door renders what has been cached; when the answer is
@@ -88,7 +95,7 @@ const BOX_COUNT = 4;
 const NETWORK_COUNT = 3;
 
 function PantryPage() {
-  const { active, recipes, week, network } = Route.useLoaderData();
+  const { active, recipes, nudges, week, network } = Route.useLoaderData();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: session } = useHydratedSession();
@@ -177,6 +184,10 @@ function PantryPage() {
                 : "What's cooking this week, what the household added lately, and a few things from the network worth stealing."}
             </p>
           </header>
+
+          {/* A first-run action rather than part of either state below, so it
+              sits above both the empty-box welcome and the overview. */}
+          {nudges?.inviteNudge ? <InviteYourHouseCard householdId={active.householdId} /> : null}
 
           {isFresh ? (
             <>

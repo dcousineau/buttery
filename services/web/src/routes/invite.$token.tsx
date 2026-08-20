@@ -78,7 +78,7 @@ function ValidInvite({ token, preview }: { token: string; preview: InvitePreview
       // under the old one's buster (offline plan §2.4, §2.7).
       await refreshSession();
       clearPendingInvite();
-      await navigate({ to: "/households" });
+      await navigate({ to: "/household" });
     } catch (err) {
       setError(errorMessage(err));
       setPending(null);

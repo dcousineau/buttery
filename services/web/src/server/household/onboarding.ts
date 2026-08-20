@@ -126,7 +126,7 @@ const computeOnboarding = createServerOnlyFn(async (): Promise<OnboardingVerdict
     .where("i.revoked_at", "is", null)
     .where("h.deleted_at", "is", null)
     .where((eb) => eb.or([eb("i.expires_at", "is", null), eb("i.expires_at", ">", sql<Date>`now()`)]))
-    .select(["i.id as id", "i.role as role", "i.created_by_did as createdByDid", "h.name as householdName"])
+    .select(["i.id as id", "i.role as role", "i.created_by_did as createdByDid", "i.created_at as createdAt", "h.name as householdName"])
     .orderBy("i.created_at", "desc")
     .execute();
 
@@ -142,6 +142,7 @@ const computeOnboarding = createServerOnlyFn(async (): Promise<OnboardingVerdict
       householdName: i.householdName,
       inviterHandle: handleByDid.get(i.createdByDid) ?? null,
       role: asRole(i.role),
+      createdAt: new Date(i.createdAt).toISOString(),
     })),
   };
 });

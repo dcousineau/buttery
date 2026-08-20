@@ -134,6 +134,7 @@ export interface Household {
   deleted_at: Timestamp | null;
   id: string;
   name: string;
+  settings: Generated<Json>;
   updated_at: Generated<Timestamp>;
 }
 

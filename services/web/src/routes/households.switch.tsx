@@ -72,7 +72,7 @@ function PickerCard({ household }: { household: HouseholdSummary }) {
       // previous household. Anything the new household fetches in that window is
       // written to disk under the old buster and thrown away unread (§2.4, §4.5).
       await refreshSession();
-      await navigate({ to: "/households" });
+      await navigate({ to: "/household" });
     } catch (err) {
       setError(errorMessage(err));
       setPending(false);
