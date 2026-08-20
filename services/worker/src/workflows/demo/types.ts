@@ -17,3 +17,10 @@ export interface DemoResult {
   /** One line per step, each naming the attempt it succeeded on. */
   steps: string[];
 }
+
+export interface DemoStepInput {
+  name: string;
+  durationMs: number;
+  /** Throw on attempts 1..failTimes, then succeed. */
+  failTimes?: number;
+}

@@ -166,9 +166,8 @@ export default defineRailway((ctx) => {
   // over workflow attributes and saves ~650 MiB of memory. For the volumes this
   // project has, that is the right trade.
   //
-  // This is the honest price of the Temporal build, and it is four services
-  // where BullMQ needed none: the queue there was the Redis the app already had.
-  // Everything below exists before a single workflow runs.
+  // This is the honest price of durable workflows: four services that exist
+  // before a single one of ours runs.
 
   // Temporal's own database, holding both the main and the visibility schemas.
   // Deliberately NOT the app's `postgres` above: auto-setup creates databases
@@ -180,8 +179,8 @@ export default defineRailway((ctx) => {
 
   // The server: frontend, history, matching and worker roles in one container,
   // which is what `auto-setup` is for. It also creates the databases, applies the
-  // schema and registers the default namespace on first boot, so there is no
-  // separate admin-tools step to run by hand.
+  // schema and registers the namespace on first boot, so there is no separate
+  // admin-tools step to run by hand.
   //
   // Pinned by digest-less tag on purpose — a Temporal server upgrade is a schema
   // migration, and it should be a deliberate edit to this line rather than
@@ -216,10 +215,13 @@ export default defineRailway((ctx) => {
       // connection refused against a port that is demonstrably open.
       BIND_ON_IP: "::",
 
-      // The namespace the worker polls and the CLI defaults to. 72 hours of
-      // history retention: long enough to debug last night's sweep, short enough
-      // that the visibility tables do not grow without bound.
-      DEFAULT_NAMESPACE: "default",
+      // Buttery's namespace, created by auto-setup on first boot. A namespace is
+      // Temporal's isolation boundary — schedules, task queues, workflow ids and
+      // retention all scope to one — and the worker refuses to start against a
+      // namespace that does not exist, so this and TEMPORAL_NAMESPACE below must
+      // agree. 72 hours of history retention: long enough to debug last night's
+      // sweep, short enough that the visibility tables do not grow without bound.
+      DEFAULT_NAMESPACE: "buttery",
       DEFAULT_NAMESPACE_RETENTION: "72h",
     },
   });
@@ -243,9 +245,7 @@ export default defineRailway((ctx) => {
   temporal.networking = { tcpProxies: { "7233": {} } };
 
   // The Web UI: every workflow, its input, its result, each activity attempt and
-  // each retry, with a "start workflow" button. It is the thing the BullMQ build
-  // had to stand up itself (a Fastify service, Bull Board, basic auth, a
-  // healthcheck and a place in the IaC) and here is a container with one variable.
+  // each retry, with a "start workflow" button — a container and one variable.
   //
   // No public domain of its own — it is only reachable through `temporal-auth`
   // below, because the UI has no login and can terminate any workflow in the
@@ -256,6 +256,9 @@ export default defineRailway((ctx) => {
       // Private DNS is `<service name>.railway.internal`, always.
       TEMPORAL_ADDRESS: "temporal.railway.internal:7233",
       TEMPORAL_UI_PORT: "8080",
+      // Which namespace the UI opens on. Without it every visit starts in
+      // `default`, which is empty here and looks like a broken cluster.
+      TEMPORAL_DEFAULT_NAMESPACE: "buttery",
       // The UI serves an API for its own frontend; without an allowed origin it
       // rejects the browser's requests. Point it at the auth proxy's domain once
       // one exists (see the note on `temporalAuth`).
@@ -303,31 +306,25 @@ export default defineRailway((ctx) => {
     start: "pnpm --filter @buttery/worker start",
 
     // Schedules live in the cluster, not in this repo, so they are reconciled on
-    // every deploy: created, updated, and REMOVED when no workflow declares them
-    // any more. preDeploy is exactly the right place — it runs once per deploy,
-    // in the built image, before any new container serves, and a non-zero exit
-    // aborts the deploy and keeps the old containers up.
-    //
-    // The BullMQ build could not do this. Its schedulers lived in Redis and had
-    // to be reconciled by a process that was always up and that there was
-    // exactly one of, which is part of why that design needed a second
-    // always-on service.
+    // every deploy: created, updated, and REMOVED when nothing declares them any
+    // more. preDeploy is exactly the right place — it runs once per deploy, in
+    // the built image, before any new container serves, and a non-zero exit
+    // aborts the deploy and keeps the old containers up. Nothing has to stay
+    // running to own the schedule.
     preDeploy: "pnpm --filter @buttery/worker schedules:sync",
 
-    // Declared, unlike the BullMQ fleet's, and that is the point: there is no
-    // autoscaler here and nothing needs one. A worker pulls tasks when it has
-    // capacity, so a backlog waits in Temporal instead of piling into a process
-    // — depth is absorbed by WORKER_MAX_CONCURRENT_ACTIVITIES first, and only
-    // then by this number. Raise it when the queue's schedule-to-start latency
-    // says so, in a commit, rather than by a control loop holding a Railway API
-    // token.
+    // A worker pulls tasks when it has capacity, so a backlog waits in Temporal
+    // instead of piling into a process: depth is absorbed by
+    // WORKER_MAX_CONCURRENT_ACTIVITIES first and only then by this number. Raise
+    // it when the task queue's schedule-to-start latency says so — visible in
+    // `temporal task-queue describe` and in the UI.
     replicas: 1,
 
     // No healthcheck: there is no server to probe. Railway treats a long-running
     // process with no healthcheck path as healthy once it starts.
     env: {
       TEMPORAL_ADDRESS: "temporal.railway.internal:7233",
-      TEMPORAL_NAMESPACE: "default",
+      TEMPORAL_NAMESPACE: "buttery",
       TEMPORAL_TASK_QUEUE: "buttery",
 
       // Workflows read and write the recipe index in the APP's database (not
@@ -362,9 +359,10 @@ export default defineRailway((ctx) => {
   // Deleting it is a DESTRUCTIVE plan item, so the apply that lands this change
   // needs `railway config apply --confirm-destructive`. Nothing is lost with it:
   // the service held no volume and no state, and its DATABASE_URL and RELAY_URL
-  // moved to `worker`. The sweep is still runnable by hand, now as
-  // `pnpm --filter @buttery/worker sync:once` against whichever cluster
-  // TEMPORAL_ADDRESS names.
+  // moved to `worker`. The sweep is still runnable by hand, now with the CLI:
+  //   temporal workflow execute --namespace buttery --task-queue buttery \
+  //     --type atprotoSync --workflow-id atproto-sync --input '{}'
+  // against whichever cluster `--address` names.
 
   return project("buttery", {
     resources: [db, cache, uploads, web, temporalDb, temporal, temporalUi, temporalAuth, worker],

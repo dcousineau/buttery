@@ -235,12 +235,14 @@ processes:
   # that is Postgres-backed and is three services — but the same server code and
   # the same API, which is what the worker and the CLI actually talk to.
   #
-  # The UI on :8233 is the local stand-in for what the BullMQ build had to build
-  # and secure itself: every run, its input, its result, each activity attempt
+  # The UI on :8233 shows every run, its input, its result, each activity attempt
   # and each retry, with no code in this repo behind it.
   temporal:
     description: "Temporal dev cluster + Web UI (http://127.0.0.1:8233)"
-    command: "temporal server start-dev --ip 127.0.0.1 --port 7233 --ui-port 8233 --db-filename ./.dev-data/temporal/dev.db --log-format json"
+    # `--namespace buttery` creates it at launch: Buttery's workflows, schedules
+    # and task queue live there rather than in `default`, exactly as they do on
+    # Railway, and a worker refuses to start against a namespace that is missing.
+    command: "temporal server start-dev --ip 127.0.0.1 --port 7233 --ui-port 8233 --namespace buttery --db-filename ./.dev-data/temporal/dev.db --log-format json"
     working_dir: "."
     availability: *app_availability
     readiness_probe:
@@ -249,7 +251,7 @@ processes:
         # well before the history and matching services are ready to accept a
         # workflow, and a worker that starts polling in that window logs a wall
         # of connection errors before settling.
-        command: "temporal operator cluster health --address 127.0.0.1:7233"
+        command: "temporal operator cluster health --address 127.0.0.1:7233 --namespace buttery"
       initial_delay_seconds: 2
       period_seconds: 2
       failure_threshold: 60
@@ -308,17 +310,24 @@ processes:
   # app up. `disabled` is a plain literal rather than `docs`'s ${VAR:-…} knob:
   # there is no "boot the whole stack and also run one sweep" case worth a flag.
   #
-  # Unlike the BullMQ build's one-shot, this process does not do the work: it
-  # starts the `atproto-sync` workflow and waits for its result, and the `worker`
-  # process above runs it. That is why `worker` is a dependency — and why the
-  # sweep shows up in the Temporal UI whether a person or the schedule started it.
+  # It is the Temporal CLI, not a script in this repo: starting a workflow is
+  # `temporal workflow execute`, and `--input` is where a run's arguments go
+  # (`--input '{"dryRun":true}'` for a sweep that writes nothing). `execute`
+  # blocks until the workflow finishes and prints its result; the `worker`
+  # process is what actually runs it, which is why it is a dependency.
   #
-  # No `environment:` block, deliberately — which network a sweep reads is
-  # `services/worker/.env`'s call and nothing else's, so this process, a shell run
-  # and the scheduled workflow all do the same thing.
+  # The fixed `--workflow-id` is the interlock: Temporal refuses to start a
+  # second running execution under an id that already has one, so two of these
+  # cannot overlap. To respect the schedule's overlap policy as well, trigger the
+  # schedule instead: `temporal schedule trigger --schedule-id atproto-sync`.
+  #
+  # No `environment:` block, deliberately — which network gets swept is
+  # `services/worker/.env`'s call and nothing else's, so this process and the
+  # scheduled workflow read the same settings.
   atproto-sync:
     description: "One atproto → Postgres sync sweep — manual one-shot, starts Disabled"
-    command: "pnpm --filter=@buttery/worker sync:once"
+    command: "temporal workflow execute --address 127.0.0.1:7233 --namespace buttery --task-queue buttery --type atprotoSync --workflow-id atproto-sync --input '{}'"
+    working_dir: "."
     # It writes tables `migrate` creates. `atproto-dev-env` is in here because a
     # `.env` pointed at the local dev-env needs it up, and against the real
     # atmosphere it costs only a wait that has already happened.

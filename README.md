@@ -71,18 +71,21 @@ See [docs/LOCAL-DEV.md](./docs/LOCAL-DEV.md) for what each process is and how th
 
 ## Backfill / sync
 
-The `atproto-sync` workflow pulls recipe records into Postgres — hourly in production, on demand here. It reads `services/worker/.env` (created for you by `pnpm dev`), and the dev stack has to be up: these commands start a workflow and wait, and the `worker` process is what runs it.
+The `atproto-sync` workflow pulls recipe records into Postgres — hourly in production, on demand here. Which network it reads is `services/worker/.env` (created for you by `pnpm dev`); what one run should do differently is a workflow argument. The dev stack has to be up, because these commands start a workflow and the `worker` process runs it.
 
 ```bash
-# One sweep of the real atmosphere into the local DB (writes)
-pnpm --filter=@buttery/worker sync:once
-
-# Fetch + log without writing
-pnpm --filter=@buttery/worker sync:once --dry-run
-
-# One sweep of the LOCAL atproto dev-env instead — a disabled process-compose
-# one-shot; run it after publishing a recipe locally
+# One sweep of whatever `.env` points at — a disabled process-compose one-shot;
+# run it after publishing a recipe locally
 process-compose process start atproto-sync
+
+# The same thing by hand, and how to pass a run its arguments
+temporal workflow execute --namespace buttery --task-queue buttery \
+  --type atprotoSync --workflow-id atproto-sync --input '{}'
+
+# Fetch + log without writing, stopping after 25 repos
+temporal workflow execute --namespace buttery --task-queue buttery \
+  --type atprotoSync --workflow-id atproto-sync-dry \
+  --input '{"dryRun":true,"maxRepos":25}'
 ```
 
 Watch either of them run, step by step, at [127.0.0.1:8233](http://127.0.0.1:8233). See [services/worker/README.md](./services/worker/README.md) for the workflow layout and what Temporal costs and buys here.

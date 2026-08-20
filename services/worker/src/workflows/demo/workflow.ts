@@ -1,30 +1,28 @@
 import { log, proxyActivities, sleep } from "@temporalio/workflow";
-import type * as activities from "#/workflows/demo/activities.ts";
+import type { DemoActivities } from "#/workflows/demo/activities.ts";
 import type { DemoInput, DemoResult } from "#/workflows/demo/types.ts";
 
 /**
  * The reference workflow: what this service does, with none of the domain.
  *
- * Run it and watch it in the UI —
+ *   temporal workflow execute --type demo --task-queue buttery \
+ *     --workflow-id demo-1 --input '{"label":"hello"}'
+ *   temporal workflow execute --type demo --task-queue buttery \
+ *     --workflow-id demo-2 --input '{"fail":true}'
  *
- *   pnpm --filter @buttery/worker run:once demo --label=hello
- *   pnpm --filter @buttery/worker run:once demo --fail
- *
- * — because three things it demonstrates are the whole argument for Temporal
- * over a job queue:
+ * Three things it demonstrates, all of which the Temporal UI shows without this
+ * repo writing a line of dashboard:
  *
  *  1. **The timer is durable.** `sleep` below occupies no worker and survives
  *     every restart. Kill the worker while it is sleeping and the run resumes
- *     when a worker comes back, with the remaining time honoured.
- *  2. **A retry does not restart the run.** With `--fail`, the last step fails
- *     twice and is retried twice; the two steps before it do not run again,
- *     because their results are already in the history. A BullMQ job would have
- *     re-run the whole thing, or needed a hand-maintained step cursor to avoid
- *     it.
- *  3. **The failure is legible.** Every attempt, its error and its backoff show
- *     up on the timeline without anything here logging them.
+ *     when one comes back, with the remaining time honoured.
+ *  2. **A retry does not restart the run.** With `{"fail":true}` the last step
+ *     fails twice and is retried twice; the two steps before it do not run
+ *     again, because their results are already in the history.
+ *  3. **The failure is legible.** Every attempt, its error and its backoff are
+ *     on the timeline without anything here logging them.
  */
-const { demoStep } = proxyActivities<typeof activities>({
+const { demoStep } = proxyActivities<DemoActivities>({
   startToCloseTimeout: "1 minute",
   retry: { initialInterval: "1 second", backoffCoefficient: 2, maximumAttempts: 3 },
 });
@@ -36,7 +34,7 @@ export async function demo(input: DemoInput = {}): Promise<DemoResult> {
   const steps = [await demoStep({ name: "warm-up", durationMs: slice })];
   log.info("warmed up, sleeping", { label, slice });
 
-  // Durable: this is a timer held by the Temporal service, not a worker.
+  // Durable: this is a timer held by the Temporal service, not by a worker.
   await sleep(slice);
 
   steps.push(await demoStep({ name: "work", durationMs: slice }));

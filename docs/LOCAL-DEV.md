@@ -80,11 +80,14 @@ pnpm dev atproto-sync                        # from cold: it, the worker, migrat
 
 It does not do the work itself: it starts the `atproto-sync` workflow and waits for the result, and `worker` runs it — which is why the sweep shows up in the UI whether a person or the schedule started it. Each run is one idempotent sweep that ends `Completed`; start it again after every publish to pull the new record into the `recipe` tables.
 
-The process declares no environment of its own. **Which network gets swept is `services/worker/.env`'s call** — the same file the worker reads, so a scheduled sweep, a shell run and this process all do the same thing:
+The process is the Temporal CLI, not a script in this repo — starting a workflow is `temporal workflow execute`, and `--input` is where one run's arguments go:
 
 ```bash
-pnpm --filter=@buttery/worker sync:once [--dry-run]
+temporal workflow execute --namespace buttery --task-queue buttery \
+  --type atprotoSync --workflow-id atproto-sync --input '{"dryRun":true}'
 ```
+
+**Which network gets swept is `services/worker/.env`'s call** — the same file the worker reads, so a scheduled sweep and a hand-started one read the same settings; only the input differs. The fixed `--workflow-id` is the interlock: Temporal will not start a second running execution under an id that already has one.
 
 Its defaults are the real atmosphere (`plc.directory` + the public relay), which is what fills a dev database with real recipes. To sweep the local dev-env instead, set `ATPROTO_PLC_URL=http://localhost:2582` and `SYNC_PDS_URL=http://localhost:2583` in that file. `SYNC_PDS_URL` swaps the relay's `listReposByCollection` for that one PDS's `listRepos`, because dev-env ships no relay and its PDS refuses the former unauthenticated (`AuthMissing`).
 

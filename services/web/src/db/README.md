@@ -42,7 +42,7 @@ household-owned row — users, sessions, atproto OAuth sessions, households,
 boxes, meal plans, grocery lists, import history, and `origin = 'local'`
 recipes — while **keeping** the synced atproto corpus (`atproto_*` tables,
 `origin = 'sync'` recipes and their children) and `recipe_vocab*`. Use it to
-re-run onboarding from zero without paying for another `sync:once` sweep.
+re-run onboarding from zero without paying for another atproto sweep.
 
 - `pnpm db:reset:users -- --dry-run` — run the deletes and roll back, printing
   per-table counts.

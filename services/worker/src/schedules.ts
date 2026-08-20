@@ -1,110 +1,75 @@
-import type { Duration } from "@temporalio/common";
 import type { Client, ScheduleOptions } from "@temporalio/client";
 import { ScheduleOverlapPolicy } from "@temporalio/client";
 import { loadConfig } from "#/config.ts";
 import { log } from "#/log.ts";
-import { WORKFLOWS } from "#/workflows/index.ts";
-import { workflowIdFor } from "#/workflows/id.ts";
+import { atprotoSync } from "#/workflows.ts";
 
 /**
- * Reconciling the repo's schedules onto the cluster.
+ * The schedules this build wants, and the reconcile that makes the cluster match.
  *
- * A Temporal Schedule lives in the cluster and outlives every deployment, which
- * is the same property BullMQ's job schedulers had in Redis and the same trap:
- * a schedule nothing in the repo mentions any more keeps firing forever. So this
- * is a reconcile and not a register — a workflow whose `schedule()` returns
- * undefined has its schedule *deleted*, which is what makes emptying
- * `ATPROTO_SYNC_SCHEDULE` actually turn the sweep off.
+ * A Temporal Schedule lives in the cluster and outlives every deployment, so this
+ * is a reconcile rather than a register: a schedule the repo no longer declares
+ * is *deleted*. That is what makes emptying `ATPROTO_SYNC_SCHEDULE` actually turn
+ * the sweep off instead of orphaning one that keeps firing from a config nothing
+ * mentions any more.
  *
- * Where it runs is the interesting difference from the BullMQ build. There, the
- * reconcile had to happen in a process that (a) was always up and (b) there was
- * exactly one of, because two replicas racing would fight over the scheduler
- * keys — which is part of why that design needed a separate always-on service.
- * Here it is a *deploy step*: Railway's `preDeploy` runs it once per deploy, in
- * the built image, before any new container serves. Nothing has to stay up to
- * own it, and the worker fleet stays a fleet of identical, disposable replicas.
+ * Deleting on that basis is only safe because the namespace is ours — everything
+ * in `buttery` is declared here, so anything else found in it is stale by
+ * definition. That is most of the argument for not sharing `default`.
+ *
+ * Where it runs: Railway's `preDeploy`, once per deploy, in the built image,
+ * before any new container serves. Nothing has to stay up to own it.
  */
 
-/** Only schedules with this prefix are ours to delete. */
-export const SCHEDULE_PREFIX = "buttery-";
+/** Passing the workflow function rather than its name is what type-checks `args`. */
+export function desiredSchedules(taskQueue: string): ScheduleOptions[] {
+  // Cron patterns are UTC unless a timezone is named, and naming one would make
+  // "hourly" mean something different in March and November.
+  const cron = process.env.ATPROTO_SYNC_SCHEDULE;
+  if (!cron) return [];
 
-export function scheduleIdFor(workflowName: string): string {
-  return `${SCHEDULE_PREFIX}${workflowName}`;
-}
-
-/** What the repo says should exist, flattened for comparison. */
-export interface DesiredSchedule {
-  scheduleId: string;
-  workflowName: string;
-  cron: string;
-  input: unknown;
-  workflowId: string;
-  executionTimeout: Duration | undefined;
+  return [
+    {
+      scheduleId: "atproto-sync",
+      spec: { cronExpressions: [cron] },
+      policies: {
+        // A firing that lands while the previous run is still going is dropped,
+        // not queued: the work is already being done, and a sweep that runs long
+        // should cost one skipped hour rather than a pile-up that never drains.
+        overlap: ScheduleOverlapPolicy.SKIP,
+        // If the cluster itself was down across several firings, run one — not
+        // the backlog. Sweeps reconcile; the newest one subsumes the rest.
+        catchupWindow: "1 minute",
+      },
+      action: {
+        type: "startWorkflow",
+        workflowType: atprotoSync,
+        taskQueue,
+        // A scheduled sweep takes the defaults: everything about it is the
+        // deployment's environment.
+        args: [{}],
+        workflowId: "atproto-sync",
+        // A backstop, not a target: a full sweep runs in minutes. What this
+        // catches is a run that has wedged, which would otherwise sit forever.
+        workflowExecutionTimeout: "2 hours",
+      },
+    },
+  ];
 }
 
 export interface SchedulePlan {
-  create: DesiredSchedule[];
-  update: DesiredSchedule[];
+  create: ScheduleOptions[];
+  update: ScheduleOptions[];
   remove: string[];
 }
 
-/** Every workflow that declares a cron pattern right now. */
-export function desiredSchedules(): DesiredSchedule[] {
-  return WORKFLOWS.flatMap((workflow) => {
-    const cron = workflow.schedule?.();
-    if (!cron) return [];
-    return [
-      {
-        scheduleId: scheduleIdFor(workflow.name),
-        workflowName: workflow.name,
-        cron,
-        input: workflow.input({}),
-        workflowId: workflowIdFor(workflow, "scheduled"),
-        executionTimeout: workflow.executionTimeout,
-      },
-    ];
-  });
-}
-
-/**
- * The diff, as a pure function so it can be tested without a cluster. `existing`
- * is every schedule id the cluster reports; ids without our prefix are somebody
- * else's and are left alone.
- */
-export function planSchedules(desired: readonly DesiredSchedule[], existing: readonly string[]): SchedulePlan {
-  const ours = existing.filter((id) => id.startsWith(SCHEDULE_PREFIX));
+/** The diff, pure so it can be tested without a cluster. */
+export function planSchedules(desired: readonly ScheduleOptions[], existing: readonly string[]): SchedulePlan {
   const wanted = new Set(desired.map((schedule) => schedule.scheduleId));
   return {
-    create: desired.filter((schedule) => !ours.includes(schedule.scheduleId)),
-    update: desired.filter((schedule) => ours.includes(schedule.scheduleId)),
-    remove: ours.filter((id) => !wanted.has(id)),
-  };
-}
-
-function optionsFor(schedule: DesiredSchedule, taskQueue: string): ScheduleOptions {
-  return {
-    scheduleId: schedule.scheduleId,
-    // Cron patterns are UTC unless a timezone is named, and naming one here
-    // would make "hourly" mean something different in March and November.
-    spec: { cronExpressions: [schedule.cron] },
-    policies: {
-      // The interlock a queue needs a distributed lock for. SKIP means a firing
-      // that lands while the previous run is still going is dropped, not queued:
-      // the work is already being done, and a sweep that runs long should cost
-      // one skipped hour rather than a pile-up that never drains.
-      overlap: ScheduleOverlapPolicy.SKIP,
-      // If the cluster itself was down over several firings, run one — not the
-      // backlog. Sweeps are reconciliations; the newest one subsumes the rest.
-      catchupWindow: "1 minute",
-    },
-    action: {
-      type: "startWorkflow",
-      workflowType: schedule.workflowName,
-      taskQueue,
-      args: [schedule.input],
-      workflowId: schedule.workflowId,
-      workflowExecutionTimeout: schedule.executionTimeout,
-    },
+    create: desired.filter((schedule) => !existing.includes(schedule.scheduleId)),
+    update: desired.filter((schedule) => existing.includes(schedule.scheduleId)),
+    remove: existing.filter((scheduleId) => !wanted.has(scheduleId)),
   };
 }
 
@@ -114,40 +79,39 @@ export interface ReconcileSummary {
   removed: string[];
 }
 
-/** Apply `planSchedules` against a live cluster. Idempotent; safe to run on every deploy. */
+/** Apply the plan against a live cluster. Idempotent; safe to run on every deploy. */
 export async function reconcileSchedules(client: Client): Promise<ReconcileSummary> {
-  const { temporal } = loadConfig();
+  const { taskQueue } = loadConfig();
 
   const existing: string[] = [];
   for await (const schedule of client.schedule.list()) {
     existing.push(schedule.scheduleId);
   }
 
-  const plan = planSchedules(desiredSchedules(), existing);
+  const plan = planSchedules(desiredSchedules(taskQueue), existing);
 
   for (const schedule of plan.create) {
-    await client.schedule.create(optionsFor(schedule, temporal.taskQueue));
-    log.info("schedule created", { scheduleId: schedule.scheduleId, cron: schedule.cron });
+    await client.schedule.create(schedule);
+    log.info("schedule created", { scheduleId: schedule.scheduleId });
   }
 
   for (const schedule of plan.update) {
     // `update` takes the current description and returns the new one, so the
-    // cluster can reject a write that raced another. Everything this service
-    // owns is overwritten; anything a person paused stays paused, because
-    // `state` is carried through untouched.
-    const options = optionsFor(schedule, temporal.taskQueue);
+    // cluster can reject a write that raced another. Everything declared here is
+    // overwritten; anything a person paused stays paused, because `state` is
+    // carried through untouched.
     await client.schedule.getHandle(schedule.scheduleId).update((previous) => ({
       ...previous,
-      spec: options.spec,
-      policies: { ...previous.policies, ...options.policies },
-      action: options.action,
+      spec: schedule.spec ?? previous.spec,
+      policies: { ...previous.policies, ...schedule.policies },
+      action: schedule.action,
     }));
-    log.info("schedule updated", { scheduleId: schedule.scheduleId, cron: schedule.cron });
+    log.info("schedule updated", { scheduleId: schedule.scheduleId });
   }
 
   for (const scheduleId of plan.remove) {
     await client.schedule.getHandle(scheduleId).delete();
-    log.warn("schedule removed — no workflow in this build declares it", { scheduleId });
+    log.warn("schedule removed — nothing in this build declares it", { scheduleId });
   }
 
   return {

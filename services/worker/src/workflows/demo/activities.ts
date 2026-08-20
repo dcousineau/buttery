@@ -1,4 +1,5 @@
 import { activityInfo, sleep } from "@temporalio/activity";
+import type { DemoStepInput } from "#/workflows/demo/types.ts";
 
 /**
  * One pretend unit of work.
@@ -13,11 +14,16 @@ import { activityInfo, sleep } from "@temporalio/activity";
  * is durable, costs no worker at all, and is what you want for anything longer
  * than seconds.
  */
-export async function demoStep(input: { name: string; durationMs: number; failTimes?: number }): Promise<string> {
-  const { attempt } = activityInfo();
-  if (input.failTimes && attempt <= input.failTimes) {
-    throw new Error(`step "${input.name}" failed on attempt ${attempt} (fail: true)`);
-  }
-  await sleep(input.durationMs);
-  return `${input.name} ok on attempt ${attempt}`;
-}
+export const demoActivities = {
+  async demoStep(input: DemoStepInput): Promise<string> {
+    const { attempt } = activityInfo();
+    if (input.failTimes && attempt <= input.failTimes) {
+      throw new Error(`step "${input.name}" failed on attempt ${attempt} (failTimes: ${input.failTimes})`);
+    }
+    await sleep(input.durationMs);
+    return `${input.name} ok on attempt ${attempt}`;
+  },
+};
+
+/** What `proxyActivities` is parameterised by on the workflow side. */
+export type DemoActivities = typeof demoActivities;

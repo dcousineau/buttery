@@ -12,7 +12,8 @@ import { deleteRenderedForDid, renderRecipe } from "#/workflows/atproto-sync/lib
  * The mechanics of a sweep: what happens to one repo, and the bookkeeping rows
  * that record that a sweep happened. The *order* these run in is `workflow.ts`;
  * which of them an activity calls is `activities.ts`. Nothing in this file knows
- * that Temporal exists.
+ * that Temporal exists, and every function takes the pool it should use rather
+ * than reaching for one.
  */
 
 // --- atproto_repo bookkeeping SQL ---------------------------------------

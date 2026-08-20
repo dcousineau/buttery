@@ -1,11 +1,12 @@
-// Environment parsing for every entrypoint (worker.ts, schedules-sync.ts,
-// run-once.ts). Node runs this `.ts` directly (type-stripping) — keep everything
-// erasable (no enum / namespace / parameter properties).
+// Environment parsing for both entrypoints (worker.ts, schedules-sync.ts). Node
+// runs this `.ts` directly (type-stripping) — keep everything erasable (no enum
+// / namespace / parameter properties).
 //
-// Local dev config comes from this package's `.env` (see `.env.example`), read
-// once by `#/env.ts` — including the variables the workflows themselves consume
-// (DATABASE_URL, RELAY_URL, SYNC_*), which used to live in a `.env` of their own
-// back when the sweep was its own service.
+// Local config comes from this package's `.env` (see `.env.example`), read once
+// by `#/env.ts`. Everything here is *environment*: where the cluster is, how big
+// this process is allowed to get, what a sweep should reach for. What a single
+// run should do is a workflow argument instead — see the input types under
+// `workflows/`.
 import "#/env.ts";
 
 function int(name: string, fallback: number): number {
@@ -20,16 +21,26 @@ function bool(name: string): boolean {
   return process.env[name] === "true";
 }
 
-export interface TemporalConfig {
+export interface Config {
+  /** `production` on Railway; anything else is treated as local dev. */
+  production: boolean;
+
   /** `host:port` of the Temporal frontend's gRPC endpoint. */
   address: string;
+  /**
+   * Namespaces are Temporal's isolation boundary — schedules, task queues,
+   * workflow ids and retention are all scoped to one. Buttery gets its own
+   * rather than sharing `default`, so "every schedule in this namespace" and
+   * "every workflow in this namespace" are statements about *us*. It must exist
+   * before a worker connects: locally `temporal server start-dev --namespace
+   * buttery` creates it, on Railway auto-setup's `DEFAULT_NAMESPACE` does.
+   */
   namespace: string;
   /**
    * The queue workers poll and workflows are started on. One queue for the whole
-   * service: a task queue is a routing key, not a unit of isolation, and every
-   * workflow here wants the same fleet. Splitting it is how you give one workflow
-   * dedicated capacity (or a machine with different hardware), which nothing here
-   * needs yet.
+   * service: a task queue is a routing key, not a unit of isolation. Splitting it
+   * is how you give one workflow dedicated capacity (or different hardware),
+   * which nothing here needs yet.
    */
   taskQueue: string;
   /**
@@ -39,54 +50,51 @@ export interface TemporalConfig {
    */
   tls: boolean;
   apiKey: string | undefined;
-}
 
-export interface WorkerTuning {
   /**
-   * Activity executions this process runs at once. This is the knob that made
-   * the BullMQ build's autoscaler mostly unnecessary: a worker pulls work when it
-   * has capacity rather than being handed jobs, so a backlog waits in Temporal
-   * instead of piling into a process that cannot keep up.
+   * Activity executions this process runs at once. Workers pull work when they
+   * have capacity, so this — not a replica count — is the first knob for
+   * throughput; a backlog waits in Temporal rather than piling into the process.
    */
   maxConcurrentActivityTaskExecutions: number;
   /**
-   * Workflow tasks at once. Workflow tasks are short and CPU-bound (they replay
-   * history and decide the next command), so this stays well below the activity
-   * number.
+   * Workflow tasks at once. These are short and CPU-bound (they replay history
+   * and decide the next command), so this stays well below the activity number.
    */
   maxConcurrentWorkflowTaskExecutions: number;
   /**
    * How long `worker.run()` waits for in-flight activities after a SIGTERM
    * before cancelling them. Railway's drain window is 30s by default, so this
    * sits inside it — an activity that has not finished by then is retried on
-   * another replica, which is the whole point of activities being retryable.
+   * another worker, which is what activities are for.
    */
   shutdownGraceTimeMs: number;
-}
 
-export interface Config {
-  /** `production` on Railway; anything else is treated as local dev. */
-  production: boolean;
-  temporal: TemporalConfig;
-  worker: WorkerTuning;
+  /** The app's database. Opened by `worker.ts` and handed to the activities. */
+  databaseUrl: string;
 }
 
 export function loadConfig(): Config {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is not set");
+  }
+
   return {
     production: process.env.NODE_ENV === "production",
-    temporal: {
-      // Defaults to the `temporal server start-dev` address, so a fresh clone
-      // with the local stack up needs no configuration at all.
-      address: process.env.TEMPORAL_ADDRESS ?? "127.0.0.1:7233",
-      namespace: process.env.TEMPORAL_NAMESPACE ?? "default",
-      taskQueue: process.env.TEMPORAL_TASK_QUEUE ?? "buttery",
-      tls: bool("TEMPORAL_TLS"),
-      apiKey: process.env.TEMPORAL_API_KEY || undefined,
-    },
-    worker: {
-      maxConcurrentActivityTaskExecutions: int("WORKER_MAX_CONCURRENT_ACTIVITIES", 8),
-      maxConcurrentWorkflowTaskExecutions: int("WORKER_MAX_CONCURRENT_WORKFLOW_TASKS", 4),
-      shutdownGraceTimeMs: int("WORKER_SHUTDOWN_GRACE_SECONDS", 20) * 1000,
-    },
+
+    // Defaults to the `temporal server start-dev` address, so a fresh clone with
+    // the local stack up needs no configuration at all.
+    address: process.env.TEMPORAL_ADDRESS ?? "127.0.0.1:7233",
+    namespace: process.env.TEMPORAL_NAMESPACE ?? "buttery",
+    taskQueue: process.env.TEMPORAL_TASK_QUEUE ?? "buttery",
+    tls: bool("TEMPORAL_TLS"),
+    apiKey: process.env.TEMPORAL_API_KEY || undefined,
+
+    maxConcurrentActivityTaskExecutions: int("WORKER_MAX_CONCURRENT_ACTIVITIES", 8),
+    maxConcurrentWorkflowTaskExecutions: int("WORKER_MAX_CONCURRENT_WORKFLOW_TASKS", 4),
+    shutdownGraceTimeMs: int("WORKER_SHUTDOWN_GRACE_SECONDS", 20) * 1000,
+
+    databaseUrl,
   };
 }

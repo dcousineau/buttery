@@ -84,5 +84,5 @@ pnpm --filter @buttery/atproto-dev-env records        # confirm the record is pr
 DID=$(pnpm -s --filter @buttery/atproto-dev-env records | sed -n 's/^DID //p')
 railway run --service buttery -- env \
   ATPROTO_PLC_URL=http://localhost:2582 SYNC_ONLY_DID="$DID" \
-  pnpm --filter @buttery/worker sync:once
+  process-compose process start atproto-sync
 ```
