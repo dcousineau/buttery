@@ -34,6 +34,17 @@ import {
   toggleHouseholdRecipeFavorite as toggleHouseholdRecipeFavoriteFn,
   upsertHouseholdRecipeNote as upsertHouseholdRecipeNoteFn,
 } from "#/server/household-recipes";
+import type { AddRecipesToCollectionResult } from "#/server/collections";
+import {
+  addRecipesToCollection as addRecipesToCollectionFn,
+  createCollection as createCollectionFn,
+  deleteCollection as deleteCollectionFn,
+  listCollections as listCollectionsFn,
+  removeRecipeFromCollection as removeRecipeFromCollectionFn,
+  reorderCollectionRecipes as reorderCollectionRecipesFn,
+  reorderCollections as reorderCollectionsFn,
+  updateCollection as updateCollectionFn,
+} from "#/server/collections";
 import {
   addMealPlanNote as addMealPlanNoteFn,
   addMealPlanRecipes as addMealPlanRecipesFn,
@@ -105,6 +116,7 @@ import {
 } from "#/server/recipe-import";
 
 import type {
+  CollectionSummary,
   CopiedWeek,
   CreatedPlanEntry,
   GlobalRecipeResult,
@@ -177,6 +189,51 @@ export function upsertHouseholdRecipeNote(input: { recipeId: string; body: strin
 
 export function searchGlobalRecipes(input: { q?: string; limit?: number; cursor?: string | null }): Promise<{ results: GlobalRecipeResult[]; nextCursor: string | null }> {
   return searchGlobalRecipesFn({ data: input });
+}
+
+// --- collections --------------------------------------------------------
+//
+// The publish/unpublish pair is deliberately absent: it lands with the atproto
+// write layer in milestone 5, not before.
+
+/**
+ * Filing's result union lives beside the server fn that returns it (the way
+ * `SaveRecipeResult` does), and is re-exported here so a picker has one address
+ * to import from — `recipes_unpublished` is a decision the UI has to render, not
+ * an error it can throw away.
+ */
+export type { AddRecipesToCollectionResult };
+
+export function listCollections(): Promise<CollectionSummary[]> {
+  return listCollectionsFn();
+}
+
+export function createCollection(input: { name: string; description?: string }): Promise<CollectionSummary> {
+  return createCollectionFn({ data: input });
+}
+
+export function updateCollection(input: { collectionId: string; name?: string; description?: string | null }): Promise<{ updated: boolean }> {
+  return updateCollectionFn({ data: input });
+}
+
+export function reorderCollections(orderedIds: string[]): Promise<{ reordered: boolean }> {
+  return reorderCollectionsFn({ data: { orderedIds } });
+}
+
+export function reorderCollectionRecipes(input: { collectionId: string; orderedRecipeIds: string[] }): Promise<{ reordered: boolean }> {
+  return reorderCollectionRecipesFn({ data: input });
+}
+
+export function addRecipesToCollection(input: { collectionId: string; recipeIds: string[] }): Promise<AddRecipesToCollectionResult> {
+  return addRecipesToCollectionFn({ data: input });
+}
+
+export function removeRecipeFromCollection(input: { collectionId: string; recipeId: string }): Promise<{ removed: boolean }> {
+  return removeRecipeFromCollectionFn({ data: input });
+}
+
+export function deleteCollection(collectionId: string): Promise<{ deleted: boolean }> {
+  return deleteCollectionFn({ data: { collectionId } });
 }
 
 // --- the meal plan ------------------------------------------------------

@@ -34,7 +34,7 @@ function asScopeError(err: unknown): AtprotoScopeError | null {
 }
 
 /** Run a PDS write, converting an under-scoped 403 into `AtprotoScopeError`. */
-async function withScopeCheck<T>(fn: () => Promise<T>): Promise<T> {
+export async function withScopeCheck<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {

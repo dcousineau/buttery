@@ -89,8 +89,13 @@ async function activeContext(): Promise<{ did: string; householdId: string }> {
  * map lets them overwrite the sign-in ones. `user` is the base arm because its
  * `did` is nullable and `atproto_repo`'s is not, and a union arm must be
  * assignable to the base.
+ *
+ * Exported because it is the household's one DID → "@handle" batch: the
+ * collections read (`server/collections.ts`) resolves a published collection's
+ * publisher through this exact lookup, and a second copy of the precedence rule
+ * above would be a second thing to keep in step.
  */
-async function resolveAdderHandles(db: Kysely<DB>, dids: string[]): Promise<Map<string, string>> {
+export async function resolveAdderHandles(db: Kysely<DB>, dids: string[]): Promise<Map<string, string>> {
   const byDid = new Map<string, string>();
   if (dids.length === 0) return byDid;
 
@@ -363,12 +368,19 @@ export const addRecipeToHousehold = createServerFn({ method: "POST" })
 // --- §6.4 removeRecipeFromHousehold -------------------------------------
 
 /**
- * Remove a recipe from the box (cascades its shared note). Idempotent.
+ * Remove a recipe from the box (cascades its shared note, and — collections plan
+ * §2.11 — unfiles it from every collection in the household). Idempotent.
  *
  * Never blocked by the meal plan (D8/§7.2): `meal_plan_entry.recipe_id` is FK'd
  * to `recipe`, not to `household_recipe`, so unlinking the box row cannot hit
  * that `ON DELETE RESTRICT` — the plan entry keeps rendering, now with
  * `inBox: false`. The warning is a UI courtesy (`DetailPane`), not a gate.
+ *
+ * The collection unfiling is the composite FK's doing (`recipe_collection_entry
+ * (household_id, recipe_id)` → `household_recipe` ON DELETE CASCADE), not this
+ * function's — but a cascade leaves holes in `position`, and the entry order IS
+ * the published array order. So the whole thing runs in ONE transaction: collect
+ * the affected collections, delete the box row, renumber each of them densely.
  */
 export const removeRecipeFromHousehold = createServerFn({ method: "POST" })
   .validator((data: { recipeId: string }) => ({ recipeId: validateRecipeId(data?.recipeId) }))
@@ -378,9 +390,31 @@ export const removeRecipeFromHousehold = createServerFn({ method: "POST" })
     const { did, householdId } = await activeContext();
     await assertMember(did, householdId);
 
-    await getDb().deleteFrom("household_recipe").where("household_id", "=", householdId).where("recipe_id", "=", data.recipeId).execute();
+    await unboxRecipe(getDb(), householdId, data.recipeId);
     return { ok: true };
   });
+
+/**
+ * The body of `removeRecipeFromHousehold`, callable by an already-authorized
+ * server-side caller. Returns the collections the recipe was unfiled from, in
+ * sorted (lock) order — the list milestone 5 re-puts once this has committed.
+ */
+export async function unboxRecipe(db: Kysely<DB>, householdId: string, recipeId: string): Promise<{ unfiledFrom: string[] }> {
+  const { collectionsHoldingRecipe, renumberAfterUnfile } = await import("./collections");
+
+  const unfiledFrom = await db.transaction().execute(async (trx) => {
+    // Read (and therefore lock the read set of) the affected collections BEFORE
+    // the delete, because the cascade is about to take those rows away.
+    const affected = await collectionsHoldingRecipe(trx, householdId, recipeId);
+    await trx.deleteFrom("household_recipe").where("household_id", "=", householdId).where("recipe_id", "=", recipeId).execute();
+    await renumberAfterUnfile(trx, affected);
+    return affected;
+  });
+
+  // TODO(m5): reputOrMarkStale each PUBLISHED collection in `unfiledFrom` — the
+  // record's `recipes` array just lost a ref (§2.11, §5).
+  return { unfiledFrom };
+}
 
 // --- §6.5 toggleHouseholdRecipeFavorite ---------------------------------
 

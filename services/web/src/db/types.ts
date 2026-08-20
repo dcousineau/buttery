@@ -259,6 +259,34 @@ export interface RecipeAttribution {
   url: string | null;
 }
 
+export interface RecipeCollection {
+  cid: string | null;
+  created_at: Generated<Timestamp>;
+  created_by_did: string;
+  description: string | null;
+  household_id: string;
+  id: string;
+  name: string;
+  position: number;
+  published_at: Timestamp | null;
+  published_by_did: string | null;
+  record_created_at: Timestamp | null;
+  record_stale: Generated<boolean>;
+  rev: string | null;
+  rkey: string | null;
+  updated_at: Generated<Timestamp>;
+  uri: string | null;
+}
+
+export interface RecipeCollectionEntry {
+  added_at: Generated<Timestamp>;
+  added_by_did: string;
+  collection_id: string;
+  household_id: string;
+  position: number;
+  recipe_id: string;
+}
+
 export interface RecipeFetchCache {
   body: string;
   byte_size: number | null;
@@ -425,6 +453,8 @@ export interface DB {
   meal_plan_entry: MealPlanEntry;
   recipe: Recipe;
   recipe_attribution: RecipeAttribution;
+  recipe_collection: RecipeCollection;
+  recipe_collection_entry: RecipeCollectionEntry;
   recipe_fetch_cache: RecipeFetchCache;
   recipe_image: RecipeImage;
   recipe_import_attempt: RecipeImportAttempt;

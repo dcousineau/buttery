@@ -121,6 +121,51 @@ export interface GlobalRecipeResult {
   handle: string | null;
 }
 
+// --- collections --------------------------------------------------------
+
+/**
+ * One collection, with its ordered membership inline (collections plan §5).
+ *
+ * `listCollections` is the **single** collections read: the chips on a recipe,
+ * the counts beside each row, the picker's checkbox state and the scoped ledger
+ * all derive from this array joined client-side against the already-cached
+ * `householdRecipesQuery`. Membership therefore travels as bare `recipeIds`
+ * rather than as embedded rows — the rows are already in the cache, and
+ * duplicating them here would give one recipe two cache entries that could
+ * disagree about its title.
+ *
+ * `recipeIds` is in `recipe_collection_entry.position` order, which is also the
+ * order the published record's `recipes` array carries (§2.10). `position` is
+ * the collection's own place in the household-wide list, and is local-only —
+ * it is never published.
+ *
+ * The publish fields are all-or-none, mirroring the DB's shape CHECK: either
+ * every one of them is set or every one is null. `publishedByHandle` is
+ * resolved server-side (`resolveAdderHandles`) so the UI can say "Published by
+ * @sam" without a second lookup, and can still be null for a DID nothing in
+ * this instance has ever seen.
+ */
+export interface CollectionSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  /** Place in the household-wide list, dense `0..n-1`. Local-only, never published. */
+  position: number;
+  /** Member recipe ids, in entry-position order — the published array order. */
+  recipeIds: string[];
+  createdByDid: string;
+  /** DID whose PDS holds the record and whose session every re-put goes through. */
+  publishedByDid: string | null;
+  /** "@handle" for `publishedByDid`, already prefixed; null when unresolvable. */
+  publishedByHandle: string | null;
+  /** ISO timestamp of the FIRST publish; a re-put never bumps it. */
+  publishedAt: string | null;
+  /** A re-put failed and the published copy is behind. Annotates; never blocks. */
+  recordStale: boolean;
+  /** at:// uri of the published record, or null while unpublished. */
+  uri: string | null;
+}
+
 // --- the meal plan ------------------------------------------------------
 
 export interface PlanRecipeEntry {

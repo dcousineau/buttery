@@ -48,6 +48,24 @@ export function householdRecipeQuery(householdId: string, recipeId: string) {
 }
 
 /**
+ * Every collection in the household, each with its ordered membership
+ * (collections plan §6).
+ *
+ * Its presence in this file is the point: collections are offline-readable, and
+ * that is intended. The recipes ledger is already cached beside it, and the two
+ * together are everything the scoped views, the chips and the counts need — a
+ * household can browse "Weeknights" on a phone with no signal. Writes stay
+ * online-only (`OFFLINE_WRITE_HINT`), the same rule every other M1 write
+ * follows.
+ */
+export function householdCollectionsQuery(householdId: string) {
+  return queryOptions({
+    queryKey: keys.household.collections(householdId),
+    queryFn: () => api.listCollections(),
+  });
+}
+
+/**
  * A plan week. `week` is `undefined` for "whatever the server calls this week",
  * which is a distinct cache entry from any dated one — the server resolves it
  * against the household's timezone and week-start day, so the client cannot

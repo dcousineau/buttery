@@ -33,7 +33,8 @@ const REDIRECT_URI = `${APP_URL}/api/auth/atproto/callback`;
  *
  * - `atproto`               — base identity scope; required, grants no writes.
  * - `repo:exchange.recipe.recipe` — create/update/delete recipe records only.
- *   No other collection in the user's repo is reachable with this grant.
+ * - `repo:exchange.recipe.collection` — create/update/delete collection records
+ *   only. No other collection in the user's repo is reachable with this grant.
  * - `blob:image/*`          — upload image blobs (recipe hero photos). Wildcard
  *   because an imported hero can be jpeg/png/webp/avif and we don't know which
  *   until we fetch it.
@@ -44,7 +45,7 @@ const REDIRECT_URI = `${APP_URL}/api/auth/atproto/callback`;
  * re-authorize. The publish path detects that 403 and prompts for it; see
  * `AtprotoScopeError` in recipe-writes.ts.
  */
-export const ATPROTO_SCOPE = "atproto repo:exchange.recipe.recipe blob:image/*";
+export const ATPROTO_SCOPE = "atproto repo:exchange.recipe.recipe repo:exchange.recipe.collection blob:image/*";
 
 /**
  * In dev the atproto loopback client is used (`http://localhost` client_id
