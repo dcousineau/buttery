@@ -37,7 +37,7 @@ supporting service with no UI:
 | --- | --- | --- |
 | Public web (`buttery.recipes`) | Marketing landing, sign-in, public recipe pages, legal pages, `COMING_SOON` holding page | `ui_kits/marketing/` |
 | Signed-in app | Nav-rail shell, pantry home, household management, onboarding, invites | `ui_kits/app/` |
-| `atproto-cron-sync` | Headless worker that pulls recipe records from the atmosphere into Postgres | no UI |
+| `pipeline` | BullMQ workflows (incl. the atproto sweep) + the Bull Board UI | Bull Board's own UI, not Buttery-branded |
 
 **Shipped today:** landing, login/OAuth via atproto, public recipe detail,
 household create/rename/delete, members and roles, bound + shareable invites,
@@ -57,7 +57,7 @@ inside those files, and app code composes primitives rather than restyling them.
   - `services/web/` — the app. `src/styles.css` is the token source of truth;
     `src/components/ui/*.tsx` is the component inventory; `src/routes/*.tsx` are
     the screens.
-  - `services/atproto-cron-sync/` — sync worker.
+  - `services/pipeline/` — background workflows.
   - `packages/lexicons/` — atproto lexicon definitions.
   - `docs/BRAND.md` — the brand guide, copied verbatim to
     `guidelines/BRAND-source.md`.

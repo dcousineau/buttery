@@ -1,6 +1,6 @@
 // Small display formatters shared across routes. Client-safe.
 //
-// dayjs powers both formatters (matches the atproto-cron-sync service, which
+// dayjs powers both formatters (matches the atproto-sync workflow, which
 // already uses dayjs + the duration plugin). Plugins are imported from their
 // `.js` subpaths so the same import works under Node's native ESM too.
 import dayjs from "dayjs";
