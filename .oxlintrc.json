@@ -52,14 +52,51 @@
 
     // ── React ────────────────────────────────────────────────────────────────
     // Neither hooks rule is in a category: `rules-of-hooks` sits in the
-    // `react-hooks` namespace outside them, and `react-compiler` is `nursery`.
+    // `react-hooks` namespace outside them, and the React Compiler checks below
+    // are `nursery`.
     "react/rules-of-hooks": "error",
     "react/exhaustive-deps": "warn",
-    // oxlint ships the react-hooks React Compiler checks (set-state-in-effect,
-    // purity, immutability, …) as one experimental rule instead of the sixteen
-    // `react-hooks/*` rules the ESLint plugin's recommended config enabled, so this
-    // single line is what carries that coverage.
-    "react/react-compiler": "error",
+    // The React Compiler checks. oxlint 1.78 shipped these as ONE experimental
+    // `react/react-compiler` rule; 1.79 split that rule into the individual
+    // diagnostics listed here and removed the aggregate, so a config still naming
+    // it fails to parse outright ("Rule 'react-compiler' not found in plugin
+    // 'react'") and takes `pnpm lint` — and the boundary test that reads oxlint's
+    // JSON — down with it. Enumerated rather than pulled in by category so the set
+    // stays the deliberate one, and so a future addition is a visible diff instead
+    // of a silent new failure.
+    //
+    // Three levels, because the split is not a like-for-like swap — 1.79's
+    // individual rules fire on code 1.78's aggregate passed:
+    //   * `todo` is OFF. It does not report a defect; it reports React Compiler
+    //     failing to lower our syntax ("Handle TryStatement with a finalizer"),
+    //     which is a statement about the compiler, not about the code. 17 hits,
+    //     almost all of them ordinary `try`/`finally`. Nothing to fix.
+    //   * the three `warn`s are a real backlog (2 extra effect deps, 1 setState in
+    //     an effect, 1 stale suppression) in files unrelated to whatever change
+    //     first hit this. Visible on every run, not blocking, not silently dropped.
+    //   * everything else is `error` and clean today.
+    "react/capitalized-calls": "error",
+    "react/error-boundaries": "error",
+    "react/exhaustive-effect-dependencies": "warn",
+    "react/globals": "error",
+    "react/hooks": "error",
+    "react/immutability": "error",
+    "react/incompatible-library": "error",
+    "react/invariant": "error",
+    "react/memo-dependencies": "error",
+    "react/no-deriving-state-in-effects": "error",
+    "react/preserve-manual-memoization": "error",
+    "react/purity": "error",
+    "react/refs": "error",
+    "react/rule-suppression": "warn",
+    "react/set-state-in-effect": "warn",
+    "react/set-state-in-render": "error",
+    "react/static-components": "error",
+    "react/syntax": "error",
+    "react/todo": "off",
+    "react/unsupported-syntax": "error",
+    "react/use-memo": "error",
+    "react/void-use-memo": "error",
 
     // ── TypeScript rules outside `correctness` ───────────────────────────────
     // Mostly `restriction`: bans on escape hatches we have decided not to take.
