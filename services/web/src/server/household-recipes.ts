@@ -396,11 +396,14 @@ export const removeRecipeFromHousehold = createServerFn({ method: "POST" })
 
 /**
  * The body of `removeRecipeFromHousehold`, callable by an already-authorized
- * server-side caller. Returns the collections the recipe was unfiled from, in
- * sorted (lock) order — the list milestone 5 re-puts once this has committed.
+ * server-side caller.
+ *
+ * Returns the collections the recipe was unfiled from, in sorted (lock) order,
+ * and which of those could not be re-put — `staleCollectionIds` is a subset of
+ * `unfiledFrom`, and every id in it now carries `record_stale`.
  */
-export async function unboxRecipe(db: Kysely<DB>, householdId: string, recipeId: string): Promise<{ unfiledFrom: string[] }> {
-  const { collectionsHoldingRecipe, renumberAfterUnfile } = await import("./collections");
+export async function unboxRecipe(db: Kysely<DB>, householdId: string, recipeId: string): Promise<{ unfiledFrom: string[]; staleCollectionIds: string[] }> {
+  const { collectionsHoldingRecipe, renumberAfterUnfile, reputEach } = await import("./collections");
 
   const unfiledFrom = await db.transaction().execute(async (trx) => {
     // Read (and therefore lock the read set of) the affected collections BEFORE
@@ -411,9 +414,11 @@ export async function unboxRecipe(db: Kysely<DB>, householdId: string, recipeId:
     return affected;
   });
 
-  // TODO(m5): reputOrMarkStale each PUBLISHED collection in `unfiledFrom` — the
-  // record's `recipes` array just lost a ref (§2.11, §5).
-  return { unfiledFrom };
+  // AFTER COMMIT (§2.11, §5): every published collection that just lost a ref
+  // gets its record rebuilt. `reputEach` never throws — leaving the box must not
+  // fail because someone's PDS is unreachable — so a failure only annotates.
+  const staleCollectionIds = await reputEach(db, unfiledFrom);
+  return { unfiledFrom, staleCollectionIds };
 }
 
 // --- §6.5 toggleHouseholdRecipeFavorite ---------------------------------

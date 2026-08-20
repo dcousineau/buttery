@@ -3,6 +3,7 @@ import type { Kysely } from "kysely";
 import * as z from "zod";
 import type { DB } from "#/db/types";
 import type { CollectionSummary } from "#/lib/api/types";
+import type { SaveRecipeResult } from "./recipes-write";
 
 /**
  * Collections server functions (collections plan §5).
@@ -15,10 +16,11 @@ import type { CollectionSummary } from "#/lib/api/types";
  * `household_id` in its `WHERE`, so a leaked or guessed `collectionId` from
  * another household is inert.
  *
- * Role is consulted in exactly one place (§2.8): `deleteCollection` is
- * owner-only, because it destroys shared state and — once §5's publish path
- * lands — a record on someone's PDS. Creating, editing, reordering, filing and
- * unfiling are open to every live member. A household organizes together.
+ * Role is consulted in exactly three places (§2.8): `publishCollection`,
+ * `unpublishCollection` and `deleteCollection` are owner-only, because each one
+ * creates or destroys a record on someone's PDS. Creating, editing, reordering,
+ * filing, unfiling and retrying a failed sync are open to every live member. A
+ * household organizes together.
  *
  * Server-only imports (`getDb`, kysely `sql`, authz/session) are pulled in with
  * dynamic `import()` inside each handler so this module stays safe to reference
@@ -30,11 +32,15 @@ import type { CollectionSummary } from "#/lib/api/types";
  * without faking a session, and the wrappers stay the only place
  * `active_household_id` is read.
  *
- * **Milestone 1 scope (§10.1).** Everything here is local. `publishCollection`,
- * `unpublishCollection`, the PDS half of `deleteCollection` and the
- * `reputOrMarkStale` re-put plumbing arrive in milestone 5; the exact call
- * sites they attach to are marked `TODO(m5)` below rather than sketched, so the
- * milestone that implements them does not have to go looking.
+ * **Milestone 5 (§10.5)** added the PDS half: `publishCollection`,
+ * `unpublishCollection`, the PDS-first ordering inside `deleteCollection`, the
+ * `reputOrMarkStale` re-put plumbing every membership/name/order write now ends
+ * with, and `retryCollectionSync`. The rule that shapes all of it: **the local
+ * database is the source of truth and the record is a projection of it**, so a
+ * PDS failure after a local write is an annotation (`record_stale`), never a
+ * rollback and never an exception — while a PDS failure *before* a destructive
+ * local write (unpublish, delete) aborts, so a live record can never be
+ * orphaned by rows that no longer exist to point at it.
  */
 
 // --- shared shapes -------------------------------------------------------
@@ -56,10 +62,79 @@ export type { CollectionSummary };
  * add" against exactly those rows (§5, §7).
  */
 export type AddRecipesToCollectionResult =
-  | { ok: true; added: string[] }
+  // `stale` is the re-put's verdict, not the filing's: the entries ARE saved.
+  // True means the published copy on the publisher's PDS is behind, which the
+  // caller shows as "Saved — couldn't update @handle's published copy yet".
+  | { ok: true; added: string[]; stale: boolean }
   // The collection is published and at least one of these recipes is not. A
-  // published collection may not reference a private recipe (§2.4).
-  | { ok: false; reason: "recipes_unpublished"; recipeIds: string[] };
+  // published collection may not reference a private recipe (§2.4). The ids are
+  // the ones still blocking — anything the caller listed in `publishRecipeIds`
+  // has already been published and is absent from here.
+  | { ok: false; reason: "recipes_unpublished"; recipeIds: string[] }
+  // Only reachable through the "Publish recipe & add" combo: publishing the
+  // recipe hit the kill switch, or an under-scoped grant. Nothing was filed.
+  | { ok: false; reason: "flag_disabled" }
+  | { ok: false; reason: "scope_error"; missingScope: string | null };
+
+/**
+ * The two ways a PDS write can refuse that the UI has to tell apart, shared by
+ * every owner write below.
+ *
+ * `scope_error` is recoverable by the acting user: their atproto grant predates
+ * `repo:exchange.recipe.collection`, and re-authorizing fixes it. That is the
+ * same `AtprotoScopeError` → `reauth_required` translation the recipe publish
+ * path makes (`server/recipes-write.ts`).
+ *
+ * `publisher_unavailable` is everything else: the publisher's stored OAuth
+ * session would not restore, their PDS is down, the network is gone. It carries
+ * the publisher's `@handle` because the message a member needs names a *person*
+ * — "we couldn't reach @sam's PDS" — and the acting member may not be the
+ * publisher at all (§2.5). It is deliberately not split further: from a
+ * caller's seat every one of those failures has the same shape (nothing
+ * changed, try again later), and inventing finer reasons would invent UI
+ * copy that cannot be acted on differently.
+ */
+export type CollectionPdsFailure = { ok: false; reason: "scope_error"; missingScope: string | null } | { ok: false; reason: "publisher_unavailable"; handle: string | null };
+
+/**
+ * What publishing a collection can answer (§5), modelled on `SaveRecipeResult`.
+ * Publishing an already-published collection is a successful no-op rather than
+ * an error — the same idempotence `runPublishExisting` gives a recipe.
+ */
+export type PublishCollectionResult =
+  | { ok: true; uri: string; publishedByDid: string; publishedByHandle: string | null }
+  // The atproto-publishing kill switch is off for this DID (fail-closed §2.3).
+  | { ok: false; reason: "flag_disabled" }
+  // Every member recipe must be published first (§2.4).
+  | { ok: false; reason: "recipes_unpublished"; recipeIds: string[] }
+  | CollectionPdsFailure;
+
+/**
+ * What unpublishing can answer. `unpublished: false` means there was nothing
+ * published to remove — idempotent, not an error. A PDS failure leaves the local
+ * publish columns exactly as they were: the record may still be live, and
+ * forgetting the rkey would strand it forever.
+ */
+export type UnpublishCollectionResult = { ok: true; unpublished: boolean } | CollectionPdsFailure;
+
+/**
+ * What deleting can answer. On a published collection the PDS delete runs FIRST
+ * and the local rows go only if it succeeded (§5) — so a failure here means
+ * nothing was deleted at all, anywhere.
+ */
+export type DeleteCollectionResult = { ok: true; deleted: boolean } | CollectionPdsFailure;
+
+/**
+ * Publish one already-saved recipe, as `addRecipesToCollection`'s "Publish
+ * recipe & add" combo (§5) does it.
+ *
+ * A seam, not an abstraction: the default is the real `publishRecipe` server fn
+ * and every caller in the app uses it. It exists as a parameter because the db
+ * suite drives the exported bodies with no session, and the recipe publish path
+ * resolves its own session — so a test that wants to exercise the combo has to
+ * be able to stand in for it.
+ */
+export type RecipePublisher = (recipeId: string) => Promise<SaveRecipeResult>;
 
 // --- validators ----------------------------------------------------------
 
@@ -176,6 +251,94 @@ async function readCollectionRow(db: Kysely<DB>, householdId: string, id: string
   return db.selectFrom("recipe_collection").select(COLLECTION_COLUMNS).where("id", "=", id).where("household_id", "=", householdId).executeTakeFirst();
 }
 
+/** Everything a record build or a PDS write needs about one collection. */
+interface PublishRow {
+  id: string;
+  name: string;
+  description: string | null;
+  updated_at: Date | string;
+  published_by_did: string | null;
+  rkey: string | null;
+  uri: string | null;
+  cid: string | null;
+  record_created_at: Date | string | null;
+}
+
+const PUBLISH_COLUMNS = ["id", "name", "description", "updated_at", "published_by_did", "rkey", "uri", "cid", "record_created_at"] as const;
+
+/** {@link readCollectionRow}, with the publish state a PDS write needs. */
+async function readPublishRow(db: Kysely<DB>, householdId: string, id: string): Promise<PublishRow | undefined> {
+  return db.selectFrom("recipe_collection").select(PUBLISH_COLUMNS).where("id", "=", id).where("household_id", "=", householdId).executeTakeFirst();
+}
+
+/**
+ * One collection's membership in published-array order, each entry carrying the
+ * strongRef fields of its recipe.
+ *
+ * `uri`/`cid` are null for a recipe that is not published — which is what makes
+ * this one query answer both questions the publish path asks: "may this
+ * collection be published at all?" (any null ⇒ no, §2.4) and "what refs go in
+ * the record?".
+ */
+async function entryRefs(db: Kysely<DB>, collectionId: string): Promise<Array<{ recipeId: string; uri: string | null; cid: string | null }>> {
+  const rows = await db
+    .selectFrom("recipe_collection_entry as e")
+    .innerJoin("recipe as r", "r.id", "e.recipe_id")
+    .select(["e.recipe_id as recipe_id", "r.uri as uri", "r.cid as cid", "r.visibility as visibility"])
+    .where("e.collection_id", "=", collectionId)
+    .orderBy("e.position")
+    .orderBy("e.added_at")
+    .execute();
+  // A public recipe with no cid cannot be a strongRef, so it counts as
+  // unpublished here even though the ledger would call it published: the
+  // lexicon requires BOTH halves of the ref, and half a ref is not a record.
+  return rows.map((row) => ({
+    recipeId: row.recipe_id,
+    uri: row.visibility === "public" ? row.uri : null,
+    cid: row.visibility === "public" ? row.cid : null,
+  }));
+}
+
+/** The ids among `refs` that cannot be published — see {@link entryRefs}. */
+function unpublishedAmong(refs: Array<{ recipeId: string; uri: string | null; cid: string | null }>): string[] {
+  return refs.filter((ref) => !ref.uri || !ref.cid).map((ref) => ref.recipeId);
+}
+
+/**
+ * Which of `recipeIds` are not publishable as a strongRef, in the caller's
+ * order. The filing preflight's half of {@link entryRefs}: same definition of
+ * "published" (public, with both halves of the ref), asked of recipes that are
+ * not entries yet.
+ */
+async function unpublishedRecipeIds(db: Kysely<DB>, recipeIds: string[]): Promise<string[]> {
+  if (recipeIds.length === 0) return [];
+  const rows = await db
+    .selectFrom("recipe")
+    .select("id")
+    .where("id", "in", recipeIds)
+    .where((eb) => eb.or([eb("visibility", "!=", "public"), eb("uri", "is", null), eb("cid", "is", null)]))
+    .execute();
+  const blocked = new Set(rows.map((row) => row.id));
+  return recipeIds.filter((id) => blocked.has(id));
+}
+
+/** "@handle" for one DID, or null. The same batched lookup the read uses. */
+async function handleFor(db: Kysely<DB>, did: string): Promise<string | null> {
+  const { resolveAdderHandles } = await import("./household-recipes");
+  return (await resolveAdderHandles(db, [did])).get(did) ?? null;
+}
+
+/**
+ * Classify a failed PDS write for a caller. See {@link CollectionPdsFailure}
+ * for why there are exactly two answers.
+ */
+async function pdsFailure(db: Kysely<DB>, err: unknown, publisherDid: string): Promise<CollectionPdsFailure> {
+  const { AtprotoScopeError } = await import("#/lib/atproto/recipe-writes");
+  if (err instanceof AtprotoScopeError) return { ok: false, reason: "scope_error", missingScope: err.missingScope };
+  console.warn(`[collections] PDS write as ${publisherDid} failed`, err);
+  return { ok: false, reason: "publisher_unavailable", handle: await handleFor(db, publisherDid) };
+}
+
 // --- §3 ordering: lock the parent scope, rewrite `position` densely -------
 //
 // Both orderings follow the planner's §3.6 pattern verbatim (`meal-plan.ts`):
@@ -242,6 +405,98 @@ function reconcileOrder(present: string[], requested: string[]): string[] {
   }
   for (const id of present) if (!seen.has(id)) ordered.push(id);
   return ordered;
+}
+
+// --- §5 the re-put plumbing ----------------------------------------------
+
+/**
+ * Rebuild a published collection's record from the database and put it back on
+ * the publisher's PDS. **Called AFTER COMMIT** by every write that changes a
+ * published field — name, description, membership, within-collection order.
+ *
+ * Three properties this function must have, all of them load-bearing:
+ *
+ * 1. **It never throws.** The local write already committed and is the truth;
+ *    failing the caller's mutation because a PDS was unreachable would undo a
+ *    save the user watched succeed. Every failure — session gone, PDS down,
+ *    under-scoped grant, CAS lost twice — lands in the same place: `record_stale
+ *    = true`, and `{ stale: true }` for the caller to annotate with.
+ * 2. **`record_stale` is self-healing.** Any later successful re-put clears it,
+ *    so the flag is "the copy is behind", not "this collection is broken". The
+ *    edit dialog's retry button is just `retryCollectionSync` re-running this.
+ * 3. **It writes as `published_by_did`, not as the acting member** (§2.5). The
+ *    record lives in the publisher's repo; a household-mate's edit travels
+ *    through the publisher's stored OAuth session or not at all.
+ *
+ * Unpublished collections are the common case and cost one SELECT: there is no
+ * record to put, so this is a no-op rather than a caller's `if`.
+ *
+ * No household scope: the callers are already-authorized writes naming a
+ * collection they just wrote, and `retryCollectionSync` re-asserts the scope
+ * itself before calling in.
+ */
+export async function reputOrMarkStale(db: Kysely<DB>, collectionId: string): Promise<{ stale: boolean }> {
+  try {
+    const row = await db.selectFrom("recipe_collection").select(PUBLISH_COLUMNS).where("id", "=", collectionId).executeTakeFirst();
+    // Not published (or gone) ⇒ nothing to keep in step. The all-or-none CHECK
+    // means one null here implies the rest, but they are checked individually
+    // because that is what narrows the types for the build below.
+    if (!row?.published_by_did || !row.rkey || !row.cid || !row.record_created_at) return { stale: false };
+
+    const { buildCollectionRecord, putCollectionRecord } = await import("#/lib/atproto/collection-writes");
+    const refs = entryRefsToStrongRefs(await entryRefs(db, collectionId));
+    const record = buildCollectionRecord({
+      name: row.name,
+      description: row.description,
+      recipes: refs,
+      // The record's own createdAt is frozen at first publish and replayed here;
+      // updatedAt is the row's, which the caller's write just bumped.
+      createdAt: new Date(row.record_created_at),
+      updatedAt: new Date(row.updated_at),
+    });
+
+    const put = await putCollectionRecord(row.published_by_did, row.rkey, record, row.cid);
+    await db.updateTable("recipe_collection").set({ uri: put.uri, cid: put.cid, rev: put.rev, record_stale: false }).where("id", "=", collectionId).execute();
+    return { stale: false };
+  } catch (err) {
+    console.warn(`[collections] re-put of ${collectionId} failed; marking the record stale`, err);
+    // Even the bookkeeping is best-effort: if the database is what broke, the
+    // caller's write is still committed and still must not fail.
+    await db
+      .updateTable("recipe_collection")
+      .set({ record_stale: true })
+      .where("id", "=", collectionId)
+      .execute()
+      .catch((markErr: unknown) => console.warn(`[collections] could not mark ${collectionId} stale`, markErr));
+    return { stale: true };
+  }
+}
+
+/**
+ * Entry refs → the record's `recipes` array.
+ *
+ * An entry whose recipe is not published is dropped rather than published as a
+ * half-ref: the preflight (§2.4) makes that unreachable through the app, and a
+ * lexicon `strongRef` has no spelling for "a recipe I can't name". The local
+ * membership stays the truth either way.
+ */
+function entryRefsToStrongRefs(refs: Array<{ uri: string | null; cid: string | null }>): Array<{ uri: string; cid: string }> {
+  const out: Array<{ uri: string; cid: string }> = [];
+  for (const ref of refs) if (ref.uri && ref.cid) out.push({ uri: ref.uri, cid: ref.cid });
+  return out;
+}
+
+/**
+ * Re-put every published collection in `collectionIds`, reporting the ones that
+ * came back stale. Used by the box-removal sweep (§2.11), which can touch
+ * several collections at once.
+ */
+export async function reputEach(db: Kysely<DB>, collectionIds: string[]): Promise<string[]> {
+  const stale: string[] = [];
+  for (const id of collectionIds) {
+    if ((await reputOrMarkStale(db, id)).stale) stale.push(id);
+  }
+  return stale;
 }
 
 // --- §5 listCollections --------------------------------------------------
@@ -375,7 +630,7 @@ export const insertCollection = createServerOnlyFn(
  */
 export const updateCollection = createServerFn({ method: "POST" })
   .validator((data: unknown) => z.object({ collectionId, name: collectionName.optional(), description: collectionDescription.nullable().optional() }).parse(data))
-  .handler(async ({ data }): Promise<{ updated: boolean }> => {
+  .handler(async ({ data }): Promise<{ updated: boolean; stale: boolean }> => {
     const { getDb } = await import("#/lib/db");
     const { assertMember } = await import("./authz");
     const { activeContext } = await import("./recipe-context");
@@ -389,14 +644,14 @@ export async function patchCollection(
   db: Kysely<DB>,
   householdId: string,
   input: { collectionId: string; name?: string; description?: string | null },
-): Promise<{ updated: boolean }> {
+): Promise<{ updated: boolean; stale: boolean }> {
   const { sql } = await import("kysely");
 
   const patch: { name?: string; description?: string | null } = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.description !== undefined) patch.description = input.description;
   // "Change nothing" is a successful no-op, not an empty UPDATE statement.
-  if (Object.keys(patch).length === 0) return { updated: false };
+  if (Object.keys(patch).length === 0) return { updated: false, stale: false };
 
   const updated = await db
     .updateTable("recipe_collection")
@@ -406,10 +661,11 @@ export async function patchCollection(
     .returning("id")
     .executeTakeFirst();
 
-  // TODO(m5): reputOrMarkStale(db, input.collectionId) — name/description are
-  // published fields, so a published collection needs its record re-put here,
-  // after the write has committed.
-  return { updated: Boolean(updated) };
+  // Name and description are both published fields, so the record follows the
+  // row — after the UPDATE has committed, and never at the cost of failing it.
+  if (!updated) return { updated: false, stale: false };
+  const { stale } = await reputOrMarkStale(db, input.collectionId);
+  return { updated: true, stale };
 }
 
 // --- §5 reorderCollections -----------------------------------------------
@@ -448,7 +704,7 @@ export async function orderCollections(db: Kysely<DB>, householdId: string, inpu
  */
 export const reorderCollectionRecipes = createServerFn({ method: "POST" })
   .validator((data: unknown) => z.object({ collectionId, orderedRecipeIds: z.array(recipeId).max(RECIPE_LIMIT) }).parse(data))
-  .handler(async ({ data }): Promise<{ reordered: boolean }> => {
+  .handler(async ({ data }): Promise<{ reordered: boolean; stale: boolean }> => {
     const { getDb } = await import("#/lib/db");
     const { assertMember } = await import("./authz");
     const { activeContext } = await import("./recipe-context");
@@ -458,7 +714,11 @@ export const reorderCollectionRecipes = createServerFn({ method: "POST" })
   });
 
 /** The body of `reorderCollectionRecipes`. See `readCollections` for the contract. */
-export async function orderCollectionRecipes(db: Kysely<DB>, householdId: string, input: { collectionId: string; orderedRecipeIds: string[] }): Promise<{ reordered: boolean }> {
+export async function orderCollectionRecipes(
+  db: Kysely<DB>,
+  householdId: string,
+  input: { collectionId: string; orderedRecipeIds: string[] },
+): Promise<{ reordered: boolean; stale: boolean }> {
   const { sql } = await import("kysely");
 
   const reordered = await db.transaction().execute(async (trx) => {
@@ -479,9 +739,11 @@ export async function orderCollectionRecipes(db: Kysely<DB>, householdId: string
     return true;
   });
 
-  // TODO(m5): reputOrMarkStale(db, input.collectionId) when `reordered` — the
-  // entry order IS the published array order.
-  return { reordered };
+  // The entry order IS the published array order (§2.10), so a reorder is a
+  // record change like any other.
+  if (!reordered) return { reordered: false, stale: false };
+  const { stale } = await reputOrMarkStale(db, input.collectionId);
+  return { reordered: true, stale };
 }
 
 // --- §5 addRecipesToCollection -------------------------------------------
@@ -493,9 +755,17 @@ export async function orderCollectionRecipes(db: Kysely<DB>, householdId: string
  * silent no-op (§8), and the PK makes that structural. Unboxed ids fail the
  * whole call instead of being dropped, mirroring `addRecipesToPlan` — the client
  * never half-succeeds, and the composite FK would refuse them anyway.
+ *
+ * `publishRecipeIds` is the **"Publish recipe & add" combo** (§5): the ids the
+ * user has explicitly agreed to publish first. They are published through the
+ * ordinary recipe publish path and then filed in the same call. Consent is
+ * per-id and never inferred — an unpublished id that is not on this list still
+ * blocks the whole filing with `recipes_unpublished`.
  */
 export const addRecipesToCollection = createServerFn({ method: "POST" })
-  .validator((data: unknown) => z.object({ collectionId, recipeIds: z.array(recipeId).min(1).max(RECIPE_LIMIT) }).parse(data))
+  .validator((data: unknown) =>
+    z.object({ collectionId, recipeIds: z.array(recipeId).min(1).max(RECIPE_LIMIT), publishRecipeIds: z.array(recipeId).max(RECIPE_LIMIT).optional() }).parse(data),
+  )
   .handler(async ({ data }): Promise<AddRecipesToCollectionResult> => {
     const { getDb } = await import("#/lib/db");
     const { assertMember } = await import("./authz");
@@ -505,9 +775,25 @@ export const addRecipesToCollection = createServerFn({ method: "POST" })
     return fileRecipesIntoCollection(getDb(), did, householdId, data);
   });
 
+/**
+ * Publish one recipe the way the app does: the existing `publishRecipe` server
+ * fn, session, authorization, kill switch and all. Called server-side from
+ * inside another handler, which is the same local execution SSR loaders use.
+ */
+const publishRecipeThroughApp: RecipePublisher = async (id) => {
+  const { publishRecipe } = await import("./recipes-write");
+  return publishRecipe({ data: { recipeId: id } });
+};
+
 /** The body of `addRecipesToCollection`. See `readCollections` for the contract. */
 export const fileRecipesIntoCollection = createServerOnlyFn(
-  async (db: Kysely<DB>, did: string, householdId: string, input: { collectionId: string; recipeIds: string[] }): Promise<AddRecipesToCollectionResult> => {
+  async (
+    db: Kysely<DB>,
+    did: string,
+    householdId: string,
+    input: { collectionId: string; recipeIds: string[]; publishRecipeIds?: string[] },
+    publishRecipe: RecipePublisher = publishRecipeThroughApp,
+  ): Promise<AddRecipesToCollectionResult> => {
     const { sql } = await import("kysely");
 
     const collection = await readCollectionRow(db, householdId, input.collectionId);
@@ -522,20 +808,27 @@ export const fileRecipesIntoCollection = createServerOnlyFn(
     if (wanted.some((id) => !inBox.has(id))) throw new Error("That recipe is not in this household's box.");
 
     // §2.4 preflight: a published collection may not point at a private recipe.
-    // `unpublished` is spelled exactly as the ledger spells it — no atproto uri,
-    // or a recipe that is not public.
     if (collection.published_by_did) {
-      const unpublished = await db
-        .selectFrom("recipe")
-        .select("id")
-        .where("id", "in", wanted)
-        .where((eb) => eb.or([eb("visibility", "!=", "public"), eb("uri", "is", null)]))
-        .execute();
-      if (unpublished.length > 0) {
-        // TODO(m5): `publishRecipeIds` — the "Publish recipe & add" combo (§5)
-        // publishes each named id through the existing recipe-publish path here
-        // and then falls through to the filing below, instead of returning.
-        return { ok: false, reason: "recipes_unpublished", recipeIds: unpublished.map((row) => row.id) };
+      const unpublished = await unpublishedRecipeIds(db, wanted);
+      const consented = new Set(input.publishRecipeIds ?? []);
+      const blocked = unpublished.filter((id) => !consented.has(id));
+      // Anything the user did not agree to publish stops the whole filing, so
+      // the picker can offer "Publish recipe & add" against exactly these rows.
+      if (blocked.length > 0) return { ok: false, reason: "recipes_unpublished", recipeIds: blocked };
+
+      // The combo (§5): publish first, then fall through to the filing below.
+      // Sequential on purpose — each publish is a PDS write, and a failure must
+      // stop the run rather than fire N more of them.
+      for (const id of unpublished) {
+        const result = await publishRecipe(id);
+        if (result.status === "ok" && result.published) continue;
+        // The recipe publish path's refusals, mapped onto this call's union.
+        // Anything else (invalid draft, duplicate source URL) leaves the recipe
+        // unpublished, which is exactly what `recipes_unpublished` says — now
+        // about the one id that failed, since the rest may have published.
+        if (result.status === "publish_disabled") return { ok: false, reason: "flag_disabled" };
+        if (result.status === "reauth_required") return { ok: false, reason: "scope_error", missingScope: result.missingScope };
+        return { ok: false, reason: "recipes_unpublished", recipeIds: [id] };
       }
     }
 
@@ -569,10 +862,10 @@ export const fileRecipesIntoCollection = createServerOnlyFn(
       return fresh;
     });
 
-    // TODO(m5): reputOrMarkStale(db, input.collectionId) when `added.length` —
-    // membership changed, so the published record's `recipes` array has to be
-    // rebuilt and re-put.
-    return { ok: true, added };
+    // Membership changed ⇒ the record's `recipes` array has to be rebuilt.
+    if (added.length === 0) return { ok: true, added, stale: false };
+    const { stale } = await reputOrMarkStale(db, input.collectionId);
+    return { ok: true, added, stale };
   },
 );
 
@@ -585,7 +878,7 @@ export const fileRecipesIntoCollection = createServerOnlyFn(
  */
 export const removeRecipeFromCollection = createServerFn({ method: "POST" })
   .validator((data: unknown) => z.object({ collectionId, recipeId }).parse(data))
-  .handler(async ({ data }): Promise<{ removed: boolean }> => {
+  .handler(async ({ data }): Promise<{ removed: boolean; stale: boolean }> => {
     const { getDb } = await import("#/lib/db");
     const { assertMember } = await import("./authz");
     const { activeContext } = await import("./recipe-context");
@@ -595,7 +888,11 @@ export const removeRecipeFromCollection = createServerFn({ method: "POST" })
   });
 
 /** The body of `removeRecipeFromCollection`. See `readCollections` for the contract. */
-export async function unfileRecipeFromCollection(db: Kysely<DB>, householdId: string, input: { collectionId: string; recipeId: string }): Promise<{ removed: boolean }> {
+export async function unfileRecipeFromCollection(
+  db: Kysely<DB>,
+  householdId: string,
+  input: { collectionId: string; recipeId: string },
+): Promise<{ removed: boolean; stale: boolean }> {
   const { sql } = await import("kysely");
 
   const removed = await db.transaction().execute(async (trx) => {
@@ -620,24 +917,27 @@ export async function unfileRecipeFromCollection(db: Kysely<DB>, householdId: st
     return true;
   });
 
-  // TODO(m5): reputOrMarkStale(db, input.collectionId) when `removed`.
-  return { removed };
+  if (!removed) return { removed: false, stale: false };
+  const { stale } = await reputOrMarkStale(db, input.collectionId);
+  return { removed: true, stale };
 }
 
 // --- §5 deleteCollection (owner) -----------------------------------------
 
 /**
- * Delete a collection outright. **Owner-only** (§2.8): it destroys shared state
- * for everyone, and — once milestone 5 lands — a record on someone's PDS.
+ * Delete a collection outright — local rows AND the published record (§2.7).
+ * **Owner-only** (§2.8): it destroys shared state for everyone and a record on
+ * someone's PDS.
  *
  * Hard delete; the entries cascade. The remaining collections are renumbered so
  * the list stays dense.
  *
- * Idempotent: deleting one that is already gone reports `{ deleted: false }`.
+ * Idempotent: deleting one that is already gone reports `{ ok: true, deleted:
+ * false }`.
  */
 export const deleteCollection = createServerFn({ method: "POST" })
   .validator((data: unknown) => z.object({ collectionId }).parse(data))
-  .handler(async ({ data }): Promise<{ deleted: boolean }> => {
+  .handler(async ({ data }): Promise<DeleteCollectionResult> => {
     const { getDb } = await import("#/lib/db");
     const { assertMember } = await import("./authz");
     const { activeContext } = await import("./recipe-context");
@@ -647,26 +947,207 @@ export const deleteCollection = createServerFn({ method: "POST" })
   });
 
 /** The body of `deleteCollection`. See `readCollections` for the contract. */
-export async function removeCollection(db: Kysely<DB>, householdId: string, input: { collectionId: string }): Promise<{ deleted: boolean }> {
-  const collection = await readCollectionRow(db, householdId, input.collectionId);
-  if (!collection) return { deleted: false };
+export async function removeCollection(db: Kysely<DB>, householdId: string, input: { collectionId: string }): Promise<DeleteCollectionResult> {
+  const collection = await readPublishRow(db, householdId, input.collectionId);
+  if (!collection) return { ok: true, deleted: false };
 
-  // TODO(m5): a PUBLISHED collection deletes from the PDS FIRST
-  // (`deleteCollectionRecord` as `published_by_did`), and the local rows go only
-  // on success — never silently orphan a live record (§5). Milestone 1 has no
-  // publish path, so no row here can carry publish state yet.
+  // A PUBLISHED collection leaves the PDS FIRST, and the local rows go only if
+  // that succeeded (§5). The other order would orphan a live record: the rkey
+  // and the publisher's DID live in the row we are about to destroy, so a failed
+  // delete after a successful one is unrecoverable — nothing would be left that
+  // knows what to remove. The user is told to retry instead, and both dialogs
+  // already say a PDS delete does not guarantee removal from the wider internet.
+  if (collection.published_by_did && collection.rkey) {
+    const { deleteCollectionRecord } = await import("#/lib/atproto/collection-writes");
+    try {
+      await deleteCollectionRecord(collection.published_by_did, collection.rkey);
+    } catch (err) {
+      return pdsFailure(db, err, collection.published_by_did);
+    }
+  }
 
-  return db.transaction().execute(async (trx) => {
+  return db.transaction().execute(async (trx): Promise<DeleteCollectionResult> => {
     const present = await lockCollections(trx, householdId);
     const deleted = await trx.deleteFrom("recipe_collection").where("id", "=", input.collectionId).where("household_id", "=", householdId).returning("id").executeTakeFirst();
-    if (!deleted) return { deleted: false };
+    if (!deleted) return { ok: true, deleted: false };
     await renumberCollections(
       trx,
       householdId,
       present.filter((id) => id !== input.collectionId),
     );
-    return { deleted: true };
+    return { ok: true, deleted: true };
   });
+}
+
+// --- §5 publishCollection (owner) ----------------------------------------
+
+/**
+ * Publish a collection to the acting owner's PDS (§5). **Owner-only** (§2.8).
+ *
+ * The acting owner becomes `published_by_did` and every later re-put travels
+ * through their session, whichever household member made the edit (§2.5) — which
+ * is why the confirmation dialog names them before this is ever called.
+ *
+ * The order is: role gate → kill switch → membership preflight → PDS create →
+ * stamp the row. The PDS write is last because everything before it is free to
+ * refuse, and a refusal must cost nothing.
+ */
+export const publishCollection = createServerFn({ method: "POST" })
+  .validator((data: unknown) => z.object({ collectionId }).parse(data))
+  .handler(async ({ data }): Promise<PublishCollectionResult> => {
+    const { getDb } = await import("#/lib/db");
+    const { assertMember } = await import("./authz");
+    const { activeContext } = await import("./recipe-context");
+    const { did, householdId } = await activeContext();
+    await assertMember(did, householdId, "owner");
+    return runPublishCollection(getDb(), did, householdId, data);
+  });
+
+/** The body of `publishCollection`. See `readCollections` for the contract. */
+export const runPublishCollection = createServerOnlyFn(
+  async (db: Kysely<DB>, did: string, householdId: string, input: { collectionId: string }): Promise<PublishCollectionResult> => {
+    const { sql } = await import("kysely");
+    const { isAtprotoPublishEnabled } = await import("#/lib/posthog-server");
+
+    const collection = await readPublishRow(db, householdId, input.collectionId);
+    if (!collection) throw new Error("That collection no longer exists.");
+    // Already live: idempotent, the way publishing an already-public recipe is.
+    if (collection.published_by_did && collection.uri) {
+      return { ok: true, uri: collection.uri, publishedByDid: collection.published_by_did, publishedByHandle: await handleFor(db, collection.published_by_did) };
+    }
+
+    // Fail-closed kill switch (§2.3). Nothing has happened yet, so nothing is
+    // left half-done by refusing here.
+    if (!(await isAtprotoPublishEnabled(did))) return { ok: false, reason: "flag_disabled" };
+
+    // §2.4: every member recipe must be published first. An empty collection is
+    // legal and publishes with no `recipes` field at all (§8).
+    const refs = await entryRefs(db, input.collectionId);
+    const unpublished = unpublishedAmong(refs);
+    if (unpublished.length > 0) return { ok: false, reason: "recipes_unpublished", recipeIds: unpublished };
+
+    const { buildCollectionRecord, createCollectionRecord, deleteCollectionRecord } = await import("#/lib/atproto/collection-writes");
+    // First publish: the record's createdAt is minted now and then frozen in
+    // `record_created_at`, because every later re-put has to replay it.
+    const now = new Date();
+    const record = buildCollectionRecord({ name: collection.name, description: collection.description, recipes: entryRefsToStrongRefs(refs), createdAt: now, updatedAt: now });
+
+    let created: { uri: string; cid: string; rkey: string; rev: string };
+    try {
+      created = await createCollectionRecord(did, record);
+    } catch (err) {
+      return pdsFailure(db, err, did);
+    }
+
+    // `published_by_did is null` is the compare-and-swap: two owners publishing
+    // the same collection at the same moment must not both stamp the row.
+    const stamped = await db
+      .updateTable("recipe_collection")
+      .set({
+        published_by_did: did,
+        rkey: created.rkey,
+        uri: created.uri,
+        cid: created.cid,
+        rev: created.rev,
+        published_at: sql`now()`,
+        record_created_at: now,
+        record_stale: false,
+      })
+      .where("id", "=", input.collectionId)
+      .where("household_id", "=", householdId)
+      .where("published_by_did", "is", null)
+      .returning("id")
+      .executeTakeFirst();
+
+    if (!stamped) {
+      // We lost the race (or the collection was deleted mid-flight). The record
+      // we just created is unreferenced, so take it back off the PDS rather than
+      // leave a live record nothing points at — the exact thing the delete
+      // ordering above exists to prevent.
+      await deleteCollectionRecord(did, created.rkey).catch((err: unknown) => console.warn(`[collections] could not roll back orphan record ${created.rkey}`, err));
+      throw new Error("That collection was published by someone else just now.");
+    }
+
+    return { ok: true, uri: created.uri, publishedByDid: did, publishedByHandle: await handleFor(db, did) };
+  },
+);
+
+// --- §5 unpublishCollection (owner) --------------------------------------
+
+/**
+ * Take the record off the publisher's PDS and keep the local collection (§2.7).
+ * **Owner-only** (§2.8).
+ *
+ * The PDS delete goes first for the same reason `deleteCollection`'s does: the
+ * rkey lives in the columns this clears. A failure leaves every publish column
+ * untouched, so the retry still knows what to remove.
+ */
+export const unpublishCollection = createServerFn({ method: "POST" })
+  .validator((data: unknown) => z.object({ collectionId }).parse(data))
+  .handler(async ({ data }): Promise<UnpublishCollectionResult> => {
+    const { getDb } = await import("#/lib/db");
+    const { assertMember } = await import("./authz");
+    const { activeContext } = await import("./recipe-context");
+    const { did, householdId } = await activeContext();
+    await assertMember(did, householdId, "owner");
+    return runUnpublishCollection(getDb(), householdId, data);
+  });
+
+/** The body of `unpublishCollection`. See `readCollections` for the contract. */
+export const runUnpublishCollection = createServerOnlyFn(async (db: Kysely<DB>, householdId: string, input: { collectionId: string }): Promise<UnpublishCollectionResult> => {
+  const collection = await readPublishRow(db, householdId, input.collectionId);
+  // Gone, or never published: the caller's goal already holds.
+  if (!collection?.published_by_did || !collection.rkey) return { ok: true, unpublished: false };
+
+  const { deleteCollectionRecord } = await import("#/lib/atproto/collection-writes");
+  try {
+    // As the PUBLISHER, not as the acting owner (§2.5) — the record is in their
+    // repo and no other session can touch it.
+    await deleteCollectionRecord(collection.published_by_did, collection.rkey);
+  } catch (err) {
+    return pdsFailure(db, err, collection.published_by_did);
+  }
+
+  // All seven publish columns together, or the all-or-none CHECK rejects it.
+  // `record_stale` goes too: there is no published copy left to be behind.
+  await db
+    .updateTable("recipe_collection")
+    .set({ published_by_did: null, rkey: null, uri: null, cid: null, rev: null, published_at: null, record_created_at: null, record_stale: false })
+    .where("id", "=", input.collectionId)
+    .where("household_id", "=", householdId)
+    .execute();
+  return { ok: true, unpublished: true };
+});
+
+// --- §5 retryCollectionSync ----------------------------------------------
+
+/**
+ * Re-run the re-put for one collection — the edit dialog's retry button behind
+ * a stale badge (§5). Member-level: any member's edit re-puts the record, so any
+ * member may retry the one that failed.
+ *
+ * Deliberately nothing more than {@link reputOrMarkStale} with the household
+ * scope re-asserted: a retry that did anything else would be a second write path
+ * to keep in step with the first.
+ */
+export const retryCollectionSync = createServerFn({ method: "POST" })
+  .validator((data: unknown) => z.object({ collectionId }).parse(data))
+  .handler(async ({ data }): Promise<{ stale: boolean }> => {
+    const { getDb } = await import("#/lib/db");
+    const { assertMember } = await import("./authz");
+    const { activeContext } = await import("./recipe-context");
+    const { did, householdId } = await activeContext();
+    await assertMember(did, householdId);
+    return retrySync(getDb(), householdId, data);
+  });
+
+/** The body of `retryCollectionSync`. See `readCollections` for the contract. */
+export async function retrySync(db: Kysely<DB>, householdId: string, input: { collectionId: string }): Promise<{ stale: boolean }> {
+  const collection = await readCollectionRow(db, householdId, input.collectionId);
+  // Another household's id (or a deleted one) has nothing to sync — and must
+  // not become a PDS write on someone else's behalf.
+  if (!collection) return { stale: false };
+  return reputOrMarkStale(db, input.collectionId);
 }
 
 // --- §5 the box-removal hook ---------------------------------------------
@@ -693,8 +1174,8 @@ export async function renumberAfterUnfile(trx: Kysely<DB>, collectionIds: string
 
 /**
  * The collections a recipe is filed in, sorted — the lock order
- * {@link renumberAfterUnfile} relies on, and the list of records milestone 5
- * has to re-put once the box removal commits.
+ * {@link renumberAfterUnfile} relies on, and the list of records
+ * {@link reputEach} re-puts once the box removal commits.
  */
 export async function collectionsHoldingRecipe(db: Kysely<DB>, householdId: string, id: string): Promise<string[]> {
   const rows = await db

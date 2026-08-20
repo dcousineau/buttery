@@ -1,4 +1,4 @@
-import { Dices, FolderLock } from "lucide-react";
+import { Dices } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 
 /**
@@ -39,7 +39,4 @@ export function LockedFeaturesStrip({ className }: { className?: string }) {
   );
 }
 
-const LOCKED_FEATURES = [
-  { icon: FolderLock, title: "Collections", body: "Sort the box into shelves only your household can open." },
-  { icon: Dices, title: "Randomizer", body: "Can’t decide? Roll the dice, dinner picks itself." },
-];
+const LOCKED_FEATURES = [{ icon: Dices, title: "Randomizer", body: "Can’t decide? Roll the dice, dinner picks itself." }];

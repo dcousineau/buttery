@@ -217,3 +217,403 @@ local-only (§2.10).
 `markPublished()` in `collections.db.test.ts` fakes publish state with a raw `UPDATE`;
 replace those tests' fixtures with the real `publishCollection` once it exists, and add the
 §9 "delete with a failing PDS keeps the local rows" case.
+
+---
+
+## Milestone 5 (server) — atproto publish
+
+The server half of §5: the owner writes that create and destroy a record on a PDS, the
+re-put plumbing every other write now ends with, and the "Publish recipe & add" combo.
+The atproto write layer (`src/lib/atproto/collection-writes.ts`) was already committed;
+nothing in it changed. **No UI** — the milestone-5 UI pass owns that, and the contract it
+needs is spelled out at the bottom of this section.
+
+The rule the whole milestone hangs on: **the local database is the source of truth and the
+record is a projection of it.** So:
+
+- A PDS failure **after** a local write is an annotation (`record_stale`), never a rollback
+  and never an exception. A save the user watched succeed does not un-happen because
+  someone's PDS was unreachable.
+- A PDS failure **before** a destructive local write (unpublish, delete) aborts the whole
+  thing. The rkey and the publisher's DID live in the rows those writes destroy, so
+  deleting locally first and failing on the PDS would strand a live record with nothing
+  left that knows how to remove it.
+
+### What was built
+
+**`src/server/collections.ts`** — new exports (every server fn is the house shape: a thin
+wrapper doing session → `assertMember` → body, plus an exported session-free body the db
+suite drives directly).
+
+| server fn (owner-only ★) | body                     | result                                                             |
+| ------------------------ | ------------------------ | ------------------------------------------------------------------ |
+| `publishCollection` ★    | `runPublishCollection`   | `PublishCollectionResult`                                          |
+| `unpublishCollection` ★  | `runUnpublishCollection` | `UnpublishCollectionResult`                                        |
+| `deleteCollection` ★     | `removeCollection`       | `DeleteCollectionResult` (**was** `{ deleted }` — see deviation 1) |
+| `retryCollectionSync`    | `retrySync`              | `{ stale: boolean }`                                               |
+| —                        | `reputOrMarkStale`       | `{ stale: boolean }` — never throws                                |
+| —                        | `reputEach`              | `string[]` — the ids that came back stale                          |
+
+`publishCollection` runs in the order role gate → kill switch (`isAtprotoPublishEnabled`,
+fail-closed) → `recipes_unpublished` preflight → `createCollectionRecord` → stamp the row.
+The PDS write is last because everything before it is free to refuse, and a refusal must
+cost nothing. The stamp is a compare-and-swap (`where published_by_did is null`); if it
+loses the race the just-created record is deleted back off the PDS rather than left
+orphaned, and the caller gets a thrown error (a genuine two-owners-at-once race).
+
+`unpublishCollection` deletes as `published_by_did` — not as the acting owner (§2.5) — then
+clears all seven publish columns plus `record_stale` in one statement, keeping every local
+row. `deleteCollection` does the same PDS delete first and only then takes the local rows
+and renumbers.
+
+**Where `reputOrMarkStale` is called from** — all six of milestone 1's `TODO(m5)` markers
+are gone, five of them replaced by a call:
+
+1. `patchCollection` — after the `UPDATE` commits (name and description are published fields).
+2. `orderCollectionRecipes` — after the transaction (entry order IS the published array order).
+3. `fileRecipesIntoCollection` — after the transaction, only when something was actually added.
+4. `unfileRecipeFromCollection` — after the transaction, only when something was removed.
+5. `unboxRecipe` (`src/server/household-recipes.ts`) — after the transaction commits, via
+   `reputEach(db, unfiledFrom)` (decision §2.11).
+6. `removeCollection` — the sixth marker was the PDS-**delete**-first ordering, not a re-put.
+
+`reorderCollections` still has none: the household list order is local-only (§2.10), and a
+db test now asserts it never touches a PDS.
+
+Each of those writes returns `stale` alongside its existing field
+(`{ updated, stale }`, `{ reordered, stale }`, `{ ok: true, added, stale }`,
+`{ removed, stale }`); `unboxRecipe` returns `{ unfiledFrom, staleCollectionIds }`.
+
+**"Publish recipe & add"** — `addRecipesToCollection` gained `publishRecipeIds?: string[]`.
+Consent is per-id and never inferred: unpublished ids that are _not_ on that list still fail
+the whole call with `recipes_unpublished` carrying exactly those ids. The consented ones are
+published first, sequentially, through the existing `publishRecipe` server fn, and the call
+then falls through to the ordinary filing. The recipe path's refusals are mapped onto this
+call's union — `publish_disabled` → `flag_disabled`, `reauth_required` → `scope_error`, and
+anything else (invalid, duplicate) → `recipes_unpublished` for the one id that failed, which
+is exactly what is true of it.
+
+**Transport** (`src/lib/api/transport.ts`) — `publishCollection`, `unpublishCollection`,
+`retryCollectionSync` added; `addRecipesToCollection` takes `publishRecipeIds`;
+`updateCollection` / `reorderCollectionRecipes` / `removeRecipeFromCollection` /
+`deleteCollection` carry the widened results; the three new result unions are re-exported
+beside `AddRecipesToCollectionResult`. **`src/lib/api/types.ts` is unchanged** — the M1 DTO
+already carries `recordStale`, `publishedByDid`, `publishedByHandle`, `publishedAt` and
+`uri`, so there was no field to add and still no `CACHE_SCHEMA_VERSION` bump.
+No optimistic patches: publish/unpublish/delete are non-optimistic per §6.
+
+**Tests** — `src/server/collections.db.test.ts` grew from 38 to **74** tests. The suite now
+fakes exactly one thing: the three network functions in `collection-writes.ts`
+(`buildCollectionRecord` stays real, so the spies receive the records a PDS would have).
+Publish state is created by the real `runPublishCollection` — milestone 1's hand-written
+`UPDATE` fixture is gone, as its note asked. New coverage: every publish outcome (column
+stamping incl. the PDS-minted rkey, refs in position order, empty collection omitting
+`recipes`, `recipes_unpublished`, cid-less recipe counted unpublished, `flag_disabled`,
+idempotence, `scope_error`, `publisher_unavailable`, cross-household inertness); the re-put
+on all four write paths plus the frozen `createdAt` and the CAS cid; `record_stale` set on
+failure with the local write still committed, and cleared by the next success; the box-removal
+sweep re-putting only the published collections; `retryCollectionSync`; unpublish clearing
+all seven columns and keeping them on failure; **§9's "delete with a failing PDS keeps the
+local rows"**; and the whole publish-and-add combo including each mapped refusal.
+
+### Deviations from §5, and why
+
+1. **`deleteCollection` returns a union, not `{ deleted: boolean }`.** §5 specifies the
+   PDS-first ordering but not what a PDS refusal looks like to a caller. Throwing would have
+   made "your PDS is unreachable, nothing was deleted, try again" indistinguishable from a
+   bug, so it returns `DeleteCollectionResult` = `{ ok: true; deleted } | CollectionPdsFailure`,
+   the same shape as its two siblings. Nothing in the UI called it yet when this landed.
+
+2. **The PDS-failure union has two arms, not more.** §5 names `publisher_unavailable`;
+   `scope_error` is split out of it because it is the one failure the acting user can fix
+   (re-authorize), exactly as the recipe path splits `reauth_required` out. Everything else
+   — session unrestorable, PDS down, network gone, CAS lost twice — collapses into
+   `publisher_unavailable`, because from a caller's seat they have identical consequences
+   (nothing changed, try later) and finer reasons would only invent UI copy nobody can act
+   on differently. `publisher_unavailable` carries the publisher's `@handle`, since the
+   acting member may not be the publisher (§2.5).
+
+3. **Every write that can re-put now returns `stale`.** §5 says callers surface `stale: true`
+   as "Saved — couldn't update @handle's published copy yet", which is only possible if the
+   flag travels with the write's own answer. Additive: `{ updated }` → `{ updated, stale }`,
+   and so on. `unboxRecipe` returns `staleCollectionIds` (a subset of `unfiledFrom`) rather
+   than a boolean, because it can touch several collections at once.
+
+4. **"Published" means public **with both halves of the strongRef**.** The preflight now
+   also refuses a recipe with a `uri` but no `cid` (M1 checked `visibility`/`uri` only). A
+   lexicon `strongRef` requires both, so a cid-less recipe simply cannot go in the record;
+   counting it as publishable would have produced a PDS 400 instead of an answerable
+   `recipes_unpublished`. The db fixture's published recipes gained cids to match.
+
+5. **`fileRecipesIntoCollection` takes an optional `RecipePublisher`.** The default is the
+   real `publishRecipe` server fn and every caller in the app uses it. It is a parameter
+   only because the recipe publish path resolves its own session and the db suite has none,
+   so there is no other way to exercise the combo against a real database.
+
+6. **`publishCollection` throws (rather than returning a variant) for a collection that is
+   not this household's, or that lost the publish race.** Both are "this id does not name a
+   thing you can publish", not a decision a user can make — the same call `fileRecipesInto
+Collection` already makes for an unknown collection.
+
+7. **The kill switch gates publish only.** §5 attaches `isAtprotoPublishEnabled` to
+   `publishCollection`, and unpublish/delete deliberately do not consult it: the switch stops
+   _new_ records reaching the atmosphere, and turning it off must never trap a record that is
+   already there.
+
+### Commands run
+
+```
+pnpm --filter @buttery/lexicons build
+pnpm typecheck
+pnpm lint
+pnpm format:check                      # 2 files reformatted with `pnpm exec oxfmt <files>`, then clean
+pnpm test
+DATABASE_URL=<services/web/.env> pnpm --filter @buttery/web exec vitest run --project db
+```
+
+`pnpm test:db` was again not usable (it wraps `railway run`, and this environment has no
+Railway login); the db project ran directly with `DATABASE_URL` from `services/web/.env`.
+
+### Test results
+
+| command                          | result                                                             |
+| -------------------------------- | ------------------------------------------------------------------ |
+| `pnpm typecheck`                 | **pass** — all 7 workspace projects                                |
+| `pnpm lint` (oxlint)             | **pass**, exit 0 — 3 pre-existing warnings in unrelated components |
+| `pnpm format:check` (oxfmt)      | **pass** — "All matched files use the correct format"              |
+| `pnpm test`                      | **pass** — web: 35 files, 564 passed / 253 skipped (no DB)         |
+| `vitest run --project db`        | **pass** — 8 files, **253 passed**, 0 failed                       |
+| └ `collections.db.test.ts` alone | **pass** — **74/74** (was 38)                                      |
+
+### What the milestone-5 UI pass needs to know
+
+**The unions to handle.** All of these _resolve_ — none of them throws — so `onError` never
+fires and there is nothing to roll back (publish/unpublish/delete are non-optimistic; just
+invalidate `keys.household.collections(hid)` either way).
+
+- `publishCollection(id)` → `{ ok: true, uri, publishedByDid, publishedByHandle }` ·
+  `{ ok: false, reason: "flag_disabled" }` ·
+  `{ ok: false, reason: "recipes_unpublished", recipeIds }` ·
+  `{ ok: false, reason: "scope_error", missingScope }` ·
+  `{ ok: false, reason: "publisher_unavailable", handle }`.
+  Publishing something already published is a **success**, not an error.
+- `unpublishCollection(id)` → `{ ok: true, unpublished }` · `scope_error` ·
+  `publisher_unavailable`. `unpublished: false` means it was not published to begin with.
+- `deleteCollection(id)` → `{ ok: true, deleted }` · `scope_error` · `publisher_unavailable`.
+  A failure means **nothing was deleted, locally or remotely** — the row is still there and
+  the dialog should say "couldn't reach @handle's PDS; nothing was deleted", with a retry.
+- `addRecipesToCollection({ collectionId, recipeIds, publishRecipeIds? })` →
+  `{ ok: true, added, stale }` · `recipes_unpublished` (render the blocked rows and offer
+  "Publish recipe & add", which re-calls with those ids in `publishRecipeIds`) ·
+  `flag_disabled` · `scope_error` (the last two only reachable through the combo).
+- `updateCollection` / `reorderCollectionRecipes` / `removeRecipeFromCollection` →
+  their old field plus `stale`.
+
+**Staleness.** Two surfaces, one meaning ("the local state is saved; the published copy is
+behind"): the `stale` flag on a write's own answer, for the toast right after the edit
+("Saved — couldn't update @handle's published copy yet"), and `CollectionSummary.recordStale`
+from the collections read, for the persistent badge in the edit dialog. `retryCollectionSync(id)`
+is the retry button: it returns `{ stale }` and is **member-level**, so do not hide it from
+non-owners. Any later successful write clears the flag on its own; it never blocks an edit.
+
+**"Publisher unavailable"** always names a person, never a machine: use the `handle` on the
+variant, falling back to `CollectionSummary.publishedByHandle`, and remember the acting
+member may not be the publisher (§2.5) — "we couldn't reach @sam's PDS", not "your PDS".
+`scope_error` is the _acting_ user's own grant and wants the re-authorize prompt the recipe
+publish flow already uses (`missingScope` is `repo:exchange.recipe.collection` in practice).
+
+**Role.** `publishCollection`, `unpublishCollection` and `deleteCollection` are owner-only
+(`InsufficientRoleError`); `retryCollectionSync` and every other write are member-level.
+Hide the owner affordances rather than letting a member discover them by failure.
+
+**The kill switch is fail-closed and off by default outside production**
+(`ATPROTO_PUBLISH_ENABLED=true` in `services/web/.env` is the local escape hatch), so a dev
+build will answer `flag_disabled` unless it is set. The publish confirm dialog still has to
+state that the record goes to the acting owner's PDS and that every future update will come
+from their handle regardless of which member edits (§2.5), and both the unpublish and delete
+dialogs still have to say a PDS delete does not guarantee removal from the wider internet
+(§2.7) — none of that copy exists yet.
+
+---
+
+## Milestone 2 — desktop UI core
+
+The feature becomes reachable. Everything M1 built is now driven from a third column inside
+`/household/recipes`, scoped by the URL. No drag and drop (M3), no mobile sheets (M4), no
+publish surface (M5).
+
+### What was built
+
+**New — `services/web/src/components/collections/`**
+
+| file                         | what it is                                                                                                                                                  |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scope.ts`                   | The scope semantics of §7 as pure functions: `resolveScope`, `scopeRows`, `smartScopeRows`, `searchRows`, `smartScopeCount`, `scopeLabel`, `isDefaultScope` |
+| `scope.test.ts`              | 16 unit tests over the above                                                                                                                                |
+| `use-collections-column.ts`  | The collapse flag, cookie-backed (`collections_column`), collapsed by default                                                                               |
+| `CollectionsTree.tsx`        | Smart rows + shelves + quick-add + the edit dialog. Reads its own queries, writes the URL                                                                   |
+| `CollectionRow.tsx`          | `CollectionTreeRow` (the shared row: icon, label, count, selection paint) and `CollectionRow` (a real shelf, plus the hover gear)                           |
+| `QuickAddRow.tsx`            | Inline `<form>`: Enter creates + selects, Escape discards, duplicates never error                                                                           |
+| `CollectionsColumn.tsx`      | The desktop `<aside>` — `hidden md:flex`, and the ledger's `lg` hide-on-selection classes                                                                   |
+| `ScopedLedgerHeader.tsx`     | Active scope name, description or count, and a clear-scope link                                                                                             |
+| `EditCollectionDialog.tsx`   | Name, description, and the member list with per-row removal                                                                                                 |
+| `CollectionChips.tsx`        | The memberships row on a recipe detail; every chip opens the picker                                                                                         |
+| `CollectionPickerDialog.tsx` | Checkbox list of shelves for one recipe; each tick files/unfiles immediately                                                                                |
+
+**Changed**
+
+- `src/routes/household.recipes.tsx` — `validateSearch` (`?scope=`, `?c=`, both
+  `.catch()`-guarded), the loader now primes `householdCollectionsQuery` alongside the box,
+  the column is mounted ahead of the ledger, and the resolved scope is computed **once** and
+  handed to both columns. Filter state stopped being a `LedgerFilters` object: scope is in
+  the URL, and the search box is a plain `useState<string>`.
+- `src/components/recipes/RecipeLedger.tsx` — `SortKey`, `LedgerFilters`, the sort `Select`
+  and the "My recipes" lock-chip are **gone**. Added: the collections toggle in the filter
+  bar (`aria-expanded` + `aria-controls`), `ScopedLedgerHeader`, scope-aware rows, two new
+  empty states (`EmptyShelf`, `MissingCollection`), and `search: (prev) => prev` on every
+  ledger row link so the scope rides onto the detail route.
+- `src/components/recipes/DetailPane.tsx` — `CollectionChips` under the title block, and the
+  "Back to the shelf" link carries the search through.
+- `src/components/AppSidebar.tsx` — the `Collections` `soon` entry is deleted (§2.9).
+- `src/components/ui/checkbox.tsx` — `CheckboxRow` gained a `tone` variant. See deviation 4.
+
+### Deviations from §7, and why
+
+1. **A pure `scope.ts` (plus its test) that §7 does not list.** §7 describes the scope
+   semantics as prose spread across the ledger and the tree. Both columns need the same
+   answer — the tree highlights what the ledger is showing — and two copies of that
+   arithmetic would drift the first time a scope was added. It is pure, so it is also the
+   only part of this milestone that could be tested at all (§9: no DOM tests), and the
+   collection-scope join is exactly the code where a silently missing recipe would go
+   unnoticed.
+
+2. **Picking a scope deselects the open recipe.** A tree row is a `<Link to="/household/recipes">`,
+   so it drops the `$id`. The alternative (staying on the recipe and changing only the
+   search) leaves the detail pane showing a recipe that is not on the shelf you just picked,
+   with nothing on screen to explain it. Deep-linking still composes in the direction §7
+   actually specifies: recipe links carry the scope _out_ of the ledger.
+
+3. **`ScopedLedgerHeader` does not render for the default scope.** §7 asks for "active scope
+   name, count, clear-scope control above the ledger". On `mine` there is nothing to clear
+   and the count is already in the search placeholder, so the strip would be furniture. Every
+   other scope — including `missing-collection` — gets it.
+
+4. **`CheckboxRow` gained a `tone` variant (`task` | `selection`), rather than the picker
+   restating its own row.** The existing row paints _checked_ as the checklist dialect from
+   BRAND.md: struck through, shadow dropped, "this is done". Membership is not done work — a
+   list of the shelves a recipe is on, every one of them struck through, reads as "removed".
+   `tone="selection"` takes the butter `accent` fill instead. Default is `task`, so every
+   existing call site (grocery, plan) is byte-identical. This is the AGENTS rule about shared
+   behaviour living in the shared `ui/` component rather than at the call site.
+
+5. **The collapse hook lives in `components/collections/`, not `lib/hooks/`.** It is
+   `useSyncExternalStore` over one cookie — the sidebar's storage idiom, but the sidebar
+   never reads its cookie back, so there was nothing to reuse. It is written the way
+   `use-mobile.ts` is (server snapshot = the collapsed default) so hydration renders the
+   default and the real value lands on the first client render, with no mismatch and no
+   `setState` in an effect. It is feature state; it moves to `lib/hooks/` the day a second
+   feature wants a cookie-backed flag.
+
+6. **The edit dialog has no delete, and the picker has no "Publish recipe & add".** Both are
+   §10.5 deliverables (the delete dialog is one of M5's "all confirm dialogs"). The picker's
+   _blocked row_ — published shelf, private recipe — **is** implemented and is unreachable
+   today by construction; it is the row M5 hangs the combo action off.
+
+7. **Membership is edited in one direction from the dialog (removal only).** §7 says "entries
+   manage"; adding lives on the recipe, in the picker, because "which shelves does this
+   recipe belong on?" is the question people have. A second recipe-picker inside the edit
+   dialog would be a fourth surface answering it.
+
+### Milestone seams left for 3, 4 and 5
+
+- **M3 (drag and drop).** Four `TODO(m3)` markers: `CollectionTreeRow`'s `<li>` (drop target
+  for `application/x-buttery-recipe`, drag source for list reorder) and its `leading` prop
+  (the handle slot, already rendered ahead of the link); the ledger's list branch (handles +
+  `DropLine` when collection-scoped and the search box is empty); and the edit dialog's
+  member rows. The mutations are already wired in the port —
+  `reorderCollectionsMutation` and `reorderCollectionRecipesMutation` need only an ordered
+  id array.
+- **M4 (mobile).** `CollectionsTree` takes `{ householdId, onNavigate?, className? }` and
+  nothing else: it reads its own two cached queries, resolves the active scope from the URL
+  itself, and owns the edit dialog. `CollectionsSheet` is `<Sheet>` + `<CollectionsTree
+householdId={hid} onNavigate={close} />`, with **no edit to this file**. `onNavigate` fires
+  after every row click and after a quick-add lands. `CollectionChips` carries a `TODO(m4)`
+  at the spot where the `<md` affordance becomes the "File this recipe" button.
+- **M5 (publish).** `EditCollectionDialog`'s header comment names where the publish section
+  mounts (under the member list, above the footer) and what belongs in it. The picker's
+  blocked row carries the combo's `TODO(m5)`. `CollectionSummary.publishedAt`/`recordStale`/
+  `publishedByHandle` are already threaded through to both surfaces and simply unused.
+
+### Commands run
+
+```
+pnpm --filter @buttery/lexicons build
+pnpm typecheck
+pnpm lint
+pnpm format:check                      # 4 files reformatted with `pnpm exec oxfmt <files>`, then clean
+pnpm test
+```
+
+### Test results
+
+| command                     | result                                                        |
+| --------------------------- | ------------------------------------------------------------- |
+| `pnpm typecheck`            | **pass** — all 7 workspace projects                           |
+| `pnpm lint` (oxlint)        | **pass**, exit 0 — 3 pre-existing warnings in unrelated files |
+| `pnpm format:check` (oxfmt) | **pass** — "All matched files use the correct format"         |
+| `pnpm test`                 | **pass** — web: 35 files, 564 passed / 253 skipped (no DB)    |
+| └ `scope.test.ts`           | **pass** — 16/16                                              |
+
+`db:migrate`/`db:codegen` were not needed: milestone 2 adds no schema.
+
+### Verified in the browser
+
+Driven with Playwright against the running dev stack at `http://127.0.0.1:3000`, signed in
+as `chef.test`, household "The Test Kitchen" (33 seeded recipes), viewport 1440×900. Console
+was clean — 0 errors, 0 warnings — on every page after the checks below.
+
+- **Column collapse.** Collapsed on first load. Toggle shows it, `aria-expanded` flips,
+  cookie becomes `collections_column=true`; a full reload keeps it open. Toggling back hides
+  it and a reload keeps it hidden.
+- **All four smart rows.** `mine` 33 A–Z; `recent` 33 in a visibly different (added-at)
+  order; `favorites` 1 after starring Chana Masala, and the tree's count moved with it;
+  `unpublished` 33.
+- **Quick-add.** "Weeknights" created, appended, **selected** — URL became
+  `?c=01M0GRQWTQWZ5CWZJ2KAW70ED1` — and the ledger switched to the empty-shelf state.
+  Escape discards a half-typed name without creating anything. A second collection named
+  "Weeknight dinners" was created while one already had that name: no error, appended and
+  selected (§8).
+- **Edit dialog.** Gear opens it; renaming to "Weeknight dinners" plus a description landed
+  optimistically in the tree; the description then rendered in the scoped header. Removing a
+  member from the dialog moved both the tree count and the dialog's own list on the same
+  frame.
+- **Chips + picker.** A recipe detail shows the folder-lock row with an "Add to a collection"
+  chip; the picker filed the recipe (count 0 → 1, chip appeared behind the dialog) and the
+  ledger, scoped to that collection, then showed exactly that one recipe.
+- **URL round-trips.** Reloading on `?c=<id>` and on `?scope=favorites` both restore the
+  scope from a cold page load. `?scope=banana` degrades to the whole box (param stripped by
+  `.catch`), never a 404.
+- **Deleted collection.** `?c=01M0DELETEDCOLLECTION0000` renders "This collection no longer
+  exists." inline, with the tree and the box intact beside it.
+- **Search carries through.** From `?scope=unpublished`, every ledger row's `href` is
+  `/household/recipes/<id>?scope=unpublished`, and the detail route renders it.
+- **Responsive.** At 900px wide with a recipe selected, the column and the ledger both yield
+  to the detail pane, exactly as the ledger did before this milestone.
+- **Keyboard.** The row gear is a real button at all times and becomes visible on focus
+  (`group-focus-within`), not on hover alone.
+
+### Notes for the next implementer
+
+- **`src/components/pantry/LockedFeaturesStrip.tsx` still advertises Collections with a
+  `soon` chip.** §2.9 named only the nav rail, and `components/pantry/**` was outside this
+  milestone's file ownership, so it was left alone — but it is now wrong on the pantry home
+  for a household with an empty box. One line to delete when someone owns that file.
+- The ledger's filter bar no longer has a sort control **at all**. In-place re-sorting of a
+  scoped view is deferred by §2.2; if it comes back it belongs beside `ScopedLedgerHeader`,
+  not in the filter bar, and it must be inert for a collection scope (that order is the
+  published array order).
+- `resolveScope` is the only place that knows `?c=` beats `?scope=`. Anything that needs to
+  know what the ledger is showing should call it rather than reading the params.
+- The scoped ledger renders `scopeRows(...)` — for a collection, a straight map over
+  `recipeIds` with unboxed ids dropped. M3's reorder must write back the _full_ current
+  order, not the rendered subset, if a member is ever missing from the box.

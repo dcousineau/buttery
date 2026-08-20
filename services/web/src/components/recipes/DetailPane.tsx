@@ -10,6 +10,7 @@ import { Textarea } from "#/components/ui/textarea";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { AddToPlanDialog, type AddToPlanRequest } from "#/components/plan/AddToPlanDialog";
 import { AddPreviewDialog, type AddPreviewRequest } from "#/components/grocery/AddPreviewDialog";
+import { CollectionChips } from "#/components/collections/CollectionChips";
 import { summarizeGroceryAdd } from "#/components/grocery/added-summary";
 import { SLOT_LABELS, formatPlanDate, shortDow } from "#/lib/plan/labels";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
@@ -212,8 +213,14 @@ export function DetailPane({
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
       <div className="mx-auto flex max-w-[54rem] flex-col gap-3.5 px-5 pt-4 pb-8">
-        {/* Mobile back affordance */}
-        <Link to="/household/recipes" className="flex w-fit items-center gap-1 text-xs font-semibold text-muted-foreground no-underline hover:text-foreground lg:hidden">
+        {/* Mobile back affordance. `search: (prev) => prev` keeps the collection
+          or smart scope you came from (collections plan §7) — going back to "the
+          shelf" should land on the shelf you were on, not the whole box. */}
+        <Link
+          to="/household/recipes"
+          search={(prev) => prev}
+          className="flex w-fit items-center gap-1 text-xs font-semibold text-muted-foreground no-underline hover:text-foreground lg:hidden"
+        >
           <ArrowLeft className="size-3.5" aria-hidden="true" />
           Back to the shelf
         </Link>
@@ -265,6 +272,12 @@ export function DetailPane({
             )}
           </div>
         </div>
+
+        {/* Which household shelves this recipe is filed on, and the way onto
+          another one (collections plan §7). Reads the same cached collections
+          query the tree and the ledger do — memberships are a client-side join,
+          not a second request. */}
+        <CollectionChips householdId={householdId} recipeId={recipe.recipeId} recipeTitle={recipe.title} recipeUnpublished={recipe.unpublished} />
 
         {/* Action row */}
         <div className="flex flex-wrap items-center gap-2">
