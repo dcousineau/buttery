@@ -88,14 +88,32 @@ things:
   else's work. `sweepDid` throws rather than swallowing, because throwing is how
   an activity asks for the retry it deserves; the error still lands in
   `atproto_repo.last_error` on the way out.
-- **Failure.** A repo that exhausts its retries is counted and stepped over —
-  the workflow runs each window through `Promise.allSettled`, so one dead PDS
-  never ends a sweep. An hourly sweep that failed whenever one of thousands of
-  servers was unreachable would simply always be failing.
+- **Failure.** A repo that exhausts its retries is counted and stepped over, so
+  one dead PDS never ends a sweep. An hourly sweep that failed whenever one of
+  thousands of servers was unreachable would simply always be failing.
 - **Distribution.** Repos go through the task queue, so a fleet shares them
-  instead of one worker looping alone. How many are in flight from a run is the
-  workflow's `parallelism` input; how many a worker will actually execute is
-  `WORKER_MAX_CONCURRENT_ACTIVITIES`.
+  instead of one worker looping alone.
+
+They run as a **rolling pool**: `parallelism` runners, each claiming the next
+unclaimed DID the moment it finishes the last one. Nothing waits for a batch
+boundary, so a slow PDS costs its own slot and nobody else's. Temporal has no
+per-workflow concurrency limit to lean on here —
+`WORKER_MAX_CONCURRENT_ACTIVITIES` bounds what one worker will _execute_ across
+everything it is doing, which protects the machine but would not stop this sweep
+from scheduling thousands of activities into its own history at once. The pool is
+the scheduling-side half.
+
+Two traps that loop has, both commented where they live: fold the result _after_
+the await (`foldRepo(summary, await …)` reads `summary` before suspending, so two
+runners lose one another's counts — it shipped that way for one commit and showed
+up as a failure count of 1 where the history said 3), and let cancellation
+through rather than counting it as a failed repo.
+
+Timeouts are sized from a measured sweep of the live atmosphere: a healthy repo
+is ~700 ms (p50) and ~1 s (p90), so `syncRepo` gets 45 s per attempt and a 90 s
+`scheduleToCloseTimeout` as its total hang budget, and the HTTP layer's
+per-request timeout is 8 s. A host that accepts connections and then hangs used
+to cost 25 s per attempt; it now costs 16 s, and the sweep never waits on it.
 
 What it costs is history — roughly three events per repo against a 10k-event
 soft warning and a 50k hard cap. So the loop watches `continueAsNewSuggested` and

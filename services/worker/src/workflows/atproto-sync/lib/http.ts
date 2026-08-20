@@ -12,7 +12,13 @@ import { log } from "#/log.ts";
 // gave up. One retry covers the packet that got dropped; anything longer-lived
 // is Temporal's to wait out.
 
-const DEFAULT_TIMEOUT_MS = 15_000;
+// Measured against the live network: a healthy PDS answers one of these in
+// ~700 ms (p50) and ~1 s (p90). Eight seconds is ten times the p90 — long enough
+// that a slow-but-alive host still gets served, short enough that a host which
+// accepts the connection and then hangs is abandoned before it costs the sweep
+// anything. It was 15 s, which is where a single hung repo's 25-second attempts
+// came from.
+const DEFAULT_TIMEOUT_MS = 8_000;
 const MAX_ATTEMPTS = 2;
 
 function sleep(ms: number): Promise<void> {

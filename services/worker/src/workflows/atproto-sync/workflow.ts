@@ -1,7 +1,7 @@
 import { ApplicationFailure, CancellationScope, ContinueAsNew, continueAsNew, isCancellation, log, proxyActivities, workflowInfo } from "@temporalio/workflow";
 import type { AtprotoSyncActivities } from "#/workflows/atproto-sync/activities.ts";
-import { emptySummary, foldRepo, windows } from "#/workflows/atproto-sync/plan.ts";
-import type { AtprotoSyncInput, SweepContinuation, SweepSummary } from "#/workflows/atproto-sync/types.ts";
+import { boundedParallelism, emptySummary, foldRepo } from "#/workflows/atproto-sync/plan.ts";
+import type { AtprotoSyncInput, RepoOutcome, SweepContinuation, SweepSummary } from "#/workflows/atproto-sync/types.ts";
 
 /**
  * Sweep the atproto network and reconcile the Postgres recipe index.
@@ -23,6 +23,11 @@ import type { AtprotoSyncInput, SweepContinuation, SweepSummary } from "#/workfl
  * **distribution** (repos go through the task queue, so a fleet of workers
  * shares them instead of one worker looping alone).
  *
+ * They run as a rolling pool of `parallelism` runners rather than in lockstep
+ * batches: a runner that finishes a repo takes the next one immediately, so a
+ * single slow PDS costs its own slot and nobody else's. Nothing waits for a
+ * batch boundary, because there are no batches.
+ *
  * What it costs is history: roughly three events per repo, against a 10k-event
  * soft warning and a 50k hard cap. Hence `continueAsNew` below, which is the
  * whole reason this shape is safe at network scale.
@@ -37,19 +42,29 @@ const { enumerateRepos } = proxyActivities<AtprotoSyncActivities>({
   retry: { initialInterval: "10 seconds", maximumAttempts: 3 },
 });
 
-/** One repo: seconds of network, then a handful of writes. */
+/**
+ * One repo: a couple of HTTP round trips, then a handful of writes.
+ *
+ * The timeouts are sized from a measured sweep of the live network — a healthy
+ * repo takes ~700 ms (p50) and ~1 s (p90) — so they are generous by an order of
+ * magnitude while still being short enough that an unresponsive host is dropped
+ * quickly rather than held onto.
+ */
 const { syncRepo } = proxyActivities<AtprotoSyncActivities>({
-  // One attempt. A repo is two HTTP round trips plus its records; two minutes is
-  // generous even for a slow PDS with hundreds of them.
-  startToCloseTimeout: "2 minutes",
-  // Every attempt, together. Without it a repo on a host that accepts
-  // connections and then hangs costs its full retry chain of timeouts, and the
-  // window it is in waits for all of it. This is the ceiling on that tail.
-  scheduleToCloseTimeout: "5 minutes",
+  // One attempt. Forty-five times the p90, which leaves room for a repo with
+  // hundreds of records paging slowly, and still gives up on a hung host in a
+  // fraction of the time the old two minutes did.
+  startToCloseTimeout: "45 seconds",
+  // Every attempt together — the hang budget for one repo. A host that accepts
+  // connections and never answers costs at most this before the sweep moves on,
+  // instead of however long three attempts and their backoff happen to take.
+  scheduleToCloseTimeout: "90 seconds",
   retry: {
-    initialInterval: "5 seconds",
+    // Short, because a repo is short. Waiting a minute between attempts on a
+    // one-second unit of work only makes the tail longer.
+    initialInterval: "2 seconds",
     backoffCoefficient: 2,
-    maximumInterval: "1 minute",
+    maximumInterval: "10 seconds",
     // A PDS being briefly unreachable is the common case and is worth three
     // tries. Past that it is an outage on their side, and the next scheduled
     // sweep is a better answer than a fourth attempt inside this one.
@@ -63,6 +78,9 @@ const { openSyncRun, reconcileMissingRepos, closeSyncRun } = proxyActivities<Atp
   retry: { maximumAttempts: 3 },
 });
 
+/** Repos between progress lines. Every repo would be thousands of lines at network scale. */
+const PROGRESS_EVERY = 25;
+
 export async function atprotoSync(input: AtprotoSyncInput = {}): Promise<SweepSummary> {
   // What one run should do, forwarded to every activity that needs it. What the
   // *deployment* does — which relay, which PDS — is environment, resolved inside
@@ -73,29 +91,51 @@ export async function atprotoSync(input: AtprotoSyncInput = {}): Promise<SweepSu
   // Everything before this point already happened, in a previous execution.
   const start: SweepContinuation = input.continuation ?? (await beginSweep());
 
-  let { cursor, summary } = start;
   const { dids, fullSweep, syncRunId } = start;
+  let summary = start.summary;
+  /** The next DID no runner has claimed. Everything below it is done. */
+  let next = start.cursor;
+  /** Set once the server suggests this execution's history is long enough. */
+  let handover = false;
+  let swept = 0;
 
   try {
-    for (const window of windows(dids.slice(cursor), input.parallelism)) {
-      // `allSettled`, not `all`: a repo that has exhausted its retries is a
-      // counted failure, not the end of the sweep. `all` would abandon the rest
-      // of the window as well, and lose the results of the repos that succeeded.
-      const results = await Promise.allSettled(window.map((did) => syncRepo({ ...scope, did })));
-      for (const result of results) {
-        summary = foldRepo(summary, result.status === "fulfilled" ? result.value : undefined);
-      }
-      cursor += window.length;
-      log.info("window complete", { done: cursor, of: dids.length, ...summary });
+    // A rolling pool: `parallelism` runners, each taking the next unclaimed DID
+    // the moment it finishes the last one. `next` is shared between them, which
+    // is safe — a workflow runs on one thread, and `next++` happens between
+    // awaits — and deterministic on replay, because activity results are
+    // redelivered in the order the history recorded them.
+    const runners = Array.from({ length: Math.min(boundedParallelism(input.parallelism), dids.length - next) }, async () => {
+      while (next < dids.length && !handover) {
+        const did = dids[next++];
 
-      // The server tells us when this execution's history is getting long
-      // enough to be worth ending. Handing the rest to a fresh execution is what
-      // keeps a per-repo sweep of a large network inside the event limits — the
-      // new run starts with an empty history and the same cursor.
-      if (workflowInfo().continueAsNewSuggested && cursor < dids.length) {
-        log.info("continuing as new", { done: cursor, of: dids.length, historyLength: workflowInfo().historyLength });
-        await continueAsNew<typeof atprotoSync>({ ...input, continuation: { dids, cursor, fullSweep, syncRunId, summary } });
+        // Await FIRST, fold second. `foldRepo(summary, await …)` would read
+        // `summary` before suspending, so two runners suspending on their own
+        // repos would both fold onto the same stale value and one result would
+        // vanish — silently, as a count that is merely too low. Every read of
+        // shared state in this loop has to happen after the await that precedes
+        // it, not in the same expression.
+        const outcome = await sweepOne(did);
+        summary = foldRepo(summary, outcome);
+
+        swept++;
+        if (swept % PROGRESS_EVERY === 0) log.info("sweep progress", { done: next, of: dids.length, ...summary });
+
+        // Checked here rather than on a timer: the server raises this once the
+        // history is long enough to be worth ending, and the cheapest place to
+        // notice is between two repos.
+        if (workflowInfo().continueAsNewSuggested) handover = true;
       }
+    });
+    await Promise.all(runners);
+
+    // Every DID below `next` is finished, not merely started: the runners stop
+    // *claiming* work when `handover` is set, and the `Promise.all` above waits
+    // for the ones already in flight. That is what keeps the cursor a clean
+    // prefix even though repos complete out of order.
+    if (handover && next < dids.length) {
+      log.info("continuing as new", { done: next, of: dids.length, historyLength: workflowInfo().historyLength });
+      await continueAsNew<typeof atprotoSync>({ ...input, continuation: { dids, cursor: next, fullSweep, syncRunId, summary } });
     }
 
     if (fullSweep && !summary.dryRun) {
@@ -131,6 +171,22 @@ export async function atprotoSync(input: AtprotoSyncInput = {}): Promise<SweepSu
     // a type worth filtering on and the partial summary as failure details, which
     // is the only record of how far a dead sweep got.
     throw ApplicationFailure.fromError(err, { type: "AtprotoSyncFailed", details: [failed] });
+  }
+
+  /**
+   * One repo, with its failure absorbed. A repo that exhausts its retries is
+   * counted and stepped over; a *cancellation* is not a repo failure and has to
+   * keep unwinding, or a cancelled sweep would quietly grind through the rest of
+   * the network marking everything failed.
+   */
+  async function sweepOne(did: string): Promise<RepoOutcome | undefined> {
+    try {
+      return await syncRepo({ ...scope, did });
+    } catch (err) {
+      if (isCancellation(err)) throw err;
+      log.warn("repo failed after retries", { did, err: String(err) });
+      return undefined;
+    }
   }
 
   /** The first execution's opening moves: find the work, and open the run row. */

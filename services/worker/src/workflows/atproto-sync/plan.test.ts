@@ -1,29 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PARALLELISM, emptySummary, foldRepo, windows } from "#/workflows/atproto-sync/plan.ts";
+import { boundedParallelism, DEFAULT_PARALLELISM, emptySummary, foldRepo } from "#/workflows/atproto-sync/plan.ts";
 
-describe("windows", () => {
-  it("cuts the list into fixed-size windows", () => {
-    expect(windows(["a", "b", "c", "d", "e"], 2)).toEqual([["a", "b"], ["c", "d"], ["e"]]);
+describe("boundedParallelism", () => {
+  it("takes the requested number of runners", () => {
+    expect(boundedParallelism(3)).toBe(3);
   });
 
-  it("returns no windows for no dids", () => {
-    expect(windows([], 10)).toEqual([]);
+  it("defaults when the input does not ask", () => {
+    expect(boundedParallelism(undefined)).toBe(DEFAULT_PARALLELISM);
   });
 
-  it("keeps a short list in one window", () => {
-    expect(windows(["a", "b"], 100)).toEqual([["a", "b"]]);
+  it("refuses a nonsense request", () => {
+    // `{"parallelism":"nope"}` arrives as NaN, and zero or negative would mean a
+    // pool with no runners in it — a sweep that starts and then does nothing at
+    // all, which is the worst way for this to fail.
+    expect(boundedParallelism(Number.NaN)).toBe(DEFAULT_PARALLELISM);
+    expect(boundedParallelism(0)).toBe(DEFAULT_PARALLELISM);
+    expect(boundedParallelism(-4)).toBe(DEFAULT_PARALLELISM);
   });
 
-  it("falls back to the default for a nonsense size", () => {
-    // `{"parallelism":"nope"}` reaches here as NaN; a zero or negative size
-    // would loop forever, so both are the same bug and get the same answer.
-    expect(
-      windows(
-        Array.from({ length: 3 * DEFAULT_PARALLELISM }, (_, i) => String(i)),
-        Number.NaN,
-      ),
-    ).toHaveLength(3);
-    expect(windows(["a", "b"], 0)).toEqual([["a", "b"]]);
+  it("floors a fractional request", () => {
+    expect(boundedParallelism(2.9)).toBe(2);
   });
 });
 

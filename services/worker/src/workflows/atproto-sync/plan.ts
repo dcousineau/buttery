@@ -13,21 +13,22 @@ import type { RepoOutcome, SweepSummary } from "#/workflows/atproto-sync/types.t
 export const DEFAULT_PARALLELISM = 8;
 
 /**
- * Cut the remaining DIDs into windows of `size`, which the workflow starts as
- * one `Promise.all` each.
+ * How many repos the workflow keeps in flight.
  *
- * A window rather than a rolling pool: the workflow waits for all of a window
- * before starting the next, so one slow repo can leave a few slots idle. That
- * costs a little throughput and buys code with no shared mutable cursor in it,
- * which is worth more inside a function that gets replayed.
+ * This is the *scheduling* limit, and it is the workflow's to choose because
+ * Temporal has no per-workflow one: `maxConcurrentActivityTaskExecutions` bounds
+ * what a single worker will run at once across everything it is doing, which is
+ * the right knob for protecting a machine and the wrong one for saying "don't
+ * point fifty requests at the atmosphere from this sweep".
+ *
+ * Scheduling everything at once is the thing to avoid. It would work — Temporal
+ * would queue the tasks and the fleet would drain them — but a full-network
+ * sweep would write thousands of ActivityTaskScheduled events into the history
+ * in a single workflow task before any of them ran.
  */
-export function windows(dids: readonly string[], size = DEFAULT_PARALLELISM): string[][] {
-  const bounded = Number.isFinite(size) && size > 0 ? Math.floor(size) : DEFAULT_PARALLELISM;
-  const chunks: string[][] = [];
-  for (let i = 0; i < dids.length; i += bounded) {
-    chunks.push(dids.slice(i, i + bounded));
-  }
-  return chunks;
+export function boundedParallelism(requested?: number): number {
+  if (requested === undefined || !Number.isFinite(requested) || requested <= 0) return DEFAULT_PARALLELISM;
+  return Math.floor(requested);
 }
 
 /** A summary with nothing in it yet. */
