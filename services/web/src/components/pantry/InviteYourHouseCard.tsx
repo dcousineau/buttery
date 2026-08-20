@@ -39,7 +39,7 @@ export function InviteYourHouseCard({ householdId, className }: { householdId: s
 
   return (
     <Card className={cn("border-primary/40", className)}>
-      <CardContent className="flex flex-col gap-4 pt-4 sm:flex-row sm:items-start">
+      <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-start">
         <UserPlus aria-hidden="true" className="mt-0.5 size-6 flex-none" />
         <div className="min-w-0 flex-1">
           <h2 className="display-title m-0 text-lg leading-tight text-foreground">Nobody else is in here yet</h2>

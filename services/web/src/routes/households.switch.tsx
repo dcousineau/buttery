@@ -81,7 +81,7 @@ function PickerCard({ household }: { household: HouseholdSummary }) {
 
   return (
     <Card>
-      <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
+      <CardContent className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="m-0 flex items-center gap-2 text-base font-bold text-foreground">
             {household.name}

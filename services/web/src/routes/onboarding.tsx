@@ -147,7 +147,7 @@ function OnboardingPage() {
 function NoChoiceYetCard({ onChooseCreate }: { onChooseCreate: () => void }) {
   return (
     <Card>
-      <CardContent className="flex flex-col gap-4 pt-4">
+      <CardContent className="flex flex-col gap-4">
         <div className="flex items-start gap-3">
           <Mail aria-hidden="true" className="mt-0.5 size-5 flex-none" />
           <div>
@@ -221,7 +221,7 @@ function PendingInviteCard({ invite }: { invite: PendingInvite }) {
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-3.5 pt-4">
+      <CardContent className="flex flex-col gap-3.5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="display-title m-0 text-lg leading-tight text-foreground">{invite.householdName}</p>
@@ -272,7 +272,7 @@ function JoinHelpCard({ hasInvites }: { hasInvites: boolean }) {
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-5 pt-4">
+      <CardContent className="flex flex-col gap-5">
         {hasInvites ? null : (
           <>
             <div className="flex items-start gap-3.5">
@@ -471,7 +471,7 @@ function CreateHouseholdCard() {
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-5 pt-4">
+      <CardContent className="flex flex-col gap-5">
         <div>
           <p className="display-title m-0 text-lg leading-tight text-foreground">Name your household</p>
           <p className="mt-1.5 mb-0 text-[0.8125rem] text-pretty text-muted-foreground">
