@@ -1,5 +1,6 @@
 import { Lock } from "lucide-react";
 import type { CollectionSummary } from "#/lib/api";
+import { Button } from "#/components/ui/button";
 import { CheckboxRow } from "#/components/ui/checkbox";
 import { cn } from "#/lib/utils";
 
@@ -10,12 +11,25 @@ import { cn } from "#/lib/utils";
  * It exists because both surfaces answer the same question ("which shelves does
  * this recipe belong on?") and both have to refuse the same case: a published
  * collection may not hold a private recipe (§2.4). That refusal is the row
- * milestone 5 hangs its "Publish recipe & add" action off, and two copies of it
- * would mean M5 has to find both. One row, one place.
+ * "Publish recipe & add" hangs off, and two copies of it would mean two places
+ * to keep that in step. One row, one place.
  *
  * The tick is `tone="selection"`, not the checklist's strike-through: membership
  * is a standing fact, not finished work, and a shelf struck through reads as
  * "removed" (see `ui/checkbox.tsx`).
+ *
+ * ## The blocked row and its escape hatch (§2.4)
+ *
+ * A private recipe cannot go on a published shelf, because the record would
+ * point at something nobody else can read. The rule is real and the server
+ * enforces it — but the answer is almost always "then publish the recipe", so
+ * the row offers to do both in one call rather than sending someone to the
+ * recipe, back to the shelf, and into the same dialog again.
+ *
+ * **Consent is per-recipe and never inferred**: the combo is a button someone
+ * presses, and `addRecipesToCollection` only publishes the ids it is explicitly
+ * given (`publishRecipeIds`). Filing has never been allowed to make a recipe
+ * public as a side effect, and it still is not.
  */
 export function CollectionCheckRow({
   collection,
@@ -25,6 +39,8 @@ export function CollectionCheckRow({
   size,
   disabledHint,
   onToggle,
+  onPublishAndAdd,
+  publishing = false,
 }: {
   collection: CollectionSummary;
   filed: boolean;
@@ -34,12 +50,12 @@ export function CollectionCheckRow({
   /** Non-null disables the tick and explains why (offline). */
   disabledHint?: string;
   onToggle: (checked: boolean) => void;
+  /** Publish this recipe, then file it here — one call (§5). */
+  onPublishAndAdd?: () => void;
+  publishing?: boolean;
 }) {
   if (blocked) {
     return (
-      // TODO(m5): this row gains the "Publish recipe & add" action, which
-      // publishes the recipe and files it in one call
-      // (`addRecipesToCollection`'s `publishRecipeIds`).
       <div
         className={cn(
           "flex w-full items-center gap-3 rounded-lg border-2 border-dashed border-border/60 bg-muted/40 text-sm text-muted-foreground",
@@ -49,8 +65,21 @@ export function CollectionCheckRow({
         <Lock className="size-4 shrink-0" aria-hidden="true" />
         <span className="min-w-0 flex-1">
           <span className="block truncate font-semibold">{collection.name}</span>
-          <span className="block text-xs">Published shelf — this recipe is still private, so it can’t go on it yet.</span>
+          <span className="block text-xs">Published shelf — a private recipe can’t go on it.</span>
         </span>
+        {onPublishAndAdd && (
+          <Button
+            type="button"
+            variant="outline"
+            size={size === "sm" ? "xs" : undefined}
+            className={cn("shrink-0", size === "default" && "h-11")}
+            disabled={disabledHint != null || publishing}
+            title={disabledHint}
+            onClick={onPublishAndAdd}
+          >
+            {publishing ? "Publishing…" : "Publish recipe & add"}
+          </Button>
+        )}
       </div>
     );
   }

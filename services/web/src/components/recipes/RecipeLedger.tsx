@@ -9,6 +9,7 @@ import { DragHandle, DropLine, insertionPointAt } from "#/components/ui/drag-reo
 import { ScopedLedgerHeader } from "#/components/collections/ScopedLedgerHeader";
 import { dragCarries, RECIPE_DRAG_TYPE } from "#/components/collections/drag";
 import { isDefaultScope, type LedgerScope, scopeLabel, scopeRows, searchRows } from "#/components/collections/scope";
+import { useStaleToast } from "#/components/collections/use-stale-toast";
 import { useDragHandle } from "#/lib/hooks/use-drag-source";
 import { applyVisibleOrder, moveByKey, moveToInsertionPoint } from "#/lib/reorder";
 import { cn } from "#/lib/utils";
@@ -95,7 +96,18 @@ export function RecipeLedger({
   const { householdId } = useRouteContext({ from: "/household/recipes" });
   const queryClient = useQueryClient();
   const online = useIsOnline();
-  const reorder = useMutation(reorderCollectionRecipesMutation(queryClient, householdId));
+  const { notifyStale } = useStaleToast(householdId);
+  const reorder = useMutation({
+    ...reorderCollectionRecipesMutation(queryClient, householdId),
+    // The order IS the published array order (§2.6), so a reorder re-puts — and
+    // the re-put can miss while the local rows still save (§5). Handled in the
+    // mutation's own options rather than per-call, so the notice survives a
+    // navigation away from the scope that made it (query-core drops per-call
+    // callbacks once the observer has no listeners).
+    onSuccess: (result) => {
+      if (result.stale && collection) notifyStale(collection);
+    },
+  });
 
   const visible = useMemo(() => visibleRows(recipes, scope, query), [recipes, scope, query]);
   const visibleIds = useMemo(() => visible.map((r) => r.recipeId), [visible]);

@@ -1,10 +1,9 @@
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { FolderLock } from "lucide-react";
-import { addRecipesToCollectionMutation, householdCollectionsQuery, removeRecipeFromCollectionMutation } from "#/lib/api";
-import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
+import { AtprotoReauthDialog } from "#/components/AtprotoReauthDialog";
 import { Button } from "#/components/ui/button";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "#/components/ui/sheet";
 import { CollectionCheckRow } from "./CollectionCheckRow";
+import { useFileRecipe } from "./use-file-recipe";
 
 /**
  * "File this recipe" — one recipe onto many shelves, on a phone (§7).
@@ -18,7 +17,10 @@ import { CollectionCheckRow } from "./CollectionCheckRow";
  * recipe gets onto a shelf from a phone.
  *
  * Rows are the shared `CollectionCheckRow` at `size="default"` — 48px, past the
- * 44px floor §7 mandates, with `min-h-11` under it so it stays there.
+ * 44px floor §7 mandates, with `min-h-11` under it so it stays there. The
+ * behaviour behind them is the shared `useFileRecipe`, so this surface and the
+ * desktop dialog cannot drift: same refusals, same "Publish recipe & add", same
+ * stale notice.
  */
 export function FileRecipeSheet({
   open,
@@ -36,13 +38,7 @@ export function FileRecipeSheet({
   /** A private draft with no atproto record; blocked from published shelves (§2.4). */
   recipeUnpublished: boolean;
 }) {
-  const { data: collections } = useSuspenseQuery(householdCollectionsQuery(householdId));
-  const queryClient = useQueryClient();
-  const online = useIsOnline();
-  const file = useMutation(addRecipesToCollectionMutation(queryClient, householdId));
-  const unfile = useMutation(removeRecipeFromCollectionMutation(queryClient, householdId));
-
-  const filedCount = collections.filter((collection) => collection.recipeIds.includes(recipeId)).length;
+  const { collections, disabledHint, filedCount, publishingId, publishAndAdd, reauthOpen, setReauthOpen, toggle } = useFileRecipe(householdId, recipeId, recipeTitle);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -77,11 +73,10 @@ export function FileRecipeSheet({
                   filed={filed}
                   blocked={!filed && recipeUnpublished && collection.publishedAt != null}
                   size="default"
-                  disabledHint={online ? undefined : OFFLINE_WRITE_HINT}
-                  onToggle={(checked) => {
-                    if (checked) file.mutate({ collectionId: collection.id, recipeIds: [recipeId] });
-                    else unfile.mutate({ collectionId: collection.id, recipeId });
-                  }}
+                  disabledHint={disabledHint}
+                  onToggle={(checked) => toggle(collection, checked)}
+                  onPublishAndAdd={() => publishAndAdd(collection)}
+                  publishing={publishingId === collection.id}
                 />
               );
             })}
@@ -96,6 +91,10 @@ export function FileRecipeSheet({
           </p>
           <SheetClose render={<Button size="lg" className="h-11 w-full" />}>Done</SheetClose>
         </SheetFooter>
+
+        {/* The combo publishes a *recipe*: an under-scoped grant refuses it here
+          exactly as it does on the recipe's own publish button. */}
+        <AtprotoReauthDialog open={reauthOpen} onOpenChange={setReauthOpen} touch />
       </SheetContent>
     </Sheet>
   );

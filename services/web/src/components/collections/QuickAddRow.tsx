@@ -51,7 +51,10 @@ export function QuickAddRow({
         title={disabledHint}
         onClick={() => setOpen(true)}
         className={cn(
-          "flex w-full cursor-(--cursor-interactive) items-center gap-2 px-2.5 py-1.5 text-[0.8125rem] font-semibold text-muted-foreground transition-colors",
+          // 44px on a coarse pointer, like every other row in the tree — see
+          // `CollectionRow` for why the variant is the input device and not the
+          // viewport width.
+          "flex w-full cursor-(--cursor-interactive) items-center gap-2 px-2.5 py-1.5 text-[0.8125rem] font-semibold text-muted-foreground transition-colors pointer-coarse:min-h-11",
           "not-disabled:hover:bg-accent/40 not-disabled:hover:text-foreground disabled:opacity-60",
           "focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-ring",
         )}
@@ -64,7 +67,7 @@ export function QuickAddRow({
 
   return (
     <form
-      className="flex items-center gap-2 px-2.5 py-1"
+      className="flex items-center gap-2 px-2.5 py-1 pointer-coarse:min-h-11"
       onSubmit={(event) => {
         event.preventDefault();
         const trimmed = name.trim();
@@ -101,7 +104,7 @@ export function QuickAddRow({
         onBlur={() => {
           if (!name.trim()) close();
         }}
-        className="min-w-0 flex-1 border-0 bg-transparent py-0.5 text-[0.8125rem] font-semibold text-foreground outline-none placeholder:font-medium placeholder:text-muted-foreground"
+        className="min-w-0 flex-1 border-0 bg-transparent py-0.5 text-[0.8125rem] font-semibold text-foreground outline-none placeholder:font-medium placeholder:text-muted-foreground pointer-coarse:min-h-9"
       />
     </form>
   );

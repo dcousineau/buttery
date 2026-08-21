@@ -91,7 +91,13 @@ export function CollectionTreeRow({
       onDragLeave={drag?.onDragLeave}
       onDrop={drag?.onDrop}
       className={cn(
-        "group/row relative flex items-center gap-0.5 pr-1",
+        // `pointer-coarse:` is where the touch sizing lives: a finger needs 44px
+        // and a mouse does not, and the question is the *input device*, not the
+        // viewport — a phone-width desktop window keeps the dense rows, a
+        // touchscreen laptop gets the big ones. Milestone 4 had to apply these
+        // from outside (`TOUCH_TREE` in `CollectionsSheet`) because it did not
+        // own this file; they belong here, on the elements they describe.
+        "group/row relative flex items-center gap-0.5 pr-1 pointer-coarse:min-h-11",
         selectableRowVariants({ selected: active }),
         // The same ink the drop line is drawn in, as an inset outline: rows sit
         // flush in a scrollport, so an outward ring would land on its neighbours.
@@ -107,7 +113,7 @@ export function CollectionTreeRow({
         onClick={onNavigate}
         aria-current={active ? "true" : undefined}
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-2 py-1.5 text-[0.8125rem] font-semibold text-foreground no-underline focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-ring",
+          "flex min-w-0 flex-1 items-center gap-2 py-1.5 text-[0.8125rem] font-semibold text-foreground no-underline focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-ring pointer-coarse:min-h-11",
           // A row with a grip has already spent its leading gutter on it — but
           // only from `md` up, which is the only place a grip is ever visible
           // (§7). Below that the row keeps the same indent as a smart row,
@@ -134,10 +140,11 @@ export function CollectionTreeRow({
  * dialog.
  *
  * The gear is hover-revealed but **never hover-only** — it is a real button in
- * the tab order at all times, and `group-focus-within` brings it into view the
- * moment a keyboard reaches the row. Opacity, not `hidden`: a control that
- * leaves the accessibility tree when it is not hovered is a control a screen
- * reader user does not have.
+ * the tab order at all times, `group-focus-within` brings it into view the
+ * moment a keyboard reaches the row, and on a coarse pointer it is visible and
+ * 44px from the start, because a touch device has no hover to reveal it with.
+ * Opacity, not `hidden`: a control that leaves the accessibility tree when it is
+ * not hovered is a control a screen reader user does not have.
  *
  * The grip in front of the name plays by the same rules, with one addition: it
  * is `max-md:hidden`, because there is no dragging below `md` at all (§7) and a
@@ -180,7 +187,10 @@ export function CollectionRow({
           type="button"
           onClick={() => onEdit(collection)}
           aria-label={`Edit ${collection.name}`}
-          className="grid size-6 shrink-0 cursor-(--cursor-interactive) place-content-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring group-hover/row:opacity-100 group-focus-within/row:opacity-100"
+          // Hover-revealed for a mouse; on a coarse pointer there IS no hover
+          // (BRAND.md is explicit about it), so the gear that opens the edit
+          // sheet is simply there, at 44px. Without this, touch has no way in.
+          className="grid size-6 shrink-0 cursor-(--cursor-interactive) place-content-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:size-11 pointer-coarse:opacity-100"
         >
           <Settings2 className="size-3.5" aria-hidden="true" />
         </button>

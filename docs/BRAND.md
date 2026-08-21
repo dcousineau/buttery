@@ -232,8 +232,11 @@ Established glyph vocabulary — reuse rather than picking new ones: `house`,
 `cooking-pot`, `utensils-crossed`, `users`, `crown`, `shield`, `user-minus`,
 `user-plus`, `mail`, `mail-question`, `link-2`, `clock`, `pencil`, `check`, `copy`,
 `trash-2`, `log-out`, `panel-left`, `chevrons-up-down`, `chevron-right`,
-`arrow-left`, `x`, `sun`, `moon`, `sun-moon`, `external-link`, `settings-2`,
-`compass`, `loader-2`.
+`chevron-up`, `chevron-down`, `arrow-left`, `x`, `sun`, `moon`, `sun-moon`,
+`external-link`, `settings-2`, `compass`, `loader-2`, `globe`, `refresh-cw`.
+
+`globe` is "public on the atproto network" and `lock` is its opposite — the pair
+that says whether a recipe or a collection has left the household.
 
 **No emoji, ever.** The only non-icon glyphs used as UI are `·` as a metadata
 separator and `—` in prose.

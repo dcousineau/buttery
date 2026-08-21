@@ -1012,3 +1012,295 @@ caches the miss: every server fn then 500s with `Failed to load url …/generate
 long after the file is back on disk. It is not a code fault and no page change fixes it —
 `process-compose process restart web` does, in about fifteen seconds. It happened twice
 during this milestone.
+
+---
+
+## Milestone 5 (UI) — the publish surface
+
+The last milestone, and the half of §10.5 the server pass left: the owner-only publish
+section, the three warning dialogs whose copy §2.5 and §2.7 mandate, the "Publish recipe &
+add" combo, and the staleness notice every re-putting write can now answer with. Plus the
+two cleanups milestones 3 and 4 explicitly handed on — the WCAG 2.5.7 pointer-only reorder
+and the `TOUCH_TREE` seam.
+
+### What was built
+
+**New — `services/web/src/components/collections/`**
+
+| file                         | what it is                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `PublishConfirmDialog.tsx`   | §2.5's copy, plus the `recipes_unpublished` preflight list and any PDS refusal, kept on screen                 |
+| `UnpublishConfirmDialog.tsx` | §2.7's copy for "the record goes, the shelf stays"                                                             |
+| `DeleteCollectionDialog.tsx` | §2.7's copy for "both go", built on the shared `ConfirmDialog`; a second wording for an unpublished shelf      |
+| `use-stale-toast.ts`         | The one place "Saved — couldn't update @sam's published copy yet" is written, its Retry, and `publisherName()` |
+| `use-file-recipe.ts`         | The filing behaviour the picker dialog and the mobile sheet now share, combo and all                           |
+
+**New — `services/web/src/components/`**
+
+| file                      | what it is                                                                                                                          |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `AtprotoReauthDialog.tsx` | "Buttery needs new permissions" — the single prompt every `scope_error` routes to, across four call sites. Built on `ConfirmDialog` |
+
+**Changed**
+
+- `EditCollectionDialog.tsx` — the publish section (`PublishSection`) mounts exactly where
+  milestone 4 said it would: under the member list, above the footer, inside the one
+  scrolling region. It carries "Published by @handle" (or "Household only — this shelf isn't
+  on the network."), the `record_stale` badge with its member-level retry, and the owner's
+  Publish / Unpublish / Delete. The member list gained **move up / move down** per row.
+- `CollectionCheckRow.tsx` — the blocked row grew its **"Publish recipe & add"** action; the
+  `TODO(m5)` is gone.
+- `CollectionPickerDialog.tsx`, `FileRecipeSheet.tsx` — reduced to layout over `useFileRecipe`.
+- `AddRecipesSheet.tsx` — the footer's refusal grew **"Publish N recipes & add"** over the
+  whole selection; its `TODO(m5)` is gone.
+- `CollectionsTree.tsx`, `RecipeLedger.tsx` — drag-to-file and the collection-scoped reorder
+  now surface `stale`.
+- `CollectionRow.tsx`, `QuickAddRow.tsx`, `CollectionsSheet.tsx` — `TOUCH_TREE` deleted, its
+  rules moved onto the elements under `pointer-coarse:`.
+- `DetailPane.tsx` — the **recipe** publish-confirm copy now names the handle (§2.5 applies
+  to recipes too).
+- `components/ui/toast.tsx` — `action` and `sticky` on a toast; `components/ConfirmDialog.tsx`
+  — a `children` body slot and a `touch` (44px) footer; `components/recipes/context.ts` +
+  `routes/household.recipes.tsx` — `pushToast(message, options?)`.
+- `lib/api/queries.ts` — `myHouseholdsQuery()` (the caller's role, for the owner gate);
+  `lib/api/mutations.ts` — `publishRecipeIds` on the filing mutation, plus the box
+  invalidation the combo needs.
+- `server/recipes-write.ts` — a **bug fix**, see deviation 7.
+
+### The mandated copy, as shipped
+
+**Publish a collection** (`PublishConfirmDialog`, title "Publish this collection?"):
+
+> This writes **{name}** to your own atproto account, @chef.test — the record lives on your
+> PDS, where any app on the network can read it. Everyone in your household can still edit
+> the shelf, and every future update to it goes out from @chef.test too, whichever member
+> makes the edit.
+
+**Unpublish** (title "Unpublish this collection?"):
+
+> This deletes the record from @chef.test's PDS. **{name}** and everything on it stay in your
+> box — only the public copy goes. Deleting from a PDS doesn't guarantee removal from the
+> wider internet: relays, mirrors and caches may already hold a copy.
+
+**Delete** (title "Delete this collection?", published shelf):
+
+> This deletes **{name}** from your box and deletes its record from @chef.test's PDS. Your
+> recipes stay where they are — only the shelf goes. Deleting from a PDS doesn't guarantee
+> removal from the wider internet: relays, mirrors and caches may already hold a copy.
+
+An unpublished shelf gets only the first sentence pair ("This deletes {name} from your box.
+Your recipes stay where they are — only the shelf goes.") — inventing a PDS caveat for a
+record that never existed teaches people to ignore it on the one that did.
+
+**Publish a recipe** (`DetailPane`, §2.5 applied to recipes):
+
+> This writes the recipe to your own atproto account, @chef.test — a portable record on your
+> PDS that any app on the network can read. Every future update to it goes out from
+> @chef.test too, whichever member of your household makes the edit. It's hard to undo.
+
+**Stale** (the toast, from `use-stale-toast.ts`): title "Saved — couldn't update @chef.test's
+published copy yet", description "Your change is saved here. The next edit to this collection
+will try again, or retry now.", one **Retry** button, and `sticky` so it does not expire
+under someone reading it. A retry that fails again re-pushes as "Still couldn't update
+@chef.test's published copy"; one that succeeds says "@chef.test's published copy is up to
+date". The persistent twin is the edit dialog's badge: **Out of date** · "@chef.test's
+published copy is behind what's here." · Retry.
+
+### How each result variant surfaces
+
+| call                            | variant                       | what the person sees                                                                                                           |
+| ------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `publishCollection`             | `ok`                          | Dialog closes, toast "Published as @handle", section flips to "Published by @handle"                                           |
+|                                 | `recipes_unpublished`         | Dialog **stays open**, lists the private titles (capped + scrolling), says publish them first                                  |
+|                                 | `flag_disabled`               | Dialog stays open: "Publishing is switched off right now. Nothing was published."                                              |
+|                                 | `scope_error`                 | Dialog closes, `AtprotoReauthDialog` opens                                                                                     |
+|                                 | `publisher_unavailable`       | "We couldn't reach @handle's PDS. Nothing was published — try again in a bit."                                                 |
+| `unpublishCollection`           | `ok`                          | Toast "Unpublished — the record is gone from @handle's PDS" (or "That shelf wasn't published" when `unpublished: false`)       |
+|                                 | `scope_error` / `publisher_…` | Re-authorize prompt / "…Nothing changed — the record is still published."                                                      |
+| `deleteCollection`              | `ok`                          | Toast, dialog and edit surface close, and `?c=<id>` is navigated away from so the ledger never answers with "no longer exists" |
+|                                 | `publisher_unavailable`       | "We couldn't reach @handle's PDS. **Nothing was deleted** — the shelf and its published record are both still here."           |
+| `addRecipesToCollection`        | `ok` + `stale`                | Filed, plus the stale toast                                                                                                    |
+|                                 | `recipes_unpublished`         | Blocked row / footer notice **with the combo action**                                                                          |
+|                                 | `flag_disabled`               | "Publishing is switched off right now — nothing was filed"                                                                     |
+|                                 | `scope_error`                 | `AtprotoReauthDialog` (all three filing surfaces mount one)                                                                    |
+| `update` / `reorder` / `unfile` | `stale: true`                 | The stale toast, from whichever surface made the write                                                                         |
+| `retryCollectionSync`           | `{ stale }`                   | Success or "still couldn't" toast; **shown to members, not only owners**                                                       |
+
+`publisher_unavailable` always names a person: the variant's `handle`, falling back to
+`CollectionSummary.publishedByHandle` (and, for a _publish_, to the acting owner's own handle
+— they are the publisher-to-be). `publisherName()` normalizes the `@`, because
+`resolveAdderHandles` already prefixes one and the session's handle does not; without it the
+first publish rendered "Published by @@chef.test", which the browser pass caught.
+
+### The two cleanups
+
+**WCAG 2.5.7 — a pointer-only reorder.** Milestone 3's own note said the honest home was the
+edit dialog's member list, and it is: each row now carries **Move up / Move down** buttons
+(disabled at the ends, `aria-label` naming the recipe, a `role="status"` line announcing
+"Chana Masala moved to 2 of 2"). They write the collection's **full** entry order through
+`applyVisibleOrder`, exactly as the ledger's drag does, so a member the box no longer holds
+keeps its slot. The `TODO(m3)` in `EditCollectionDialog.tsx` is discharged. On a phone these
+are the _only_ reorder path — there is no drag below `md` — so they are 44px there.
+
+**The `TOUCH_TREE` seam.** The six arbitrary-variant rules milestone 4 applied from
+`CollectionsSheet` now live on the elements they describe, under `pointer-coarse:`: the row
+`<li>` and its `<a>` (`min-h-11`), the gear (`size-11` + `opacity-100` — a touch device has
+no hover to reveal it with), and the quick-add trigger, form and input. `TOUCH_TREE` is
+deleted; the sheet passes `className="h-full"` and nothing else. The variant keys off the
+**input device** rather than the viewport, which is what the rule was always about: a
+touchscreen laptop now gets the big targets the phone got, and a narrow desktop window keeps
+the dense ones. Verified both ways in the browser (below).
+
+### Deviations, and why
+
+1. **`myHouseholdsQuery()` — a new factory in `queries.ts`.** The owner gate needs the
+   caller's role and nothing in the session carries one: `ensureActiveHousehold` answers an id
+   and a name, and the members list is a different, household-scoped read. It is keyed on the
+   already-reserved `keys.me.households()`, takes no argument (it is household-independent),
+   and decides only what to _draw_ — every one of these writes is `assertMember`-gated
+   server-side regardless.
+
+2. **`useFileRecipe` — one file §7's table does not list.** Milestone 4's note said the picker
+   dialog and the file sheet take identical props and must change together. This milestone
+   changed both (the combo, the stale notice, the re-authorize prompt), so the behaviour moved
+   into a hook and the two components became layout. Same reasoning as `CollectionCheckRow`
+   one milestone earlier.
+
+3. **A shared `AtprotoReauthDialog`.** Four collections call sites can answer `scope_error`
+   (publish, unpublish, delete, and the combo in each of three filing surfaces). Four copies
+   of that paragraph would drift on the first edit. `DetailPane` and `RecipeForm` keep their
+   own older, recipe-specific wording — folding them in is a tidy-up for whoever owns those
+   files next, not a collections change.
+
+4. **`ConfirmDialog` gained `children` and `touch`; `Toast` gained `action` and `sticky`.**
+   Both additive with defaults, so every existing call site is byte-identical — the same move
+   milestones 2 and 4 made on `CheckboxRow`. `children` exists because `description` renders
+   inside a `<p>` and the blocked-recipes list and the failure notice are blocks; `touch`
+   because a dialog opened from a phone sheet needs the feature's 44px floor and
+   `Button size="lg"` is 36px. `sticky` because a toast carrying a Retry must not expire in
+   four seconds.
+
+5. **The stale notice is handled in each mutation's own `onSuccess`, not per call.** Saving
+   closes the edit dialog, and query-core skips a `mutate(vars, { onSuccess })` callback once
+   the observer has no listeners — so the first implementation dropped the notice exactly when
+   the write it describes had outlived its dialog. Options-level callbacks run on the mutation
+   itself and survive the unmount. (Caught in the browser, not by types.)
+
+6. **Box removal does not raise a stale toast.** `unboxRecipe` returns `staleCollectionIds`,
+   but the `removeRecipeFromHousehold` **server fn** answers `{ ok: true }` and this milestone
+   changed no server contract to widen it. The person is also navigating away from the recipe
+   at that moment. The badge in the edit dialog still tells the truth, and the next write to
+   the collection clears it.
+
+7. **A server bug fix outside this milestone's scope: `publishRecipe` could never succeed.**
+   `runPublishExisting` validated `buildRecordFromRow`'s output directly, and that builder
+   assembles the _author's_ columns only — `createdAt`/`updatedAt` are the server's to stamp
+   (`recipe-record.ts`). So **every** publish of an already-saved recipe returned
+   `invalid: Missing required key "createdAt"` and nothing ever reached a PDS. It is fixed
+   here (stamp before validating; `createdAt` = the row's frozen `record_created_at`, else its
+   `indexed_at`, else now) because milestone 5's own "Publish recipe & add" combo calls that
+   exact path — the escape hatch was dead on arrival without it, and the first browser attempt
+   proved it. `recipes-write.db.test.ts` gained the regression test (it fails with the stamp
+   removed; verified both ways).
+
+8. **`Globe` and the chevrons are new to the icon vocabulary.** BRAND.md's list had no glyph
+   for "public on the atproto network" — `lock` had no opposite. `globe`, `refresh-cw`,
+   `chevron-up` and `chevron-down` were added to that list in `docs/BRAND.md`, with a line
+   pairing `globe`/`lock`. No token or form state changed, so no `/design-sync` was pushed.
+
+9. **The publish dialog lists the blocking recipes but does not offer to publish them all.**
+   §5 gives the combo to _filing_, and `publishCollection` has no equivalent parameter, so the
+   dialog names the titles (capped at ~8.5rem and scrolling — a 20-title list otherwise pushes
+   the dialog's own buttons off a phone) and leaves the decision where the server put it.
+
+### Commands run
+
+```
+pnpm --filter @buttery/lexicons build
+pnpm typecheck
+pnpm lint
+pnpm format:check                      # 3 files reformatted with `pnpm exec oxfmt <files>`, then clean
+pnpm test
+DATABASE_URL=<services/web/.env> pnpm --filter @buttery/web exec vitest run --project db
+process-compose process restart web    # once, after the first `lex build --clear`
+```
+
+The db project was run because deviation 7 changes server behaviour. `pnpm test:db` was again
+not usable (it wraps `railway run`, and this environment has no Railway login).
+
+### Test results
+
+| command                     | result                                                                      |
+| --------------------------- | --------------------------------------------------------------------------- |
+| `pnpm typecheck`            | **pass** — all 7 workspace projects                                         |
+| `pnpm lint` (oxlint)        | **pass**, exit 0 — the same 3 pre-existing warnings in unrelated components |
+| `pnpm format:check` (oxfmt) | **pass** — "All matched files use the correct format"                       |
+| `pnpm test`                 | **pass** — web: 36 files, 585 passed / 254 skipped                          |
+| `vitest run --project db`   | **pass** — 8 files, **254 passed** (was 253; +1 regression test)            |
+
+No new unit tests beyond that one: everything else here is DOM, and the repo has no DOM tests
+(§9). The pure functions this milestone leans on (`applyVisibleOrder`, the optimistic patches)
+are covered by milestones 1 and 3.
+
+### Verified in the browser — against the real local PDS
+
+Playwright against the running stack at `http://127.0.0.1:3000`, signed in as `chef.test`,
+household "The Test Kitchen", `ATPROTO_PUBLISH_ENABLED=true`. Every publish below is a real
+`com.atproto.repo.*` call to the dev PDS at `localhost:2583`, and every one was confirmed by
+fetching the record back with `getRecord` and by reading the DB columns. Console: **0 errors,
+0 warnings** throughout.
+
+- **Publishing a recipe** — Chana Masala went public (`at://did:plc:b65…/exchange.recipe.recipe/seed-chana-masala`
+  with a cid). This is what surfaced deviation 7; before the fix the call answered `invalid`
+  and the UI silently did nothing.
+- **Publishing a collection containing it** — the PDS minted the TID `3mtkkhq3sdc2y`, all seven
+  publish columns were stamped, and the record came back holding one strongRef with both
+  halves. An **empty** shelf published too, with `recipes` omitted entirely (the lexicon allows
+  it, §8).
+- **The blocked path** — a private recipe (Beef Bourguignon) against that published shelf
+  rendered the dashed blocked row with its lock and its explanation, in the desktop dialog and
+  in the mobile sheet.
+- **The combo** — "Publish recipe & add" published the recipe and filed it in one call; the
+  record came back with two refs, `createdAt` frozen and `updatedAt` moved. The **Unpublished**
+  smart row dropped 33 → 31 on the same frame, which is the box invalidation the mutation now
+  does. The mobile whole-selection version ("Publish 2 recipes & add", 44px) published both and
+  filed them in tap order.
+- **Reordering** — the edit dialog's Move down swapped two members, announced "Chana Masala
+  moved to 2 of 2", and the published record's array order followed. The ledger's keyboard
+  reorder did the same from the other surface.
+- **Staleness, for real** — `process-compose process stop atproto-dev-env`, then a rename:
+  the row saved, `record_stale` became true, the sticky toast said "Saved — couldn't update
+  @chef.test's published copy yet" **after the dialog had closed**, and the edit dialog showed
+  the Out of date badge. Retry with the PDS still down answered "Still couldn't…"; with the PDS
+  back it re-put the rename, cleared `record_stale`, and said "@chef.test's published copy is
+  up to date".
+- **Unpublish** — the record 404s on the PDS afterwards, the seven columns are null, and every
+  local row (including all entries) survived.
+- **Delete, both ways** — with the PDS stopped, the dialog stayed open saying "We couldn't
+  reach @chef.test's PDS. Nothing was deleted — the shelf and its published record are both
+  still here", and the DB confirmed the row was untouched. With the PDS back, the same button
+  deleted the record and the local rows, closed the dialog, dropped the shelf from the tree and
+  navigated off `?c=<id>`. The recipes stayed in the box.
+- **Touch, measured under a real coarse pointer** (CDP `Emulation.setTouchEmulationEnabled`,
+  390×844): every tree row **44px**, every link 44px, both gears **44×44 at opacity 1**, the
+  quick-add row 44px — the same numbers `TOUCH_TREE` produced, now from `pointer-coarse:`. The
+  publish section's buttons in the edit **sheet** are 44px, as are the confirm dialogs' footer
+  buttons (`touch`), the blocked row's combo, and the batch combo.
+- **Desktop is pixel-unchanged** (1440×900, `pointer: fine`): tree rows **31.5px**, gears
+  **24px at opacity 0**, quick-add 31.5px — identical to the measurements taken before the
+  `TOUCH_TREE` move.
+
+### Notes for whoever picks this up next
+
+- **`retryCollectionSync` is member-level and the UI treats it that way.** The stale badge and
+  its Retry render for everyone; only Publish / Unpublish / Delete are behind the owner check.
+  If a future surface hides staleness behind the owner gate it will strand the member who made
+  the edit.
+- **The non-owner path was not exercised in a browser** — the dev stack has one account, and
+  it owns the household. The gate is `myHouseholdsQuery()` → `role === "owner"`, and the server
+  refuses regardless.
+- **`publisherName()` is the only place a handle gets its `@`.** Two sources spell it
+  differently; anything new that renders a publisher should go through it.
+- The **atproto cron sync still does not read collection records** (§2.12, push-only v1), so
+  nothing round-trips a published collection back into the index. A sweep after publishing is
+  still `pnpm --filter @buttery/atproto-cron-sync sync:once`, and it will ignore these records.

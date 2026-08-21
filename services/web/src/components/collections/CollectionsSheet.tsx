@@ -29,27 +29,14 @@ import { type LedgerScope, scopeLabel } from "./scope";
  * a panel that stayed open over the list it just changed would hide the answer.
  */
 /**
- * The tree, re-tuned for a thumb — applied to `CollectionsTree`'s own root
- * `className`, which is the only handle this milestone has on it.
- *
- * Two things a 232px desktop column gets away with and a phone does not:
- *
- * 1. **Rows are 30px.** Fine for a mouse, under the 44px floor for a finger
- *    (§7), so every row — smart, shelf and the quick-add — gets a floor here.
- * 2. **The row gear is `opacity-0` until hover.** A phone has no hover
- *    (BRAND.md is explicit: no hover-dependent controls on touch), so on mobile
- *    the gear that opens the edit sheet would be an invisible 24px target — and
- *    the edit sheet is a milestone-4 deliverable. It is revealed and grown here.
- *
- * This is a **restyle from outside**, and it is deliberate rather than ideal:
- * `CollectionRow.tsx` belongs to the concurrent drag-and-drop milestone, and
- * milestone 2 designed the tree so that mobile would not need to edit it. The
- * right long-term home for rules 1 and 2 is a `pointer-coarse:` variant inside
- * `CollectionRow` itself, where the desktop column would get them too — see the
- * results doc.
+ * Milestone 4 shipped a `TOUCH_TREE` override here — a stack of
+ * arbitrary-variant classes that grew the tree's 30px rows to 44px and revealed
+ * its hover-only gear, applied from *outside* because that milestone did not own
+ * `CollectionRow.tsx`. Those rules now live on the elements they describe, under
+ * a `pointer-coarse:` variant, so a touchscreen gets them wherever the tree is
+ * mounted and a mouse never does. The sheet has no styling opinion left beyond
+ * filling its own height.
  */
-const TOUCH_TREE =
-  "h-full [&_nav_li]:min-h-11 [&_nav_li>a]:min-h-11 [&_nav_li>button]:size-11 [&_nav_li>button]:opacity-100 [&_nav>button]:min-h-11 [&_nav>form]:min-h-11 [&_nav>form_input]:min-h-9";
 
 export function CollectionsSheet({ householdId, scope, className }: { householdId: string; scope: LedgerScope; className?: string }) {
   const [open, setOpen] = useState(false);
@@ -92,7 +79,7 @@ export function CollectionsSheet({ householdId, scope, className }: { householdI
             <span className="sr-only">Close collections</span>
           </SheetClose>
 
-          <CollectionsTree householdId={householdId} onNavigate={() => setOpen(false)} className={TOUCH_TREE} />
+          <CollectionsTree householdId={householdId} onNavigate={() => setOpen(false)} className="h-full" />
         </SheetContent>
       </Sheet>
     </div>

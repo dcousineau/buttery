@@ -15,7 +15,7 @@ import { resolveScope, SMART_SCOPES } from "#/components/collections/scope";
 import { useCollectionsColumn } from "#/components/collections/use-collections-column";
 import { GlobalRecipePicker } from "#/components/recipes/GlobalRecipePicker";
 import { AddRecipeChooser } from "#/components/recipes/create/AddRecipeChooser";
-import { RecipesViewContext } from "#/components/recipes/context";
+import { RecipesViewContext, type ToastOptions } from "#/components/recipes/context";
 import { RecipeScaleContext } from "#/components/recipes/scale";
 import { cn } from "#/lib/utils";
 import { seo } from "#/lib/seo";
@@ -125,8 +125,8 @@ function RecipesLayout() {
   const [chooserOpen, setChooserOpen] = useState(false);
   const { toasts, push, dismiss, pauseAll, resumeAll } = useToasts(4000);
 
-  function pushToast(message: string) {
-    push({ variant: "success", title: message });
+  function pushToast(message: string, options?: ToastOptions) {
+    push({ variant: options?.variant ?? "success", title: message, description: options?.description, action: options?.action, sticky: options?.sticky });
   }
 
   async function onAdded(recipeId: string) {
@@ -183,8 +183,30 @@ function RecipesLayout() {
 
         <ToastViewport position="bottom-center" onMouseEnter={pauseAll} onMouseLeave={resumeAll} onFocusCapture={pauseAll} onBlurCapture={resumeAll}>
           {toasts.map((t) => (
-            <Toast key={t.id} variant={t.variant} title={t.title} onClose={() => dismiss(t.id)}>
-              <Check className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <Toast
+              key={t.id}
+              variant={t.variant}
+              title={t.title}
+              description={t.description}
+              // Acting on a toast is also done with it: the outcome of the retry
+              // arrives as its own toast, and leaving the old one behind would
+              // stack two contradictory sentences.
+              action={
+                t.action
+                  ? {
+                      label: t.action.label,
+                      onClick: () => {
+                        t.action?.onClick();
+                        dismiss(t.id);
+                      },
+                    }
+                  : undefined
+              }
+              onClose={() => dismiss(t.id)}
+            >
+              {/* The tick belongs to a confirmation. A toast reporting that
+                something did NOT finish carries no icon rather than a wrong one. */}
+              {t.variant === "success" || t.variant === undefined ? <Check className="mt-0.5 size-4 shrink-0" aria-hidden="true" /> : null}
             </Toast>
           ))}
         </ToastViewport>

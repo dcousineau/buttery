@@ -1,10 +1,9 @@
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { FolderLock } from "lucide-react";
-import { addRecipesToCollectionMutation, householdCollectionsQuery, removeRecipeFromCollectionMutation } from "#/lib/api";
-import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
+import { AtprotoReauthDialog } from "#/components/AtprotoReauthDialog";
 import { Button } from "#/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "#/components/ui/dialog";
 import { CollectionCheckRow } from "./CollectionCheckRow";
+import { useFileRecipe } from "./use-file-recipe";
 
 /**
  * "Which shelves does this recipe belong on?" — the desktop filing surface (§7).
@@ -22,9 +21,10 @@ import { CollectionCheckRow } from "./CollectionCheckRow";
  *
  * **Blocked rows.** A published collection may not hold an unpublished recipe
  * (§2.4); the server's preflight refuses it, so the row refuses it here too
- * rather than letting someone discover the rule by failure. That row lives in
- * `CollectionCheckRow` now, shared with the mobile sheet, so milestone 5 adds
- * "Publish recipe & add" in one place rather than two.
+ * rather than letting someone discover the rule by failure — and offers
+ * "Publish recipe & add", which does both in one call (§5). Both the row and the
+ * behaviour behind it are shared with the mobile sheet (`CollectionCheckRow`,
+ * `use-file-recipe.ts`); this file is layout.
  */
 export function CollectionPickerDialog({
   open,
@@ -42,11 +42,7 @@ export function CollectionPickerDialog({
   /** A private draft with no atproto record; blocked from published shelves. */
   recipeUnpublished: boolean;
 }) {
-  const { data: collections } = useSuspenseQuery(householdCollectionsQuery(householdId));
-  const queryClient = useQueryClient();
-  const online = useIsOnline();
-  const file = useMutation(addRecipesToCollectionMutation(queryClient, householdId));
-  const unfile = useMutation(removeRecipeFromCollectionMutation(queryClient, householdId));
+  const { collections, disabledHint, publishingId, publishAndAdd, reauthOpen, setReauthOpen, toggle } = useFileRecipe(householdId, recipeId, recipeTitle);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -73,11 +69,10 @@ export function CollectionPickerDialog({
                   filed={filed}
                   blocked={!filed && recipeUnpublished && collection.publishedAt != null}
                   size="sm"
-                  disabledHint={online ? undefined : OFFLINE_WRITE_HINT}
-                  onToggle={(checked) => {
-                    if (checked) file.mutate({ collectionId: collection.id, recipeIds: [recipeId] });
-                    else unfile.mutate({ collectionId: collection.id, recipeId });
-                  }}
+                  disabledHint={disabledHint}
+                  onToggle={(checked) => toggle(collection, checked)}
+                  onPublishAndAdd={() => publishAndAdd(collection)}
+                  publishing={publishingId === collection.id}
                 />
               );
             })}
@@ -87,6 +82,10 @@ export function CollectionPickerDialog({
         <DialogFooter>
           <DialogClose render={<Button />}>Done</DialogClose>
         </DialogFooter>
+
+        {/* The combo publishes a *recipe*, so an under-scoped grant refuses it
+          the same way the recipe detail's own publish button does. */}
+        <AtprotoReauthDialog open={reauthOpen} onOpenChange={setReauthOpen} />
       </DialogContent>
     </Dialog>
   );

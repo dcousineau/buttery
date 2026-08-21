@@ -20,6 +20,7 @@ import { cn } from "#/lib/utils";
 import { CollectionRow, CollectionTreeRow } from "./CollectionRow";
 import { COLLECTION_DRAG_TYPE, dragCarries, RECIPE_DRAG_TYPE } from "./drag";
 import { EditCollectionDialog } from "./EditCollectionDialog";
+import { useStaleToast } from "./use-stale-toast";
 import { QuickAddRow } from "./QuickAddRow";
 import { DEFAULT_SCOPE, resolveScope, SMART_SCOPE_LABELS, SMART_SCOPES, type SmartScope, smartScopeCount } from "./scope";
 
@@ -80,6 +81,7 @@ export function CollectionsTree({ householdId, onNavigate, className }: { househ
   const { pushToast } = useRecipesView();
   const reorder = useMutation(reorderCollectionsMutation(queryClient, householdId));
   const file = useMutation(addRecipesToCollectionMutation(queryClient, householdId));
+  const { notifyStale } = useStaleToast(householdId);
 
   /**
    * Which collection the edit dialog is on — an **id**, resolved back to the
@@ -169,9 +171,18 @@ export function CollectionsTree({ householdId, onNavigate, className }: { househ
     }
     try {
       const result = await file.mutateAsync({ collectionId: collection.id, recipeIds: [recipeId] });
-      if (result.ok) pushToast(`Filed on ${collection.name}`);
-      else if (result.reason === "recipes_unpublished") pushToast(`${collection.name} is published, so it can only hold published recipes.`);
-      else pushToast("That didn't file. Try again.");
+      if (result.ok) {
+        pushToast(`Filed on ${collection.name}`);
+        // Filed here, but the publisher's copy of the shelf is behind (§5). The
+        // "Publish recipe & add" combo is deliberately not offered on a drop:
+        // making a recipe public is a decision, and a drag is not the gesture to
+        // take it with — the picker and the sheets ask properly.
+        if (result.stale) notifyStale(collection);
+      } else if (result.reason === "recipes_unpublished") {
+        pushToast(`${collection.name} is published, so it can only hold published recipes.`);
+      } else {
+        pushToast("That didn't file. Try again.");
+      }
     } catch {
       pushToast("That didn't file. Try again.");
     }

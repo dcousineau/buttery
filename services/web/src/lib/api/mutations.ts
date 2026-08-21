@@ -358,13 +358,22 @@ export function reorderCollectionRecipesMutation(queryClient: QueryClient, house
  */
 export function addRecipesToCollectionMutation(queryClient: QueryClient, householdId: string) {
   const queryKey = keys.household.collections(householdId);
-  type Vars = { collectionId: string; recipeIds: string[] };
+  type Vars = { collectionId: string; recipeIds: string[]; publishRecipeIds?: string[] };
   return mutationOptions({
     mutationKey: mutationKeys.collectionRecipesFiled,
     mutationFn: (vars: Vars) => api.addRecipesToCollection(vars),
     ...optimisticOver<CollectionSummary[], Vars, Awaited<ReturnType<typeof api.addRecipesToCollection>>>(queryClient, queryKey, (list, vars) =>
       withRecipesFiled(list, vars.collectionId, vars.recipeIds),
     ),
+    /**
+     * The "Publish recipe & add" combo (§5) changes something this key does not
+     * hold: the recipes it published stopped being private. `keys.household.recipes`
+     * is the prefix of `keys.household.recipe(hid, id)`, so one invalidation
+     * covers both the box list (the private chip, the Unpublished smart row) and
+     * every recipe detail under it — and it only runs when a recipe was actually
+     * published, so an ordinary filing still touches exactly one cache entry.
+     */
+    onSuccess: (_data: unknown, vars: Vars) => (vars.publishRecipeIds?.length ? queryClient.invalidateQueries({ queryKey: keys.household.recipes(householdId) }) : undefined),
   });
 }
 

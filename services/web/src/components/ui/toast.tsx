@@ -2,6 +2,7 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { XIcon } from "lucide-react";
 
+import { Button } from "#/components/ui/button.tsx";
 import { cn } from "#/lib/utils.ts";
 
 /*
@@ -56,6 +57,7 @@ function Toast({
   size = "default",
   title,
   description,
+  action,
   onClose,
   children,
   ...props
@@ -63,6 +65,13 @@ function Toast({
   VariantProps<typeof toastVariants> & {
     title?: React.ReactNode;
     description?: React.ReactNode;
+    /**
+     * One optional control, for the toast that reports something that did not
+     * finish ("couldn't update the published copy — Retry"). A toast carrying an
+     * action should be pushed `sticky`: four seconds is not long enough to read
+     * a sentence and reach a button, least of all with a keyboard.
+     */
+    action?: { label: string; onClick: () => void };
     onClose?: () => void;
   }) {
   // No role="status" here: the enclosing <ToastViewport> is the single
@@ -73,6 +82,11 @@ function Toast({
       <div className="min-w-0 flex-1">
         {title ? <div className="leading-snug font-semibold">{title}</div> : null}
         {description ? <p className={cn("m-0 mt-0.5 text-sm", variant === "default" ? "text-muted-foreground" : "opacity-85")}>{description}</p> : null}
+        {action ? (
+          <Button type="button" variant="outline" size="xs" className="mt-2" onClick={action.onClick}>
+            {action.label}
+          </Button>
+        ) : null}
       </div>
       {onClose ? (
         <button
@@ -93,6 +107,14 @@ type ToastQueueItem = {
   variant?: "default" | "success" | "destructive";
   title?: React.ReactNode;
   description?: React.ReactNode;
+  /** One control on the toast — see {@link Toast}. */
+  action?: { label: string; onClick: () => void };
+  /**
+   * Skip the auto-dismiss countdown for this one toast. For anything the reader
+   * has to act on: a countdown is fine for "Added to your box", and wrong for a
+   * message that carries a Retry button.
+   */
+  sticky?: boolean;
 };
 
 /**
@@ -119,7 +141,7 @@ function useToasts(timeout = 4000) {
     (toast: Omit<ToastQueueItem, "id">) => {
       const id = crypto.randomUUID();
       setToasts((t) => [...t, { ...toast, id }]);
-      if (timeout) {
+      if (timeout && !toast.sticky) {
         timers.current.set(id, { handle: setTimeout(() => dismiss(id), timeout), remaining: timeout, startedAt: Date.now() });
       }
       return id;

@@ -96,6 +96,8 @@ export function DetailPane({
   const [listRequest, setListRequest] = useState<AddPreviewRequest | null>(null);
   // `handle` is an atproto-plugin column, absent from better-auth's base user type.
   const { data: session } = useHydratedSession() as { data: { user?: { handle?: string | null } } | null };
+  /** "@chef.test" — the account a publish writes to, and publishes from after. */
+  const myHandle = session?.user?.handle ? `@${session.user.handle}` : null;
 
   // Detail-pane state (scroll position, note draft) is keyed by recipeId at the
   // render site (`<DetailPane key={recipe.recipeId} …/>`), so switching recipes
@@ -430,11 +432,20 @@ export function DetailPane({
         </div>
       </div>
 
+      {/* Collections plan §2.5 applies to recipes too: a publish dialog has to
+        name the account the record lands in and the handle every later update
+        will come from, because both are the acting member's and neither is
+        visible from the button. */}
       <ConfirmDialog
         open={confirmPublish}
         onOpenChange={setConfirmPublish}
         title="Publish this recipe?"
-        description="This makes the recipe public on atproto — a portable record in your repo that other apps can read. It's hard to undo."
+        description={
+          <>
+            This writes the recipe to your own atproto account{myHandle ? `, ${myHandle}` : ""} — a portable record on your PDS that any app on the network can read. Every future
+            update to it goes out from {myHandle ?? "your account"} too, whichever member of your household makes the edit. It’s hard to undo.
+          </>
+        }
         confirmLabel="Publish"
         pending={publishing}
         onConfirm={onPublish}

@@ -421,7 +421,15 @@ const runPublishExisting = createServerOnlyFn(async (db: Kysely<DB>, ctx: Ctx, r
   if (!built) return { status: "invalid", issues: [{ path: "recipeId", message: "Draft not found." }] };
   if (built.uri) return { status: "ok", recipeId, published: true }; // already public
 
-  const validated = validateRecipeRecord({ ...built.record, $type: "exchange.recipe.recipe" });
+  // Stamp the record's timestamps before validating: `createdAt`/`updatedAt` are
+  // required by the lexicon and are the server's to fill in (`recipe-record.ts`),
+  // and `buildRecordFromRow` reads the *author's* columns only. Without this,
+  // every publish of an existing draft fails validation with "Missing required
+  // key createdAt" and nothing ever reaches a PDS. A draft has never had a
+  // record, so its creation is either the frozen stamp from a previous life or
+  // this moment.
+  const stampedAt = new Date().toISOString();
+  const validated = validateRecipeRecord({ ...built.record, $type: "exchange.recipe.recipe", createdAt: built.createdAt ?? stampedAt, updatedAt: stampedAt });
   if (validated.status === "invalid") return { status: "invalid", issues: validated.issues };
 
   // Dedupe against a published record for the same source URL (import → publish later).
@@ -772,7 +780,7 @@ async function buildRecordFromRow(
   db: Kysely<DB>,
   ctx: Ctx,
   recipeId: string,
-): Promise<{ record: RecipeRecordInput; uri: string | null; sourceUrl: string | null; pendingImage: RecipeImageInput | null } | null> {
+): Promise<{ record: RecipeRecordInput; createdAt: string | null; uri: string | null; sourceUrl: string | null; pendingImage: RecipeImageInput | null } | null> {
   // Ownership: the recipe must be boxed in the caller's active household.
   const row = await db
     .selectFrom("recipe as r")
@@ -821,7 +829,11 @@ async function buildRecordFromRow(
   void pendingRow;
 
   const sourceUrl = attribution?.kind === "website" ? attribution.url : null;
-  return { record, uri: row.uri, sourceUrl, pendingImage };
+  // The record's frozen `createdAt` if this row ever carried one, else when the
+  // local row came into being. Never `now` here — the caller decides that, and
+  // only when there is nothing truer to use.
+  const createdAt = (row.record_created_at ?? row.indexed_at)?.toISOString() ?? null;
+  return { record, createdAt, uri: row.uri, sourceUrl, pendingImage };
 }
 
 // --- small helpers -------------------------------------------------------

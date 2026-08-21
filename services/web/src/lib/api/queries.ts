@@ -101,7 +101,27 @@ export function groceryListQuery(householdId: string) {
 }
 
 /**
- * The keys for the un-migrated resources (`me.households`, `household.members`,
+ * The caller's memberships — **their role is the only thing this is for**.
+ *
+ * Collections gate publish, unpublish and delete on `assertMember(…, "owner")`
+ * (collections plan §2.8), and the UI has to hide those controls rather than let
+ * a member find them by failure. Nothing else in the session carries a role:
+ * `ensureActiveHousehold` answers an id and a name, and the members list is a
+ * different, household-scoped read.
+ *
+ * It is household-independent and survives a household switch (`keys.me`), which
+ * is also why it takes no argument. Authorization still happens on the server —
+ * this decides what to *draw*, never what is allowed.
+ */
+export function myHouseholdsQuery() {
+  return queryOptions({
+    queryKey: keys.me.households(),
+    queryFn: () => api.listMyHouseholds(),
+  });
+}
+
+/**
+ * The keys for the remaining un-migrated resources (`household.members`,
  * `household.preferences`, the public browse surface) are reserved in `keys.ts`
  * but have no factory yet, on purpose: a factory here is a promise that the
  * resource is offline-capable, and those routes still read through plain
