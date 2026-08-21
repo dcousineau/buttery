@@ -77,7 +77,7 @@ function App() {
             blurb="Send a recipe or the whole week to one running household list — duplicates merged, grouped by aisle for the store."
           />
           <FeatureCard icon={<Dices />} title="Randomizer" status="development" blurb="Can't decide? Roll the dice, dinner picks itself." />
-          <FeatureCard icon={<FolderLock />} title="Private collections" blurb="Sort recipes into shelves only you (or your chosen few) can open." />
+          <FeatureCard icon={<FolderLock />} title="Private collections" blurb="Sort recipes into collections only you (or your chosen few) can open." />
         </div>
       </section>
     </div>

@@ -5,7 +5,7 @@ import { publisherName } from "./use-stale-toast";
  * "Unpublish this collection?" — §2.7's first warning dialog.
  *
  * Unpublishing is a `deleteRecord` on the publisher's PDS and nothing else: the
- * shelf, its description and every recipe filed on it stay exactly where they
+ * collection, its description and every recipe filed in it stay exactly where they
  * are locally. That is the first half of the copy.
  *
  * The second half is the one this app must never leave out. Deleting a record

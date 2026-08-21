@@ -1,7 +1,7 @@
 import { type DragEventHandler, type ReactNode, useMemo, useState } from "react";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BookOpenText, EyeOff, FolderLock, Lock, Plus, Star, UtensilsCrossed } from "lucide-react";
+import { BookOpenText, EyeOff, FolderLock, Plus, Star, Unlink, UtensilsCrossed } from "lucide-react";
 import { type HouseholdRecipeRow, reorderCollectionRecipesMutation } from "#/lib/api";
 import { useIsOnline } from "#/lib/offline/use-online";
 import { Button } from "#/components/ui/button";
@@ -113,7 +113,7 @@ export function RecipeLedger({
   const visibleIds = useMemo(() => visible.map((r) => r.recipeId), [visible]);
   const boxEmpty = recipes.length === 0;
   const missing = scope.kind === "missing-collection";
-  const emptyShelf = scope.kind === "collection" && scope.collection.recipeIds.length === 0;
+  const emptyCollection = scope.kind === "collection" && scope.collection.recipeIds.length === 0;
 
   // The row being carried, and the gap it would land in — an *insertion point*
   // (0…visible.length), counted between rows rather than on them.
@@ -199,7 +199,7 @@ export function RecipeLedger({
           : missing
             ? "This collection no longer exists."
             : visible.length === 0
-              ? emptyShelf && !query
+              ? emptyCollection && !query
                 ? `${scopeLabel(scope)} is empty.`
                 : "No recipes match your filters."
               : `${visible.length} recipe${visible.length === 1 ? "" : "s"}.`}
@@ -212,8 +212,8 @@ export function RecipeLedger({
         ) : missing ? (
           <MissingCollection />
         ) : visible.length === 0 ? (
-          emptyShelf && !query ? (
-            <EmptyShelf name={scopeLabel(scope)} />
+          emptyCollection && !query ? (
+            <EmptyCollection name={scopeLabel(scope)} />
           ) : (
             <EmptyFilter />
           )
@@ -221,7 +221,7 @@ export function RecipeLedger({
           <RecipeSlatList
             // The reorder is read at the list, not at each row: the drop line
             // lands in the divider between two rows, and a drag read row-by-row
-            // goes blind exactly there. A recipe on its way to a shelf passes
+            // goes blind exactly there. A recipe on its way to a collection passes
             // over this list too — `reorderable` is what keeps a search result,
             // or a smart scope, from quietly rewriting a collection's order.
             onDragOver={(event) => {
@@ -254,7 +254,7 @@ export function RecipeLedger({
                   filable
                     ? (event) => {
                         // One payload, two possible landings: `copy` onto a
-                        // shelf, `move` inside this list.
+                        // collection, `move` inside this list.
                         event.dataTransfer.effectAllowed = "copyMove";
                         event.dataTransfer.setData(RECIPE_DRAG_TYPE, r.recipeId);
                         setDragging(index);
@@ -358,9 +358,9 @@ function LedgerRow({
         <RecipeSlatBody>
           <RecipeSlatTitle>
             <span className="truncate">{row.title}</span>
-            {row.unpublished && <Lock className="size-3 shrink-0 text-muted-foreground" aria-label="Private — not published" />}
+            {row.unpublished && <EyeOff className="size-3 shrink-0 text-muted-foreground" aria-label="Private — not published" />}
             {row.favorite && <Star className="size-3 shrink-0 fill-primary text-primary" aria-label="Favorited" />}
-            {row.unavailable && <EyeOff className="size-3 shrink-0 text-muted-foreground" aria-label="Source no longer available" />}
+            {row.unavailable && <Unlink className="size-3 shrink-0 text-muted-foreground" aria-label="Source no longer available" />}
           </RecipeSlatTitle>
           <RecipeSlatMeta className="flex items-center gap-1">
             <SourceIcon kind={row.sourceKind} className="size-[11px] shrink-0" />
@@ -394,13 +394,13 @@ function EmptyFilter() {
     <div className="flex flex-col items-center gap-1 px-6 py-14 text-center">
       <UtensilsCrossed className="size-8 text-muted-foreground" aria-hidden="true" />
       <p className="m-0 text-[0.8125rem] font-bold text-foreground">Nothing matches that.</p>
-      <p className="m-0 text-xs text-muted-foreground">Clear the search, or pick another collection, to see more of the shelf.</p>
+      <p className="m-0 text-xs text-muted-foreground">Clear the search, or pick another collection, to see more of your box.</p>
     </div>
   );
 }
 
 /** A real, empty collection — a state to fill, not a search that found nothing. */
-function EmptyShelf({ name }: { name: string }) {
+function EmptyCollection({ name }: { name: string }) {
   return (
     <div className="flex flex-col items-center gap-1 px-6 py-14 text-center">
       <FolderLock className="size-8 text-muted-foreground" aria-hidden="true" />
@@ -412,7 +412,7 @@ function EmptyShelf({ name }: { name: string }) {
 
 /**
  * `?c=` pointing at a collection that is not there any more — someone deleted it
- * while this tab held it, or the link outlived the shelf. An inline state, never
+ * while this tab held it, or the link outlived the collection. An inline state, never
  * a 404 (§8): the box is fine, and one control gets you back to it.
  */
 function MissingCollection() {

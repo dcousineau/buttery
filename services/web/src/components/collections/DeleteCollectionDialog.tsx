@@ -7,7 +7,7 @@ import { publisherName } from "./use-stale-toast";
  *
  * Three things the copy has to be straight about:
  *
- * - **The recipes survive.** Deleting a shelf deletes the shelf. Nothing leaves
+ * - **The recipes survive.** Deleting a collection deletes the collection. Nothing leaves
  *   the box, which is the fear the word "delete" produces here.
  * - **The published record goes too**, from the publisher's PDS — the server
  *   deletes it *first* and only takes the local rows if that succeeded (§5), so
@@ -17,7 +17,7 @@ import { publisherName } from "./use-stale-toast";
  *   the same reason: relays, mirrors and caches may already hold a copy, and
  *   Buttery does not get to promise otherwise.
  *
- * An unpublished shelf gets the first point only — inventing a PDS caveat for a
+ * An unpublished collection gets the first point only — inventing a PDS caveat for a
  * record that never existed would teach people to ignore it on the one that did.
  */
 export function DeleteCollectionDialog({
@@ -52,11 +52,11 @@ export function DeleteCollectionDialog({
         published ? (
           <>
             This deletes <span className="font-semibold text-foreground">{collectionName}</span> from your box and deletes its record from {who}’s PDS. Your recipes stay where they
-            are — only the shelf goes. Deleting from a PDS doesn’t guarantee removal from the wider internet: relays, mirrors and caches may already hold a copy.
+            are — only the collection goes. Deleting from a PDS doesn’t guarantee removal from the wider internet: relays, mirrors and caches may already hold a copy.
           </>
         ) : (
           <>
-            This deletes <span className="font-semibold text-foreground">{collectionName}</span> from your box. Your recipes stay where they are — only the shelf goes.
+            This deletes <span className="font-semibold text-foreground">{collectionName}</span> from your box. Your recipes stay where they are — only the collection goes.
           </>
         )
       }

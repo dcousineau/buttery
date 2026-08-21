@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { BookOpenText, Clock, Lock, Star } from "lucide-react";
+import { BookOpenText, Clock, EyeOff, Star } from "lucide-react";
 import {
   addRecipesToCollectionMutation,
   type CollectionSummary,
@@ -12,9 +12,8 @@ import {
   reorderCollectionsMutation,
 } from "#/lib/api";
 import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
-import { useDragHandle } from "#/lib/hooks/use-drag-source";
-import { DragHandle, DropLine, insertionPointAt } from "#/components/ui/drag-reorder";
-import { moveByKey, moveToInsertionPoint, type ReorderMove } from "#/lib/reorder";
+import { DropLine, insertionPointAt } from "#/components/ui/drag-reorder";
+import { moveToInsertionPoint } from "#/lib/reorder";
 import { useRecipesView } from "#/components/recipes/context";
 import { cn } from "#/lib/utils";
 import { CollectionRow, CollectionTreeRow } from "./CollectionRow";
@@ -46,9 +45,9 @@ import { DEFAULT_SCOPE, resolveScope, SMART_SCOPE_LABELS, SMART_SCOPES, type Sma
  *
  * ## Two drags land here, and they are not the same drag (§7)
  *
- * - **A collection row, dragged by its grip** — reorders the household's list.
- *   Read at the `<ul>`, because the drop line is drawn in the gaps between rows
- *   and the gaps belong to no row. That order is **local-only and never
+ * - **A collection row, dragged by the row itself** — reorders the household's
+ *   list. Read at the `<ul>`, because the drop line is drawn in the gaps between
+ *   rows and the gaps belong to no row. That order is **local-only and never
  *   published** (§2.10): `reorderCollections` is the one write in the feature
  *   with no re-put behind it.
  * - **A recipe, dragged from the ledger** — files onto whichever row it is
@@ -58,17 +57,20 @@ import { DEFAULT_SCOPE, resolveScope, SMART_SCOPE_LABELS, SMART_SCOPES, type Sma
  * target only calls `preventDefault()` for its own, so the browser paints
  * "no drop" for the other one instead of quietly accepting it.
  *
- * Every bit of it is desktop-only (§7). The grips are `max-md:hidden`, and since
- * a row is only `draggable` while its grip is held (`useDragHandle`), a hidden
- * grip means a phone cannot start either drag at all — no media query in JS, no
- * touch shim, nothing to keep in sync.
+ * There is **no grip** on a collection row. One used to sit in a left gutter
+ * that every row had to pay for, which pushed the collections out of line with
+ * the smart rows above them; the row drags by its own body instead, the way the
+ * ledger's cards already do. Reordering therefore needs a non-drag path
+ * somewhere else (WCAG 2.5.7), and it has one: move up / move down live in the
+ * edit dialog, which is also the only path a phone gets. Touch cannot start an
+ * HTML5 drag, so the gesture stays desktop-only without a media query in JS.
  */
 
 const SMART_ICONS: Record<SmartScope, typeof BookOpenText> = {
   mine: BookOpenText,
   recent: Clock,
   favorites: Star,
-  unpublished: Lock,
+  unpublished: EyeOff,
 };
 
 export function CollectionsTree({ householdId, onNavigate, className }: { householdId: string; onNavigate?: () => void; className?: string }) {
@@ -99,13 +101,12 @@ export function CollectionsTree({ householdId, onNavigate, className }: { househ
   // above it or below it.
   const [dragging, setDragging] = useState<number | null>(null);
   const [dropAt, setDropAt] = useState<number | null>(null);
-  /** The shelf a dragged recipe is currently hovering over. */
+  /** The collection a dragged recipe is currently hovering over. */
   const [fileTarget, setFileTarget] = useState<string | null>(null);
   /** What the last reorder did, for people who cannot see the rows move. */
   const [moved, setMoved] = useState("");
   // One hook for the whole list: only one grip can be under the pointer, so only
   // the pressed row can arm itself.
-  const { armed, handleProps, disarm } = useDragHandle();
 
   const scope = resolveScope(search, collections);
   // Gone from the list (deleted by another member) closes the dialog by itself.
@@ -137,7 +138,8 @@ export function CollectionsTree({ householdId, onNavigate, className }: { househ
   }
 
   /**
-   * The one place the new order is written, from both the drag and the keyboard.
+   * The one place the new order is written. Only the drag reaches it now — the
+   * keyboard path moved to the edit dialog when the grips came off.
    *
    * The tree renders every collection the household has, so the order it sends
    * is the whole order by construction — unlike the scoped ledger, which renders
@@ -150,30 +152,25 @@ export function CollectionsTree({ householdId, onNavigate, className }: { househ
     setMoved(`${name} moved to ${nextIds.indexOf(ids[movedIndex]) + 1} of ${nextIds.length}.`);
   }
 
-  function onMove(index: number, move: ReorderMove) {
-    commitOrder(moveByKey(ids, index, move), index);
-  }
-
   function endDrag() {
     setDragging(null);
     setDropAt(null);
     setFileTarget(null);
-    disarm();
   }
 
-  /** A recipe card dropped on a shelf (§7's third surface). */
+  /** A recipe card dropped on a collection (§7's third surface). */
   async function fileRecipe(collection: CollectionSummary, recipeId: string) {
     if (collection.recipeIds.includes(recipeId)) {
       // Filing something twice is a silent no-op server-side (§8) — but silence
       // here would read as a drag that missed.
-      pushToast(`Already on ${collection.name}`);
+      pushToast(`Already in ${collection.name}`);
       return;
     }
     try {
       const result = await file.mutateAsync({ collectionId: collection.id, recipeIds: [recipeId] });
       if (result.ok) {
-        pushToast(`Filed on ${collection.name}`);
-        // Filed here, but the publisher's copy of the shelf is behind (§5). The
+        pushToast(`Filed in ${collection.name}`);
+        // Filed here, but the publisher's copy of the collection is behind (§5). The
         // "Publish recipe & add" combo is deliberately not offered on a drop:
         // making a recipe public is a decision, and a drag is not the gesture to
         // take it with — the picker and the sheets ask properly.
@@ -213,10 +210,10 @@ export function CollectionsTree({ householdId, onNavigate, className }: { househ
           ))}
         </ul>
 
-        <h3 className="m-0 px-2.5 pt-3 pb-1 text-[0.6875rem] font-bold tracking-[0.06em] text-muted-foreground uppercase">Your shelves</h3>
+        <h3 className="m-0 px-2.5 pt-3 pb-1 text-[0.6875rem] font-bold tracking-[0.06em] text-muted-foreground uppercase">Your collections</h3>
 
         {collections.length === 0 ? (
-          <p className="m-0 px-2.5 pb-1 text-xs text-pretty text-muted-foreground">Nothing here yet. A shelf is just a name and the recipes you file on it.</p>
+          <p className="m-0 px-2.5 pb-1 text-xs text-pretty text-muted-foreground">Nothing here yet. A collection is just a name and the recipes you file into it.</p>
         ) : (
           <ul
             className="m-0 list-none p-0"
@@ -250,18 +247,6 @@ export function CollectionsTree({ householdId, onNavigate, className }: { househ
                 active={scope.kind === "collection" && scope.collection.id === collection.id}
                 onNavigate={onNavigate}
                 onEdit={(target) => setEditingId(target.id)}
-                leading={
-                  reorderable ? (
-                    <DragHandle
-                      // Ten rows whose handles are all called "Reorder" are ten
-                      // buttons a screen reader cannot tell apart.
-                      label={`Reorder ${collection.name}`}
-                      onMove={(move) => onMove(index, move)}
-                      onPointerDown={handleProps.onPointerDown}
-                      className="ml-1.5 opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 max-md:hidden"
-                    />
-                  ) : undefined
-                }
                 dropLine={
                   dropAt === index ? (
                     <DropLine className="-top-[1.5px]" />
@@ -273,7 +258,7 @@ export function CollectionsTree({ householdId, onNavigate, className }: { househ
                 drag={
                   online
                     ? {
-                        draggable: armed,
+                        draggable: reorderable,
                         onDragStart: (event) => {
                           event.dataTransfer.effectAllowed = "move";
                           event.dataTransfer.setData(COLLECTION_DRAG_TYPE, collection.id);

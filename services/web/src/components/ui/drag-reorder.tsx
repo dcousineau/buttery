@@ -73,8 +73,8 @@ const gripClass = "-m-1 flex shrink-0 cursor-grab p-1 text-muted-foreground";
  *   feature simply does not exist for a keyboard, and dragging is also the one
  *   gesture a switch or head-pointer user cannot make (WCAG 2.5.7).
  * - `onMove` omitted → an `aria-hidden` `<span>`: a pointer accelerator for
- *   something that already has a full non-drag path (filing a recipe onto a
- *   shelf, which is what the collections picker and the mobile sheets are for).
+ *   something that already has a full non-drag path (filing a recipe into a
+ *   collection, which the collections picker and the mobile sheets are for).
  *   A focusable control that does nothing when you press it is worse than no
  *   control.
  *
@@ -91,7 +91,7 @@ export function DragHandle({
 }: {
   label: string;
   /**
-   * A pointer-only hint ("Drag onto a shelf to file it"). Worth setting on a
+   * A pointer-only hint ("Drag onto a collection to file it"). Worth setting on a
    * decorative grip, whose job is not guessable from a picture of a grip; leave
    * it off a keyboard handle, where it would only duplicate `label`.
    */

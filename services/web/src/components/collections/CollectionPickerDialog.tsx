@@ -6,7 +6,7 @@ import { CollectionCheckRow } from "./CollectionCheckRow";
 import { useFileRecipe } from "./use-file-recipe";
 
 /**
- * "Which shelves does this recipe belong on?" — the desktop filing surface (§7).
+ * "Which collections does this recipe belong in?" — the desktop filing surface (§7).
  * Below `md` the same question is asked by `FileRecipeSheet`, over the same rows.
  *
  * **Each tick files or unfiles immediately.** There is no Save: both writes are
@@ -16,7 +16,7 @@ import { useFileRecipe } from "./use-file-recipe";
  * decision. The footer button just closes.
  *
  * The rows are `tone="selection"` — membership is a standing fact, not finished
- * work, so a checked shelf takes the butter fill rather than the checklist's
+ * work, so a checked collection takes the butter fill rather than the checklist's
  * strike-through (see `ui/checkbox.tsx`).
  *
  * **Blocked rows.** A published collection may not hold an unpublished recipe
@@ -39,7 +39,7 @@ export function CollectionPickerDialog({
   householdId: string;
   recipeId: string;
   recipeTitle: string;
-  /** A private draft with no atproto record; blocked from published shelves. */
+  /** A private draft with no atproto record; blocked from published collections. */
   recipeUnpublished: boolean;
 }) {
   const { collections, disabledHint, publishingId, publishAndAdd, reauthOpen, setReauthOpen, toggle } = useFileRecipe(householdId, recipeId, recipeTitle);
@@ -49,13 +49,13 @@ export function CollectionPickerDialog({
       <DialogContent size="lg" className="max-h-[80vh] overflow-auto">
         <DialogTitle>File this recipe</DialogTitle>
         <DialogDescription>
-          Pick the shelves <span className="font-semibold text-foreground">{recipeTitle}</span> belongs on. Changes save as you tick.
+          Pick the collections <span className="font-semibold text-foreground">{recipeTitle}</span> belongs in. Changes save as you tick.
         </DialogDescription>
 
         {collections.length === 0 ? (
           <div className="flex flex-col items-center gap-1 px-6 py-10 text-center">
             <FolderLock className="size-8 text-muted-foreground" aria-hidden="true" />
-            <p className="m-0 text-[0.8125rem] font-bold text-foreground">No shelves yet</p>
+            <p className="m-0 text-[0.8125rem] font-bold text-foreground">No collections yet</p>
             <p className="m-0 text-xs text-muted-foreground">Open the collections column beside your box and make one — it only needs a name.</p>
           </div>
         ) : (

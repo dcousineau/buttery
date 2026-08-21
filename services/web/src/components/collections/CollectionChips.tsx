@@ -11,16 +11,23 @@ import { CollectionPickerDialog } from "./CollectionPickerDialog";
 import { FileRecipeSheet } from "./FileRecipeSheet";
 
 /**
- * The collections row on a recipe's detail pane (§7): which shelves this recipe
- * is on, and the way onto another one.
+ * The collections row on a recipe's detail pane (§7): which collections this
+ * recipe is on, and the way onto another one.
  *
  * **Two shapes, one job.** On a desktop every chip opens the picker dialog,
  * including the ones already filed — the chips are a *summary*, and the one
- * thing anyone wants after reading a summary of shelves is to change it. Below
- * `md` the chips stop being buttons and a full-width **"File this recipe"**
- * button appears under them, opening `FileRecipeSheet`: a phone has no drag and
- * no collections column, so this button is the whole way onto a shelf from a
+ * thing anyone wants after reading a summary of collections is to change it.
+ * Below `md` the chips stop being buttons and a **"File this recipe"** button
+ * appears beside them, opening `FileRecipeSheet`: a phone has no drag and no
+ * collections column, so this button is the whole way into a collection from a
  * recipe, and an `xs` chip is not a thing you ask a thumb to hit for it.
+ *
+ * That button is a **peer of the pane's other recipe actions**, not a banner
+ * over them: "Add to shopping list" and "Add to meal planner" sit directly
+ * underneath it in `DetailPane`, and they are default-size `outline` buttons
+ * with a leading icon. This one is the same button in the same flex flow, so
+ * the three read as one set of things you can do with this recipe rather than
+ * one loud one and two quiet ones.
  *
  * The read is the same cached `householdCollectionsQuery` the tree and the
  * ledger use — memberships are derived client-side by joining it against the
@@ -49,15 +56,17 @@ export function CollectionChips({
 
   if (isMobile) {
     return (
-      <div className={cn("flex flex-col items-stretch gap-2", className)}>
+      // `gap-2`, like the action row below it, so the button lines up with the
+      // set it belongs to whether the chips wrap it onto its own line or not.
+      <div className={cn("flex flex-wrap items-center gap-2", className)}>
         {filed.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <FolderLock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="sr-only">Collections:</span>
             {filed.map((collection) => (
-              // Read-out, not a control: the button below is the one target,
-              // and two ways to open the same sheet on one row is a row that
-              // has to explain itself.
+              // Read-out, not a control: the button beside them is the one
+              // target, and two ways to open the same sheet on one row is a row
+              // that has to explain itself.
               <Badge key={collection.id} size="xs" variant="secondary">
                 {collection.name}
               </Badge>
@@ -65,10 +74,11 @@ export function CollectionChips({
           </div>
         )}
 
+        {/* Deliberately no size or width of its own: default `outline` is
+          exactly what "Add to shopping list" and "Add to meal planner" are in
+          the action row below, and this button is one of them. */}
         <Button
           variant="outline"
-          // 44px — the mobile floor §7 sets for this feature's touch targets.
-          className="h-11 w-full"
           disabled={!online}
           title={online ? undefined : OFFLINE_WRITE_HINT}
           aria-haspopup="dialog"

@@ -93,7 +93,7 @@ const checkboxRowVariants = cva(
        * shopping line, a meal-plan claim. Checked is *done*, so the row strikes
        * through and drops its shadow, and remaining work stands proud of it.
        *
-       * `selection` is membership — "this recipe is on that shelf", "this
+       * `selection` is membership — "this recipe is in that collection", "this
        * option is chosen". Checked is a standing fact, not finished work, and
        * striking it through reads as "removed" to everyone who sees it. It
        * takes the butter selection fill instead, the same `accent` the app uses
@@ -127,8 +127,8 @@ function CheckboxRow({
   VariantProps<typeof checkboxRowVariants> & {
     checked?: boolean;
     /**
-     * A row whose state is a *fact*, not a choice — a recipe already filed on
-     * the shelf you are adding to, a line someone else claimed. It keeps its
+     * A row whose state is a *fact*, not a choice — a recipe already filed in
+     * the collection you are adding to, a line someone else claimed. It keeps its
      * tick and its label in the accessibility tree (a disabled checkbox still
      * announces "checked"), and only the sticker physics go quiet.
      */

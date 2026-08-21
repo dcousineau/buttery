@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useRouteContext, useRouter } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CalendarRange, Clock, EyeOff, Lock, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, CalendarRange, Clock, EyeOff, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
 import { type HouseholdRecipeDetail, keys, publishRecipe, removeRecipeFromHousehold, toggleRecipeFavoriteMutation, upsertHouseholdRecipeNote } from "#/lib/api";
 import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
@@ -244,7 +244,7 @@ export function DetailPane({
                   title={online ? undefined : OFFLINE_WRITE_HINT}
                   className="inline-flex items-center gap-1 rounded-4xl border-2 border-border bg-secondary px-2 py-0.5 text-secondary-foreground transition-colors not-disabled:hover:bg-accent disabled:opacity-60"
                 >
-                  <Lock className="size-3" aria-hidden="true" />
+                  <EyeOff className="size-3" aria-hidden="true" />
                   Private · Publish
                 </button>
                 <span aria-hidden>·</span>
@@ -275,7 +275,7 @@ export function DetailPane({
           </div>
         </div>
 
-        {/* Which household shelves this recipe is filed on, and the way onto
+        {/* Which household collections this recipe is filed in, and the way onto
           another one (collections plan §7). Reads the same cached collections
           query the tree and the ledger do — memberships are a client-side join,
           not a second request. */}

@@ -6,7 +6,7 @@ import { useRecipesView } from "#/components/recipes/context";
 import { useStaleToast } from "./use-stale-toast";
 
 /**
- * "Which shelves does this recipe belong on?", once — for the desktop picker
+ * "Which collections does this recipe belong in?", once — for the desktop picker
  * dialog and the mobile file sheet, which ask it identically and must answer it
  * identically.
  *
@@ -30,7 +30,7 @@ export function useFileRecipe(householdId: string, recipeId: string, recipeTitle
   const file = useMutation(addRecipesToCollectionMutation(queryClient, householdId));
   const unfile = useMutation(removeRecipeFromCollectionMutation(queryClient, householdId));
 
-  /** The shelf whose combo is in flight, so only its button says "Publishing…". */
+  /** The collection whose combo is in flight, so only its button says "Publishing…". */
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [reauthOpen, setReauthOpen] = useState(false);
 
@@ -46,7 +46,7 @@ export function useFileRecipe(householdId: string, recipeId: string, recipeTitle
       });
       if (result.ok) {
         if (publishFirst) pushToast(`Published ${recipeTitle} and filed it on ${collection.name}`);
-        // The filing saved; the publisher's copy of the shelf is what is behind.
+        // The filing saved; the publisher's copy of the collection is what is behind.
         if (result.stale) notifyStale(collection);
         return;
       }
@@ -85,7 +85,7 @@ export function useFileRecipe(householdId: string, recipeId: string, recipeTitle
     publishingId,
     reauthOpen,
     setReauthOpen,
-    /** A tick or an untick on one shelf — files and unfiles immediately. */
+    /** A tick or an untick on one collection — files and unfiles immediately. */
     toggle: (collection: CollectionSummary, checked: boolean) => {
       if (checked) void fileInto(collection, false);
       else unfileFrom(collection);

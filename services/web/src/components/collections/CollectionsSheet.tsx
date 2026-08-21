@@ -15,7 +15,7 @@ import { type LedgerScope, scopeLabel } from "./scope";
  * dialog, so mounting it in a `Sheet` and handing it `onNavigate` is the entire
  * mobile port of the desktop column — milestone 2 built it that way on purpose,
  * and this milestone did not have to touch it. Everything the tree can do on a
- * desktop (pick a smart row, pick a shelf, quick-add a new one, open the edit
+ * desktop (pick a smart row, pick a collection, quick-add a new one, open the edit
  * surface) it does here, unchanged.
  *
  * The trigger renders the **active scope's name** rather than the word
@@ -25,7 +25,7 @@ import { type LedgerScope, scopeLabel } from "./scope";
  * the same function the scoped ledger header uses, so the two can never
  * disagree.
  *
- * `onNavigate` closes the sheet behind a tap: picking a shelf is navigation, and
+ * `onNavigate` closes the sheet behind a tap: picking a collection is navigation, and
  * a panel that stayed open over the list it just changed would hide the answer.
  */
 /**
@@ -70,7 +70,7 @@ export function CollectionsSheet({ householdId, scope, className }: { householdI
             is the accessible name of the *dialog*, which a heading inside it
             cannot supply. */}
           <SheetTitle className="sr-only">Collections</SheetTitle>
-          <SheetDescription className="sr-only">Pick a smart list or a shelf to scope your recipe box. Picking one closes this panel.</SheetDescription>
+          <SheetDescription className="sr-only">Pick a smart list or a collection to scope your recipe box. Picking one closes this panel.</SheetDescription>
 
           {/* The primitive's own close is a 28px icon button. This one is 44px,
             like every other target in the mobile surface. */}

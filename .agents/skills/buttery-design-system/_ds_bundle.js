@@ -2960,7 +2960,7 @@ function Landing({
   }), /*#__PURE__*/React.createElement(FeatureCard, {
     icon: "folder-lock",
     title: "Private collections",
-    blurb: "Sort recipes into shelves only you (or your chosen few) can open."
+    blurb: "Sort recipes into collections only you (or your chosen few) can open."
   }), /*#__PURE__*/React.createElement(FeatureCard, {
     icon: "shopping-basket",
     title: "Shopping lists",

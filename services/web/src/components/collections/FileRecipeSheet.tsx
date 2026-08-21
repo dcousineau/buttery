@@ -6,7 +6,7 @@ import { CollectionCheckRow } from "./CollectionCheckRow";
 import { useFileRecipe } from "./use-file-recipe";
 
 /**
- * "File this recipe" — one recipe onto many shelves, on a phone (§7).
+ * "File this recipe" — one recipe into many collections, on a phone (§7).
  *
  * The mobile twin of `CollectionPickerDialog`, and deliberately the *same
  * interaction*: each tick files or unfiles immediately, both writes are
@@ -14,7 +14,7 @@ import { useFileRecipe } from "./use-file-recipe";
  * closes. What changes is the shape — a bottom sheet with a thumb-sized row,
  * because **mobile has no drag** (§7): sheets are the whole filing mechanism,
  * so this is not a convenience next to a drag target, it is the only way a
- * recipe gets onto a shelf from a phone.
+ * recipe gets into a collection from a phone.
  *
  * Rows are the shared `CollectionCheckRow` at `size="default"` — 48px, past the
  * 44px floor §7 mandates, with `min-h-11` under it so it stays there. The
@@ -35,7 +35,7 @@ export function FileRecipeSheet({
   householdId: string;
   recipeId: string;
   recipeTitle: string;
-  /** A private draft with no atproto record; blocked from published shelves (§2.4). */
+  /** A private draft with no atproto record; blocked from published collections (§2.4). */
   recipeUnpublished: boolean;
 }) {
   const { collections, disabledHint, filedCount, publishingId, publishAndAdd, reauthOpen, setReauthOpen, toggle } = useFileRecipe(householdId, recipeId, recipeTitle);
@@ -43,8 +43,8 @@ export function FileRecipeSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       {/*
-        `max-h` rather than a height: a household with two shelves gets a sheet
-        two shelves tall, and only a long list grows to most of the screen and
+        `max-h` rather than a height: a household with two collections gets a sheet
+        two collections tall, and only a long list grows to most of the screen and
         scrolls inside itself. The `data-[side=bottom]:` modifier is repeated on
         the radius so it beats the primitive's own attribute-selector rule.
       */}
@@ -52,14 +52,14 @@ export function FileRecipeSheet({
         <SheetHeader className="flex-none border-b-2 border-border px-4 py-3">
           <SheetTitle className="display-title text-lg">File this recipe</SheetTitle>
           <SheetDescription>
-            Pick the shelves <span className="font-semibold text-foreground">{recipeTitle}</span> belongs on. Changes save as you tick.
+            Pick the collections <span className="font-semibold text-foreground">{recipeTitle}</span> belongs in. Changes save as you tick.
           </SheetDescription>
         </SheetHeader>
 
         {collections.length === 0 ? (
           <div className="flex flex-col items-center gap-1 px-6 py-10 text-center">
             <FolderLock className="size-8 text-muted-foreground" aria-hidden="true" />
-            <p className="m-0 text-[0.8125rem] font-bold text-foreground">No shelves yet</p>
+            <p className="m-0 text-[0.8125rem] font-bold text-foreground">No collections yet</p>
             <p className="m-0 text-xs text-pretty text-muted-foreground">Go back to your box and make one from the collections button — it only needs a name.</p>
           </div>
         ) : (
@@ -87,7 +87,7 @@ export function FileRecipeSheet({
           {/* A running count, because the sheet covers the chips it changes —
             on a phone there is nothing behind it to watch move. */}
           <p className="m-0 text-center text-xs text-muted-foreground" role="status" aria-live="polite">
-            {filedCount === 0 ? "Not on any shelf yet" : `On ${filedCount} ${filedCount === 1 ? "shelf" : "shelves"}`}
+            {filedCount === 0 ? "Not in any collection yet" : `In ${filedCount} ${filedCount === 1 ? "collection" : "collections"}`}
           </p>
           <SheetClose render={<Button size="lg" className="h-11 w-full" />}>Done</SheetClose>
         </SheetFooter>

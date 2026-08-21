@@ -8,7 +8,7 @@ import { isDefaultScope, resolveScope, scopeLabel, scopeRows, searchRows, smartS
  *
  * It is unit-tested rather than clicked through because it is the one part of
  * milestone 2 that is pure: a wrong answer here shows up as a recipe missing
- * from a shelf, which is exactly the class of bug that is invisible until
+ * from a collection, which is exactly the class of bug that is invisible until
  * someone goes looking for a specific dinner.
  */
 

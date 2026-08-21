@@ -1,16 +1,18 @@
 import { type FormEvent, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { ChevronDown, ChevronUp, Globe, Lock, Plus, RefreshCw, Trash2, UtensilsCrossed, X } from "lucide-react";
+import { ChevronDown, ChevronUp, EyeOff, Globe, Plus, RefreshCw, Trash2, UtensilsCrossed, X } from "lucide-react";
 import {
   type CollectionSummary,
   deleteCollection,
+  householdCollectionsQuery,
   type HouseholdRecipeRow,
   keys,
   myHouseholdsQuery,
   publishCollection,
   removeRecipeFromCollectionMutation,
   reorderCollectionRecipesMutation,
+  reorderCollectionsMutation,
   unpublishCollection,
   updateCollectionMutation,
 } from "#/lib/api";
@@ -22,9 +24,10 @@ import { useRecipesView } from "#/components/recipes/context";
 import { AtprotoReauthDialog } from "#/components/AtprotoReauthDialog";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/components/ui/card";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "#/components/ui/dialog";
 import { Sheet, SheetContent } from "#/components/ui/sheet";
-import { Field, FieldLabel } from "#/components/ui/field";
+import { Field, FieldContent, FieldDescription, FieldLabel, FieldTitle } from "#/components/ui/field";
 import { Input } from "#/components/ui/input";
 import { Textarea } from "#/components/ui/textarea";
 import { AddRecipesSheet } from "./AddRecipesSheet";
@@ -89,7 +92,7 @@ export function EditCollectionDialog({
       <Sheet open={open} onOpenChange={onOpenChange}>
         {/*
           Full height, not `h-auto`: §7 asks for a full-height sheet, and a
-          shelf's member list is the one part of this form that can be thirty
+          collection's member list is the one part of this form that can be thirty
           rows long. The `data-[side=bottom]:` modifier is repeated so the
           height actually replaces the primitive's own attribute-selector rule.
         */}
@@ -130,8 +133,17 @@ function EditCollectionForm({
   const [name, setName] = useState(collection.name);
   const [description, setDescription] = useState(collection.description ?? "");
   const [addOpen, setAddOpen] = useState(false);
-  /** What the last move did, for people who cannot see the rows move. */
+  /** What the last move did — either kind — for people who cannot see rows move. */
   const [moved, setMoved] = useState("");
+
+  /**
+   * Every collection the household has, in the order the tree draws them. It is
+   * the same cached entry the tree read to render the row this dialog was opened
+   * from, so it is primed by construction and this never suspends — and the
+   * reorder below patches it optimistically, so the position shown here moves on
+   * the same frame as the click.
+   */
+  const { data: siblings } = useSuspenseQuery(householdCollectionsQuery(householdId));
 
   const { notifyStale } = useStaleToast(householdId);
 
@@ -149,6 +161,9 @@ function EditCollectionForm({
   const update = useMutation({ ...updateCollectionMutation(queryClient, householdId), onSuccess: onStale });
   const unfile = useMutation({ ...removeRecipeFromCollectionMutation(queryClient, householdId), onSuccess: onStale });
   const reorder = useMutation({ ...reorderCollectionRecipesMutation(queryClient, householdId), onSuccess: onStale });
+  // No `onStale` on this one, and that is not an oversight: the household's list
+  // order is local-only and has no published copy to fall behind (§2.10).
+  const reorderList = useMutation(reorderCollectionsMutation(queryClient, householdId));
 
   const byId = new Map(recipes.map((row) => [row.recipeId, row]));
   // Entry order, which is the order the published `recipes` array carries.
@@ -157,6 +172,12 @@ function EditCollectionForm({
   // that has not caught up.
   const members = collection.recipeIds.map((recipeId) => byId.get(recipeId)).filter((row): row is HouseholdRecipeRow => row != null);
   const visibleIds = members.map((row) => row.recipeId);
+
+  // Where this collection sits among the household's collections. `-1` means a
+  // cache that has not caught up (it was deleted elsewhere) — no position to
+  // show and nothing to move.
+  const siblingIds = siblings.map((row) => row.id);
+  const position = siblingIds.indexOf(collection.id);
 
   const trimmed = name.trim();
   const nextDescription = description.trim();
@@ -189,12 +210,32 @@ function EditCollectionForm({
     setMoved(`${members[index].title} moved to ${nextVisible.indexOf(visibleIds[index]) + 1} of ${nextVisible.length}.`);
   }
 
+  /**
+   * Move **this collection** a place up or down the household's list.
+   *
+   * Not to be confused with `move` above: that one reorders a *recipe inside*
+   * this collection, this one reorders the collection itself among its siblings.
+   * The label and the announcement both say "in your collections" so the two can
+   * never be read as the same control.
+   *
+   * The tree renders every collection the household has, so `siblingIds` is
+   * already the whole order — no `applyVisibleOrder` fold is needed here, unlike
+   * the member list, which renders a subset.
+   */
+  function moveCollection(direction: ReorderMove) {
+    const nextIds = moveByKey(siblingIds, position, direction);
+    // `moveByKey` hands back the same array when the move would fall off an end.
+    if (nextIds === siblingIds) return;
+    reorderList.mutate({ orderedIds: nextIds });
+    setMoved(`${collection.name} moved to ${nextIds.indexOf(collection.id) + 1} of ${nextIds.length} in your collections.`);
+  }
+
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
       <header className="flex flex-none items-start gap-2 border-b-2 border-border px-5 py-4 md:px-6">
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <DialogTitle>Edit collection</DialogTitle>
-          <DialogDescription>Rename the shelf, say what belongs on it, and take anything off that doesn’t.</DialogDescription>
+          <DialogDescription>Rename the collection, say what belongs in it, and take anything off that doesn’t.</DialogDescription>
         </div>
         {/* The sheet has no chrome of its own (`showCloseButton={false}`), and a
           full-height sheet with only a footer Cancel is a sheet people swipe at.
@@ -208,13 +249,61 @@ function EditCollectionForm({
       </header>
 
       {/* The one scrolling region. Everything above and below it is pinned, so a
-        long shelf never pushes the Save button off a phone screen — and the
-        publish section at the foot of it scrolls with the rest. */}
+        long collection never pushes the Save button off a phone screen — and the
+        publishing card at the foot of it scrolls with the rest. */}
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-5 py-4 md:px-6">
         <Field>
           <FieldLabel htmlFor="collection-name">Name</FieldLabel>
           <Input id="collection-name" value={name} maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="Weeknights" />
         </Field>
+
+        {/* The collection's own place in the household's list. It sits here,
+          beside the name, because it is a fact about *this collection* — where
+          it is filed — and not about what is filed in it; putting it down beside
+          the member list would park it two rows from a second pair of up/down
+          buttons that mean something else entirely.
+
+          It is also the only pointer-and-keyboard path to that order now that
+          the tree's rows carry no drag grip. Hidden outright when there is
+          nothing to move past: a lone collection reading "1 of 1" over two dead
+          buttons is noise. */}
+        {position >= 0 && siblingIds.length > 1 && (
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldTitle id="collection-position">Position in your collections</FieldTitle>
+              <FieldDescription className="tabular-nums">
+                {position + 1} of {siblingIds.length}
+              </FieldDescription>
+            </FieldContent>
+            <div className="flex flex-none items-center gap-1.5" role="group" aria-labelledby="collection-position">
+              <Button
+                type="button"
+                variant="outline"
+                // 44px on the sheet, like every other control on that surface.
+                size={mobile ? "icon" : "icon-sm"}
+                className={mobile ? "size-11" : undefined}
+                disabled={!online || position === 0}
+                title={online ? undefined : OFFLINE_WRITE_HINT}
+                aria-label={`Move ${collection.name} up in your collections`}
+                onClick={() => moveCollection("up")}
+              >
+                <ChevronUp aria-hidden="true" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size={mobile ? "icon" : "icon-sm"}
+                className={mobile ? "size-11" : undefined}
+                disabled={!online || position === siblingIds.length - 1}
+                title={online ? undefined : OFFLINE_WRITE_HINT}
+                aria-label={`Move ${collection.name} down in your collections`}
+                onClick={() => moveCollection("down")}
+              >
+                <ChevronDown aria-hidden="true" />
+              </Button>
+            </div>
+          </Field>
+        )}
 
         <Field>
           <FieldLabel htmlFor="collection-description">Description</FieldLabel>
@@ -228,10 +317,14 @@ function EditCollectionForm({
           />
         </Field>
 
-        <div className="flex min-h-0 flex-col gap-2">
+        {/* `shrink-0`, not `min-h-0`: on mobile this list has no scroller of
+          its own (a second one inside the form would trap a thumb), so if it
+          were allowed to shrink it would hand its space to the publishing card
+          and spill its last rows underneath it instead of scrolling the form. */}
+        <div className="flex shrink-0 flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
             <h3 className="m-0 text-[0.6875rem] font-bold tracking-[0.06em] text-muted-foreground uppercase">
-              On this shelf
+              In this collection
               <span className="ml-1.5 tabular-nums">{members.length}</span>
             </h3>
             {mobile && (
@@ -304,7 +397,7 @@ function EditCollectionForm({
                   <Button
                     type="button"
                     variant="ghost"
-                    // 44px on a phone, where this is the only way off a shelf;
+                    // 44px on a phone, where this is the only way out of a collection;
                     // the desktop keeps the quiet 24px row action.
                     size={mobile ? "icon" : "icon-xs"}
                     className={mobile ? "size-11 text-muted-foreground" : "text-muted-foreground"}
@@ -319,12 +412,16 @@ function EditCollectionForm({
               ))}
             </ul>
           )}
-
-          {/* A move is invisible to anyone not watching the rows move. */}
-          <p className="sr-only" role="status" aria-live="polite">
-            {moved}
-          </p>
         </div>
+
+        {/* A move is invisible to anyone not watching the rows move. One region
+          for both kinds — the collection's own position and the order of what is
+          filed in it — because two polite regions racing each other announce
+          less, not more; each message names what moved and which list it moved
+          in, so they can't be mistaken for one another. */}
+        <p className="sr-only" role="status" aria-live="polite">
+          {moved}
+        </p>
 
         <PublishSection householdId={householdId} collection={collection} recipes={recipes} mobile={mobile} online={online} onDeleted={onClose} />
       </div>
@@ -345,12 +442,17 @@ function EditCollectionForm({
 }
 
 /**
- * The publish section (§7) — whether this shelf exists on the atproto network,
- * and the three writes that change that answer.
+ * The publishing card (§7) — whether this collection exists on the atproto
+ * network, and the three writes that change that answer.
+ *
+ * It is a `Card` rather than a run of loose rows under a rule because it is one
+ * concern with one question at the top of it, and the kit already has a
+ * container that says so. The card's own border replaces the separator this
+ * section used to carry; keeping both would draw the same line twice.
  *
  * **Who sees what.** Publishing, unpublishing and deleting are owner-only
  * server-side (`assertMember(…, "owner")`, §2.8), so a member is shown the
- * *state* — "Published by @sam", or that the shelf is household-only — and none
+ * *state* — "Published by @sam", or that the collection is household-only — and none
  * of the buttons, rather than discovering the rule by pressing one. The retry
  * beside a stale badge is the deliberate exception: `retryCollectionSync` is
  * member-level, because the person looking at "your change didn't reach the
@@ -400,7 +502,7 @@ function PublishSection({
   const [pending, setPending] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  /** Ids from a `recipes_unpublished` preflight — the shelf's own private members. */
+  /** Ids from a `recipes_unpublished` preflight — the collection's own private members. */
   const [blockedIds, setBlockedIds] = useState<string[]>([]);
 
   const published = collection.publishedAt != null;
@@ -457,7 +559,7 @@ function PublishSection({
       await refresh();
       if (result.ok) {
         setUnpublishOpen(false);
-        pushToast(result.unpublished ? `Unpublished — the record is gone from ${publisher}’s PDS` : "That shelf wasn’t published");
+        pushToast(result.unpublished ? `Unpublished — the record is gone from ${publisher}’s PDS` : "That collection wasn’t published");
         return;
       }
       if (result.reason === "scope_error") {
@@ -482,7 +584,7 @@ function PublishSection({
       if (result.ok) {
         setDeleteOpen(false);
         pushToast(`Deleted ${collection.name}`);
-        // The shelf that was on screen is gone; leaving `?c=<id>` in the URL
+        // The collection that was on screen is gone; leaving `?c=<id>` in the URL
         // would answer the click with "this collection no longer exists".
         if (search.c === collection.id) await navigate({ to: "/household/recipes", search: {} });
         onDeleted();
@@ -496,7 +598,7 @@ function PublishSection({
       // The PDS delete runs first and the local rows go only if it succeeded, so
       // this really does mean nothing was deleted — say so rather than leaving
       // someone wondering which half went.
-      setFailure(pdsFailure(result.handle ?? collection.publishedByHandle, "Nothing was deleted — the shelf and its published record are both still here."));
+      setFailure(pdsFailure(result.handle ?? collection.publishedByHandle, "Nothing was deleted — the collection and its published record are both still here."));
     } catch {
       setFailure("That didn’t delete. Nothing changed — try again.");
     } finally {
@@ -514,107 +616,129 @@ function PublishSection({
   }
 
   const touchButton = mobile ? "h-11" : undefined;
+  /** Shown to members as well as owners — see the note on the strip below. */
+  const stale = published && collection.recordStale;
 
   return (
-    <section className="flex flex-col gap-2 border-t-2 border-border/45 pt-3.5">
-      <h3 className="m-0 text-[0.6875rem] font-bold tracking-[0.06em] text-muted-foreground uppercase">Publishing</h3>
+    <>
+      {/* `flex-none`: the card clips its own overflow, and an `overflow-hidden`
+        child of a scrolling flex column loses its automatic minimum size — which
+        is a licence for the column to squash the card and hide the buttons
+        inside it rather than scroll to them. */}
+      <Card size="sm" className="flex-none">
+        <CardHeader>
+          {/* A div by construction (`ui/card.tsx`), so it says out loud that it is
+            still the heading of this block, at the level the sibling "In this
+            collection" heading uses. */}
+          <CardTitle role="heading" aria-level={3}>
+            Publishing
+          </CardTitle>
+          <CardDescription className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[0.8125rem]">
+            {published ? (
+              <>
+                <Globe className="size-3.5 shrink-0" aria-hidden="true" />
+                <span>
+                  Published by <span className="font-semibold text-foreground">{publisher}</span>
+                </span>
+              </>
+            ) : (
+              <>
+                <EyeOff className="size-3.5 shrink-0" aria-hidden="true" />
+                <span>Household only — this collection isn’t on the network.</span>
+              </>
+            )}
+          </CardDescription>
+        </CardHeader>
 
-      <p className="m-0 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[0.8125rem] text-muted-foreground">
-        {published ? (
-          <>
-            <Globe className="size-3.5 shrink-0" aria-hidden="true" />
-            <span>
-              Published by <span className="font-semibold text-foreground">{publisher}</span>
-            </span>
-          </>
-        ) : (
-          <>
-            <Lock className="size-3.5 shrink-0" aria-hidden="true" />
-            <span>Household only — this shelf isn’t on the network.</span>
-          </>
+        {/* Nothing to say and nothing to press — a member looking at a healthy
+          published collection — leaves the card as its header alone, rather than
+          an empty content slot padding the bottom of it. */}
+        {(stale || isOwner) && (
+          <CardContent className="flex flex-col gap-2">
+            {stale && (
+              // Not an error state: the local rows are saved and every later write
+              // tries again on its own. It is an annotation with a way to hurry it up,
+              // and it is shown to members as well as owners.
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border-2 border-border bg-muted/50 px-2.5 py-2">
+                <Badge size="xs" variant="destructive">
+                  Out of date
+                </Badge>
+                <span className="min-w-0 flex-1 text-xs text-muted-foreground">{publisher}’s published copy is behind what’s here.</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size={mobile ? undefined : "xs"}
+                  className={touchButton}
+                  disabled={!online || retrying}
+                  title={online ? undefined : OFFLINE_WRITE_HINT}
+                  onClick={() => void onRetrySync()}
+                >
+                  <RefreshCw data-icon="inline-start" aria-hidden="true" />
+                  {retrying ? "Retrying…" : "Retry"}
+                </Button>
+              </div>
+            )}
+
+            {isOwner && (
+              <div className="flex flex-wrap items-center gap-2">
+                {published ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className={touchButton}
+                    disabled={!online}
+                    title={online ? undefined : OFFLINE_WRITE_HINT}
+                    aria-haspopup="dialog"
+                    onClick={() => {
+                      setFailure(null);
+                      setUnpublishOpen(true);
+                    }}
+                  >
+                    <EyeOff data-icon="inline-start" aria-hidden="true" />
+                    Unpublish
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className={touchButton}
+                    disabled={!online}
+                    title={online ? undefined : OFFLINE_WRITE_HINT}
+                    aria-haspopup="dialog"
+                    onClick={() => {
+                      setFailure(null);
+                      setBlockedIds([]);
+                      setPublishOpen(true);
+                    }}
+                  >
+                    <Globe data-icon="inline-start" aria-hidden="true" />
+                    Publish collection
+                  </Button>
+                )}
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className={mobile ? "h-11 text-destructive" : "text-destructive"}
+                  disabled={!online}
+                  title={online ? undefined : OFFLINE_WRITE_HINT}
+                  aria-haspopup="dialog"
+                  onClick={() => {
+                    setFailure(null);
+                    setDeleteOpen(true);
+                  }}
+                >
+                  <Trash2 data-icon="inline-start" aria-hidden="true" />
+                  Delete collection
+                </Button>
+              </div>
+            )}
+          </CardContent>
         )}
-      </p>
+      </Card>
 
-      {published &&
-        collection.recordStale && (
-          // Not an error state: the local rows are saved and every later write
-          // tries again on its own. It is an annotation with a way to hurry it up,
-          // and it is shown to members as well as owners.
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border-2 border-border bg-muted/50 px-2.5 py-2">
-            <Badge size="xs" variant="destructive">
-              Out of date
-            </Badge>
-            <span className="min-w-0 flex-1 text-xs text-muted-foreground">{publisher}’s published copy is behind what’s here.</span>
-            <Button
-              type="button"
-              variant="outline"
-              size={mobile ? undefined : "xs"}
-              className={touchButton}
-              disabled={!online || retrying}
-              title={online ? undefined : OFFLINE_WRITE_HINT}
-              onClick={() => void onRetrySync()}
-            >
-              <RefreshCw data-icon="inline-start" aria-hidden="true" />
-              {retrying ? "Retrying…" : "Retry"}
-            </Button>
-          </div>
-        )}
-
-      {isOwner && (
-        <div className="flex flex-wrap items-center gap-2">
-          {published ? (
-            <Button
-              type="button"
-              variant="outline"
-              className={touchButton}
-              disabled={!online}
-              title={online ? undefined : OFFLINE_WRITE_HINT}
-              aria-haspopup="dialog"
-              onClick={() => {
-                setFailure(null);
-                setUnpublishOpen(true);
-              }}
-            >
-              <Lock data-icon="inline-start" aria-hidden="true" />
-              Unpublish
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="secondary"
-              className={touchButton}
-              disabled={!online}
-              title={online ? undefined : OFFLINE_WRITE_HINT}
-              aria-haspopup="dialog"
-              onClick={() => {
-                setFailure(null);
-                setBlockedIds([]);
-                setPublishOpen(true);
-              }}
-            >
-              <Globe data-icon="inline-start" aria-hidden="true" />
-              Publish collection
-            </Button>
-          )}
-
-          <Button
-            type="button"
-            variant="ghost"
-            className={mobile ? "h-11 text-destructive" : "text-destructive"}
-            disabled={!online}
-            title={online ? undefined : OFFLINE_WRITE_HINT}
-            aria-haspopup="dialog"
-            onClick={() => {
-              setFailure(null);
-              setDeleteOpen(true);
-            }}
-          >
-            <Trash2 data-icon="inline-start" aria-hidden="true" />
-            Delete collection
-          </Button>
-        </div>
-      )}
-
+      {/* Portalled the moment they open, so they sit outside the card rather
+        than inside a container that clips its own overflow. */}
       <PublishConfirmDialog
         open={publishOpen}
         onOpenChange={setPublishOpen}
@@ -651,6 +775,6 @@ function PublishSection({
       />
 
       <AtprotoReauthDialog open={reauthOpen} onOpenChange={setReauthOpen} touch={mobile} />
-    </section>
+    </>
   );
 }

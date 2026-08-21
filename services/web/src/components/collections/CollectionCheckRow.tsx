@@ -1,30 +1,30 @@
-import { Lock } from "lucide-react";
+import { EyeOff } from "lucide-react";
 import type { CollectionSummary } from "#/lib/api";
 import { Button } from "#/components/ui/button";
 import { CheckboxRow } from "#/components/ui/checkbox";
 import { cn } from "#/lib/utils";
 
 /**
- * One shelf, as a tickable row — the shared body of the desktop picker dialog
+ * One collection, as a tickable row — the shared body of the desktop picker dialog
  * and the mobile "File this recipe" sheet.
  *
- * It exists because both surfaces answer the same question ("which shelves does
- * this recipe belong on?") and both have to refuse the same case: a published
+ * It exists because both surfaces answer the same question ("which collections does
+ * this recipe belong in?") and both have to refuse the same case: a published
  * collection may not hold a private recipe (§2.4). That refusal is the row
  * "Publish recipe & add" hangs off, and two copies of it would mean two places
  * to keep that in step. One row, one place.
  *
  * The tick is `tone="selection"`, not the checklist's strike-through: membership
- * is a standing fact, not finished work, and a shelf struck through reads as
+ * is a standing fact, not finished work, and a collection struck through reads as
  * "removed" (see `ui/checkbox.tsx`).
  *
  * ## The blocked row and its escape hatch (§2.4)
  *
- * A private recipe cannot go on a published shelf, because the record would
+ * A private recipe cannot go on a published collection, because the record would
  * point at something nobody else can read. The rule is real and the server
  * enforces it — but the answer is almost always "then publish the recipe", so
  * the row offers to do both in one call rather than sending someone to the
- * recipe, back to the shelf, and into the same dialog again.
+ * recipe, back to the collection, and into the same dialog again.
  *
  * **Consent is per-recipe and never inferred**: the combo is a button someone
  * presses, and `addRecipesToCollection` only publishes the ids it is explicitly
@@ -34,7 +34,7 @@ import { cn } from "#/lib/utils";
 export function CollectionCheckRow({
   collection,
   filed,
-  /** A private recipe against a published shelf — the §2.4 refusal. */
+  /** A private recipe against a published collection — the §2.4 refusal. */
   blocked,
   size,
   disabledHint,
@@ -62,10 +62,10 @@ export function CollectionCheckRow({
           size === "sm" ? "px-2.5 py-2" : "min-h-11 px-3 py-2.5",
         )}
       >
-        <Lock className="size-4 shrink-0" aria-hidden="true" />
+        <EyeOff className="size-4 shrink-0" aria-hidden="true" />
         <span className="min-w-0 flex-1">
           <span className="block truncate font-semibold">{collection.name}</span>
-          <span className="block text-xs">Published shelf — a private recipe can’t go on it.</span>
+          <span className="block text-xs">Published collection — a private recipe can’t go on it.</span>
         </span>
         {onPublishAndAdd && (
           <Button

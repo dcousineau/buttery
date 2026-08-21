@@ -1,39 +1,60 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BookOpenText, Lock, UtensilsCrossed } from "lucide-react";
+import { BookOpenText, EyeOff, UtensilsCrossed } from "lucide-react";
 import { addRecipesToCollectionMutation, type CollectionSummary, type HouseholdRecipeRow } from "#/lib/api";
 import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
 import { AtprotoReauthDialog } from "#/components/AtprotoReauthDialog";
 import { Button } from "#/components/ui/button";
-import { CheckboxRow } from "#/components/ui/checkbox";
+import { Checkbox } from "#/components/ui/checkbox";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "#/components/ui/sheet";
+import { RecipeSlat, RecipeSlatAction, RecipeSlatAside, RecipeSlatBody, RecipeSlatList, RecipeSlatMeta, RecipeSlatTitle } from "#/components/recipes/RecipeSlat";
+import { SourceIcon } from "#/components/recipes/SourceIcon";
+import { cn } from "#/lib/utils";
 import { searchRows } from "./scope";
 import { useStaleToast } from "./use-stale-toast";
 
 /**
- * "Add recipes" — many recipes onto one shelf, on a phone (§7).
+ * "Add recipes" — many recipes onto one collection, on a phone (§7).
  *
  * The other half of mobile's filing story. `FileRecipeSheet` starts from a
- * recipe ("which shelves does this belong on?"); this starts from the shelf
- * ("what goes on here?"), which is the question you have with an empty
- * collection in front of you and thirty recipes in the box. On a desktop that
- * job belongs to dragging a ledger card onto a collection row; **mobile has no
- * drag** (§7), so it is this.
+ * recipe ("which collections does this belong in?"); this starts from the
+ * collection ("what goes in here?"), which is the question you have with an
+ * empty collection in front of you and thirty recipes in the box. On a desktop
+ * that job belongs to dragging a ledger row onto a collection row; **mobile has
+ * no drag** (§7), so it is this.
  *
  * Unlike the tick-to-save picker, this one **batches**: a selection, then one
  * `addRecipesToCollection` call. Filing fifteen recipes one request at a time
  * would be fifteen optimistic patches racing one another's `onSettled`
  * invalidation, and the server appends in the order it is given — so one call
- * is also the only way the resulting shelf order matches the order they were
- * ticked.
+ * is also the only way the resulting collection order matches the order they
+ * were ticked.
  *
- * Rows are 44px+ (§7) and two-line: a title alone is not enough to tell two
+ * ## The rows are ledger slats, not cards
+ *
+ * This list is *the recipe box, seen through a filing question*, so it is drawn
+ * with the same `RecipeSlat` the box ledger uses: flush full-bleed bars, a
+ * hairline between neighbours, no per-row border or shadow. A gapped stack of
+ * outlined cards reads as N separate objects to compare one at a time; a column
+ * of slats reads as one ledger to scan, and scanning thirty recipes for the six
+ * that belong here is the entire job of this sheet. Matching the ledger also
+ * means a recipe looks the same in both places — same thumbnail tile, same
+ * title with its state icons, same source line, same trailing time.
+ *
+ * The slat's leading-control slot carries the tick: a bare `Checkbox` **outside**
+ * `RecipeSlatAction`, exactly as the import review list composes it. The action
+ * itself renders as a `<label htmlFor>` rather than the default button, which is
+ * what keeps the *whole row* the hit target without inventing a second control
+ * for one checkbox — the same trade `CheckboxRow` makes, minus the card.
+ *
+ * Rows are ≥44px (§7) and two-line: a title alone is not enough to tell two
  * "Chana masala"s apart, and the source line is what does it in the ledger too.
  *
- * **The refusal has an escape hatch.** A published shelf cannot hold a private
- * recipe (§2.4), and a batch is the one place that can be true of several
- * recipes at once — so the footer's refusal grows a single "Publish N & add"
- * that re-sends the same selection with those ids in `publishRecipeIds`. The
+ * **The refusal has an escape hatch.** A published collection cannot hold a
+ * private recipe (§2.4), and a batch is the one place that can be true of
+ * several recipes at once — so the footer's refusal grows a single "Publish N &
+ * add" that re-sends the same selection with those ids in `publishRecipeIds`,
+ * and every refused row is tinted so the list says which ones it means. The
  * consent is one press for the batch the person can see listed, and the server
  * still publishes only the ids it was given.
  */
@@ -54,15 +75,17 @@ export function AddRecipesSheet({
   const online = useIsOnline();
   const file = useMutation(addRecipesToCollectionMutation(queryClient, householdId));
   const { notifyStale } = useStaleToast(householdId);
+  /** Prefix for the per-row checkbox ids the row labels point at. */
+  const rowIdPrefix = useId();
 
   const [query, setQuery] = useState("");
   /**
    * An **array**, not a `Set`: tap order is append order, and the server files
    * `recipeIds` in the order it receives them (§5). Ticking A then B should put
-   * A above B on the shelf.
+   * A above B in the collection.
    */
   const [picked, setPicked] = useState<string[]>([]);
-  /** Ids the server refused because the shelf is published and they are not (§2.4). */
+  /** Ids the server refused because the collection is published and they are not (§2.4). */
   const [blocked, setBlocked] = useState<string[]>([]);
   const [failed, setFailed] = useState<string | null>(null);
   const [reauthOpen, setReauthOpen] = useState(false);
@@ -112,13 +135,14 @@ export function AddRecipesSheet({
         else setFailed("Publishing is switched off right now. Nothing was filed.");
         return;
       }
-      // The entries saved; `stale` is the publisher's copy of the shelf being
-      // behind, which is a notice with a retry rather than a failed add.
+      // The entries saved; `stale` is the publisher's copy of the collection
+      // being behind, which is a notice with a retry rather than a failed add.
       if (result.stale) notifyStale(collection);
       close();
     } catch {
-      // A thrown error IS rolled back by the mutation's `onError`, so the shelf
-      // behind the sheet is already correct; all that is owed is the reason.
+      // A thrown error IS rolled back by the mutation's `onError`, so the
+      // collection behind the sheet is already correct; all that is owed is the
+      // reason.
       setFailed("That didn’t save. Nothing was filed — try again.");
     } finally {
       setPublishing(false);
@@ -131,7 +155,7 @@ export function AddRecipesSheet({
         <SheetHeader className="flex-none border-b-2 border-border px-4 py-3">
           <SheetTitle className="display-title text-lg">Add recipes</SheetTitle>
           <SheetDescription>
-            Pick what goes on <span className="font-semibold text-foreground">{collection.name}</span>. They’re filed in the order you tick them.
+            Pick what goes in <span className="font-semibold text-foreground">{collection.name}</span>. They’re filed in the order you tick them.
           </SheetDescription>
           <div className="mt-1.5 flex h-11 items-center gap-1.5 rounded-lg border-2 border-border bg-background px-3">
             <BookOpenText className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -151,43 +175,67 @@ export function AddRecipesSheet({
             <UtensilsCrossed className="size-8 text-muted-foreground" aria-hidden="true" />
             <p className="m-0 text-[0.8125rem] font-bold text-foreground">{recipes.length === 0 ? "Your box is empty" : "Nothing matches that."}</p>
             <p className="m-0 text-xs text-pretty text-muted-foreground">
-              {recipes.length === 0 ? "Add a recipe to your box first — a shelf holds recipes you already keep." : "Clear the search to see the rest of your box."}
+              {recipes.length === 0 ? "Add a recipe to your box first — a collection holds recipes you already keep." : "Clear the search to see the rest of your box."}
             </p>
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-3">
+          <RecipeSlatList className="min-h-0 flex-1 overflow-auto">
             {candidates.map((row) => {
               const already = filed.has(row.recipeId);
+              const ticked = already || picked.includes(row.recipeId);
               const refused = blocked.includes(row.recipeId);
+              const checkId = `${rowIdPrefix}${row.recipeId}`;
               return (
-                <CheckboxRow
+                <RecipeSlat
                   key={row.recipeId}
-                  size="default"
-                  tone="selection"
-                  // Two lines of 13/11px type plus padding clears 44px on its
-                  // own; the floor keeps it true if the type scale moves.
-                  className={refused ? "min-h-11 border-dashed border-destructive/40" : "min-h-11"}
-                  checked={already || picked.includes(row.recipeId)}
-                  // An already-filed recipe is state, not a choice: unticking it
-                  // here would mean "unfile", and unfiling lives in the edit
-                  // sheet's member list where it is one deliberate control.
-                  disabled={already}
+                  // A ticked row takes the butter selection marker the ledger
+                  // uses for its current row — membership is a standing fact, and
+                  // this is the app's one row dialect for saying so.
+                  selected={ticked}
+                  // The slat's own padding plus a 44px tile already clears the
+                  // touch floor; the explicit `min-h-11` (§7) keeps it true if
+                  // the tile or the type scale ever moves.
+                  className={cn("min-h-11", refused && "border-destructive/40 bg-destructive/10")}
                   title={online ? undefined : OFFLINE_WRITE_HINT}
-                  meta={already ? "Filed" : row.totalTimeDisplay}
-                  onCheckedChange={(checked) => {
-                    if (!online || already) return;
-                    toggle(row.recipeId, checked);
-                  }}
                 >
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="min-w-0 truncate font-semibold">{row.title}</span>
-                    {row.unpublished && <Lock className="size-3 shrink-0 text-muted-foreground" aria-label="Private — not published" />}
-                  </span>
-                  <span className="block truncate text-xs font-medium text-muted-foreground">{row.sourceLabel}</span>
-                </CheckboxRow>
+                  <Checkbox
+                    id={checkId}
+                    checked={ticked}
+                    // An already-filed recipe is state, not a choice: unticking it
+                    // here would mean "unfile", and unfiling lives in the edit
+                    // sheet's member list where it is one deliberate control.
+                    disabled={already}
+                    onChange={(event) => {
+                      if (!online || already) return;
+                      toggle(row.recipeId, event.target.checked);
+                    }}
+                  />
+                  {/* A label, not the slat's default button: the whole row is the
+                    tick's hit target, and the row's own text is the tick's name. */}
+                  <RecipeSlatAction render={<label htmlFor={checkId} />} className={cn("cursor-(--cursor-interactive)", already && "cursor-default")}>
+                    {row.thumbUrl ? (
+                      <img src={row.thumbUrl} alt="" className="size-11 flex-none rounded-sm border-2 border-border object-cover" loading="lazy" />
+                    ) : (
+                      <span className="grid size-11 flex-none place-content-center rounded-sm border-2 border-border bg-muted">
+                        <UtensilsCrossed className="size-4 text-muted-foreground" aria-hidden="true" />
+                      </span>
+                    )}
+                    <RecipeSlatBody>
+                      <RecipeSlatTitle>
+                        <span className="truncate">{row.title}</span>
+                        {row.unpublished && <EyeOff className="size-3 shrink-0 text-muted-foreground" aria-label="Private — not published" />}
+                      </RecipeSlatTitle>
+                      <RecipeSlatMeta className="flex items-center gap-1">
+                        <SourceIcon kind={row.sourceKind} className="size-[11px] shrink-0" />
+                        <span className="truncate">{row.sourceLabel}</span>
+                      </RecipeSlatMeta>
+                    </RecipeSlatBody>
+                    {(already || row.totalTimeDisplay) && <RecipeSlatAside>{already ? "Filed" : row.totalTimeDisplay}</RecipeSlatAside>}
+                  </RecipeSlatAction>
+                </RecipeSlat>
               );
             })}
-          </div>
+          </RecipeSlatList>
         )}
 
         <SheetFooter className="flex-none border-t-2 border-border">

@@ -153,7 +153,7 @@ function RecipesLayout() {
                 sizing the ledger used to carry alone, so the strip and the
                 ledger appear and disappear together: with a recipe selected
                 below `lg` this whole column yields to the detail pane, and the
-                way onto a shelf from there is the recipe's own "File this
+                way into a collection from there is the recipe's own "File this
                 recipe" button.
               */}
               <div className={cn("flex min-h-0 w-full flex-col lg:w-[360px] lg:shrink-0", hasSelection ? "hidden lg:flex" : "flex")}>

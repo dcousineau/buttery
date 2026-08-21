@@ -81,7 +81,7 @@ function Landing({ onNavigate }) {
         <h2 className="display-title" style={{ margin: 0, fontSize: "1.875rem", color: "var(--foreground)" }}>What's in the pantry</h2>
         <div style={{ marginTop: "1.5rem", display: "grid", gap: "1.25rem", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))" }}>
           <FeatureCard icon="cooking-pot" title="Cook mode" highlight blurb="The whole point. Recipes rendered huge and glare-proof for the counter — no sleep, no scrolling with buttery thumbs." />
-          <FeatureCard icon="folder-lock" title="Private collections" blurb="Sort recipes into shelves only you (or your chosen few) can open." />
+          <FeatureCard icon="folder-lock" title="Private collections" blurb="Sort recipes into collections only you (or your chosen few) can open." />
           <FeatureCard icon="shopping-basket" title="Shopping lists" blurb="Pick recipes, get one consolidated list for the store." />
           <FeatureCard icon="calendar-range" title="Meal planner" blurb="Lay the week out on the table before it starts." />
           <FeatureCard icon="dices" title="Randomizer" blurb="Can't decide? Roll the dice, dinner picks itself." />

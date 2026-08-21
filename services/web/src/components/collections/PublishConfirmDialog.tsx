@@ -12,7 +12,7 @@ import { publisherName } from "./use-stale-toast";
  *    the household's, which owns no repo, and not Buttery's.
  * 2. **Who future updates come from.** A published collection is re-put through
  *    the publisher's stored session on every later edit, by any member (§2.5).
- *    So a shelf someone else rearranges still goes out over the publisher's
+ *    So a collection someone else rearranges still goes out over the publisher's
  *    handle, and the person clicking Publish is the one signing all of it.
  *
  * The `blockedTitles` list is the §2.4 preflight, shown here rather than as a
@@ -34,7 +34,7 @@ export function PublishConfirmDialog({
   onOpenChange: (open: boolean) => void;
   collectionName: string;
   ownerHandle: string | null;
-  /** Recipes on the shelf that are still private, from `recipes_unpublished`. */
+  /** Recipes in the collection that are still private, from `recipes_unpublished`. */
   blockedTitles: string[];
   /** A refusal to keep on screen — the dialog stays open holding it. */
   failure: string | null;
@@ -52,7 +52,7 @@ export function PublishConfirmDialog({
       description={
         <>
           This writes <span className="font-semibold text-foreground">{collectionName}</span> to your own atproto account, {who} — the record lives on your PDS, where any app on
-          the network can read it. Everyone in your household can still edit the shelf, and every future update to it goes out from {who} too, whichever member makes the edit.
+          the network can read it. Everyone in your household can still edit the collection, and every future update to it goes out from {who} too, whichever member makes the edit.
         </>
       }
       confirmLabel="Publish collection"
@@ -63,10 +63,12 @@ export function PublishConfirmDialog({
       {blockedTitles.length > 0 && (
         <div className="flex flex-col gap-1 rounded-lg border-2 border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-foreground" role="status">
           <p className="m-0 font-semibold">
-            {blockedTitles.length === 1 ? "One recipe on this shelf is still private" : `${blockedTitles.length} recipes on this shelf are still private`}
+            {blockedTitles.length === 1 ? "One recipe in this collection is still private" : `${blockedTitles.length} recipes in this collection are still private`}
           </p>
-          <p className="m-0">A published collection can only point at published recipes. Publish {blockedTitles.length === 1 ? "it" : "them"} first, then publish the shelf.</p>
-          {/* Capped: a shelf can refuse with thirty titles, and an uncapped list
+          <p className="m-0">
+            A published collection can only point at published recipes. Publish {blockedTitles.length === 1 ? "it" : "them"} first, then publish the collection.
+          </p>
+          {/* Capped: a collection can refuse with thirty titles, and an uncapped list
             pushes the dialog's own buttons off a phone screen. */}
           <ul className="m-0 flex max-h-[8.5rem] list-disc flex-col gap-0.5 overflow-auto pl-4 font-semibold">
             {blockedTitles.map((title) => (
