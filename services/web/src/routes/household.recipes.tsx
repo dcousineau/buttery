@@ -10,6 +10,7 @@ import { useRecipeMirror } from "#/lib/offline/use-recipe-mirror";
 import { Toast, ToastViewport, useToasts } from "#/components/ui/toast";
 import { RecipeLedger } from "#/components/recipes/RecipeLedger";
 import { CollectionsColumn } from "#/components/collections/CollectionsColumn";
+import { CollectionsSheet } from "#/components/collections/CollectionsSheet";
 import { resolveScope, SMART_SCOPES } from "#/components/collections/scope";
 import { useCollectionsColumn } from "#/components/collections/use-collections-column";
 import { GlobalRecipePicker } from "#/components/recipes/GlobalRecipePicker";
@@ -144,18 +145,32 @@ function RecipesLayout() {
           {!onNewForm && (
             <>
               <CollectionsColumn id={COLLECTIONS_PANEL_ID} householdId={householdId} open={collectionsColumn.open} hasSelection={hasSelection} />
-              <RecipeLedger
-                recipes={recipes}
-                scope={scope}
-                selectedId={selectedId}
-                query={query}
-                onQueryChange={setQuery}
-                onAdd={() => setChooserOpen(true)}
-                collectionsOpen={collectionsColumn.open}
-                onToggleCollections={collectionsColumn.toggle}
-                collectionsPanelId={COLLECTIONS_PANEL_ID}
-                className={cn("w-full", hasSelection ? "hidden lg:flex" : "flex")}
-              />
+              {/*
+                The ledger column. Below `md` it gains a head of its own — the
+                collections *sheet* trigger (collections plan §7), because the
+                ledger's filter-bar toggle is `max-md:hidden` and a phone has no
+                third column to toggle. The wrapper carries the responsive
+                sizing the ledger used to carry alone, so the strip and the
+                ledger appear and disappear together: with a recipe selected
+                below `lg` this whole column yields to the detail pane, and the
+                way onto a shelf from there is the recipe's own "File this
+                recipe" button.
+              */}
+              <div className={cn("flex min-h-0 w-full flex-col lg:w-[360px] lg:shrink-0", hasSelection ? "hidden lg:flex" : "flex")}>
+                <CollectionsSheet householdId={householdId} scope={scope} className="md:hidden" />
+                <RecipeLedger
+                  recipes={recipes}
+                  scope={scope}
+                  selectedId={selectedId}
+                  query={query}
+                  onQueryChange={setQuery}
+                  onAdd={() => setChooserOpen(true)}
+                  collectionsOpen={collectionsColumn.open}
+                  onToggleCollections={collectionsColumn.toggle}
+                  collectionsPanelId={COLLECTIONS_PANEL_ID}
+                  className="min-h-0 w-full flex-1"
+                />
+              </div>
             </>
           )}
           <section className={cn("min-h-0 min-w-0 flex-1 flex-col bg-background", onNewForm || hasSelection ? "flex" : "hidden lg:flex")}>

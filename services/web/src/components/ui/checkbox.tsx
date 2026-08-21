@@ -118,6 +118,7 @@ function CheckboxRow({
   size = "default",
   tone = "task",
   checked = false,
+  disabled = false,
   onCheckedChange,
   meta,
   children,
@@ -125,13 +126,30 @@ function CheckboxRow({
 }: Omit<React.ComponentProps<"label">, "size"> &
   VariantProps<typeof checkboxRowVariants> & {
     checked?: boolean;
+    /**
+     * A row whose state is a *fact*, not a choice — a recipe already filed on
+     * the shelf you are adding to, a line someone else claimed. It keeps its
+     * tick and its label in the accessibility tree (a disabled checkbox still
+     * announces "checked"), and only the sticker physics go quiet.
+     */
+    disabled?: boolean;
     onCheckedChange?: (checked: boolean) => void;
     /** Right-aligned muted text — quantity, aisle, assignee. */
     meta?: React.ReactNode;
   }) {
   return (
-    <label data-slot="checkbox-row" data-checked={checked} className={cn(checkboxRowVariants({ size, tone }), className)} {...props}>
-      <Checkbox size={size} checked={checked} onChange={(e) => onCheckedChange?.(e.target.checked)} />
+    <label
+      data-slot="checkbox-row"
+      data-checked={checked}
+      data-disabled={disabled || undefined}
+      className={cn(
+        checkboxRowVariants({ size, tone }),
+        disabled && "cursor-default opacity-70 shadow-none hover:bg-card active:translate-x-0 active:translate-y-0 active:shadow-none",
+        className,
+      )}
+      {...props}
+    >
+      <Checkbox size={size} checked={checked} disabled={disabled} onChange={(e) => onCheckedChange?.(e.target.checked)} />
       <span data-slot="row-label" className="min-w-0 flex-1">
         {children}
       </span>

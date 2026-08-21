@@ -617,3 +617,398 @@ was clean — 0 errors, 0 warnings — on every page after the checks below.
 - The scoped ledger renders `scopeRows(...)` — for a collection, a straight map over
   `recipeIds` with unboxed ids dropped. M3's reorder must write back the _full_ current
   order, not the rendered subset, if a member is ever missing from the box.
+
+---
+
+## Milestone 3 — drag and drop
+
+The three surfaces of §10.3, all of them native HTML5 drag and drop (§7 — no dnd-kit, no
+drag library anywhere in this repo), all of them desktop-only, and each with a keyboard path
+because a grip that only answers to a pointer is a feature half the household cannot use.
+
+### What was built
+
+**Two shared primitives, because this is now the app's third reorderable list.**
+
+| file                                 | what it is                                                                                                           |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/reorder.ts`                 | The pure arithmetic: `moveItem`, `moveToInsertionPoint`, `moveByKey`, **`applyVisibleOrder`**                        |
+| `src/lib/reorder.test.ts`            | 21 tests over it, including the exact compositions the ledger and the tree perform                                   |
+| `src/components/ui/drag-reorder.tsx` | `insertionPointAt`, `DropLine`, `DragHandle` — the paint and the keyboard contract, shared by every reorderable list |
+| `src/components/collections/drag.ts` | The two MIME types and `dragCarries`                                                                                 |
+
+`LineEditor.tsx` — the canonical pattern this milestone was told to follow — now **imports**
+those primitives instead of carrying its own copies (its private `DropLine`,
+`insertionPointAt`, the `at > from ? at - 1 : at` off-by-one, and its hand-rolled grip span
+are gone; behaviour is byte-identical, including the `aria-hidden` decorative grip). That is
+the AGENTS rule about shared behaviour living in a shared `ui/` component rather than at the
+call site, and it is why the drop line is the same 3px of ink in all three lists.
+
+**The two MIME types** (`src/components/collections/drag.ts`):
+
+- **`application/x-buttery-recipe`** — a recipe id, dragged from a ledger row. Two landings:
+  a collection row (file it there) and the gap between two ledger rows (reorder).
+- **`application/x-buttery-collection`** — a collection id, dragged inside the tree. One
+  landing: the household's local list order.
+
+They cannot cross-drop, and the mechanism is structural rather than hopeful: every target
+reads `dataTransfer.types` in `dragover` — the one moment `getData` is deliberately blank —
+and only calls `preventDefault()` for its own type, so the browser paints "no drop" for the
+other drag instead of quietly accepting it. The same check makes a file, a text selection or
+a link dragged in from another app inert over both lists.
+
+**1. Collections-list reorder** (`CollectionsTree.tsx`, `CollectionRow.tsx`). The `<ul>`
+reads the drag and computes an insertion point over `[data-collection-row]`; each row is the
+drag source and draws the `DropLine` in its own top edge (and its bottom edge for the row at
+the end, the one landing place no gap above a row can express). The write is
+`reorderCollectionsMutation` — local-only, no re-put, exactly as §2.10 requires.
+
+**2. Within-collection reorder** (`RecipeLedger.tsx`). Live only when
+`scope.kind === "collection"` **and the search box is empty** and there is more than one row:
+that order IS the published `recipes` array order, so it can only be rearranged while what is
+on screen is the order itself and not a filtered view of it. `reorderCollectionRecipesMutation`,
+optimistic through the M1 patch, so the rows settle in place and the tree's count never moves.
+
+**3. Ledger card → collection row filing** (`CollectionsTree.tsx`). The row is the drop target
+(here the row _is_ the destination, so there is nothing to measure), painted with the ink
+outline the drop line is drawn in plus the `accent` fill. `addRecipesToCollectionMutation`,
+and the answer is a resolved union rather than a throw, so all three arms are handled: filed,
+already filed (a toast, because silence reads as a drag that missed), and `recipes_unpublished`
+(a published shelf refusing a private recipe — M5's "Publish recipe & add" attaches to the
+picker row, not here).
+
+**The full-order write.** M2's note was right, and it is the one place this milestone could
+have quietly corrupted data. The scoped ledger renders `recipeIds` mapped through the box with
+unboxed ids dropped, so what someone drags can be a _subsequence_ of the collection's entries,
+while `reorderCollectionRecipes` replaces the whole order. `applyVisibleOrder(fullOrder,
+nextVisible)` folds the new on-screen order back into the full one: ids the ledger never
+rendered keep their absolute slots, and the visible ones are dealt back into the slots they
+occupied. Ids that are not in the collection at all are ignored — a stale cache is not a
+licence to invent an entry. Both the ledger's drag and its keyboard path go through the one
+`commitOrder`, so there is a single call site to get right, and `reorder.test.ts` asserts the
+composition directly ("a drag in a collection-scoped ledger writes the FULL entry order").
+The tree needs none of it: it renders every collection the household has, so its order is the
+whole order by construction — and it still calls `applyVisibleOrder` in a test to prove the
+identity.
+
+### The keyboard path
+
+`DragHandle` has two shapes, decided by one question: _is dragging this the only way to do
+the job?_
+
+- **Reordering** — nothing else in the app reorders a collection or an entry, so the grip is
+  a real `<button>` in the tab order, named per row ("Reorder Weeknights", never ten buttons
+  all called "Reorder"), carrying `aria-keyshortcuts`, and handling **`↑`/`↓` to move one
+  place, `Home`/`End` to send the row to an end**. Both lists key their rows by id, so the
+  focused handle travels with its row and focus survives the move. Each list also has its own
+  `role="status"` live region that announces "Weeknights moved to 2 of 5." — the drop line is
+  `aria-hidden` and a move is otherwise silent.
+- **Filing** — already has a full non-drag path (the collections picker on the recipe detail,
+  and M4's sheets), so in a non-reorderable scope the ledger's grip is a decorative
+  `aria-hidden` span with a pointer `title`. A focusable control that does nothing when you
+  press it is worse than no control.
+
+Both grips are `max-md:hidden`, which is also what makes the whole gesture inert below `md`
+(§7): a row is only `draggable` while its grip is held (`useDragHandle`), and a
+`display: none` grip is never held. No media query in JS, no touch shim, nothing to keep in
+sync — and nothing for milestone 4's sheet to work around.
+
+### Deviations from §7, and why
+
+1. **Two new shared modules (`lib/reorder.ts`, `ui/drag-reorder.tsx`) and one refactor of
+   `LineEditor.tsx`.** §7 says to build on `useDragHandle` and `insertionPointAt`/`DropLine`,
+   but the latter two were private to `LineEditor`. Copying them into two more files would
+   have made three drop lines to keep in step; AGENTS says shared behaviour lives in the
+   shared `ui/` component. The insertion-point maths moved to `lib/` because it is pure and is
+   the only part of a drag this repo can test at all.
+
+2. **The ledger's grip appears in _every_ scope, not only a collection scope.** §7 gives the
+   scoped ledger drag handles, and filing by dragging a card onto a shelf is the third surface
+   — which means the card has to be draggable everywhere, because "put this on that shelf" is
+   the gesture the whole third column exists for. The grip changes its _name_ and its
+   _shape_ with the scope (above), so it never claims to reorder a list that has no order.
+
+3. **The card body drags too, not just the grip.** Not a decision so much as an honest note:
+   both a ledger row and a tree row wrap a `<Link>`, and an anchor is natively draggable, so a
+   drag begun on the row body starts an anchor drag that bubbles into the same `dragstart`
+   handler and carries the same typed payload. It is left that way deliberately — §7 calls
+   this surface "ledger-**card** → collection-row filing", and a forgiving target is the point
+   — but it does mean `armed` gates the grip, not the row, on these two lists. The grips of
+   `LineEditor`, whose rows hold text inputs, are unaffected: nothing there is an anchor.
+
+4. **No pointer-only alternative to the reorder drag (WCAG 2.5.7).** The keyboard path is
+   complete, and filing has a full click-only path (picker, sheets), but _reordering_ by
+   pointer alone still requires a drag. The honest fix is a pair of move up/down controls in
+   the edit dialog's member list — which is where a non-drag reorder naturally belongs, and
+   that file is the concurrent agent's `TODO(m3)`. Flagged rather than smuggled in.
+
+5. **The tree's grip is hover-revealed (`opacity-0`, `group-hover`/`group-focus-within`), the
+   ledger's is always visible.** The tree row already reveals its gear this way and a second
+   always-on icon in a 232px column would crowd the name; the ledger has the room and the grip
+   is the only sign that a card can be dragged onto a shelf. Neither is hover-_only_: both are
+   in the accessibility tree at all times, and the button shape takes focus and paints itself
+   visible when a keyboard reaches it.
+
+6. **Dragging is off while offline.** Writes are online-only (§6) and a reorder is a write, so
+   `useIsOnline()` removes the grips and the drop targets rather than starting a drag that
+   cannot be saved. This also means the row is not a filing target offline.
+
+7. **`CollectionTreeRow` grew three props** (`leading` was already there for this milestone):
+   `dropLine`, `drag`, and the drop paint. The drop line has to be a child of the row it hangs
+   off — it is out of flow, so the row does not move when it appears — and the row is the only
+   element that can carry `draggable`. The presence of `drag` is also what marks a row as a
+   measurable slot (`[data-collection-row]`), so a smart row is never one.
+
+### Not in this milestone, on purpose
+
+- **The edit dialog's member-row reorder** keeps its `TODO(m3)`: `EditCollectionDialog.tsx`
+  belongs to the concurrent mobile milestone and was not touched. Everything it needs is
+  ready — `DragHandle`, `DropLine`, `insertionPointAt`, `moveToInsertionPoint` and
+  `reorderCollectionRecipesMutation` — and its list is the collection's _whole_ entry order,
+  so it can write `moveToInsertionPoint(recipeIds, …)` straight through without
+  `applyVisibleOrder`.
+- **Mobile drag** — none, by §7.
+
+### Commands run
+
+```
+pnpm --filter @buttery/lexicons build
+pnpm typecheck
+pnpm lint
+pnpm format:check                      # 1 file reformatted with `pnpm exec oxfmt <file>`, then clean
+pnpm test
+```
+
+No schema, so no migration or codegen; no server change, so no db suite.
+
+### Test results
+
+| command                     | result                                                                                       |
+| --------------------------- | -------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`            | **pass** — all 7 workspace projects                                                          |
+| `pnpm lint` (oxlint)        | **pass**, exit 0 — the same 3 pre-existing warnings in unrelated components                  |
+| `pnpm format:check` (oxfmt) | **pass** — "All matched files use the correct format"                                        |
+| `pnpm test`                 | **pass** — web: 36 files, **585 passed** / 253 skipped (was 564, +21 from `reorder.test.ts`) |
+| └ `reorder.test.ts`         | **pass** — 21/21                                                                             |
+
+**Not verified in a browser.** The single shared Playwright session belonged to the concurrent
+milestone-4 agent for the whole of this work, so none of the three drags has been exercised by
+hand: what is asserted here is the arithmetic (unit-tested), the types (`tsc`), and careful
+reading of the event plumbing against the two patterns already in the repo (`LineEditor`, the
+meal planner's slot drops). The drags themselves — the drop line landing where the pointer
+says, the ink outline on the shelf under the cursor, the arrow keys moving a focused row, and
+the fact that a collection cannot be dropped on the ledger nor a recipe between two shelves —
+still want a pass in a real browser.
+
+### Notes for whoever picks this up next
+
+- `applyVisibleOrder` is the guard rail, not a nicety: any future surface that renders a
+  _filtered_ view of a collection and lets it be reordered must go through it, or it will
+  unfile every row it did not render. The two current call sites both live in one
+  `commitOrder` function per list.
+- The two MIME types are the whole cross-drop story. A new drag (a meal-plan slot, say) needs
+  its own `application/x-buttery-*` type and a `dragCarries` check in every target it passes
+  over — never `text/plain`, which every other app on the machine also speaks.
+- `DragHandle`'s two shapes are a decision about the _feature_, not about styling: give it
+  `onMove` and it becomes a keyboard control, omit it and it is a pointer accelerator. Omit it
+  only when the job has another complete path.
+- `CollectionsSheet`'s `TOUCH_TREE` override (`[&_nav_li>button]:size-11`) also matches the
+  tree's new grip button, but the grip is `max-md:hidden` and the sheet only exists below
+  `md`, so the two never meet. Anything that starts showing the sheet at wider widths should
+  re-check that.
+
+---
+
+## Milestone 4 — mobile
+
+The feature reaches a phone. Everything the desktop column does, a left `Sheet` now does; the
+two filing surfaces §7 names for mobile exist; the edit dialog becomes a full-height sheet
+below `md`; and every target on those surfaces is at least 44px. **No drag anywhere** —
+mobile has none by design (§7, "Mobile: no drag — sheets are the filing mechanism"), and the
+desktop DnD in milestone 3 landed concurrently in files this milestone never opened.
+
+### What was built
+
+**New — `services/web/src/components/collections/`**
+
+| file                     | what it is                                                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `CollectionsSheet.tsx`   | The `<md` strip + left `Sheet` wrapping `CollectionsTree`, plus the `TOUCH_TREE` restyle that makes the tree thumb-sized |
+| `AddRecipesSheet.tsx`    | Many recipes → one shelf. Search, batched selection in tap order, one `addRecipesToCollection` call                      |
+| `FileRecipeSheet.tsx`    | One recipe → many shelves. The mobile twin of the picker dialog; each tick files or unfiles immediately                  |
+| `CollectionCheckRow.tsx` | The shelf row shared by the picker dialog and `FileRecipeSheet`, including the §2.4 blocked row. See deviation 2         |
+
+**Changed**
+
+- `EditCollectionDialog.tsx` — **two shells, one form**. `useIsMobile()` picks a `Dialog`
+  (desktop) or a bottom `Sheet` at `data-[side=bottom]:h-svh` (mobile). Both are the same
+  Base UI `Dialog` primitive underneath, so `DialogTitle`/`DialogClose`/`DialogFooter` work
+  unchanged in either root and the form is byte-identical in both. The form was restructured
+  into pinned header · one scrolling region · pinned footer, so a 22-recipe shelf never
+  pushes Save off a phone screen. On mobile it also grows a 44px close button, an **"Add
+  recipes"** button that opens `AddRecipesSheet`, 44px row-removal buttons, and it drops the
+  member list's inner `max-h-[14rem]` scroller (a scroller inside a scroller is a thumb trap;
+  the desktop keeps it).
+- `CollectionChips.tsx` — the `TODO(m4)` is discharged. Below `md` the chips stop being
+  buttons and a full-width 44px **"File this recipe"** button appears under them, opening
+  `FileRecipeSheet`. Desktop is untouched.
+- `CollectionPickerDialog.tsx` — its rows are now `CollectionCheckRow`. No behaviour change.
+- `routes/household.recipes.tsx` — the ledger gained a wrapper column carrying the responsive
+  sizing it used to carry alone (`lg:w-[360px] lg:shrink-0`, the `hidden lg:flex`
+  hide-on-selection), with `CollectionsSheet` (`md:hidden`) as its head. The strip and the
+  ledger therefore appear and disappear together.
+- `components/ui/checkbox.tsx` — `CheckboxRow` gained a `disabled` prop. See deviation 3.
+
+### Deviations from §7, and why
+
+1. **The mobile entry point is a strip above the ledger, and it is labelled with the active
+   scope, not the word "Collections".** §7 names `CollectionsSheet` but not what opens it.
+   The ledger's own collections toggle is `max-md:hidden` and `RecipeLedger.tsx` belongs to
+   the concurrent DnD milestone, so the trigger had to live in the layout route. Labelling it
+   `scopeLabel(scope)` makes one strip do the two jobs the desktop needs two columns for —
+   "you are looking at Weeknights; tap to look at something else". It costs a little
+   redundancy with `ScopedLedgerHeader` on non-default scopes, which is the half that also
+   carries the description and the clear-scope control.
+
+2. **`CollectionCheckRow.tsx` — one file §7's table does not list.** The picker dialog and
+   the file sheet ask the same question and must refuse the same case (published shelf,
+   private recipe — §2.4), and that refusal is precisely the row milestone 5 hangs "Publish
+   recipe & add" off. Two copies would mean M5 has to find both. The row takes a `size` so
+   the dialog keeps its `sm` density and the sheet gets the 44px one.
+
+3. **`CheckboxRow` gained a `disabled` prop** (`components/ui/checkbox.tsx`). `AddRecipesSheet`
+   shows recipes already on the shelf as ticked-but-not-tickable — unticking there would mean
+   "unfile", which belongs to the edit sheet's member list where it is one deliberate control.
+   A disabled native checkbox still announces "checked" to a screen reader, which a
+   look-alike `<div>` would not. Default is `false`, so every existing call site (grocery,
+   plan, picker) is byte-identical. This is the AGENTS rule about shared behaviour living in
+   the shared `ui/` component.
+
+4. **The tree is restyled from _outside_ for touch — `TOUCH_TREE` in `CollectionsSheet.tsx`.**
+   Two things a 232px desktop column gets away with and a phone does not: its rows are 30.6px
+   (measured), under the 44px floor; and the row gear that opens the edit sheet is
+   `opacity-0` until hover, so on a touch device the milestone's own full-height edit sheet
+   would have had **no visible way in** (BRAND.md is explicit that cook-mode-class touch
+   surfaces carry no hover-dependent controls). Both are fixed with arbitrary-variant classes
+   on the `className` `CollectionsTree` already accepts, because `CollectionRow.tsx` belongs
+   to the concurrent DnD milestone and milestone 2 built the tree so that mobile would not
+   have to edit it. **This is a seam, not an ideal**: the rules belong in `CollectionRow` under
+   a `pointer-coarse:` variant, where the desktop column would inherit them too. Whoever owns
+   that file next should move them and delete `TOUCH_TREE`.
+
+5. **`AddRecipesSheet` batches; `FileRecipeSheet` saves on every tick.** §7 describes both
+   only as "44px checkbox rows". They differ because the server appends `recipeIds` in the
+   order it receives them (§5): filing fifteen recipes one request at a time would be fifteen
+   optimistic patches racing one another's `onSettled` invalidation, and the resulting shelf
+   order would be whichever response landed last. One call is also the only way the shelf
+   order matches the order they were ticked — verified below.
+
+6. **"Add recipes" is mobile-only**, per §7's table ("Mobile: add many recipes to one
+   collection"). The desktop adds from the recipe side (the picker) or, from milestone 3, by
+   dragging a ledger card onto a shelf row. If that ever feels thin on the desktop, the sheet
+   already takes a `collection` and a `recipes` array and would work in a dialog unchanged.
+
+7. **`AddRecipesSheet` is nested inside the edit sheet** rather than replacing it. Closing the
+   edit sheet to file recipes would drop a half-typed name and description. Base UI stacks the
+   two dialogs correctly — verified in the browser.
+
+8. **No `DetailPane.tsx` change was needed.** §7 lists the mobile "File this recipe" button
+   as a `DetailPane` change, but M2 had already mounted `CollectionChips` there and the button
+   is a shape `CollectionChips` takes below `md`, so the pane is untouched. (The recipe
+   publish-confirm copy §7 also assigns to `DetailPane` is a milestone-5 deliverable and was
+   left alone.)
+
+### Seams milestone 5's UI pass needs to know about
+
+- **The blocked row lives in one place now** — `CollectionCheckRow.tsx`, `TODO(m5)`. Adding
+  "Publish recipe & add" there lights it up in the desktop dialog _and_ the mobile sheet at
+  once. `AddRecipesSheet`'s footer carries the same `TODO(m5)` for the whole-selection version
+  (it already renders the refused titles from `recipes_unpublished`'s `recipeIds`; it needs
+  the action, and `publishRecipeIds` threaded through the port — M1 deviation 2).
+- **The publish section still mounts in `EditCollectionForm`, under the member list and above
+  the footer** — that is inside the one scrolling region, so it scrolls with the rest on a
+  phone and needs no layout of its own. `mobile` is already in scope if the section wants
+  44px controls; use it rather than a second `useIsMobile()`.
+- **Every mobile control in this milestone is 44px by explicit class**, not by size token.
+  `Button size="lg"` is 36px, not 44 — anything M5 adds to a sheet needs `h-11` (or `min-h-11`
+  on a row) the same way, or it will be the one target that fails the §7 floor.
+- **`FileRecipeSheet` and `CollectionPickerDialog` take identical props.** If M5 changes one
+  surface's contract, change both — `CollectionChips` picks between them on `useIsMobile()`
+  alone.
+
+### Commands run
+
+```
+pnpm --filter @buttery/lexicons build
+pnpm typecheck
+pnpm lint
+pnpm format:check                      # 2 files reformatted with `pnpm exec oxfmt <files>`, then clean
+pnpm test
+process-compose process restart web    # twice; see "A note on the dev stack" below
+```
+
+### Test results
+
+| command                     | result                                                                                                           |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `pnpm typecheck`            | **pass** — all 7 workspace projects                                                                              |
+| `pnpm lint` (oxlint)        | **pass**, exit 0 — 3 pre-existing warnings in unrelated files (`CookPhase`, `PlanDaysAgenda`, `useWindowedRows`) |
+| `pnpm format:check` (oxfmt) | **pass** for every file this milestone owns                                                                      |
+| `pnpm test`                 | **pass** — web: 36 files, 585 passed / 253 skipped (no DB)                                                       |
+
+No new unit tests: everything here is DOM, and the repo has no DOM tests (§9). The pure
+functions this milestone leans on (`scope.ts`'s `searchRows`, `optimistic.ts`'s
+`withRecipesFiled`) are already covered by milestones 1 and 2.
+
+### Verified in the browser
+
+Playwright against the running dev stack at `http://127.0.0.1:3000`, signed in as `chef.test`,
+household "The Test Kitchen", 33 seeded recipes. Viewport **390 × 844** (iPhone-class) unless
+noted. Console was clean — 0 errors, 0 warnings — on every check below.
+
+- **The sheet tree opens, closes, and closes behind a tap.** The strip's trigger opens the
+  left sheet (288px wide, full height); the 44px close button and the backdrop both dismiss
+  it; tapping **Favorites** navigated to `?scope=favorites`, closed the sheet, relabelled the
+  trigger "Favorites", and the ledger showed the one favourited recipe.
+- **Quick-add works from the sheet.** Typing "Phone shelf" + Enter created it, navigated to
+  `?c=01M0GTTN1M4C7HH5XY956MJVQB`, **closed the sheet**, and relabelled the trigger — the
+  `onNavigate` path M2 left for this milestone, exercised end to end.
+- **"Add recipes" files several recipes into a collection.** Opened from the edit sheet
+  (nested on top of it, both dialogs stacked correctly). Ticked Air-Fryer Chicken Parmesan,
+  Arroz con Pollo, Beef Bourguignon → the button read "Add 3 recipes" → the shelf's member
+  list came back **in tap order, appended after the existing member**, and the tree's count
+  went 1 → 4. A second pass added 18 more in one call (count → 22).
+- **"File this recipe" files one recipe into several collections.** On Chana Masala's detail
+  the chips row is a read-out plus a full-width "File this recipe" button; the sheet ticked a
+  second shelf (its count 0 → 1, a second chip appeared behind the sheet, the footer status
+  read "On 2 shelves"), and unticking it reversed all three on the same frame.
+- **The edit sheet is genuinely full-height and scrolls.** Measured: popup `top: 0`,
+  `height: 844` = viewport height, width 390. With 22 members the middle region reports
+  `scrollHeight 1529` vs `clientHeight 662` and scrolls to 867, while the header stays at
+  `top: 2` and the footer at `bottom: 844`.
+- **Every touch target measured ≥ 44px**, with `getBoundingClientRect()` rather than by eye:
+  - sheet tree — all 6 rows exactly **44**, the quick-add row **44**, both edit gears **44 × 44**
+    at computed `opacity: 1` (30.6px and `opacity: 0` before `TOUCH_TREE`);
+  - `AddRecipesSheet` — all 33 recipe rows exactly **44** (`[...new Set(heights)] === [44]`);
+  - `FileRecipeSheet` — both shelf rows **48**;
+  - edit sheet — close **44**, "Add recipes" **44**, each row's remove **44 × 44**, Cancel and
+    Save **44**;
+  - the strip's own trigger **44**.
+- **Desktop is not regressed.** At **1440 × 900**: nav rail, 232px collections column, 360px
+  ledger (with milestone 3's grips), detail pane — unchanged, and the `md:hidden` strip
+  measures 0px. The edit **dialog** still renders as a dialog (now with a pinned header and
+  footer and a scrolling middle) and the picker dialog's rows are pixel-identical to
+  milestone 2's through the shared row component.
+- **The in-between width still yields.** At **900 × 840** with a recipe selected, the column,
+  the strip and the ledger all give way to the detail pane; with nothing selected the column
+  is back at 232px and the strip is still 0px.
+
+### A note on the dev stack, for the next implementer
+
+`pnpm --filter @buttery/lexicons build` (which `pnpm typecheck` also runs, and which the
+concurrent milestone-3 agent ran too) uses `lex build --clear`. It deletes
+`packages/lexicons/src/generated/**` before rewriting it, and the running Vite dev server
+caches the miss: every server fn then 500s with `Failed to load url …/generated/exchange/recipe/recipe.ts`
+long after the file is back on disk. It is not a code fault and no page change fixes it —
+`process-compose process restart web` does, in about fifteen seconds. It happened twice
+during this milestone.

@@ -1,10 +1,16 @@
-import { useMemo } from "react";
-import { Link } from "@tanstack/react-router";
+import { type DragEventHandler, type ReactNode, useMemo, useState } from "react";
+import { Link, useRouteContext } from "@tanstack/react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { BookOpenText, EyeOff, FolderLock, Lock, Plus, Star, UtensilsCrossed } from "lucide-react";
-import type { HouseholdRecipeRow } from "#/lib/api";
+import { type HouseholdRecipeRow, reorderCollectionRecipesMutation } from "#/lib/api";
+import { useIsOnline } from "#/lib/offline/use-online";
 import { Button } from "#/components/ui/button";
+import { DragHandle, DropLine, insertionPointAt } from "#/components/ui/drag-reorder";
 import { ScopedLedgerHeader } from "#/components/collections/ScopedLedgerHeader";
+import { dragCarries, RECIPE_DRAG_TYPE } from "#/components/collections/drag";
 import { isDefaultScope, type LedgerScope, scopeLabel, scopeRows, searchRows } from "#/components/collections/scope";
+import { useDragHandle } from "#/lib/hooks/use-drag-source";
+import { applyVisibleOrder, moveByKey, moveToInsertionPoint } from "#/lib/reorder";
 import { cn } from "#/lib/utils";
 import { RecipeSlat, RecipeSlatAction, RecipeSlatAside, RecipeSlatBody, RecipeSlatDetail, RecipeSlatList, RecipeSlatMeta, RecipeSlatTitle } from "./RecipeSlat";
 import { SourceIcon } from "./SourceIcon";
@@ -29,6 +35,31 @@ import { SourceIcon } from "./SourceIcon";
  * Search stays **local component state, owned by the route** and narrows *within*
  * the active scope — it is a lens, not a place, so it does not belong in the URL
  * beside the scope that is.
+ *
+ * ## Dragging, in two directions (§7)
+ *
+ * Every row is a drag source for its recipe (`application/x-buttery-recipe`), and
+ * that one drag has two destinations:
+ *
+ * - **a collection row in the tree** — files the recipe there. Always available,
+ *   in every scope, because "put this on that shelf" is the gesture the whole
+ *   third column exists for.
+ * - **the gap between two ledger rows** — but only while the ledger is scoped to
+ *   a collection *and the search box is empty*. That order is the collection's
+ *   entry order, which IS the published `recipes` array order, so it can only be
+ *   rearranged while what is on screen is the order itself and not a filtered
+ *   view of it.
+ *
+ * The grip changes shape with that second answer: a real keyboard control when
+ * the list can be reordered (arrow keys move a row, `Home`/`End` send it to an
+ * end), and a plain decorative grip otherwise — filing already has a keyboard
+ * path through the collections picker, and a focusable button that does nothing
+ * when pressed is worse than no button.
+ *
+ * **The reorder writes the whole order, never the rendered subset.** A scoped
+ * ledger drops entries whose recipe has left the box, so what is on screen can be
+ * a subsequence of `recipeIds`; `applyVisibleOrder` folds the new visible order
+ * back into the full one, and the ids nobody could see keep their places.
  */
 
 /** The ordered, searched rows for the active scope. */
@@ -61,10 +92,53 @@ export function RecipeLedger({
   collectionsPanelId: string;
   className?: string;
 }) {
+  const { householdId } = useRouteContext({ from: "/household/recipes" });
+  const queryClient = useQueryClient();
+  const online = useIsOnline();
+  const reorder = useMutation(reorderCollectionRecipesMutation(queryClient, householdId));
+
   const visible = useMemo(() => visibleRows(recipes, scope, query), [recipes, scope, query]);
+  const visibleIds = useMemo(() => visible.map((r) => r.recipeId), [visible]);
   const boxEmpty = recipes.length === 0;
   const missing = scope.kind === "missing-collection";
   const emptyShelf = scope.kind === "collection" && scope.collection.recipeIds.length === 0;
+
+  // The row being carried, and the gap it would land in — an *insertion point*
+  // (0…visible.length), counted between rows rather than on them.
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [dropAt, setDropAt] = useState<number | null>(null);
+  /** What the last reorder did, for people who cannot see the rows move. */
+  const [moved, setMoved] = useState("");
+  // One hook for every row: only one grip can be under the pointer, so only the
+  // pressed row can arm itself.
+  const { armed, handleProps, disarm } = useDragHandle();
+
+  const collection = scope.kind === "collection" ? scope.collection : null;
+  // Dragging is a write, and writes are online-only (§6) — offline there is no
+  // grip at all, because a drag that cannot be saved should not start.
+  const filable = online;
+  const reorderable = collection !== null && query.trim() === "" && online && visible.length > 1;
+
+  function endDrag() {
+    setDragging(null);
+    setDropAt(null);
+    disarm();
+  }
+
+  /**
+   * The one place a new order is written, from both the drag and the keyboard.
+   *
+   * `applyVisibleOrder` is the whole point: `nextVisible` is the order of the
+   * rows on screen, and the write replaces the collection's entire entry order,
+   * so the ids the scope dropped (a recipe that has left the box, and whose
+   * unfiling has not reached this cache yet) have to be put back in their own
+   * slots rather than silently deleted.
+   */
+  function commitOrder(nextVisible: string[], movedIndex: number) {
+    if (!collection || nextVisible === visibleIds) return;
+    reorder.mutate({ collectionId: collection.id, orderedRecipeIds: applyVisibleOrder(collection.recipeIds, nextVisible) });
+    setMoved(`${visible[movedIndex].title} moved to ${nextVisible.indexOf(visibleIds[movedIndex]) + 1} of ${nextVisible.length}.`);
+  }
 
   return (
     <div className={cn("flex min-h-0 flex-col border-border bg-background lg:w-[360px] lg:shrink-0 lg:border-r-2", className)}>
@@ -132,26 +206,127 @@ export function RecipeLedger({
             <EmptyFilter />
           )
         ) : (
-          // TODO(m3): when `scope.kind === "collection"` and the search box is
-          // empty, each row gains a drag handle and the list gains a `DropLine`
-          // (the `LineEditor` pattern) so the entry order — which IS the
-          // published `recipes` array order — is draggable.
-          <RecipeSlatList>
-            {visible.map((r) => (
-              <LedgerRow key={r.recipeId} row={r} selected={r.recipeId === selectedId} />
+          <RecipeSlatList
+            // The reorder is read at the list, not at each row: the drop line
+            // lands in the divider between two rows, and a drag read row-by-row
+            // goes blind exactly there. A recipe on its way to a shelf passes
+            // over this list too — `reorderable` is what keeps a search result,
+            // or a smart scope, from quietly rewriting a collection's order.
+            onDragOver={(event) => {
+              if (!reorderable || dragging === null || !dragCarries(event.dataTransfer, RECIPE_DRAG_TYPE)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              setDropAt(insertionPointAt(event.currentTarget, event.clientY, "[data-ledger-row]"));
+            }}
+            onDragLeave={(event) => {
+              // Only a departure from the list itself counts — crossing between
+              // two rows fires dragleave too, and hiding the line there would
+              // strobe it.
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropAt(null);
+            }}
+            onDrop={(event) => {
+              if (!reorderable || dragging === null || !dragCarries(event.dataTransfer, RECIPE_DRAG_TYPE)) return;
+              event.preventDefault();
+              if (dropAt !== null) commitOrder(moveToInsertionPoint(visibleIds, dragging, dropAt), dragging);
+              endDrag();
+            }}
+          >
+            {visible.map((r, index) => (
+              <LedgerRow
+                key={r.recipeId}
+                row={r}
+                selected={r.recipeId === selectedId}
+                dragging={dragging === index}
+                draggable={filable && armed}
+                onDragStart={
+                  filable
+                    ? (event) => {
+                        // One payload, two possible landings: `copy` onto a
+                        // shelf, `move` inside this list.
+                        event.dataTransfer.effectAllowed = "copyMove";
+                        event.dataTransfer.setData(RECIPE_DRAG_TYPE, r.recipeId);
+                        setDragging(index);
+                        if (reorderable) setDropAt(index);
+                      }
+                    : undefined
+                }
+                onDragEnd={filable ? endDrag : undefined}
+                handle={
+                  filable ? (
+                    <DragHandle
+                      // Named per row: the alternative is one accessible name
+                      // repeated down the whole ledger. It also names the job the
+                      // grip actually does in this scope — only a collection
+                      // scope has an order to rearrange.
+                      label={reorderable ? `Reorder ${r.title}` : `Drag ${r.title} onto a collection`}
+                      title={reorderable ? undefined : "Drag onto a collection to file it"}
+                      onMove={reorderable ? (move) => commitOrder(moveByKey(visibleIds, index, move), index) : undefined}
+                      onPointerDown={handleProps.onPointerDown}
+                      className="max-md:hidden"
+                    />
+                  ) : undefined
+                }
+                dropLine={
+                  dropAt === index ? (
+                    <DropLine className="-top-[1.5px]" />
+                  ) : dropAt === visible.length && index === visible.length - 1 ? (
+                    // The one landing place no gap above a row can express.
+                    <DropLine className="-bottom-[1.5px]" />
+                  ) : undefined
+                }
+              />
             ))}
           </RecipeSlatList>
         )}
       </div>
+
+      {/* A reorder is invisible to anyone not watching the rows move, and the
+        drop line is deliberately `aria-hidden`, so the move says itself here.
+        Separate from the filter-count status above: they are two different
+        pieces of news and one would overwrite the other. */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {moved}
+      </p>
     </div>
   );
 }
 
 /** The two `Add` affordances (filter bar + empty box) open the chooser modal. */
 
-function LedgerRow({ row, selected }: { row: HouseholdRecipeRow; selected: boolean }) {
+function LedgerRow({
+  row,
+  selected,
+  handle,
+  dropLine,
+  draggable,
+  dragging,
+  onDragStart,
+  onDragEnd,
+}: {
+  row: HouseholdRecipeRow;
+  selected: boolean;
+  /** The grip, outside the hit target — a slat's one leading-control slot. */
+  handle?: ReactNode;
+  dropLine?: ReactNode;
+  /** Armed by the grip only (`useDragHandle`), so a press on the row is still a click. */
+  draggable?: boolean;
+  dragging?: boolean;
+  onDragStart?: DragEventHandler<HTMLLIElement>;
+  onDragEnd?: DragEventHandler<HTMLLIElement>;
+}) {
   return (
-    <RecipeSlat selected={selected}>
+    <RecipeSlat
+      selected={selected}
+      data-ledger-row=""
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      // `relative` is what the drop line hangs off; without it the line would
+      // position against the scrollport and draw in the wrong place entirely.
+      className={cn("relative", dragging && "opacity-40")}
+    >
+      {dropLine}
+      {handle}
       <RecipeSlatAction
         // `search: (prev) => prev` carries the active scope onto the detail
         // route (§7): opening a recipe from inside "Weeknights" keeps you inside

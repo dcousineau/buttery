@@ -1,13 +1,14 @@
 import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { FolderLock, Lock } from "lucide-react";
+import { FolderLock } from "lucide-react";
 import { addRecipesToCollectionMutation, householdCollectionsQuery, removeRecipeFromCollectionMutation } from "#/lib/api";
 import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
 import { Button } from "#/components/ui/button";
-import { CheckboxRow } from "#/components/ui/checkbox";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "#/components/ui/dialog";
+import { CollectionCheckRow } from "./CollectionCheckRow";
 
 /**
  * "Which shelves does this recipe belong on?" — the desktop filing surface (§7).
+ * Below `md` the same question is asked by `FileRecipeSheet`, over the same rows.
  *
  * **Each tick files or unfiles immediately.** There is no Save: both writes are
  * optimistic over the one collections cache entry, so the chips behind the
@@ -21,11 +22,9 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
  *
  * **Blocked rows.** A published collection may not hold an unpublished recipe
  * (§2.4); the server's preflight refuses it, so the row refuses it here too
- * rather than letting someone discover the rule by failure. In milestone 2 that
- * branch is unreachable — nothing can be published yet — but it is the shape
- * milestone 5 hangs the "Publish recipe & add" combo off, and shipping the
- * refusal now means M5 adds an action to an existing row instead of inventing a
- * state.
+ * rather than letting someone discover the rule by failure. That row lives in
+ * `CollectionCheckRow` now, shared with the mobile sheet, so milestone 5 adds
+ * "Publish recipe & add" in one place rather than two.
  */
 export function CollectionPickerDialog({
   open,
@@ -67,42 +66,19 @@ export function CollectionPickerDialog({
           <div className="flex max-h-[18rem] flex-col gap-1 overflow-auto pr-0.5">
             {collections.map((collection) => {
               const filed = collection.recipeIds.includes(recipeId);
-              const blocked = !filed && recipeUnpublished && collection.publishedAt != null;
-
-              if (blocked) {
-                return (
-                  // TODO(m5): this row gains the "Publish recipe & add" action,
-                  // which publishes the recipe and files it in one call
-                  // (`addRecipesToCollection`'s `publishRecipeIds`).
-                  <div
-                    key={collection.id}
-                    className="flex w-full items-center gap-3 rounded-lg border-2 border-dashed border-border/60 bg-muted/40 px-2.5 py-2 text-sm text-muted-foreground"
-                  >
-                    <Lock className="size-4 shrink-0" aria-hidden="true" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-semibold">{collection.name}</span>
-                      <span className="block text-xs">Published shelf — this recipe is still private, so it can’t go on it yet.</span>
-                    </span>
-                  </div>
-                );
-              }
-
               return (
-                <CheckboxRow
+                <CollectionCheckRow
                   key={collection.id}
+                  collection={collection}
+                  filed={filed}
+                  blocked={!filed && recipeUnpublished && collection.publishedAt != null}
                   size="sm"
-                  tone="selection"
-                  checked={filed}
-                  title={online ? undefined : OFFLINE_WRITE_HINT}
-                  meta={`${collection.recipeIds.length}`}
-                  onCheckedChange={(checked) => {
-                    if (!online) return;
+                  disabledHint={online ? undefined : OFFLINE_WRITE_HINT}
+                  onToggle={(checked) => {
                     if (checked) file.mutate({ collectionId: collection.id, recipeIds: [recipeId] });
                     else unfile.mutate({ collectionId: collection.id, recipeId });
                   }}
-                >
-                  {collection.name}
-                </CheckboxRow>
+                />
               );
             })}
           </div>
