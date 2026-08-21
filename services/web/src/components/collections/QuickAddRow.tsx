@@ -92,6 +92,11 @@ export function QuickAddRow({
         // authoritative; this is the guard that stops someone typing 900
         // characters into a 100-character field.
         maxLength={100}
+        // A collection's name, not a person's: `autoComplete="off"` keeps the
+        // browser's name/address suggestions out, `data-1p-ignore` keeps
+        // 1Password from claiming the field.
+        autoComplete="off"
+        data-1p-ignore
         aria-label="Name the new collection"
         placeholder="Weeknights"
         onChange={(event) => setName(event.target.value)}

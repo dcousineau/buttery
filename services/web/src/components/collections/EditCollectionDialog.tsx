@@ -254,7 +254,10 @@ function EditCollectionForm({
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-5 py-4 md:px-6">
         <Field>
           <FieldLabel htmlFor="collection-name">Name</FieldLabel>
-          <Input id="collection-name" value={name} maxLength={100} onChange={(event) => setName(event.target.value)} placeholder="Weeknights" />
+          {/* A collection's name, not a person's: `autoComplete="off"` keeps the
+            browser's name/address suggestions out, `data-1p-ignore` keeps
+            1Password from claiming the field. */}
+          <Input id="collection-name" value={name} maxLength={100} autoComplete="off" data-1p-ignore onChange={(event) => setName(event.target.value)} placeholder="Weeknights" />
         </Field>
 
         {/* The collection's own place in the household's list. It sits here,
