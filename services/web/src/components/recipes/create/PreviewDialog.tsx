@@ -1,4 +1,4 @@
-import { Lock } from "lucide-react";
+import { EyeOff } from "lucide-react";
 import { Dialog, DialogContent } from "#/components/ui/dialog";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -16,7 +16,7 @@ export function PreviewDialog({ open, onOpenChange, data }: { open: boolean; onO
         <div className="flex items-center gap-2 border-b-2 border-border px-3.5 py-2">
           <span className="text-sm font-bold">Preview</span>
           <Badge variant="outline" size="xs">
-            <Lock className="size-3" aria-hidden="true" />
+            <EyeOff className="size-3" aria-hidden="true" />
             Private
           </Badge>
           <Button variant="ghost" size="sm" className="ml-auto" onClick={() => onOpenChange(false)}>

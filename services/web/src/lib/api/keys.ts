@@ -66,6 +66,14 @@ export const keys = {
     /** Every plan week in one household — the prefix every plan write invalidates. */
     planAll: (hid: HouseholdId) => ["household", hid, "plan"] as const,
     grocery: (hid: HouseholdId) => ["household", hid, "grocery"] as const,
+    /**
+     * Every collection in the household, membership included — one entry, not
+     * one per collection. `listCollections` is a single small read that the
+     * chips, the counts, the picker and the scoped ledger all derive from
+     * (collections plan §5), so splitting it per collection would buy nothing
+     * and cost a fan-out of invalidations on every reorder.
+     */
+    collections: (hid: HouseholdId) => ["household", hid, "collections"] as const,
     members: (hid: HouseholdId) => ["household", hid, "members"] as const,
     preferences: (hid: HouseholdId) => ["household", hid, "preferences"] as const,
   },

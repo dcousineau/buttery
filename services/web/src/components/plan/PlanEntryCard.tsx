@@ -1,4 +1,4 @@
-import { Check, CookingPot, EyeOff, Lock } from "lucide-react";
+import { Check, CookingPot, EyeOff, Unlink } from "lucide-react";
 import { useRef, useState } from "react";
 import type { PlanEntry } from "#/lib/api";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
@@ -232,8 +232,8 @@ export function PlanEntryFlags({ entry, scope }: { entry: PlanEntry; scope: "car
   const showAvailability = scope === "popover";
   const flags = [
     !entry.inBox ? { key: "box", label: "not in box", icon: null, tone: "muted" as const } : null,
-    showAvailability && entry.unavailable ? { key: "unavailable", label: "source unavailable", icon: EyeOff, tone: "destructive" as const } : null,
-    showAvailability && entry.unpublished ? { key: "unpublished", label: "private draft", icon: Lock, tone: "secondary" as const } : null,
+    showAvailability && entry.unavailable ? { key: "unavailable", label: "source unavailable", icon: Unlink, tone: "destructive" as const } : null,
+    showAvailability && entry.unpublished ? { key: "unpublished", label: "private draft", icon: EyeOff, tone: "secondary" as const } : null,
   ].filter((flag) => flag !== null);
 
   if (flags.length === 0) return null;

@@ -48,6 +48,24 @@ export function householdRecipeQuery(householdId: string, recipeId: string) {
 }
 
 /**
+ * Every collection in the household, each with its ordered membership
+ * (collections plan §6).
+ *
+ * Its presence in this file is the point: collections are offline-readable, and
+ * that is intended. The recipes ledger is already cached beside it, and the two
+ * together are everything the scoped views, the chips and the counts need — a
+ * household can browse "Weeknights" on a phone with no signal. Writes stay
+ * online-only (`OFFLINE_WRITE_HINT`), the same rule every other M1 write
+ * follows.
+ */
+export function householdCollectionsQuery(householdId: string) {
+  return queryOptions({
+    queryKey: keys.household.collections(householdId),
+    queryFn: () => api.listCollections(),
+  });
+}
+
+/**
  * A plan week. `week` is `undefined` for "whatever the server calls this week",
  * which is a distinct cache entry from any dated one — the server resolves it
  * against the household's timezone and week-start day, so the client cannot
@@ -83,7 +101,27 @@ export function groceryListQuery(householdId: string) {
 }
 
 /**
- * The keys for the un-migrated resources (`me.households`, `household.members`,
+ * The caller's memberships — **their role is the only thing this is for**.
+ *
+ * Collections gate publish, unpublish and delete on `assertMember(…, "owner")`
+ * (collections plan §2.8), and the UI has to hide those controls rather than let
+ * a member find them by failure. Nothing else in the session carries a role:
+ * `ensureActiveHousehold` answers an id and a name, and the members list is a
+ * different, household-scoped read.
+ *
+ * It is household-independent and survives a household switch (`keys.me`), which
+ * is also why it takes no argument. Authorization still happens on the server —
+ * this decides what to *draw*, never what is allowed.
+ */
+export function myHouseholdsQuery() {
+  return queryOptions({
+    queryKey: keys.me.households(),
+    queryFn: () => api.listMyHouseholds(),
+  });
+}
+
+/**
+ * The keys for the remaining un-migrated resources (`household.members`,
  * `household.preferences`, the public browse surface) are reserved in `keys.ts`
  * but have no factory yet, on purpose: a factory here is a promise that the
  * resource is offline-capable, and those routes still read through plain
