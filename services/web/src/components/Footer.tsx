@@ -10,6 +10,9 @@ export default function Footer() {
         <div className="page-wrap flex flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
           <p className="m-0 text-sm">&copy; {year} Buttery — the pantry where the good stuff is kept.</p>
           <nav className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm font-semibold">
+            <Link to="/tip-jar" className="hover:text-foreground">
+              Tip Jar
+            </Link>
             <Link to="/terms" className="hover:text-foreground">
               Terms
             </Link>
