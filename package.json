@@ -8,6 +8,7 @@
     "dev:down": "process-compose down",
     "dev:web": "pnpm --filter @buttery/web dev",
     "dev:docs": "pnpm --filter @buttery/docs start --port 3001 --host 127.0.0.1 --no-open",
+    "dev:admin": "pnpm --filter @buttery/admin dev",
     "atproto:dev-env": "pnpm --filter @buttery/atproto-dev-env start",
     "build": "pnpm -r build",
     "start": "pnpm --filter @buttery/web start",

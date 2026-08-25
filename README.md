@@ -2,10 +2,11 @@
 
 Your recipes, your pantry — kept as portable [atproto](https://atproto.com) records you can take anywhere. Buttery is a [TanStack Start](https://tanstack.com/start) web app backed by Postgres, with a cron service that syncs recipe records from the atmosphere.
 
-The monorepo has two services:
+The monorepo has three deployable-ish services:
 
 - `services/web` — the app (`@buttery/web`)
 - `services/atproto-cron-sync` — the periodic sync/backfill worker (`@buttery/atproto-cron-sync`)
+- `services/admin` — the backoffice (`@buttery/admin`), a local-only read tool over the same database. Not deployed. See [its README](services/admin/README.md).
 
 ## Local development
 

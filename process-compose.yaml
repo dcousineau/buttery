@@ -283,3 +283,46 @@ processes:
       failure_threshold: 60
     log_location: ./.dev-logs/docs.log
     log_configuration: *log_config
+
+  # Opt-in, same shape as `docs` and for the same reason: nothing in the app
+  # needs the backoffice running, and a second Vite dev server is not free. Three
+  # ways to get it up:
+  #
+  #   • TUI: select `admin`, then the "Start Process" shortcut in the footer
+  #   • running stack: `process-compose process start admin`
+  #   • from cold: `BUTTERY_ADMIN_DISABLED=false pnpm dev` for the whole stack
+  #     plus the admin, or `pnpm dev admin` for the admin and its dependencies
+  #     alone (naming a process on `up` overrides `disabled`).
+  #
+  # Server-side config comes from services/admin/.env, which its vite.config.ts
+  # loads into process.env — the same arrangement as web. That file points at the
+  # SAME database as services/web/.env (the admin reads the app's real tables)
+  # but carries its OWN ADMIN_BETTER_AUTH_SECRET, and the admin's cookies are
+  # namespaced `buttery-admin.*`. That prefix is load-bearing in local dev:
+  # cookies ignore ports, so 127.0.0.1:3000 and 127.0.0.1:3100 share one jar and
+  # the default prefix would have each app signing you out of the other.
+  admin:
+    description: "Backoffice admin (http://127.0.0.1:3100) — opt-in, starts Disabled"
+    command: "pnpm dev:admin"
+    # Waits on `migrate` because the `admin` Postgres schema and its better-auth
+    # tables are created by the web service's migrations (the `*_admin_*` ones);
+    # booting before they exist means every page 500s on a missing relation.
+    depends_on:
+      migrate:
+        condition: process_completed_successfully
+    disabled: ${BUTTERY_ADMIN_DISABLED:-true}
+    availability: *app_availability
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 3100
+        # `/login` rather than `/`: `/` redirects to it for a signed-out
+        # request, and a probe that follows no redirects reads a 307 as a
+        # failure.
+        path: /login
+        scheme: http
+      initial_delay_seconds: 5
+      period_seconds: 2
+      failure_threshold: 60
+    log_location: ./.dev-logs/admin.log
+    log_configuration: *log_config
