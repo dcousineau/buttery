@@ -19,6 +19,7 @@ import { Route as OfflineRouteImport } from './routes/offline'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as TipJarRouteImport } from './routes/tip-jar'
 import { Route as HouseholdIndexRouteImport } from './routes/household.index'
 import { Route as HouseholdListRouteImport } from './routes/household.list'
 import { Route as HouseholdPlanRouteImport } from './routes/household.plan'
@@ -85,6 +86,11 @@ const PrivacyRoute = PrivacyRouteImport.update({
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TipJarRoute = TipJarRouteImport.update({
+  id: '/tip-jar',
+  path: '/tip-jar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HouseholdIndexRoute = HouseholdIndexRouteImport.update({
@@ -180,6 +186,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/tip-jar': typeof TipJarRoute
   '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/household/recipes': typeof HouseholdRecipesRouteWithChildren
@@ -208,6 +215,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/tip-jar': typeof TipJarRoute
   '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/households/switch': typeof HouseholdsSwitchRoute
@@ -236,6 +244,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
+  '/tip-jar': typeof TipJarRoute
   '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/household/recipes': typeof HouseholdRecipesRouteWithChildren
@@ -266,6 +275,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/terms'
+    | '/tip-jar'
     | '/household/list'
     | '/household/plan'
     | '/household/recipes'
@@ -294,6 +304,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/terms'
+    | '/tip-jar'
     | '/household/list'
     | '/household/plan'
     | '/households/switch'
@@ -321,6 +332,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/privacy'
     | '/terms'
+    | '/tip-jar'
     | '/household/list'
     | '/household/plan'
     | '/household/recipes'
@@ -350,6 +362,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
+  TipJarRoute: typeof TipJarRoute
   HouseholdListRoute: typeof HouseholdListRoute
   HouseholdPlanRoute: typeof HouseholdPlanRoute
   HouseholdRecipesRoute: typeof HouseholdRecipesRouteWithChildren
@@ -435,6 +448,13 @@ declare module '@tanstack/react-router' {
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tip-jar': {
+      id: '/tip-jar'
+      path: '/tip-jar'
+      fullPath: '/tip-jar'
+      preLoaderRoute: typeof TipJarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/household/': {
@@ -578,6 +598,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
+  TipJarRoute: TipJarRoute,
   HouseholdListRoute: HouseholdListRoute,
   HouseholdPlanRoute: HouseholdPlanRoute,
   HouseholdRecipesRoute: HouseholdRecipesRouteWithChildren,
