@@ -2,7 +2,7 @@ import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react"
 import { cva } from "class-variance-authority";
 import { Check, Pencil, UtensilsCrossed } from "lucide-react";
 import { type GroceryPreview, type GroceryPreviewRow, commitGroceryAdd, previewGroceryAdd } from "#/lib/api";
-import { AISLE_LABELS, aisleOrder } from "#/lib/grocery/aisles";
+import { AISLE_LABELS, aisleOrder } from "@buttery/food/aisles";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";

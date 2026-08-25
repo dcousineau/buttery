@@ -21,7 +21,7 @@
  *    like a taxonomy food: they merge, they carry an aisle, they can be staples.
  */
 
-import type { Aisle } from "../services/web/src/lib/grocery/aisles.ts";
+import type { Aisle } from "../packages/food/src/aisles.ts";
 
 /** Extra English names for nodes the taxonomy already has. Keys must resolve. */
 export const EXTRA_SYNONYMS: Record<string, string[]> = {

@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Pure contract package: no DOM, no network, no Node APIs beyond what
+    // @types/node supplies for typechecking. Runs unchanged in the pipeline
+    // service and the web app.
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}

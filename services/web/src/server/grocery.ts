@@ -2,11 +2,11 @@ import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import type { Kysely } from "kysely";
 import * as z from "zod";
 import type { DB } from "#/db/types";
-import { AISLES, aisleOrder, toAisle } from "#/lib/grocery/aisles";
+import { AISLES, aisleOrder, toAisle } from "@buttery/food/aisles";
 import type { MergedRow } from "#/lib/grocery/merge";
 // `units.ts` is pure, tiny and carries no lexicon, so it is a static import
 // while `categorize.ts` and `merge.ts` stay dynamic to keep the JSON lazy.
-import { renderQuantity } from "#/lib/grocery/units";
+import { renderQuantity } from "@buttery/food/units";
 import { type PlanDate, isPlanDate, shiftDays, weekStartFor } from "#/lib/plan/week";
 import type { GroceryItemRow, GroceryItemSourceRow, GroceryListPayload, GroceryPreview, GroceryPreviewRow } from "#/lib/api/types";
 
@@ -26,7 +26,7 @@ import type { GroceryItemRow, GroceryItemSourceRow, GroceryListPayload, GroceryP
  * Server-only imports (`getDb`, kysely `sql`, authz/session) are pulled in with
  * dynamic `import()` inside each handler so this module stays safe to reference
  * from the client bundle. The **food lexicon** is loaded the same lazy way, one
- * level down in `lib/grocery/categorize.ts`, so the ~500KB of JSON never lands
+ * level down in `@buttery/food/categorize`, so the ~500KB of JSON never lands
  * in a response that categorizes nothing.
  *
  * Every server fn below is a thin wrapper — session + `assertMember`, then a
@@ -280,7 +280,7 @@ export async function buildGroceryPreview(
   householdId: string,
   input: { recipes?: Array<{ recipeId: string; scale?: number }>; planWeek?: PlanDate },
 ): Promise<GroceryPreview> {
-  const { loadLexicon } = await import("#/lib/grocery/categorize");
+  const { loadLexicon } = await import("@buttery/food/categorize");
   const { mergeRecipeLines } = await import("#/lib/grocery/merge");
 
   // A plan week contributes once per *entry* at 1×, so a recipe planned twice
@@ -517,7 +517,7 @@ export const addManualGroceryItem = createServerFn({ method: "POST" })
  * call. `is_manual` is set so the UI can tell a typed line from a recipe's.
  */
 export async function addManualItem(db: Kysely<DB>, did: string, householdId: string, input: { text: string }): Promise<{ itemId: string; merged: boolean }> {
-  const { loadLexicon } = await import("#/lib/grocery/categorize");
+  const { loadLexicon } = await import("@buttery/food/categorize");
   const { mergeManualItem } = await import("#/lib/grocery/merge");
 
   const lexicon = await loadLexicon();
