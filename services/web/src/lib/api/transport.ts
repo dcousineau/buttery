@@ -106,6 +106,7 @@ import {
 import { dismissInviteNudge as dismissInviteNudgeFn, getHouseholdNudges as getHouseholdNudgesFn } from "#/server/household/settings";
 import { clearPendingInvite as clearPendingInviteFn, errorMessage as errorMessage_, stashPendingInvite as stashPendingInviteFn } from "#/server/household/pending-invite";
 import { getRecipe as getRecipeFn, listRecentRecipes as listRecentRecipesFn } from "#/server/recipes";
+import { getRecipeEnrichmentDebug as getRecipeEnrichmentDebugFn } from "#/server/recipe-enrichment";
 import { publishRecipe as publishRecipeFn, saveRecipe as saveRecipeFn } from "#/server/recipes-write";
 import { getImportPrefill as getImportPrefillFn, scrapeRecipe as scrapeRecipeFn, submitImport as submitImportFn } from "#/server/recipe-scrape";
 import type { CommitChunkInput, ComparisonInput, FailImportSessionInput, FinalizeInput, OpenImportSessionInput, ProbeInput } from "#/server/recipe-import";
@@ -478,6 +479,20 @@ export function listRecentRecipes(): Promise<RecipeCardData[]> {
 /** Takes the id bare, not enveloped — `getRecipe`'s validator is `(id: string)`. */
 export function getRecipe(recipeId: string): Promise<RecipeDetailData | null> {
   return getRecipeFn({ data: recipeId });
+}
+
+// --- recipe-enrichment dev panel (recipe-enrichment plan §10, D16) -------
+//
+// Dev-only, not part of the offline-cached surface, so it deliberately has no
+// `queryOptions` factory in `queries.ts` — the panel reads it imperatively,
+// the same way `DetailPane` calls `publishRecipe`/`removeRecipeFromHousehold`
+// directly. `getRecipeEnrichmentDebugFn` re-checks `NODE_ENV` on the server
+// and refuses outright in production regardless of what a caller sends.
+
+export type { RecipeEnrichmentView, RecipeEnrichmentLabelView } from "#/server/recipe-enrichment";
+
+export function getRecipeEnrichmentDebug(recipeId: string) {
+  return getRecipeEnrichmentDebugFn({ data: { recipeId } });
 }
 
 // --- authoring, scraping, import (online-only, §1.1) ---------------------

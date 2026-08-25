@@ -6,6 +6,7 @@ import { householdRecipeQuery } from "#/lib/api";
 import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { Button } from "#/components/ui/button";
 import { DetailPane } from "#/components/recipes/DetailPane";
+import { EnrichmentDebugPanel } from "#/components/recipes/EnrichmentDebugPanel";
 
 /**
  * The recipe detail child route (plan §5.1). Renders in the ledger's right pane
@@ -67,14 +68,32 @@ function RecipeDetailRoute() {
   // Key by recipeId so switching recipes remounts the pane (resets favorite,
   // scroll, and the note editor without any setState-in-effect).
   return (
-    <DetailPane
-      key={recipe.recipeId}
-      recipe={recipe}
-      autoOpenCook={search.cook === true}
-      // Drop the param once cook mode has been closed, so the deep link is
-      // consumed exactly once and a reload does not re-enter the apron.
-      onCookModeClosed={() => void navigate({ search: (prev) => ({ ...prev, cook: undefined }), replace: true })}
-    />
+    <>
+      <DetailPane
+        key={recipe.recipeId}
+        recipe={recipe}
+        autoOpenCook={search.cook === true}
+        // Drop the param once cook mode has been closed, so the deep link is
+        // consumed exactly once and a reload does not re-enter the apron.
+        onCookModeClosed={() => void navigate({ search: (prev) => ({ ...prev, cook: undefined }), replace: true })}
+      />
+      {/* Dev-only enrichment diagnostics (recipe-enrichment plan §10, D16).
+        `import.meta.env.DEV` is the CLIENT half of the double gate — a
+        production build never ships this branch at all. The server half
+        (`getRecipeEnrichmentDebug` refusing outside dev) is what actually
+        matters; this is only the reason nobody sees it who isn't looking.
+        Rendered as a fixed, non-modal overlay rather than composed into
+        `DetailPane` (out of scope to edit here) — `--z-banner` is the
+        "pinned page furniture, never urgent" layer (styles.css), which is
+        exactly what a diagnostic panel is. */}
+      {import.meta.env.DEV && (
+        <div className="pointer-events-none fixed inset-x-3 bottom-3 z-(--z-banner) flex justify-end lg:inset-x-auto lg:right-3">
+          <div className="pointer-events-auto max-h-[60vh] w-full overflow-auto lg:w-96">
+            <EnrichmentDebugPanel recipeId={recipe.recipeId} />
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
