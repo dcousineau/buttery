@@ -3,7 +3,7 @@ import { loadConfig } from "#/config.ts";
 import { WORKFLOWS } from "#/workflows/index.ts";
 import { jobHost } from "#/workflows/hosts.ts";
 import { log, setLogRole } from "#/log.ts";
-import { closeQueues, getFlowProducer } from "#/queues.ts";
+import { closeQueues, getFlowProducer, getQueues } from "#/queues.ts";
 import { closeRedis, connectionFor, getRedis } from "#/redis.ts";
 
 setLogRole("worker");
@@ -32,10 +32,14 @@ function start(): void {
   // A step submits the next stage of its own graph, so a worker is a producer
   // too — of flows, not of plain jobs.
   const flows = getFlowProducer(config.redisUrl);
+  // A step can also hand work to a *different* workflow's queue (`ctx.enqueue`,
+  // `workflows/define.ts`) — `jobHost` needs every workflow's queue, not just
+  // its own, to resolve one by name.
+  const queues = getQueues(config.redisUrl);
 
   const workers = WORKFLOWS.map((workflow) => {
     // A job's name is the step it runs; the kernel looks it up and calls it.
-    const worker = new Worker(workflow.name, (job) => workflow.run({ step: job.name, payload: job.data, host: jobHost(job, workflow, flows), redis }), {
+    const worker = new Worker(workflow.name, (job) => workflow.run({ step: job.name, payload: job.data, host: jobHost(job, workflow, flows, queues), redis }), {
       connection,
       concurrency: workflow.concurrency ?? config.worker.concurrency,
     });

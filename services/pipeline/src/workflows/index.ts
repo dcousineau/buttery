@@ -1,5 +1,6 @@
 import { atprotoSync } from "#/workflows/atproto-sync/index.ts";
 import { demo } from "#/workflows/demo/index.ts";
+import { recipeEnrichment } from "#/workflows/recipe-enrichment/index.ts";
 import type { Workflow } from "#/workflows/define.ts";
 
 /**
@@ -12,7 +13,7 @@ import type { Workflow } from "#/workflows/define.ts";
  * drains it — and `atproto-sync/` for the layout a workflow with more than a
  * file's worth of code should follow.
  */
-export const WORKFLOWS: readonly Workflow[] = [atprotoSync, demo];
+export const WORKFLOWS: readonly Workflow[] = [atprotoSync, demo, recipeEnrichment];
 
 export const WORKFLOW_NAMES: readonly string[] = WORKFLOWS.map((workflow) => workflow.name);
 
