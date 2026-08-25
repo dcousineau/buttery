@@ -83,12 +83,16 @@ function RecipeDetailRoute() {
         (`getRecipeEnrichmentDebug` refusing outside dev) is what actually
         matters; this is only the reason nobody sees it who isn't looking.
         Rendered as a fixed, non-modal overlay rather than composed into
-        `DetailPane` (out of scope to edit here) — `--z-banner` is the
-        "pinned page furniture, never urgent" layer (styles.css), which is
-        exactly what a diagnostic panel is. */}
+        `DetailPane` (out of scope to edit here). `--z-popover` (styles.css)
+        is "opened by a pointer and being aimed at RIGHT NOW" — the panel is
+        a `<details>` disclosure the reader deliberately clicks open to read,
+        the same interaction the token is written for, and its value (70)
+        clears both the sticky header (`--z-sticky`, 50) and any stacking
+        context `DetailPane`'s own content establishes. `--z-banner` (40,
+        "pinned but never urgent") was tried first and lost to both. */}
       {import.meta.env.DEV && (
-        <div className="pointer-events-none fixed inset-x-3 bottom-3 z-(--z-banner) flex justify-end lg:inset-x-auto lg:right-3">
-          <div className="pointer-events-auto max-h-[60vh] w-full overflow-auto lg:w-96">
+        <div className="pointer-events-none fixed inset-x-3 bottom-3 z-(--z-popover) flex justify-end lg:inset-x-auto lg:right-3">
+          <div className="pointer-events-auto w-full lg:w-96">
             <EnrichmentDebugPanel recipeId={recipe.recipeId} />
           </div>
         </div>
