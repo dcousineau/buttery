@@ -229,8 +229,344 @@ correction UI, nothing new published to atproto, and no automatic reprocessing o
   "Backboard token is required for plan." Someone with Railway credentials has to run the
   plan/apply pair before the new variable and watch patterns take effect. AGENTS.md forbids
   hand-editing the dashboard.
-- **Measure the miss rate against real network recipes.** See the conjecture above. Until then,
-  the `may_contain` and `unknown` allergen thresholds are set by judgement rather than by data.
+- ~~**Measure the miss rate against real network recipes.**~~ Done — see "The miss rate,
+  measured against real network recipes" below. The `unknown` threshold now has a measured
+  distribution behind it; `may_contain` still has no corpus that triggers it.
 - **`atproto-sync` has no queue-level `defaultJobOptions`,** so a hand-posted `atproto-sync` job
   is still retained forever. Fixing `server.ts` to pass `jobOptionsFor` would settle it for every
   workflow at once, and is the better fix than a second per-workflow default.
+
+---
+
+# The miss rate, measured against real network recipes
+
+This section closes the open item above ("Measure the miss rate against real network
+recipes"). It adds a second corpus, measures the matcher against it, and reports what that
+does to the allergen verdicts. **Nothing in the classifiers, the lexicon, `traits.json` or the
+enrichment workflow was changed** — the only files touched are the new seed and
+`calibrate.db.test.ts`.
+
+## Why the 0.0% was never a measurement of the lexicon
+
+The baseline swept `1787000664088_dev_recipes.ts` and reported 396/396 lines resolved, and
+`calibrate.db.test.ts` independently agreed at 338/338. Both are correct and both are
+uninformative: that seed was hand-written alongside the lexicon it is being used to grade. A
+corpus written by the same hand that wrote the matcher cannot produce a miss. The 0.0% was a
+property of the corpus, not of `categorizeWith`.
+
+## The new corpus
+
+`services/web/src/db/seeds/1787688761627_network_recipe_corpus.ts` — **210 recipes, 39
+authors, 1781 ingredient lines** (1745 ingredient lines plus 36 lines the parser flags as
+group headers). Created with `pnpm --filter @buttery/web db:seed:make`, keyed `netseed-<id>`,
+upserted, and it no-ops with the same "no household" message as the dev seed.
+
+### How the sample was drawn
+
+The dev database holds 4251 synced recipes, and a uniform random draw over them would have
+been close to worthless: **4041 of the 4251 belong to a single DID** — 3695 Wikibooks Cookbook
+imports plus 346 further rows in the same uniform machine style. A blind sample of 300 from
+that pool would have been ~95% one importer, and would have reported one importer's house
+style as "the network".
+
+Measured separately, the three strata are genuinely different populations:
+
+| stratum                                 | recipes | lines | line miss | recipe miss |
+| --------------------------------------- | ------: | ----: | --------: | ----------: |
+| A — Wikibooks import (`wb-*`, bulk DID) |    3695 | 31955 |     3.81% |       24.5% |
+| B — same DID, non-`wb`                  |     346 |  2478 |     2.78% |       17.3% |
+| C — everything else (39 other DIDs)     |     210 |  1745 |    12.21% |       45.7% |
+
+**The committed corpus is a census of stratum C — all 210 of them, no sampling step at all.**
+A census has no selection to bias: there was no point at which a recipe could be kept or
+dropped for how it matched. Stratum A is already measured over all 3695 and is reported in the
+table above, so adding a slice of it to the seed would have added bulk without adding
+measurement.
+
+### What was and was not changed
+
+Nothing was changed for matching reasons. Every ingredient line is committed as it was
+authored — brand names (`RO-TEL Original`, `Carrol Shelby's Texas Chili Kit`, `Cardini's
+ceasar dressing`, `Badia Sazon Tropical`), loanwords and regional names (`doubanjiang`,
+`kasuri methi`, `shiraga negi`, `potimarron`), whole French and Portuguese recipes, prep
+clauses, parentheticals, unicode fractions, typos (`old-fashioned rolled outs`), and 36 group
+headers. **Zero recipes were dropped, for any reason.**
+
+For provenance, four things were removed, none of which touch a measured number:
+
+- **All descriptions and instruction prose.** Ingredient lists are largely uncopyrightable
+  facts; headnotes and method text are not, so the seed writes no `recipe_instruction` rows
+  at all.
+- **DIDs replaced with opaque author keys `a01`–`a39`.** Kept in some form because 210
+  recipes from 39 authors is not 210 independent draws, and the confidence intervals below
+  depend on knowing the clustering.
+- **Four titles carrying a private given name** generalised (`Rebecca's …` → `…`).
+- **Two ingredient lines carrying record locators** (an `at://did:plc:…` URI and a
+  `recipe.exchange` permalink) replaced with same-shaped placeholders. Both were verified to
+  parse and match identically before and after (`en:coating`, `en:pesto`), so no measured
+  number moved.
+
+A final sweep for residual identifiers — handles, DIDs, URLs, household names, personal notes
+— returned none. Rows are written `origin: "local"`, `visibility: "private"`, with no
+did/rkey/uri.
+
+### Note on the seed key
+
+The brief specifies `seed-<slug>`. The prefix used is **`netseed-`** instead, because
+`1787000664088_dev_recipes.ts`'s `pruneStaleSeedRecipes` deletes _any_ recipe whose id is
+`like 'seed-%'` and is not in its own keep-set. A second seed file using the documented
+convention would have had its rows silently deleted on every `db:seed:run`, in filename order,
+with no error. Recorded as `def-483885f6bc86`. Verified by running `db:seed:run` twice: 210
+`netseed-` + 33 `seed-` + 4251 `sync` rows all intact, no cross-pruning.
+
+## 1. Per-line miss rate
+
+Measured with the real matcher (`parseIngredientLine` → `categorizeWith`), group headers
+excluded as `isGroupHeader`:
+
+| view                                                |     miss |      rate |
+| --------------------------------------------------- | -------: | --------: |
+| every ingredient line                               | 213/1745 | **12.2%** |
+| distinct lines (what `calibrate.db.test.ts` sweeps) | 170/1548 | **11.0%** |
+
+95% confidence interval on the per-line rate, bootstrapped **by author** rather than by line
+(lines within one author's recipes are not independent): **5.0% – 24.2%**. The interval is
+wide because 39 authors is not many clusters, and because two authors contribute nearly all of
+the non-English lines.
+
+156 distinct ingredient names went unresolved. The parser correctly flagged 36 group headers
+and they are excluded from every rate here.
+
+## 2. Per-recipe rate — the number that decides whether `not_detected` is reachable
+
+The allergen rules emit `not_detected` only when **every** line resolved. So this is the number
+that matters:
+
+| corpus                           | ≥1 unresolved line | `not_detected` reachable |
+| -------------------------------- | -----------------: | -----------------------: |
+| all 210                          | 96/210 = **45.7%** |                **54.3%** |
+| the 171 with ≥2 ingredient lines | 57/171 = **33.3%** |                **66.7%** |
+
+The second row exists because 39 of the 210 recipes are structurally degenerate — 38 from one
+author whose entire ingredient list is the single line `See original recipe`, plus one
+`Test Recipe` whose only ingredient is `Love`. The "≥2 ingredient lines" filter is a structural
+rule fixed **before** any match outcome was inspected, and it catches exactly those 39; the
+nine genuine two-line recipes (Simple Syrup, Butter, and so on) all survive it.
+
+So the answer to the question the brief cares about: **not "almost none", but roughly half to
+two-thirds.** One recipe in three loses its allergen verdict entirely to a single unresolved
+line — that is a real ceiling, but it is not a feature that fails to function.
+
+## 3. The miss list
+
+### Composition of the 213 missed lines
+
+| what it is                                                  | lines | share |
+| ----------------------------------------------------------- | ----: | ----: |
+| non-English ingredient name (French, Portuguese)            |   112 | 52.6% |
+| English food the lexicon does not resolve                   |    45 | 21.1% |
+| placeholder / not an ingredient at all                      |    45 | 21.1% |
+| markdown `## Heading` the parser failed to flag as a header |    11 |  5.2% |
+
+Over half the miss rate is **not a lexicon gap at all** — it is a corpus containing recipes in
+languages the Open Food Facts English taxonomy structurally does not cover. That is a real
+property of the network and it will not go away, but it is a different problem from "the
+lexicon is missing foods".
+
+### Frequency-ranked, top of the list
+
+```
+ 38  see original recipe        (38 recipes — one author's placeholder)
+  4  de beurre
+  3  de sucre
+  2  ## toppings                (markdown header, not flagged)
+  2  à café de cannelle
+  2  à café de muscade
+  2  de farine
+  2  gousses d'ail
+  2  gousses d’ail              (straight vs curly apostrophe — two distinct names)
+  2  huile d’olive
+  2  kasuri methi
+  2  manteiga
+  2  œuf
+  2  oeufs
+  2  pincée de sel
+  2  poivre noir
+  2  whole                      ("2-3 whole, peeled cloves of garlic" — parser took "whole")
+```
+
+The tail is long and flat: **138 of the 156 distinct missed names occur exactly once.** There
+is no fat head of common English foods to fix.
+
+### Cheap fix vs. genuinely absent, for the English gap
+
+`scripts/food-synonyms.ts` / `EXTRA_FOODS` can close a miss only if the Open Food Facts
+taxonomy carries the food. Probed against `lexicon.foods` and `lexicon.index`:
+
+**In the taxonomy — a synonym or plural away (cheap):**
+
+| missed name                               | taxonomy has                       | why it missed                      |
+| ----------------------------------------- | ---------------------------------- | ---------------------------------- |
+| `cloves`, `ground cloves`, `whole cloves` | `en:clove`, `en:ground-clove`      | index carries only `clove`         |
+| `kasuri methi`, `kasoori methi`           | `en:dried-fenugreek-leaf`          | loanword spelling, no synonym      |
+| `chuck roast`, `ground chuck`             | `en:chuck-steak`                   | cut name variant                   |
+| `farro`                                   | `en:pearled-farro`                 | only the processed form indexed    |
+| `haloumi`                                 | `en:halloumi`                      | spelling                           |
+| `kirschwasser`                            | `en:kirsch`                        | full name vs. short                |
+| `cornichons`                              | `en:gherkin`                       | loanword                           |
+| `creme double`                            | `en:double-cream`                  | loanword                           |
+| `old-fashioned rolled outs`               | `en:oat` (via `rolled oats`)       | typo in the source, not our gap    |
+| `blackcurrants` / `redcurrants`           | `en:blackcurrant`, `en:redcurrant` | plural                             |
+| `graham crackers`                         | `en:graham-flour` only             | _partial_ — a cracker is not flour |
+| `caper brine`                             | `en:capers` only                   | _partial_ — brine is not the caper |
+
+**Not in the taxonomy — not fixable in the synonym file, and this is the evidence about what
+phase 2 would need:**
+
+`orzo`, `gnocchi`, `manicotti`, `polenta`, `masa harina`, `prosciutto`, `soppressata`,
+`schnitzel`, `chashu`, `pretzels`, `mirepoix`, `doubanjiang`, `shiraga negi`, `sazón`,
+`adobo powder`, `ranch`, `whipped topping`, `gel food coloring`, `Pinot Gris` (no wine
+varietals at all), and — the one worth flagging — **`saffron`**, which exists in the taxonomy
+only as `en:saffron-milk-cap`, a mushroom. The spice is absent.
+
+Pattern: the Open Food Facts ingredient taxonomy is strong on raw commodities and weak on
+**prepared and named products** — pasta shapes, cured meats, cuisine-specific pastes,
+condiment brands. That is precisely the register real recipes are written in.
+
+### Counterfactuals
+
+What each layer of fixing would actually buy:
+
+```
+0  as measured today                       line 213/1745 = 12.2% | recipes 96/210 = 45.7% | not_detected reachable  54.3%
+1  + parser flags '## x' as a header       line 202/1734 = 11.6% | recipes 93/210 = 44.3% |                         55.7%
+2  + placeholder rows excluded             line 157/1689 =  9.3% | recipes 50/171 = 29.2% |                         70.8%
+3  + non-English resolved (multilingual)   line  45/1689 =  2.7% | recipes 31/171 = 18.1% |                         81.9%
+4  + every English gap closed as well      line   0/1689 =  0.0% | recipes  0/171 =  0.0% |                        100.0%
+-- English-only corpus (non-English dropped, not fixed)
+                                           line  45/1577 =  2.9% | recipes 31/166 = 18.7% |                         81.3%
+```
+
+The single largest lever is **multilingual resolution**, not more synonyms. Closing every
+English gap in the corpus on top of that moves the per-recipe rate a further 18 points; doing
+it _without_ multilingual support leaves the ceiling at ~81%.
+
+## 4. Verdict distribution
+
+`POST /jobs/recipe-enrichment` with `{"name":"backfill","data":{"limit":500,"localOnly":true}}`.
+`localOnly` was added to the documented payload so the claim scopes to `origin='local'` — the
+243 seeded recipes — and leaves the 4251 unrelated synced rows out of the run. All 243
+completed `ok`.
+
+**Allergen, 210 network recipes × 10 slugs = 2100 labels:**
+
+| verdict        | network corpus |     share | dev corpus (baseline) |
+| -------------- | -------------: | --------: | --------------------: |
+| `contains`     |            219 |     10.4% |                    65 |
+| `not_detected` |            977 |     46.5% |                   265 |
+| `may_contain`  |          **0** |      0.0% |                     0 |
+| `unknown`      |        **904** | **43.0%** |                 **0** |
+
+The baseline recorded above reads 71/279; re-running it today over the same seed file gives
+65/265. The seed file has not changed since its only commit — the earlier run's database held
+two extra `origin='local'` rows that were never part of any seed file (`d-e67628b7`, resolved
+`d-5deceed8`). The shape of the baseline is unaffected.
+
+Per recipe, allergen labels:
+
+| unresolved lines                 |         recipes |
+| -------------------------------- | --------------: |
+| 0 unknown labels (all 10 usable) | **114** (54.3%) |
+| 6–9 unknown                      |              30 |
+| 10 unknown (nothing usable)      |              66 |
+
+The 96 recipes with ≥1 unresolved line are exactly the 96 with ≥1 unknown allergen label — but
+30 of them still get a usable `contains` on some allergens, because a positive match on a
+resolved line stands regardless of what else failed to resolve. **The rules degrade
+gracefully**, which is worth knowing: an unresolved line suppresses `not_detected` but does not
+suppress a detection.
+
+`may_contain` is still **zero**, exactly as at baseline. The unresolved-line path was expected
+to be what finally triggered it; it does not, because `unknown` claims those recipes first.
+That path remains untested by any corpus.
+
+**Diet, 210 × 13 = 2730 labels:** 398 `excluded`, 384 `likely`, 1948 `unknown` (71.4%). But
+**1260 of those unknowns — 64.7% — are structural, not lexical**: six slugs (`keto`,
+`low_carb`, `low_fat`, `low_calorie`, `diabetic`, `paleo`) are 210/210 unknown because they
+need nutrition data the rules do not have. Excluding those six, diet unknown is 688/1470 =
+46.8%, in line with allergen.
+
+## What was done about the calibration test
+
+Option 1 from the brief. `calibrate.db.test.ts` used to sweep _every_ distinct
+`recipe_ingredient.text` row in the database, which meant its corpus was whatever happened to
+be in that developer's dev database — on this machine 94.4% (dragged up by 4251 synced
+Wikibooks lines), on a seeds-only database 91.0%. The asserted number was never attributable to
+a corpus.
+
+Each assertion now scopes itself by recipe-id prefix, and there are two:
+
+- `seed-%` — the dev corpus, target **90%** unchanged, achieves **100.0%** (330/330).
+- `netseed-%` — the network corpus, floor **85%**, achieves **89.0%** (1378/1548).
+
+The network floor sits below its measured rate on purpose, with the reasoning in the constant's
+own doc comment: a floor pinned at the measurement goes red on one line of drift and teaches
+people to edit the number, while a floor with ~60 lines of headroom stays quiet through
+ordinary churn and goes red when a synonym pass or parser change costs real coverage. It is
+lower than 90% because the corpora differ, not because the target was relaxed — over half the
+misses are non-English. If phase 2 adds multilingual resolution it should be raised.
+
+**The honest rate did land below 90%** (89.0% on distinct lines), so this was not a hypothetical.
+No line was edited to lift it. `pnpm --filter @buttery/web exec vitest run --project db`:
+9 files, 260 tests, all passing.
+
+## Does the data support `MEANINGFUL_UNRESOLVED_SHARE = 1/3`?
+
+Yes — but almost any value between 0.25 and 0.67 would do equally well, and that is the finding.
+
+Share of recipes forced to `unknown` at each candidate threshold:
+
+| threshold |   all 210 | ≥2-line subset |
+| --------- | --------: | -------------: |
+| 0.10      |     39.0% |          25.1% |
+| 0.20      |     29.0% |          12.9% |
+| 0.25      |     27.6% |          11.1% |
+| **0.333** | **27.1%** |      **10.5%** |
+| 0.40      |     26.2% |           9.4% |
+| 0.50      |     26.2% |           9.4% |
+| 0.667     |     25.2% |           8.2% |
+
+The unresolved-share distribution is strongly **bimodal**: p50 = 0.0%, p75 = 75%, p90/p95/p99 =
+100%. Recipes either resolve cleanly or fail almost completely — the 100% tail is the
+`See original recipe` placeholder rows. Very little mass sits between a quarter and two thirds,
+so the threshold has almost nothing to cut. Moving it from 1/3 to 1/2 changes 0.9 percentage
+points of recipes; moving it to 0.10 changes 12.
+
+Where it _does_ bite is the confidence tier, and there it is doing visible work: of the 904
+`unknown` allergen labels, **567 carry confidence 0.15** (unresolved share ≥ 1/3, spread over
+57 recipes) and **337 carry 0.40** (below the threshold, 39 recipes). That is a real 60/40
+split, not a degenerate one.
+
+**Recommendation: leave it at 1/3.** It is now a judgement backed by a measured distribution
+rather than by nothing, and the measurement says the choice barely matters. The number worth
+revisiting is not this one — it is that `may_contain` still has no corpus that triggers it.
+
+## What might still make this sample unrepresentative
+
+Stated plainly, since the last corpus's bias went unnoticed:
+
+- **39 authors, not 210 independent draws.** One author supplies the 38 `See original recipe`
+  rows; two supply nearly all the French and Portuguese. The author-clustered CI (5.0%–24.2%)
+  is wide for exactly this reason, and a different 39 authors could land anywhere in it.
+- **It is a census of one stratum, not of the network.** Stratum C is "recipes from this dev
+  database that are not the bulk importer's". What that population represents is "whatever
+  this dev database happened to sync", which is not a random sample of atproto.
+- **A dev database is not production.** These are the accounts this instance follows.
+- **Non-English share is a corpus property, and it dominates.** 52.6% of the miss rate is
+  French and Portuguese from a handful of authors. A corpus with two fewer francophone authors
+  would report a per-line rate near 6% and a very different conclusion about what to fix.
+- **Instruction prose was dropped**, so this corpus cannot be used to measure anything that
+  reads method text — the `may_contain` cross-contamination triggers included.
+- **The 4251 stratum-A/B rows stay in this dev database** and are not part of the seed. Anyone
+  reproducing these numbers on a fresh seeded database gets the 210 only, which is what the
+  scoped calibration test now measures.
