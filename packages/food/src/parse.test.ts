@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseIngredientLine, parseIngredientLines } from "./parse";
+import { parseIngredientLine, parseIngredientLines } from "./parse.ts";
 
 describe("parseIngredientLine — quantities and units", () => {
   it("reads a plain quantity and unit", () => {
