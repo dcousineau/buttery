@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "verify": {
+    "at": "2026-08-25T13:29:53.034Z",
+    "commit": "d40b4d9",
+    "dirty": true,
+    "tier": "full",
+    "scope": null,
+    "cost": {
+      "totalMs": 0,
+      "claims": []
+    },
+    "lastFullAt": "2026-08-25T13:29:53.034Z",
+    "claims": [],
+    "coverage": {
+      "components": 0,
+      "claimed": 0,
+      "withWhy": 0,
+      "symbols": 1134,
+      "documented": 752
+    },
+    "invariants": {
+      "total": 0,
+      "anchored": 0,
+      "gaps": []
+    },
+    "narrative": null,
+    "jobs": 382,
+    "failures": 0
+  }
+}

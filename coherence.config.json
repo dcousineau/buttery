@@ -1,0 +1,5 @@
+{
+  "typecheck": ["pnpm", "-r", "typecheck"],
+  "test": ["pnpm", "--filter", "@buttery/web", "exec", "vitest", "run", "-t"],
+  "testMatch": "[1-9][0-9]* passed"
+}
