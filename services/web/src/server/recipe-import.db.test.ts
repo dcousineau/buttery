@@ -25,6 +25,35 @@ vi.mock("#/lib/posthog-server", async (importOriginal) => {
 });
 
 /**
+ * §9/D3 regression pin: `enqueueEnrich` may only ever fire once the recipe it
+ * names has actually committed. Faking BullMQ out (real-queue behavior is
+ * `enrichment-queue.test.ts`'s job) rather than skipping this — the point is
+ * to see WHEN the call happens relative to the commit, not what it does.
+ *
+ * `dbRef` is filled in once `connectOrSkip()` resolves, below; the mock
+ * factory's body only runs when something dynamically imports
+ * `./enrichment-queue`, which is always well after that point. Each call reads
+ * `recipeId` back through `dbRef.current` — a query issued on the pooled `db`
+ * these tests already share, so it runs on whatever connection the pool hands
+ * it NEXT, never the one a still-open transaction is holding. That is exactly
+ * what makes it a real check: under READ COMMITTED, an insert an open
+ * transaction has not committed yet is invisible on any other connection, so
+ * a call fired from *inside* `persistRecipeDraft`'s (or `commitImport`'s) own
+ * transaction — the bug this pins against — finds no row and gets recorded in
+ * `uncommittedEnqueues`. A call fired after the commit always finds one.
+ */
+const dbRef = vi.hoisted(() => ({ current: null as Kysely<DB> | null }));
+const uncommittedEnqueues = vi.hoisted(() => [] as string[]);
+vi.mock("./enrichment-queue", () => ({
+  enqueueEnrich: async (recipeId: string) => {
+    const database = dbRef.current;
+    if (!database) return;
+    const row = await database.selectFrom("recipe").select("id").where("id", "=", recipeId).executeTakeFirst();
+    if (!row) uncommittedEnqueues.push(recipeId);
+  },
+}));
+
+/**
  * DB-backed integration tests for the batch-import pipeline (plan §7).
  *
  * Everything asserted here is something a unit test structurally cannot see: the
@@ -66,6 +95,7 @@ async function connectOrSkip(): Promise<Kysely<DB> | null> {
 }
 
 const db = await connectOrSkip();
+dbRef.current = db;
 
 // --- fixture -------------------------------------------------------------
 
@@ -148,6 +178,7 @@ async function reset(): Promise<void> {
   await cleanup();
   created.length = 0;
   captured.length = 0;
+  uncommittedEnqueues.length = 0;
 
   await db
     .insertInto("household")
@@ -1198,5 +1229,48 @@ describeDb("session lifecycle (§5.3, §13)", () => {
     const row = await db!.selectFrom("recipe_import_session").select("status").where("id", "=", sessionId).executeTakeFirstOrThrow();
     expect(row.status).toBe("complete");
     expect(eventsFor(sessionId)).toEqual(["recipe_import_completed"]);
+  });
+});
+
+// --- §9/D3: recipe-enrichment enqueue ordering ----------------------------
+
+describeDb("recipe-enrichment enqueue ordering (§9/D3)", () => {
+  /**
+   * Pins the bug the coordinator caught: `persistRecipeDraft` is handed the
+   * chunk's own open transaction here (`commitImport`'s `trx`), so it must NOT
+   * enqueue itself — only `runCommitImportChunk`'s post-commit pass may, once
+   * every item's transaction has actually committed. See the `dbRef`/
+   * `uncommittedEnqueues` mock at the top of this file for how "actually
+   * committed" is verified.
+   */
+  it("never enqueues a recipe before its own transaction has committed", async () => {
+    const sessionId = await openSession();
+    const items = [importItem({ clientId: "pin-a" }), importItem({ clientId: "pin-b" }), importItem({ clientId: "pin-c" })];
+
+    const results = track(await imp.runCommitImportChunk(db!, DID, HH, { sessionId, items }));
+
+    expect(results.filter((r) => r.status === "imported")).toHaveLength(3);
+    expect(uncommittedEnqueues).toEqual([]);
+  });
+
+  /**
+   * The replay leg of the same guarantee: a `prior` outcome (an item this
+   * session already committed on an earlier chunk attempt) still reports
+   * `imported` and is still fair game for `enqueueChunkEnrichment` — and by the
+   * time the second chunk call returns, that recipe's row has been committed
+   * (and visible to other connections) since the FIRST attempt, so this must
+   * never land in `uncommittedEnqueues` either.
+   */
+  it("replaying an already-committed item still enqueues against a visible row", async () => {
+    const sessionId = await openSession();
+    const items = [importItem({ clientId: "pin-replay" })];
+
+    const first = track(await imp.runCommitImportChunk(db!, DID, HH, { sessionId, items }));
+    uncommittedEnqueues.length = 0; // only the replay's own call matters here
+    const replayed = track(await imp.runCommitImportChunk(db!, DID, HH, { sessionId, items }));
+
+    expect(replayed).toEqual(first); // same recipe id both times (§7.5 ledger)
+    expect(replayed[0]?.status).toBe("imported");
+    expect(uncommittedEnqueues).toEqual([]);
   });
 });

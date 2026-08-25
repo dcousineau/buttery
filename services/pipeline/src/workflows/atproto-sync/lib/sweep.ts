@@ -96,6 +96,24 @@ export async function markMissingRepos(pool: Pool, dids: string[]): Promise<numb
 // --- per-DID sweep -------------------------------------------------------
 
 /**
+ * What `sweepDid` hands its caller: `outcome` is `RepoOutcome`, the job return
+ * value `finalize` folds via `children()` — see `types.ts`'s header on why that
+ * shape must stay small and JSON-stable across a deploy. `advancedRecipeIds`
+ * is NOT part of that: it exists only to reach `sync-repo`'s own enqueue loop
+ * a few lines below where this function returns, in the same process, and never
+ * crosses Redis. A repo sweep of hundreds of recipes returning hundreds of ids
+ * on the job's own return value is exactly the growth `types.ts` warns against,
+ * and `finalize` has no use for them anyway (recipe-enrichment plan §9) — so
+ * this type lives here, not in `types.ts`, and `RepoOutcome` itself is
+ * unchanged.
+ */
+export interface SweepResult {
+  outcome: RepoOutcome;
+  /** Recipe ids whose content advanced this sweep — `renderRecipe`'s non-null returns. */
+  advancedRecipeIds: string[];
+}
+
+/**
  * Sweep one repo, or throw.
  *
  * Throwing rather than returning a failure flag is the contract the per-repo
@@ -103,8 +121,9 @@ export async function markMissingRepos(pool: Pool, dids: string[]): Promise<numb
  * that exhausts its attempts is one counted failure that the batch steps over.
  * Swallowing the error here would take both of those away from the queue.
  */
-export async function sweepDid(pool: Pool, config: SyncConfig, did: string): Promise<RepoOutcome> {
+export async function sweepDid(pool: Pool, config: SyncConfig, did: string): Promise<SweepResult> {
   const outcome: RepoOutcome = { did, upserted: 0, deleted: 0 };
+  const advancedRecipeIds: string[] = [];
 
   // Resolve identity (PDS + handle), preferring the cached values. Re-resolve
   // when either is missing so a repo cached before handles were tracked
@@ -138,7 +157,8 @@ export async function sweepDid(pool: Pool, config: SyncConfig, did: string): Pro
       outcome.upserted += await upsertRecipe(client, row);
       // Render the normalized/search layer on the same client (never
       // interleave a DID's writes). Rev-guarded internally; local rows exempt.
-      await renderRecipe(client, row);
+      const advancedId = await renderRecipe(client, row);
+      if (advancedId) advancedRecipeIds.push(advancedId);
     }
   } finally {
     client.release();
@@ -153,7 +173,7 @@ export async function sweepDid(pool: Pool, config: SyncConfig, did: string): Pro
   }
 
   log.info("repo synced", { did, records: records.length, upserted: outcome.upserted, deleted: outcome.deleted });
-  return outcome;
+  return { outcome, advancedRecipeIds };
 }
 
 /**

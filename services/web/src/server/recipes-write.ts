@@ -313,7 +313,27 @@ export const persistRecipeDraft = createServerOnlyFn(async (db: Kysely<DB>, ctx:
   //    is invisible to every future dedupe pass (§6.6).
   const recipeId = ulid();
   const dedupeKeys = await computeDedupeKeys(record, input.sourceUrl);
+  const ownsTransaction = !db.isTransaction;
   await insertLocalRecipe(db, ctx, recipeId, record, input.visibility, dedupeKeys);
+
+  // Enqueue *after* insertLocalRecipe's transaction has committed — a job that
+  // started before the commit landed would race it and find no recipe row to
+  // read (§9). Best-effort: the `stale` row above is what actually matters.
+  //
+  // Only when THIS call owns the transaction, though: `db.isTransaction` is the
+  // same flag `inTransaction()` (in `insertLocalRecipe`) reads to decide whether
+  // to open a new transaction or reuse the caller's. When `db` arrives already
+  // inside a transaction — the batch-import commit path hands in its own `trx`
+  // (`recipe-import.ts`'s `commitImport`) — `insertLocalRecipe` writes into that
+  // same open transaction, which has not committed by the time control returns
+  // here. Enqueueing in that case would be the exact race this comment is about,
+  // just one call further out: the caller is the only one who knows when ITS
+  // commit actually lands, so the caller owns that enqueue. See
+  // `runCommitImportChunk`'s post-commit pass for the batch-import side of this.
+  if (ownsTransaction) {
+    const { enqueueEnrich } = await import("./enrichment-queue");
+    await enqueueEnrich(recipeId);
+  }
 
   // 3. Imported hero we only have a cross-origin URL for. Fetch it now
   //    (SSRF-guarded, ≤1MB) and store it in the bucket like an uploaded image so
@@ -525,6 +545,19 @@ async function insertLocalRecipe(db: Kysely<DB>, ctx: Ctx, id: string, record: R
       content_fp: dedupeKeys.contentFp,
       ...(dedupeKeys.sourceUrlKey ? { source_url_key: dedupeKeys.sourceUrlKey } : {}),
     });
+
+    // Mark this recipe's enrichment stale in the same transaction as the recipe
+    // itself (§9/D3) — the durable signal that the `enrich` step's fingerprint
+    // check (§7.1 step 2) has something new to look at. `classifier_version` and
+    // `input_hash` are deliberately left alone: they are what let an unchanged
+    // re-save short-circuit back to `status='ok'` without running a classifier.
+    // The best-effort enqueue happens after this transaction commits — see
+    // `persistRecipeDraft`.
+    await trx
+      .insertInto("recipe_enrichment")
+      .values({ recipe_id: id, status: "stale" })
+      .onConflict((oc) => oc.column("recipe_id").doUpdateSet({ status: "stale" }))
+      .execute();
   });
 }
 
@@ -770,7 +803,24 @@ async function publishLocalRecipe(db: Kysely<DB>, ctx: Ctx, recipeId: string, re
 
     // Clear the pending draft image pointer (bytes cleaned up after commit).
     await trx.deleteFrom("recipe_pending_image").where("recipe_id", "=", recipeId).execute();
+
+    // Mark stale in the same transaction as the publish (§9/D3), same as
+    // insertLocalRecipe. Publishing never changes name or ingredients, so the
+    // fingerprint the `enrich` step compares against will still match and it
+    // will return `{status:"unchanged"}` without running a classifier — but
+    // marking stale here is still correct, and cheap enough not to special-case.
+    await trx
+      .insertInto("recipe_enrichment")
+      .values({ recipe_id: recipeId, status: "stale" })
+      .onConflict((oc) => oc.column("recipe_id").doUpdateSet({ status: "stale" }))
+      .execute();
   });
+
+  // Enqueue *after* the transaction above has committed, same reasoning as
+  // persistRecipeDraft — a job that started mid-transaction could read a
+  // recipe still mid-publish.
+  const { enqueueEnrich } = await import("./enrichment-queue");
+  await enqueueEnrich(recipeId);
 
   if (pendingKey) await deleteBlob(pendingKey).catch(() => {});
 }

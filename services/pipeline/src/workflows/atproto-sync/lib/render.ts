@@ -415,6 +415,19 @@ export async function dedupeKeys(p: Pick<RenderedRecipe, "name" | "ingredients" 
   return out;
 }
 
+// Mark this recipe's enrichment stale (plan §9, D3): the durable signal that its
+// content advanced, written on the same per-DID client as the rest of this
+// render so it can never observe a half-written row. Deliberately touches only
+// `status` — `input_hash` and `classifier_version` are left exactly as the
+// `enrich` step last wrote them, which is what lets it compare against them and
+// short-circuit a recipe whose content didn't actually change (recipe-enrichment
+// plan §7.1 step 2). `on conflict ... do update` rather than a plain insert
+// because most recipes already have a row from an earlier render.
+const MARK_ENRICHMENT_STALE_SQL = `
+insert into recipe_enrichment (recipe_id, status) values ($1, 'stale')
+on conflict (recipe_id) do update set status = 'stale'
+`;
+
 const UPSERT_SEARCH_SQL = `
 insert into recipe_search (recipe_id, search_tsv) values
   ($1,
@@ -446,12 +459,17 @@ async function insertLines(client: PoolClient, table: string, id: string, lines:
  * Render one validated record into the recipe layer. Invalid records remove any
  * previously-rendered sync row. Must run on the same per-DID client as the raw
  * upsert so writes for one DID never interleave (plan §1).
+ *
+ * Returns the recipe id when this render advanced the row's content (the caller
+ * needs that id to fan out recipe-enrichment triggers — recipe-enrichment plan
+ * §9), or `null` when nothing about the content changed: an invalid record, a
+ * stale rev, or a local row being cid/rev-reconciled.
  */
-export async function renderRecipe(client: PoolClient, row: RecipeRow): Promise<void> {
+export async function renderRecipe(client: PoolClient, row: RecipeRow): Promise<string | null> {
   if (row.validationStatus !== "valid") {
     // A record that turned invalid should not linger in the rendered layer.
     await client.query(DELETE_RENDERED_SQL, [row.rkey]);
-    return;
+    return null;
   }
 
   const vocab = await getVocab(client);
@@ -491,10 +509,14 @@ export async function renderRecipe(client: PoolClient, row: RecipeRow): Promise<
   // cid/rev and stop — never touch a local row's children/search.
   if ((res.rowCount ?? 0) === 0) {
     await client.query(RECONCILE_LOCAL_SQL, [p.id, p.cid, p.rev]);
-    return;
+    return null;
   }
 
-  // We own this sync row and it advanced: re-derive all children + search.
+  // We own this sync row and it advanced: re-derive all children + search, and
+  // mark its enrichment stale (recipe-enrichment plan §9) — nothing about the
+  // content changed in the `rowCount === 0` branch above, so nothing is marked
+  // stale there.
+  await client.query(MARK_ENRICHMENT_STALE_SQL, [p.id]);
   await client.query(DEL_INGREDIENTS, [p.id]);
   await client.query(DEL_INSTRUCTIONS, [p.id]);
   await client.query(DEL_IMAGES, [p.id]);
@@ -551,6 +573,8 @@ export async function renderRecipe(client: PoolClient, row: RecipeRow): Promise<
   // natural words rather than "gluten_free".
   const facets = compact([...p.keywords, ...p.vocabLabels, attrText]).join(" ");
   await client.query(UPSERT_SEARCH_SQL, [p.id, p.name, facets, p.ingredients.join(" "), [p.description ?? "", ...p.instructions].join(" ")]);
+
+  return p.id;
 }
 
 /**
