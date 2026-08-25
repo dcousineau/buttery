@@ -334,8 +334,18 @@ excluded as `isGroupHeader`:
 wide because 39 authors is not many clusters, and because two authors contribute nearly all of
 the non-English lines.
 
-156 distinct ingredient names went unresolved. The parser correctly flagged 36 group headers
-and they are excluded from every rate here.
+156 distinct ingredient names went unresolved. 36 lines were excluded from every rate here as
+group headers — but only 3 of them are true bare headers (`For Serving:`, `Marinade:`,
+`Peanut Sauce:`). The other **33 are compound `Label: real ingredient` lines** — `For the lye
+bath: 2 liters water` — which `parse-ingredient` mis-flags as headers because of the embedded
+colon. Stripped of their labels and re-run through the matcher, **all 33 resolve.**
+
+So the denominator here is 33 lines short, and every one of them would have been a hit: the
+honest rate is 213/1778 = **11.98%**, marginally lower than the 12.2% quoted above. The error
+runs against the matcher's favour, not for it, which is why the numbers were left as measured
+rather than restated. It is an upstream parser quirk, not something this corpus introduced or
+could control, and fixing it is its own piece of work — see the counterfactual table's row 1,
+which prices a related header fix.
 
 ## 2. Per-recipe rate — the number that decides whether `not_detected` is reachable
 
@@ -561,6 +571,15 @@ Stated plainly, since the last corpus's bias went unnoticed:
 - **It is a census of one stratum, not of the network.** Stratum C is "recipes from this dev
   database that are not the bulk importer's". What that population represents is "whatever
   this dev database happened to sync", which is not a random sample of atproto.
+- **The stratum boundary was drawn with the per-stratum miss rates already known.** The
+  decision that fixed it (`d-64be66fe`) cites 3.81% / 2.78% / 12.21% as its justification, so
+  strictly this is a matching-outcome-informed choice at the boundary, even though there is no
+  per-recipe or per-line discretion inside it. Two things cut against it being a thumb on the
+  scale: the stratum chosen is the one that matches **worst**, which is the opposite of a
+  flattering pick, and the provenance argument — that 95% of the pool is one importer, so a
+  uniform draw would measure one house style — holds whatever the rates had turned out to be.
+  Recorded here rather than left implicit, because a boundary drawn after seeing the outcome is
+  exactly the kind of thing the 0.0% corpus taught us not to leave unstated.
 - **A dev database is not production.** These are the accounts this instance follows.
 - **Non-English share is a corpus property, and it dominates.** 52.6% of the miss rate is
   French and Portuguese from a handful of authors. A corpus with two fewer francophone authors
