@@ -1,5 +1,6 @@
 {
   "typecheck": ["pnpm", "-r", "typecheck"],
   "test": ["pnpm", "--filter", "@buttery/web", "exec", "vitest", "run", "-t"],
-  "testMatch": "[1-9][0-9]* passed"
+  "testMatch": "[1-9][0-9]* passed",
+  "ignore": ["node_modules", ".git", "dist", ".turbo", ".wrangler", "routeTree.gen.ts", "generated"]
 }
