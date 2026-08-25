@@ -35,3 +35,9 @@ todos.json
 # Per-session hook telemetry: proves the control fired in THIS session, and old
 # rows can't redeem wiring removed today. One file per session forever is churn.
 .coherence/activity/
+# Same category, same reason — per-session, one file per agent, and neither is
+# in the durable set the comment above names. `read-traces/` records which files
+# a session read; `calibration/` is the harness's own per-session tuning. A swarm
+# of ten agents writes twenty of these in an afternoon.
+.coherence/read-traces/
+.coherence/calibration/

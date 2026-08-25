@@ -58,6 +58,7 @@ src/workflows/
   index.ts              the registry: WORKFLOWS
   demo/index.ts         the reference implementation, in one file
   atproto-sync/         a workflow with real code: steps.ts, plan.ts, types.ts, lib/
+  recipe-enrichment/    the second one: steps.ts, classify.ts, classifiers/, types.ts, lib/
 ```
 
 ```ts
@@ -120,6 +121,21 @@ atomic call, so there is never a window where half a fan-out exists. Children ge
 that fails for good leaves the parent's dependencies instead of failing it. A
 step that wants the opposite says `opts: { failParentOnFailure: true }`.
 
+`ctx.enqueue(workflow, node)` is the other direction: work handed to a **different**
+workflow, on that workflow's own queue, merged with _that_ workflow's job options
+for the step. It is `queue.add`, not a flow — no parent, no waiting, no atomic
+tree — and the shape says so by having no `children`. A cross-workflow handoff
+must not be a flow child, because a flow child is something the calling graph's
+tail step waits on: `atproto-sync`'s `finalize` would sit in `waiting-children`
+until every enrichment it triggered had finished, holding the sweep's hour-TTL
+lock the whole time, and the next scheduled sweep would be skipped. A name that
+is not a registered workflow, or a step that workflow does not define, throws at
+the call — the same bargain `defineWorkflow` makes about its entry step, for the
+same reason. Under `run:once` there is no queue and no fleet, so the console host
+logs the intent and skips: cross-workflow work is another workflow's run, and
+pretending otherwise would make `sync:once` quietly enrich the whole corpus on a
+laptop.
+
 **Nothing throttles the producer.** A step fans out every job it has and the
 queue holds them — a queue that is a buffer is the point of having one. How many
 actually run is `globalConcurrency`, a cap BullMQ enforces in Redis across every
@@ -135,7 +151,10 @@ protects a machine, but "do not point fifty requests at the atmosphere from this
 sweep" has to hold across replicas, and the autoscaler moves the replica count
 around underneath it. `atproto-sync` sets it from `ATPROTO_SYNC_MAX_IN_FLIGHT`
 (default 8) — verified: with three replicas and four slots each, twelve jobs
-could have been active and exactly eight were.
+could have been active and exactly eight were. `recipe-enrichment` sets it from
+`RECIPE_ENRICHMENT_MAX_IN_FLIGHT` (default 16), where it is what keeps a sweep of
+thousands of repos from handing the fleet thousands of classifications and
+crowding out everything else.
 
 Like the schedules, it is reconciled onto the queue at server boot rather than
 registered, so a workflow that stops declaring a cap has it removed.
@@ -166,16 +185,37 @@ faster than you would expect.
 
 ## The workflows
 
-| Queue          | Graph                                | What it does                                     |
-| -------------- | ------------------------------------ | ------------------------------------------------ |
-| `atproto-sync` | enumerate → sync-repo × N → finalize | Sweeps the atproto network into the recipe index |
-| `demo`         | start → task × N → report            | No-op fan-out — proves the whole path is wired   |
+| Queue               | Graph                                   | What it does                                     |
+| ------------------- | --------------------------------------- | ------------------------------------------------ |
+| `atproto-sync`      | enumerate → sync-repo × N → finalize    | Sweeps the atproto network into the recipe index |
+| `recipe-enrichment` | enrich · backfill → enrich × N → report | Derives allergen and diet labels for one recipe  |
+| `demo`              | start → task × N → report               | No-op fan-out — proves the whole path is wired   |
 
 `atproto-sync` is the whole of the old `@buttery/atproto-cron-sync` package:
 `lib/sweep.ts` and the modules it reads the network with live in that folder now,
 and `services/pipeline/.env` is the one file that says which atmosphere gets
 swept. `enumerate` finds the repos and fans them out; each repo is a job of its
 own; `finalize` folds what they returned into the `atproto_sync_run` row.
+`recipe-enrichment` has two ways in, which is why its graph reads as two.
+`enrich` is the entry step and the common case: one recipe, enqueued by whoever
+just wrote it — the app's save and import paths, and `atproto-sync`'s `sync-repo`
+for a synced record whose content advanced. `backfill` is the other, and it is
+deliberately manual: it claims a bounded batch of recipes whose enrichment is
+missing, failed, or older than the current classifier, fans them out as `enrich`
+children and reports what is left. There is no schedule and no boot-time
+re-enqueue — reprocessing the corpus is a decision somebody makes:
+
+```bash
+curl -X POST http://127.0.0.1:3002/jobs/recipe-enrichment \
+  -H 'content-type: application/json' -d '{"name":"backfill","data":{"limit":50}}'
+```
+
+Both writers mark `recipe_enrichment.status = 'stale'` inside their own
+transaction and only then enqueue. The row is the durable signal and the job is
+the latency optimisation, so a Redis that is down costs freshness rather than
+correctness: anything the enqueue dropped is still `stale`, and `backfill` is
+what finds it.
+
 `GET /workflows` reports the same table off the live registry.
 
 ## Schedules

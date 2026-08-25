@@ -84,7 +84,7 @@ export default defineRailway((ctx) => {
     source: github("dcousineau/buttery"),
     build: {
       buildCommand: "pnpm install --frozen-lockfile && pnpm --filter @buttery/web... build",
-      watchPatterns: ["services/web/**", "packages/lexicons/**", "pnpm-lock.yaml"],
+      watchPatterns: ["services/web/**", "packages/food/**", "packages/lexicons/**", "packages/pipeline-contract/**", "pnpm-lock.yaml"],
     },
     // Runs after build, before the new container serves traffic, inside the
     // built app image with DATABASE_URL injected. Migrations must succeed
@@ -166,13 +166,17 @@ export default defineRailway((ctx) => {
   // Both install the whole workspace and run the package's start script, with no
   // build step (Node 26 runs the TypeScript directly), and share one
   // watchPatterns set, so a change to the package redeploys the pair together
-  // and they never run different code. `packages/recipe-schemas/**` is in the
-  // set because the atproto-sync workflow renders records through it — the one
-  // shared package the pipelines read, and a change to it that did not redeploy
-  // them would leave the fleet rendering by yesterday's rules.
+  // and they never run different code. Three workspace packages are in the set
+  // because the workflows read them, and a change to one that did not redeploy
+  // the pair would leave the fleet running by yesterday's rules:
+  // `packages/recipe-schemas/**` (atproto-sync renders records through it),
+  // `packages/food/**` (recipe-enrichment matches ingredient lines through its
+  // lexicon and classifies from its traits), and `packages/pipeline-contract/**`
+  // (the queue and step names the web app enqueues against — a rename there that
+  // reached only one side is the exact failure that package exists to prevent).
   const pipelineBuild = {
     buildCommand: "pnpm install --frozen-lockfile",
-    watchPatterns: ["services/pipeline/**", "packages/recipe-schemas/**", "pnpm-lock.yaml"],
+    watchPatterns: ["services/pipeline/**", "packages/food/**", "packages/pipeline-contract/**", "packages/recipe-schemas/**", "pnpm-lock.yaml"],
   };
 
   // The producer + Bull Board UI. Holds no queue state of its own — everything
@@ -218,6 +222,19 @@ export default defineRailway((ctx) => {
       // around underneath it. Read by the SERVER, which reconciles it onto the
       // queue at boot the same way it does the schedule.
       ATPROTO_SYNC_MAX_IN_FLIGHT: "8",
+
+      // The same limit for the second workflow: how many recipes the fleet may
+      // classify at once. It matters more here than it looks, because the
+      // producer never throttles — an hourly sweep that advances a few thousand
+      // sync rows enqueues a few thousand `enrich` jobs in one pass, and this is
+      // the only thing that stops them crowding out everything else on the fleet.
+      //
+      // Read by the SERVER, like the one above: `reconcile.ts` and `/workflows`
+      // are the only readers of a workflow's `globalConcurrency`, so setting it
+      // on `pipeline-worker` would be a variable nothing reads. There is no
+      // RECIPE_ENRICHMENT_SCHEDULE to go with it: backfill is a deliberate act
+      // (plan D15), reached with POST /jobs/recipe-enrichment.
+      RECIPE_ENRICHMENT_MAX_IN_FLIGHT: "16",
 
       // --- autoscaler --------------------------------------------------------
       // The loop is opt-in and OFF until a Railway API token exists.
