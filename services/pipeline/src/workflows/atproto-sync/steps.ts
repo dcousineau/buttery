@@ -1,4 +1,5 @@
 import { UnrecoverableError } from "bullmq";
+import { ENRICH_STEP, RECIPE_ENRICHMENT_QUEUE, type EnrichPayload } from "@buttery/pipeline-contract";
 import type { StepSpec } from "#/workflows/define.ts";
 import { acquireLock, releaseLock } from "#/lock.ts";
 import { log } from "#/log.ts";
@@ -143,6 +144,14 @@ const enumerate: StepSpec = {
  * will answer 400 forever, and retrying it three times with backoff spends a
  * minute to learn nothing. `UnrecoverableError` is BullMQ's way of saying so:
  * fail now, skip the remaining attempts.
+ *
+ * Also where recipe-enrichment gets triggered for whatever this repo advanced
+ * (recipe-enrichment plan §9) — enqueued here, per repo, rather than batched up
+ * in `finalize`: `finalize` would have to carry every advanced id from every
+ * repo in the sweep through its own Redis job payload (thousands, on a full
+ * sweep), and doing it all at once there would spike load at the tail of the
+ * sweep instead of spreading it across the whole run the way per-repo enqueue
+ * does.
  */
 const syncRepo: StepSpec = {
   name: "sync-repo",
@@ -158,7 +167,7 @@ const syncRepo: StepSpec = {
     removeOnComplete: { count: 200 },
     removeOnFail: { count: 500 },
   },
-  run: async ({ payload, log: line }) => {
+  run: async ({ payload, log: line, enqueue }) => {
     const raw = (typeof payload === "object" && payload !== null ? payload : {}) as Record<string, unknown>;
     const did = typeof raw.did === "string" ? raw.did : "";
     if (!did) throw new UnrecoverableError("sync-repo job has no did");
@@ -167,8 +176,37 @@ const syncRepo: StepSpec = {
     const pool = getPool(config.databaseUrl);
 
     try {
-      const outcome = await sweepDid(pool, config, did);
+      const { outcome, advancedRecipeIds } = await sweepDid(pool, config, did);
       await line(`${outcome.upserted} upserted, ${outcome.deleted} deleted`);
+
+      // Best-effort enqueue (D3): `renderRecipe` already wrote `status='stale'`
+      // in the same transaction as the content that advanced, so that row is
+      // the durable signal and §7.2's backfill will find anything this misses —
+      // a failed enqueue must cost this repo nothing: not its retries, not the
+      // rest of its own ids. `advancedRecipeIds` is already empty on a dry run
+      // (`sweepDid` never calls `renderRecipe` on that path), so this guard is
+      // belt-and-suspenders — kept explicit so the loop stays inert even if a
+      // future change to `sweepDid` ever stopped guaranteeing that.
+      //
+      // `ctx.enqueue` deliberately throws on an unregistered workflow or step —
+      // a typo should fail loudly, not vanish (see `define.ts`). Catching it
+      // here does not undo that: a bad workflow/step name throws on *every*
+      // advanced recipe, on *every* repo, for the life of the bug, and each one
+      // is logged at `error` — which is far louder in practice than the single
+      // throw a caller who doesn't catch would get once. What this catch buys
+      // is narrower: it stops that bug (or a transient Redis blip) from costing
+      // an otherwise-successful repo its sweep and its retries, which D3 says
+      // it must never do.
+      if (!config.dryRun) {
+        for (const recipeId of advancedRecipeIds) {
+          try {
+            await enqueue(RECIPE_ENRICHMENT_QUEUE, { step: ENRICH_STEP, data: { recipeId } satisfies EnrichPayload });
+          } catch (err) {
+            log.error("failed to enqueue recipe enrichment", { did, recipeId, err: String(err) });
+          }
+        }
+      }
+
       return outcome;
     } catch (err) {
       const permanent = err instanceof HttpError && err.status !== undefined && err.status !== 429 && err.status >= 400 && err.status < 500;
