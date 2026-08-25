@@ -25,10 +25,10 @@
  * nullable all the way through.
  */
 
-import type { Aisle } from "./aisles";
-import { type FoodMatch, type Lexicon, categorizeWith } from "./categorize";
-import { type ParseOptions, type ParsedIngredient, parseIngredientLine } from "./parse";
-import { type UnitDim, renderQuantity, resolveUnit, unitLabel } from "./units";
+import type { Aisle } from "@buttery/food/aisles";
+import { type FoodMatch, type Lexicon, categorizeWith } from "@buttery/food/categorize";
+import { type ParseOptions, type ParsedIngredient, parseIngredientLine } from "@buttery/food/parse";
+import { type UnitDim, renderQuantity, resolveUnit, unitLabel } from "@buttery/food/units";
 
 /** One recipe line on its way into a row. */
 export interface Contribution {

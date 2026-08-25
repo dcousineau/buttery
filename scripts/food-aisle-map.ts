@@ -15,7 +15,7 @@
  * that no longer resolve, so a taxonomy refresh cannot silently drop a mapping.
  */
 
-import type { Aisle } from "../services/web/src/lib/grocery/aisles.ts";
+import type { Aisle } from "../packages/food/src/aisles.ts";
 
 export const FOOD_AISLE_MAP: Record<string, Aisle> = {
   // ---------------------------------------------------------------- produce

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import type { Lexicon } from "./categorize";
-import { loadLexicon } from "./categorize";
+import type { Lexicon } from "@buttery/food/categorize";
+import { loadLexicon } from "@buttery/food/categorize";
 import { mergeManualItem, mergeRecipeLines } from "./merge";
 
 let lexicon: Lexicon;

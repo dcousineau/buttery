@@ -1,5 +1,5 @@
 /**
- * Generate `services/web/src/lib/grocery/lexicon.json` from the Open Food Facts
+ * Generate `packages/food/src/lexicon.json` from the Open Food Facts
  * ingredients taxonomy (plan §4.2).
  *
  * Run by hand; the output is checked in. The running app never calls this, never
@@ -29,16 +29,20 @@ import { gzipSync } from "node:zlib";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AISLES, DEFAULT_AISLE, type Aisle } from "../services/web/src/lib/grocery/aisles.ts";
-import { normalizeFoodName, slugifyFoodName } from "../services/web/src/lib/grocery/normalize.ts";
+import { AISLES, DEFAULT_AISLE, type Aisle } from "../packages/food/src/aisles.ts";
+import { normalizeFoodName, slugifyFoodName } from "../packages/food/src/normalize.ts";
+import type { AllergenSlug, FoodTag, TriState } from "../packages/food/src/traits.ts";
 import { FOOD_AISLE_MAP } from "./food-aisle-map.ts";
+import { FOOD_ALLERGEN_MAP, OFF_ALLERGEN_MAP } from "./food-allergens.ts";
 import { IGNORED_NODES, STAPLE_NODES } from "./food-staples.ts";
 import { EXTRA_FOODS, EXTRA_SYNONYMS } from "./food-synonyms.ts";
+import { FOOD_TAG_MAP } from "./food-tags.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const OUT_DIR = join(ROOT, "services/web/src/lib/grocery");
+const OUT_DIR = join(ROOT, "packages/food/src");
 const OUT_JSON = join(OUT_DIR, "lexicon.json");
 const OUT_LICENSE = join(OUT_DIR, "lexicon.LICENSE.md");
+const OUT_TRAITS_JSON = join(OUT_DIR, "traits.json");
 
 /**
  * The pinned Open Food Facts revision. Bumping this is the only supported way
@@ -51,6 +55,14 @@ const SOURCE_REPO = "openfoodfacts/openfoodfacts-server";
 
 /** Target from plan §4.2. Exceeding it is a hard failure, not a warning. */
 const MAX_GZIP_BYTES = 100 * 1024;
+
+/**
+ * `traits.json`'s own budget (plan §4.1, D9) — separate from `MAX_GZIP_BYTES`
+ * above on purpose: traits are server-only, so this has real headroom over
+ * the client bundle's number. Measured against the pinned taxonomy: ~25KB
+ * gzip — comfortable margin under this.
+ */
+const TRAITS_MAX_GZIP_BYTES = 200 * 1024;
 
 // --- CLI ------------------------------------------------------------------
 
@@ -76,6 +88,14 @@ const languages = (flag("langs") ?? "en")
 const LANG_KEY = /^[a-z]{2,3}$/;
 const PARENT_LINE = /^<\s*([a-z]{2,3}):\s*(.+)$/;
 
+/**
+ * The three `prop:en:` properties plan §4.1 needs. Matched against the whole
+ * line (not the first-colon split above) because the key we want —
+ * `vegan:en` — spans the taxonomy's first *two* colons, not its first one.
+ */
+const PROPERTY_LINE = /^(vegan|vegetarian|allergens):([a-z]{2,3}):\s*(.*)$/;
+const TRI_STATE_VALUES = new Set(["yes", "no", "maybe"]);
+
 interface TaxonomyEntry {
   /** Canonical id, e.g. `en:chicken-breast`. */
   id: string;
@@ -83,6 +103,12 @@ interface TaxonomyEntry {
   parentRefs: string[];
   /** Language code → names, first name canonical. */
   names: Map<string, string[]>;
+  /** `vegan:en:` value, first occurrence per block wins. */
+  vegan?: "yes" | "no" | "maybe";
+  /** `vegetarian:en:` value, first occurrence per block wins. */
+  vegetarian?: "yes" | "no" | "maybe";
+  /** `allergens:en:` value(s), raw OFF allergen ids, e.g. `["en:gluten"]`. */
+  allergens?: string[];
 }
 
 function parseTaxonomy(text: string): TaxonomyEntry[] {
@@ -93,6 +119,9 @@ function parseTaxonomy(text: string): TaxonomyEntry[] {
   for (const block of text.split(/\n\s*\n/)) {
     const names = new Map<string, string[]>();
     const parentRefs: string[] = [];
+    let vegan: TaxonomyEntry["vegan"];
+    let vegetarian: TaxonomyEntry["vegetarian"];
+    let allergens: string[] | undefined;
 
     for (const raw of block.split("\n")) {
       const line = raw.trim();
@@ -104,10 +133,33 @@ function parseTaxonomy(text: string): TaxonomyEntry[] {
         continue;
       }
 
+      // Property lines never pass the LANG_KEY test below (their pre-colon key
+      // is a property name like `vegan`, not a 2-3 letter language code), so
+      // they are always headed for `continue` either way. Pull the three we
+      // care about out before that happens.
+      const property = PROPERTY_LINE.exec(line);
+      if (property) {
+        const [, prop, lang, rawValue] = property;
+        if (lang === "en") {
+          const value = rawValue.trim();
+          if (prop === "vegan" && vegan === undefined && TRI_STATE_VALUES.has(value)) {
+            vegan = value as TaxonomyEntry["vegan"];
+          } else if (prop === "vegetarian" && vegetarian === undefined && TRI_STATE_VALUES.has(value)) {
+            vegetarian = value as TaxonomyEntry["vegetarian"];
+          } else if (prop === "allergens" && allergens === undefined && value) {
+            allergens = value
+              .split(",")
+              .map((v) => v.trim())
+              .filter(Boolean);
+          }
+        }
+        continue;
+      }
+
       const colon = line.indexOf(":");
       if (colon < 0) continue;
       const key = line.slice(0, colon).trim();
-      if (!LANG_KEY.test(key)) continue; // a property line
+      if (!LANG_KEY.test(key)) continue; // a property line we don't track
       // Only the first line per language counts; later ones are property values
       // that happen to share a language prefix.
       if (names.has(key)) continue;
@@ -125,7 +177,7 @@ function parseTaxonomy(text: string): TaxonomyEntry[] {
     const idLang = [...names.keys()][0];
     if (!idLang) continue;
     const canonical = names.get(idLang)![0];
-    entries.push({ id: `${idLang}:${slugifyFoodName(canonical)}`, parentRefs, names });
+    entries.push({ id: `${idLang}:${slugifyFoodName(canonical)}`, parentRefs, names, vegan, vegetarian, allergens });
   }
 
   return entries;
@@ -164,6 +216,42 @@ function nearestMapped<T>(id: string, parents: Map<string, string[]>, map: Recor
   }
 
   return undefined;
+}
+
+/**
+ * Walk a node's ancestors the same multi-parent, cycle-safe way as
+ * {@link nearestMapped}, but fold the UNION of every mapped value found along
+ * the walk instead of returning the first hit.
+ *
+ * Diet properties have one authoritative answer per node, so the nearest
+ * declaration should win — that is `nearestMapped`. Allergens and tags don't
+ * work that way: a food can carry several at once (`en:pesto` is milk *and*
+ * tree nuts, plan §4.1), and a distant ancestor's allergen is additional
+ * information, never something a nearer, unrelated ancestor should be able to
+ * override by omission. So every level contributes here instead of the first
+ * hit short-circuiting the rest.
+ */
+function ancestorUnion<T>(id: string, parents: Map<string, string[]>, map: Record<string, readonly T[]>): T[] {
+  const result = new Set<T>();
+  let frontier = [id];
+  const seen = new Set<string>();
+
+  while (frontier.length) {
+    for (const node of frontier) {
+      for (const value of map[node] ?? []) result.add(value);
+    }
+    const next: string[] = [];
+    for (const node of frontier) {
+      if (seen.has(node)) continue;
+      seen.add(node);
+      for (const parent of parents.get(node) ?? []) {
+        if (!seen.has(parent)) next.push(parent);
+      }
+    }
+    frontier = next;
+  }
+
+  return [...result];
 }
 
 // --- output shape ---------------------------------------------------------
@@ -252,6 +340,11 @@ const orphans = [
   ...Object.keys(STAPLE_NODES).map((id) => [id, "food-staples.ts (STAPLE_NODES)"] as const),
   ...Object.keys(IGNORED_NODES).map((id) => [id, "food-staples.ts (IGNORED_NODES)"] as const),
   ...Object.keys(EXTRA_SYNONYMS).map((id) => [id, "food-synonyms.ts (EXTRA_SYNONYMS)"] as const),
+  // `OFF_ALLERGEN_MAP` is NOT included here: its keys are OFF allergen-taxonomy
+  // tokens (from `allergens.txt`, values of `allergens:en:`), not ingredient
+  // node ids, so they are never expected to appear in `known`.
+  ...Object.keys(FOOD_ALLERGEN_MAP).map((id) => [id, "food-allergens.ts (FOOD_ALLERGEN_MAP)"] as const),
+  ...Object.keys(FOOD_TAG_MAP).map((id) => [id, "food-tags.ts (FOOD_TAG_MAP)"] as const),
 ].filter(([id]) => !known.has(id));
 if (orphans.length) {
   for (const [id, where] of orphans) console.error(`  unknown taxonomy id ${id} (${where})`);
@@ -349,6 +442,131 @@ for (const aisle of AISLES) {
   console.log(`  ${aisle.padEnd(14)} ${String(count).padStart(5)}`);
 }
 
+// --- traits.json (plan §4.1) -----------------------------------------------
+
+interface FoodTraits {
+  vg?: TriState;
+  vt?: TriState;
+  al?: AllergenSlug[];
+  tg?: FoodTag[];
+}
+
+interface TraitsFile {
+  __meta: {
+    source: string;
+    license: string;
+    sourceRepo: string;
+    sourceCommit: string;
+    generatedFrom: string;
+    taxonomySha256: string;
+    foodCount: number;
+    veganCount: number;
+    vegetarianCount: number;
+    allergenCount: number;
+    tagCount: number;
+  };
+  foods: Record<string, FoodTraits>;
+}
+
+const TRI_STATE: Record<string, TriState> = { yes: 1, no: 0, maybe: 2 };
+
+// Diet: one authoritative value per node — nearest ancestor wins.
+const veganSeed: Record<string, TriState> = {};
+const vegetarianSeed: Record<string, TriState> = {};
+for (const entry of entries) {
+  if (entry.vegan) veganSeed[entry.id] = TRI_STATE[entry.vegan]!;
+  if (entry.vegetarian) vegetarianSeed[entry.id] = TRI_STATE[entry.vegetarian]!;
+}
+
+// Allergens: the taxonomy's OWN `allergens:en:` property (translated through
+// OFF_ALLERGEN_MAP) merged with the curated FOOD_ALLERGEN_MAP seed, then both
+// folded together by the same ancestorUnion walk — a node can contribute via
+// either or both paths.
+const allergenSeed: Record<string, AllergenSlug[]> = {};
+for (const [id, slugs] of Object.entries(FOOD_ALLERGEN_MAP)) allergenSeed[id] = [...slugs];
+const unmappedAllergenTokens = new Set<string>();
+for (const entry of entries) {
+  if (!entry.allergens) continue;
+  const mapped: AllergenSlug[] = [];
+  for (const token of entry.allergens) {
+    const hit = OFF_ALLERGEN_MAP[token];
+    if (hit) mapped.push(...hit);
+    else unmappedAllergenTokens.add(token);
+  }
+  if (mapped.length) allergenSeed[entry.id] = [...new Set([...(allergenSeed[entry.id] ?? []), ...mapped])];
+}
+if (unmappedAllergenTokens.size) {
+  console.warn(`  allergens:en: token(s) with no OFF_ALLERGEN_MAP entry: ${[...unmappedAllergenTokens].join(", ")}`);
+}
+
+const foodTraits: Record<string, FoodTraits> = {};
+let veganCount = 0;
+let vegetarianCount = 0;
+let allergenCount = 0;
+let tagCount = 0;
+
+for (const id of Object.keys(foods)) {
+  const vg = nearestMapped(id, parents, veganSeed);
+  const vt = nearestMapped(id, parents, vegetarianSeed);
+  const al = ancestorUnion(id, parents, allergenSeed);
+  const tg = ancestorUnion(id, parents, FOOD_TAG_MAP);
+
+  if (vg === undefined && vt === undefined && al.length === 0 && tg.length === 0) continue;
+
+  const traits: FoodTraits = {};
+  if (vg !== undefined) {
+    traits.vg = vg;
+    veganCount += 1;
+  }
+  if (vt !== undefined) {
+    traits.vt = vt;
+    vegetarianCount += 1;
+  }
+  if (al.length) {
+    traits.al = al;
+    allergenCount += 1;
+  }
+  if (tg.length) {
+    traits.tg = tg;
+    tagCount += 1;
+  }
+  foodTraits[id] = traits;
+}
+
+console.log(
+  `traits: ${Object.keys(foodTraits).length} foods carry a trait (vg ${veganCount}, vt ${vegetarianCount}, allergen ${allergenCount}, tag ${tagCount}), out of ${Object.keys(foods).length} lexicon foods`,
+);
+
+const traitsFile: TraitsFile = {
+  __meta: {
+    source: "Open Food Facts",
+    license: "ODbL-1.0",
+    sourceRepo: SOURCE_REPO,
+    sourceCommit,
+    generatedFrom: SOURCE_PATH,
+    taxonomySha256,
+    foodCount: Object.keys(foodTraits).length,
+    veganCount,
+    vegetarianCount,
+    allergenCount,
+    tagCount,
+  },
+  foods: foodTraits,
+};
+
+const traitsJson = `${JSON.stringify(traitsFile, null, 0)}\n`;
+const traitsGzipBytes = gzipSync(traitsJson).byteLength;
+console.log(`traits.json: ${(traitsJson.length / 1024).toFixed(1)} KB raw, ${(traitsGzipBytes / 1024).toFixed(1)} KB gzip`);
+if (traitsGzipBytes > TRAITS_MAX_GZIP_BYTES) {
+  throw new Error(`traits.json is ${(traitsGzipBytes / 1024).toFixed(1)} KB gzip, over the ${TRAITS_MAX_GZIP_BYTES / 1024} KB budget (plan §4.1)`);
+}
+
+mkdirSync(OUT_DIR, { recursive: true });
+writeFileSync(OUT_TRAITS_JSON, traitsJson);
+console.log(`Wrote ${OUT_TRAITS_JSON}`);
+
+// --- lexicon.json ------------------------------------------------------
+
 const lexicon: Lexicon = {
   __meta: {
     source: "Open Food Facts",
@@ -376,12 +594,18 @@ mkdirSync(OUT_DIR, { recursive: true });
 writeFileSync(OUT_JSON, json);
 writeFileSync(
   OUT_LICENSE,
-  `# lexicon.json — license and provenance
+  `# lexicon.json / traits.json — license and provenance
 
-\`lexicon.json\` in this directory is **generated**. Never hand-edit it; run
-\`node scripts/build-food-lexicon.ts\` from the repo root instead. The aisle
-assignments it encodes live in \`scripts/food-aisle-map.ts\` and
-\`scripts/food-staples.ts\`, which are the files to edit.
+Both \`lexicon.json\` and \`traits.json\` in this directory are **generated**.
+Never hand-edit either; run \`node scripts/build-food-lexicon.ts\` from the repo
+root instead. The aisle assignments \`lexicon.json\` encodes live in
+\`scripts/food-aisle-map.ts\` and \`scripts/food-staples.ts\`; the vegan,
+vegetarian, allergen and tag facts \`traits.json\` encodes live in
+\`scripts/food-allergens.ts\` and \`scripts/food-tags.ts\` (diet properties come
+straight from the taxonomy's own \`vegan:en:\` / \`vegetarian:en:\` values, with
+no hand-authored map). Those are the files to edit.
+
+\`traits.json\` is server-only (plan D9) — see \`packages/food/src/traits.ts\`.
 
 ## Source
 
@@ -399,10 +623,12 @@ rest of its data lives.
 Open Food Facts data is published under the
 [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/).
 
-\`lexicon.json\` is a **derived database** under that license: it reuses the
-taxonomy's food identifiers, English names, and hierarchy, and adds Buttery's own
-aisle, staple, and ignore assignments on top. As a derived database it is offered
-under the ODbL as well, and the attribution above must travel with it.
+Both files are a **derived database** under that license: they reuse the
+taxonomy's food identifiers, English names, hierarchy and (for \`traits.json\`)
+its own diet and allergen properties, and add Buttery's own assignments on top
+— aisle, staple and ignore for \`lexicon.json\`; allergen and tag seeds for
+\`traits.json\`. As derived databases they are offered under the ODbL as well,
+and the attribution above must travel with both.
 
 Buttery credits Open Food Facts on its \`/acknowledgements\` page.
 `,

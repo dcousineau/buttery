@@ -20,6 +20,8 @@
   "dependencies": {
     "@bull-board/api": "^8.6.1",
     "@bull-board/fastify": "^8.6.1",
+    "@buttery/food": "workspace:*",
+    "@buttery/pipeline-contract": "workspace:*",
     "@buttery/recipe-schemas": "workspace:*",
     "@fastify/basic-auth": "^6.3.0",
     "bullmq": "^6.1.2",

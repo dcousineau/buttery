@@ -18,8 +18,8 @@
  * (query row shapes, validator internals) stay where they are.
  */
 
-import type { Aisle } from "#/lib/grocery/aisles";
-import type { UnitDim } from "#/lib/grocery/units";
+import type { Aisle } from "@buttery/food/aisles";
+import type { UnitDim } from "@buttery/food/units";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
 
 // --- provenance ---------------------------------------------------------

@@ -5,9 +5,9 @@ import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import { describe, expect, it } from "vitest";
 import type { DB } from "#/db/types";
-import { AISLES, type Aisle } from "./aisles";
-import { type FoodMatch, type Lexicon, categorizeWith, loadLexicon } from "./categorize";
-import { parseIngredientLine } from "./parse";
+import { AISLES, type Aisle } from "@buttery/food/aisles";
+import { type FoodMatch, type Lexicon, categorizeWith, loadLexicon } from "@buttery/food/categorize";
+import { parseIngredientLine } from "@buttery/food/parse";
 
 /**
  * The calibration sweep (grocery-list plan §9).

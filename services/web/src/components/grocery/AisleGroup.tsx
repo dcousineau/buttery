@@ -1,6 +1,6 @@
 import { useId } from "react";
 import type { GroceryItemRow } from "#/lib/api";
-import type { Aisle } from "#/lib/grocery/aisles";
+import type { Aisle } from "@buttery/food/aisles";
 import { GroceryRow } from "./GroceryRow";
 import { listCounts } from "./optimistic";
 
