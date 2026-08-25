@@ -27,3 +27,11 @@ todos.json
 # @buttery/lexicons `build` script. The source of truth (lexicons/*.json +
 # lexicons.json manifest) IS committed.
 /packages/lexicons/src/generated
+
+# Coherence per-run scratch. The durable records (.coherence/status.json,
+# decisions/, work/, consequences/, hooks/) stay committed.
+.coherence/verify-jobs.json
+.coherence/test-report.json
+# Per-session hook telemetry: proves the control fired in THIS session, and old
+# rows can't redeem wiring removed today. One file per session forever is churn.
+.coherence/activity/

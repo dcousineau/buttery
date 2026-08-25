@@ -4,11 +4,64 @@
     "posthog@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
-    "atproto-skills-marketplace":   {
+    "atproto-skills-marketplace": {
       "source": {
         "source": "git",
         "url": "https://github.com/zentered/atproto-skills.git"
       }
     }
+  },
+  "hooks": {
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/coherence-hook\" SubagentStart"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/coherence-hook\" SessionStart"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/coherence-hook\" SubagentStop"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/coherence-hook\" Stop"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read|Grep|Glob|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/coherence-hook\" PostToolUse"
+          }
+        ]
+      }
+    ]
   }
 }

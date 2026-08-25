@@ -20,6 +20,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "@danilocampos/coherence": "^0.37.1",
     "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^26.2.0",
     "husky": "^9.1.7",

@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "verify": {
+    "at": "2026-08-25T14:10:15.973Z",
+    "commit": "ccc4fd5",
+    "dirty": false,
+    "tier": "full",
+    "scope": null,
+    "batched": true,
+    "cost": {
+      "totalMs": 22.931708,
+      "claims": [
+        {
+          "node": "API port",
+          "claim": "passes test \"has no `#/server/**` import outside the two port modules\"",
+          "ms": 16.491749999999996,
+          "source": "report"
+        },
+        {
+          "node": "API port",
+          "claim": "passes test \"scans a client tree that actually exists\"",
+          "ms": 5.864625000000004,
+          "source": "report"
+        },
+        {
+          "node": "API port",
+          "claim": "passes test \"keeps the import-flow contract module type-only\"",
+          "ms": 0.328125,
+          "source": "report"
+        },
+        {
+          "node": "API port",
+          "claim": "passes test \"routes every server function through the transport, by name\"",
+          "ms": 0.24720800000000054,
+          "source": "report"
+        }
+      ]
+    },
+    "lastFastAt": "2026-08-25T14:01:51.554Z",
+    "lastFullAt": "2026-08-25T14:10:15.973Z",
+    "claims": [
+      {
+        "node": "API port",
+        "claim": "passes test \"scans a client tree that actually exists\"",
+        "kind": "pass",
+        "at": "2026-08-25T14:10:15.973Z",
+        "commit": "ccc4fd5",
+        "tier": "full",
+        "everFailed": false,
+        "runs": 3
+      },
+      {
+        "node": "API port",
+        "claim": "passes test \"has no `#/server/**` import outside the two port modules\"",
+        "kind": "pass",
+        "at": "2026-08-25T14:10:15.973Z",
+        "commit": "ccc4fd5",
+        "tier": "full",
+        "everFailed": false,
+        "runs": 3
+      },
+      {
+        "node": "API port",
+        "claim": "passes test \"keeps the import-flow contract module type-only\"",
+        "kind": "pass",
+        "at": "2026-08-25T14:10:15.973Z",
+        "commit": "ccc4fd5",
+        "tier": "full",
+        "everFailed": false,
+        "runs": 3
+      },
+      {
+        "node": "API port",
+        "claim": "passes test \"routes every server function through the transport, by name\"",
+        "kind": "pass",
+        "at": "2026-08-25T14:10:15.973Z",
+        "commit": "ccc4fd5",
+        "tier": "full",
+        "everFailed": false,
+        "runs": 3
+      }
+    ],
+    "coverage": {
+      "components": 1,
+      "claimed": 1,
+      "withWhy": 1,
+      "symbols": 1074,
+      "documented": 752
+    },
+    "invariants": {
+      "total": 0,
+      "anchored": 0,
+      "gaps": []
+    },
+    "narrative": null,
+    "jobs": 322,
+    "failures": 0
+  }
+}
