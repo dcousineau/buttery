@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, FlaskConical } from "lucide-react";
+import { AlertTriangle, ChevronRight, FlaskConical } from "lucide-react";
 import { getRecipeEnrichmentDebug, type RecipeEnrichmentLabelView, type RecipeEnrichmentView } from "#/lib/api";
 import { Badge } from "#/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Spinner } from "#/components/ui/spinner";
 import { cn } from "#/lib/utils";
@@ -33,9 +32,25 @@ import { cn } from "#/lib/utils";
  * renders whatever is there as short readable lines instead of a raw
  * `JSON.stringify` blob — that is what makes a wrong verdict diagnosable
  * ("not vegetarian *because line 7 is fish sauce*") instead of mysterious.
+ * Empty facts (an empty array, an empty string, a key whose value is `[]`)
+ * are dropped rather than printed literally: a `not_detected` verdict reached
+ * its verdict from the ABSENCE of evidence, and `lines: []` on screen reads
+ * as more noise than signal. When nothing meaningful survives that filter,
+ * "No evidence recorded." fires instead of an empty bullet list.
+ *
+ * ── COLLAPSED BY DEFAULT, NATIVELY ──────────────────────────────────────
+ * A native `<details>`/`<summary>` — no JS listener (AGENTS.md prefers native
+ * CSS/HTML over a JS toggle), keyboard and screen-reader disclosure behaviour
+ * for free, and content stays mounted (so the fetch below runs regardless of
+ * whether the panel is open) while the browser hides it with no React state
+ * of its own. The summary always shows the row's status so the collapsed
+ * state still tells you something ("ok · v1", "none", "error").
  *
  * Looks like a diagnostic on purpose (dashed border, monospace-leaning
- * labels) — this is dev tooling, not a product surface.
+ * labels) — this is dev tooling, not a product surface. The surface is fully
+ * OPAQUE (`bg-muted`, no alpha) — this floats over real page content
+ * (`household.recipes.$id.tsx`), and a translucent fill let the recipe's own
+ * headings and step numbers bleed through and overlap the text.
  */
 type FetchState = { recipeId: string; kind: "error"; message: string } | { recipeId: string; kind: "ready"; data: RecipeEnrichmentView | null };
 
@@ -65,15 +80,17 @@ export function EnrichmentDebugPanel({ recipeId }: { recipeId: string }) {
   const current = state?.recipeId === recipeId ? state : null;
 
   return (
-    <Card size="sm" className="border-dashed border-muted-foreground/50 bg-muted/20 shadow-none" aria-label="Enrichment diagnostics (development only)">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-1.5 text-[0.6875rem] font-bold tracking-wide text-muted-foreground uppercase">
-          <FlaskConical className="size-3.5" aria-hidden="true" />
-          Enrichment · dev only
-        </CardTitle>
-        <CardDescription className="text-[0.6875rem]">Derived diet/allergen facts from the pipeline. Never shown to real users.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 text-xs">
+    <details className="group/enrichment overflow-hidden rounded-xl border-2 border-dashed border-muted-foreground/60 bg-muted text-xs text-foreground shadow-pop-sm">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-[0.6875rem] font-bold tracking-wide text-muted-foreground uppercase select-none [&::-webkit-details-marker]:hidden">
+        <FlaskConical className="size-3.5 shrink-0" aria-hidden="true" />
+        Enrichment · dev only
+        <span className="ml-auto">
+          <SummaryBadge current={current} />
+        </span>
+        <ChevronRight className="size-3.5 shrink-0 transition-transform group-open/enrichment:rotate-90" aria-hidden="true" />
+      </summary>
+
+      <div className="flex max-h-[60vh] flex-col gap-3 overflow-auto border-t-2 border-border/60 px-3 py-2.5 normal-case">
         {current === null && (
           <div className="flex items-center gap-2 text-muted-foreground">
             <Spinner />
@@ -92,9 +109,32 @@ export function EnrichmentDebugPanel({ recipeId }: { recipeId: string }) {
         {current?.kind === "ready" && current.data === null && <p className="m-0 text-muted-foreground">Nothing has run for this recipe yet — no enrichment row exists.</p>}
 
         {current?.kind === "ready" && current.data && <EnrichmentBody data={current.data} />}
-      </CardContent>
-    </Card>
+      </div>
+    </details>
   );
+}
+
+/** The collapsed-state summary: what the panel would say even before it's opened. */
+function SummaryBadge({ current }: { current: FetchState | null }) {
+  if (current === null)
+    return (
+      <Badge size="xs" variant="outline">
+        loading…
+      </Badge>
+    );
+  if (current.kind === "error")
+    return (
+      <Badge size="xs" variant="destructive">
+        error
+      </Badge>
+    );
+  if (current.data === null)
+    return (
+      <Badge size="xs" variant="outline">
+        none
+      </Badge>
+    );
+  return <StatusBadge status={current.data.status} suffix={` · v${current.data.classifierVersion}`} />;
 }
 
 function EnrichmentBody({ data }: { data: RecipeEnrichmentView }) {
@@ -144,11 +184,12 @@ function EnrichmentBody({ data }: { data: RecipeEnrichmentView }) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, suffix = "" }: { status: string; suffix?: string }) {
   const variant = status === "ok" ? "secondary" : status === "error" ? "destructive" : "outline";
   return (
     <Badge size="xs" variant={variant}>
       {status}
+      {suffix}
     </Badge>
   );
 }
@@ -214,22 +255,38 @@ function EvidenceList({ evidence }: { evidence: unknown }) {
  * "an array of facts, or one fact object" (§3.2, §8.3). Renders each array
  * entry, or each key of a bare object, as one short readable line — the point
  * is a wrong verdict stays diagnosable without reading a JSON blob.
+ *
+ * Every "empty" field (`null`, `undefined`, `""`, `[]`) is dropped BEFORE a
+ * line is built. A fact that collapses to nothing once its empty fields are
+ * gone contributes no line at all — that is what keeps `lines: []` off the
+ * screen and lets `EvidenceList`'s "No evidence recorded." fire instead.
  */
 function evidenceLines(evidence: unknown): string[] {
   if (evidence == null) return [];
-  if (Array.isArray(evidence)) return evidence.map(oneLine);
-  return [oneLine(evidence)];
+  if (Array.isArray(evidence)) return evidence.map(oneLine).filter((line): line is string => line !== null);
+  const line = oneLine(evidence);
+  return line === null ? [] : [line];
 }
 
-function oneLine(value: unknown): string {
+function oneLine(value: unknown): string | null {
   if (typeof value === "object" && value !== null) return objectLine(value as Record<string, unknown>);
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return value.trim() === "" ? null : value;
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value);
-  return JSON.stringify(value) ?? "";
+  const json = JSON.stringify(value);
+  return json ?? null;
 }
 
-function objectLine(obj: Record<string, unknown>): string {
-  return Object.entries(obj)
-    .map(([key, value]) => `${key}: ${typeof value === "object" && value !== null ? JSON.stringify(value) : String(value)}`)
-    .join(" · ");
+/** `null` when every field was empty — see {@link evidenceLines}'s doc comment. */
+function objectLine(obj: Record<string, unknown>): string | null {
+  const parts = Object.entries(obj)
+    .filter(([, value]) => !isEmptyValue(value))
+    .map(([key, value]) => `${key}: ${typeof value === "object" && value !== null ? JSON.stringify(value) : String(value)}`);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function isEmptyValue(value: unknown): boolean {
+  if (value == null) return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "string") return value.trim() === "";
+  return false;
 }
