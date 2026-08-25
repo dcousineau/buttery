@@ -287,6 +287,36 @@ export interface RecipeCollectionEntry {
   recipe_id: string;
 }
 
+export interface RecipeEnrichment {
+  calories_per_serving: number | null;
+  carbohydrate_g: Numeric | null;
+  classifier_version: Generated<number>;
+  enriched_at: Timestamp | null;
+  error: string | null;
+  fat_g: Numeric | null;
+  fiber_g: Numeric | null;
+  input_hash: string | null;
+  nutrition_confidence: Numeric | null;
+  nutrition_method: string | null;
+  protein_g: Numeric | null;
+  recipe_id: string;
+  servings: Numeric | null;
+  sodium_mg: Numeric | null;
+  status: Generated<string>;
+  sugar_g: Numeric | null;
+}
+
+export interface RecipeEnrichmentLabel {
+  confidence: Numeric;
+  dimension: string;
+  evidence: Json | null;
+  method: string;
+  recipe_id: string;
+  slug: string;
+  updated_at: Generated<Timestamp>;
+  verdict: string;
+}
+
 export interface RecipeFetchCache {
   body: string;
   byte_size: number | null;
@@ -455,6 +485,8 @@ export interface DB {
   recipe_attribution: RecipeAttribution;
   recipe_collection: RecipeCollection;
   recipe_collection_entry: RecipeCollectionEntry;
+  recipe_enrichment: RecipeEnrichment;
+  recipe_enrichment_label: RecipeEnrichmentLabel;
   recipe_fetch_cache: RecipeFetchCache;
   recipe_image: RecipeImage;
   recipe_import_attempt: RecipeImportAttempt;
