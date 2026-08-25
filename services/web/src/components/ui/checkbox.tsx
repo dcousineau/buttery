@@ -76,7 +76,7 @@ function Checkbox({
 }
 
 const checkboxRowVariants = cva(
-  "flex w-full cursor-(--cursor-interactive) items-center border-2 border-border bg-card text-left text-card-foreground shadow-pop-sm transition-all hover:bg-accent active:translate-x-px active:translate-y-px active:shadow-none data-[checked=true]:bg-muted/60 data-[checked=true]:shadow-none data-[checked=true]:[&_[data-slot=row-label]]:text-muted-foreground data-[checked=true]:[&_[data-slot=row-label]]:line-through data-[checked=true]:[&_[data-slot=row-label]]:decoration-2",
+  "flex w-full cursor-(--cursor-interactive) items-center border-2 border-border bg-card text-left text-card-foreground shadow-pop-sm transition-all hover:bg-accent active:translate-x-px active:translate-y-px active:shadow-none",
   {
     variants: {
       size: {
@@ -85,8 +85,26 @@ const checkboxRowVariants = cva(
         lg: "gap-4 rounded-lg px-4 py-3.5 text-lg",
         xl: "gap-5 rounded-xl px-5 py-4.5 text-2xl shadow-pop-md",
       },
+      /**
+       * What a tick MEANS on this row, which is the whole of what the checked
+       * paint should say.
+       *
+       * `task` is the checklist dialect from BRAND.md — an ingredient, a
+       * shopping line, a meal-plan claim. Checked is *done*, so the row strikes
+       * through and drops its shadow, and remaining work stands proud of it.
+       *
+       * `selection` is membership — "this recipe is in that collection", "this
+       * option is chosen". Checked is a standing fact, not finished work, and
+       * striking it through reads as "removed" to everyone who sees it. It
+       * takes the butter selection fill instead, the same `accent` the app uses
+       * everywhere else for "this one is the chosen one".
+       */
+      tone: {
+        task: "data-[checked=true]:bg-muted/60 data-[checked=true]:shadow-none data-[checked=true]:[&_[data-slot=row-label]]:text-muted-foreground data-[checked=true]:[&_[data-slot=row-label]]:line-through data-[checked=true]:[&_[data-slot=row-label]]:decoration-2",
+        selection: "data-[checked=true]:bg-accent",
+      },
     },
-    defaultVariants: { size: "default" },
+    defaultVariants: { size: "default", tone: "task" },
   },
 );
 
@@ -98,7 +116,9 @@ const checkboxRowVariants = cva(
 function CheckboxRow({
   className,
   size = "default",
+  tone = "task",
   checked = false,
+  disabled = false,
   onCheckedChange,
   meta,
   children,
@@ -106,13 +126,30 @@ function CheckboxRow({
 }: Omit<React.ComponentProps<"label">, "size"> &
   VariantProps<typeof checkboxRowVariants> & {
     checked?: boolean;
+    /**
+     * A row whose state is a *fact*, not a choice — a recipe already filed in
+     * the collection you are adding to, a line someone else claimed. It keeps its
+     * tick and its label in the accessibility tree (a disabled checkbox still
+     * announces "checked"), and only the sticker physics go quiet.
+     */
+    disabled?: boolean;
     onCheckedChange?: (checked: boolean) => void;
     /** Right-aligned muted text — quantity, aisle, assignee. */
     meta?: React.ReactNode;
   }) {
   return (
-    <label data-slot="checkbox-row" data-checked={checked} className={cn(checkboxRowVariants({ size }), className)} {...props}>
-      <Checkbox size={size} checked={checked} onChange={(e) => onCheckedChange?.(e.target.checked)} />
+    <label
+      data-slot="checkbox-row"
+      data-checked={checked}
+      data-disabled={disabled || undefined}
+      className={cn(
+        checkboxRowVariants({ size, tone }),
+        disabled && "cursor-default opacity-70 shadow-none hover:bg-card active:translate-x-0 active:translate-y-0 active:shadow-none",
+        className,
+      )}
+      {...props}
+    >
+      <Checkbox size={size} checked={checked} disabled={disabled} onChange={(e) => onCheckedChange?.(e.target.checked)} />
       <span data-slot="row-label" className="min-w-0 flex-1">
         {children}
       </span>

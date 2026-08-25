@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 import { authClient } from "../lib/auth-client";
 import AppShell from "../components/AppShell";
 import { POSTHOG_CLIENT_CONFIG, useAnalytics } from "../lib/analytics";
+import { SupportDialog } from "../components/SupportDialog";
 import { useCachePartition } from "#/lib/offline/use-cache-partition";
 import { absolute, seo } from "../lib/seo";
 
@@ -74,54 +75,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   }),
   shellComponent: RootDocument,
 });
-
-/** Route prefixes for the signed-in app surfaces. The PostHog support widget
- * (Conversations) is shown only here — never on marketing, legal, or public
- * share pages (`/`, `/login`, `/recipes/*`, `/invite/*`, …). */
-const LOGGED_IN_ROUTE_PREFIXES = ["/household", "/households", "/onboarding"];
-
-function isLoggedInRoute(pathname: string): boolean {
-  return LOGGED_IN_ROUTE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-}
-
-/** Shows PostHog's Conversations "support widget" on signed-in app routes only.
- * The widget auto-loads from remote config; we `show()` it on app routes and
- * `hide()` it everywhere else. Calls are client-only (guarded by `useEffect`)
- * and no-op until conversations finish loading, so we poll briefly to still hide
- * an auto-shown widget once it lands on a marketing/legal page.
- *
- * Production-only, like the rest of analytics: outside production `conversations`
- * is permanently undefined and this component does nothing (see `lib/analytics`). */
-function PostHogSupportWidget() {
-  const { posthog } = useAnalytics();
-  const loggedIn = useRouterState({ select: (s) => isLoggedInRoute(s.location.pathname) });
-
-  useEffect(() => {
-    const conversations = posthog.conversations;
-    if (!conversations) return;
-    const apply = () => {
-      if (loggedIn) {
-        // show() also kicks off the async load when conversations aren't ready.
-        conversations.show();
-        return true;
-      }
-      if (!conversations.isAvailable()) return false; // nothing rendered to hide yet
-      conversations.hide();
-      return true;
-    };
-    if (apply()) return;
-    const timer = setInterval(() => {
-      if (apply()) clearInterval(timer);
-    }, 500);
-    const stop = setTimeout(() => clearInterval(timer), 10_000);
-    return () => {
-      clearInterval(timer);
-      clearTimeout(stop);
-    };
-  }, [posthog, loggedIn]);
-
-  return null;
-}
 
 function PostHogIdentity() {
   const { posthog } = useAnalytics();
@@ -193,7 +146,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             }}
           >
             <PostHogIdentity />
-            <PostHogSupportWidget />
+            {/* The support conversation, opened from the account menu. At the
+                root because the menu's popup is unmounted the instant the item
+                is clicked, so it cannot host what it opens (see `lib/support`). */}
+            <SupportDialog />
             {app}
           </PostHogProvider>
         ) : (

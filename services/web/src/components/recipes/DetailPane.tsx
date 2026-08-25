@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useRouteContext, useRouter } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CalendarRange, Clock, EyeOff, Lock, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, CalendarRange, Clock, EyeOff, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
 import { type HouseholdRecipeDetail, keys, publishRecipe, removeRecipeFromHousehold, toggleRecipeFavoriteMutation, upsertHouseholdRecipeNote } from "#/lib/api";
 import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
@@ -10,6 +10,7 @@ import { Textarea } from "#/components/ui/textarea";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { AddToPlanDialog, type AddToPlanRequest } from "#/components/plan/AddToPlanDialog";
 import { AddPreviewDialog, type AddPreviewRequest } from "#/components/grocery/AddPreviewDialog";
+import { CollectionChips } from "#/components/collections/CollectionChips";
 import { summarizeGroceryAdd } from "#/components/grocery/added-summary";
 import { SLOT_LABELS, formatPlanDate, shortDow } from "#/lib/plan/labels";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
@@ -95,6 +96,8 @@ export function DetailPane({
   const [listRequest, setListRequest] = useState<AddPreviewRequest | null>(null);
   // `handle` is an atproto-plugin column, absent from better-auth's base user type.
   const { data: session } = useHydratedSession() as { data: { user?: { handle?: string | null } } | null };
+  /** "@chef.test" — the account a publish writes to, and publishes from after. */
+  const myHandle = session?.user?.handle ? `@${session.user.handle}` : null;
 
   // Detail-pane state (scroll position, note draft) is keyed by recipeId at the
   // render site (`<DetailPane key={recipe.recipeId} …/>`), so switching recipes
@@ -212,8 +215,14 @@ export function DetailPane({
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
       <div className="mx-auto flex max-w-[54rem] flex-col gap-3.5 px-5 pt-4 pb-8">
-        {/* Mobile back affordance */}
-        <Link to="/household/recipes" className="flex w-fit items-center gap-1 text-xs font-semibold text-muted-foreground no-underline hover:text-foreground lg:hidden">
+        {/* Mobile back affordance. `search: (prev) => prev` keeps the collection
+          or smart scope you came from (collections plan §7) — going back to "the
+          shelf" should land on the shelf you were on, not the whole box. */}
+        <Link
+          to="/household/recipes"
+          search={(prev) => prev}
+          className="flex w-fit items-center gap-1 text-xs font-semibold text-muted-foreground no-underline hover:text-foreground lg:hidden"
+        >
           <ArrowLeft className="size-3.5" aria-hidden="true" />
           Back to the shelf
         </Link>
@@ -235,7 +244,7 @@ export function DetailPane({
                   title={online ? undefined : OFFLINE_WRITE_HINT}
                   className="inline-flex items-center gap-1 rounded-4xl border-2 border-border bg-secondary px-2 py-0.5 text-secondary-foreground transition-colors not-disabled:hover:bg-accent disabled:opacity-60"
                 >
-                  <Lock className="size-3" aria-hidden="true" />
+                  <EyeOff className="size-3" aria-hidden="true" />
                   Private · Publish
                 </button>
                 <span aria-hidden>·</span>
@@ -265,6 +274,12 @@ export function DetailPane({
             )}
           </div>
         </div>
+
+        {/* Which household collections this recipe is filed in, and the way onto
+          another one (collections plan §7). Reads the same cached collections
+          query the tree and the ledger do — memberships are a client-side join,
+          not a second request. */}
+        <CollectionChips householdId={householdId} recipeId={recipe.recipeId} recipeTitle={recipe.title} recipeUnpublished={recipe.unpublished} />
 
         {/* Action row */}
         <div className="flex flex-wrap items-center gap-2">
@@ -417,11 +432,20 @@ export function DetailPane({
         </div>
       </div>
 
+      {/* Collections plan §2.5 applies to recipes too: a publish dialog has to
+        name the account the record lands in and the handle every later update
+        will come from, because both are the acting member's and neither is
+        visible from the button. */}
       <ConfirmDialog
         open={confirmPublish}
         onOpenChange={setConfirmPublish}
         title="Publish this recipe?"
-        description="This makes the recipe public on atproto — a portable record in your repo that other apps can read. It's hard to undo."
+        description={
+          <>
+            This writes the recipe to your own atproto account{myHandle ? `, ${myHandle}` : ""} — a portable record on your PDS that any app on the network can read. Every future
+            update to it goes out from {myHandle ?? "your account"} too, whichever member of your household makes the edit. It’s hard to undo.
+          </>
+        }
         confirmLabel="Publish"
         pending={publishing}
         onConfirm={onPublish}

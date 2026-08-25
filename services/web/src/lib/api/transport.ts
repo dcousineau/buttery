@@ -34,6 +34,20 @@ import {
   toggleHouseholdRecipeFavorite as toggleHouseholdRecipeFavoriteFn,
   upsertHouseholdRecipeNote as upsertHouseholdRecipeNoteFn,
 } from "#/server/household-recipes";
+import type { AddRecipesToCollectionResult, DeleteCollectionResult, PublishCollectionResult, UnpublishCollectionResult } from "#/server/collections";
+import {
+  addRecipesToCollection as addRecipesToCollectionFn,
+  createCollection as createCollectionFn,
+  deleteCollection as deleteCollectionFn,
+  listCollections as listCollectionsFn,
+  publishCollection as publishCollectionFn,
+  removeRecipeFromCollection as removeRecipeFromCollectionFn,
+  reorderCollectionRecipes as reorderCollectionRecipesFn,
+  reorderCollections as reorderCollectionsFn,
+  retryCollectionSync as retryCollectionSyncFn,
+  unpublishCollection as unpublishCollectionFn,
+  updateCollection as updateCollectionFn,
+} from "#/server/collections";
 import {
   addMealPlanNote as addMealPlanNoteFn,
   addMealPlanRecipes as addMealPlanRecipesFn,
@@ -105,6 +119,7 @@ import {
 } from "#/server/recipe-import";
 
 import type {
+  CollectionSummary,
   CopiedWeek,
   CreatedPlanEntry,
   GlobalRecipeResult,
@@ -177,6 +192,81 @@ export function upsertHouseholdRecipeNote(input: { recipeId: string; body: strin
 
 export function searchGlobalRecipes(input: { q?: string; limit?: number; cursor?: string | null }): Promise<{ results: GlobalRecipeResult[]; nextCursor: string | null }> {
   return searchGlobalRecipesFn({ data: input });
+}
+
+// --- collections --------------------------------------------------------
+
+/**
+ * The collection result unions live beside the server fns that return them (the
+ * way `SaveRecipeResult` does), and are re-exported here so the UI has one
+ * address to import from — every one of their `ok: false` arms is a decision to
+ * render (publish this recipe first, re-authorize, retry later), not an error to
+ * throw away.
+ *
+ * Note that publish, unpublish and delete all **resolve** their refusals and are
+ * non-optimistic (§6): there is no cache patch to roll back, so the caller reads
+ * the union and invalidates `keys.household.collections(hid)` either way.
+ */
+export type { AddRecipesToCollectionResult, DeleteCollectionResult, PublishCollectionResult, UnpublishCollectionResult };
+
+export function listCollections(): Promise<CollectionSummary[]> {
+  return listCollectionsFn();
+}
+
+export function createCollection(input: { name: string; description?: string }): Promise<CollectionSummary> {
+  return createCollectionFn({ data: input });
+}
+
+/**
+ * `stale` rides along on every write that can change a published record: the
+ * local save succeeded, the copy on the publisher's PDS did not get updated.
+ * Surface it as "Saved — couldn't update @handle's published copy yet" with a
+ * retry (`retryCollectionSync`); never as a failed save.
+ */
+export function updateCollection(input: { collectionId: string; name?: string; description?: string | null }): Promise<{ updated: boolean; stale: boolean }> {
+  return updateCollectionFn({ data: input });
+}
+
+export function reorderCollections(orderedIds: string[]): Promise<{ reordered: boolean }> {
+  return reorderCollectionsFn({ data: { orderedIds } });
+}
+
+export function reorderCollectionRecipes(input: { collectionId: string; orderedRecipeIds: string[] }): Promise<{ reordered: boolean; stale: boolean }> {
+  return reorderCollectionRecipesFn({ data: input });
+}
+
+/**
+ * File recipes into a collection. `publishRecipeIds` is the "Publish recipe &
+ * add" combo (§5): the ids the user agreed to publish first, which must be a
+ * subset of `recipeIds`. Anything unpublished and NOT listed there still comes
+ * back as `recipes_unpublished`.
+ */
+export function addRecipesToCollection(input: { collectionId: string; recipeIds: string[]; publishRecipeIds?: string[] }): Promise<AddRecipesToCollectionResult> {
+  return addRecipesToCollectionFn({ data: input });
+}
+
+export function removeRecipeFromCollection(input: { collectionId: string; recipeId: string }): Promise<{ removed: boolean; stale: boolean }> {
+  return removeRecipeFromCollectionFn({ data: input });
+}
+
+/** Owner-only. Deletes the PDS record first; a refusal means nothing was deleted. */
+export function deleteCollection(collectionId: string): Promise<DeleteCollectionResult> {
+  return deleteCollectionFn({ data: { collectionId } });
+}
+
+/** Owner-only. The acting owner becomes the publisher every re-put goes through (§2.5). */
+export function publishCollection(collectionId: string): Promise<PublishCollectionResult> {
+  return publishCollectionFn({ data: { collectionId } });
+}
+
+/** Owner-only. Removes the PDS record and keeps the local collection (§2.7). */
+export function unpublishCollection(collectionId: string): Promise<UnpublishCollectionResult> {
+  return unpublishCollectionFn({ data: { collectionId } });
+}
+
+/** The stale badge's retry: re-runs the re-put and reports whether it is still behind. */
+export function retryCollectionSync(collectionId: string): Promise<{ stale: boolean }> {
+  return retryCollectionSyncFn({ data: { collectionId } });
 }
 
 // --- the meal plan ------------------------------------------------------

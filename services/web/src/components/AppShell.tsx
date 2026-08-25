@@ -9,7 +9,7 @@ import { InstallPrompt } from "./offline/InstallPrompt";
 import { UpdateBanner } from "./offline/UpdateBanner";
 
 /** Routes that render without the sidebar — just the shared header + footer. */
-const NAVLESS_ROUTES = new Set(["/", "/login", "/terms", "/privacy", "/ai-usage", "/acknowledgements", "/onboarding", "/households/switch"]);
+const NAVLESS_ROUTES = new Set(["/", "/login", "/terms", "/privacy", "/ai-usage", "/acknowledgements", "/tip-jar", "/onboarding", "/households/switch"]);
 
 /** Recipe detail pages and the auth-flow / invite screens render full-width (no
  * sidebar) so the focused task owns the page. */

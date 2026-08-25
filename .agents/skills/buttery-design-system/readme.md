@@ -401,7 +401,15 @@ icon font, no PNG icons, and no SVG sprite sheet in the repo.
 | Nav mechanics | `panel-left` · `chevrons-up-down` · `chevron-right` · `arrow-left` · `x` |
 | Theme | `sun` · `moon` · auto `sun-moon` |
 | Off-site | `external-link` · settings `settings-2` · overview `compass` |
+| Visibility | public `globe` · private `eye-off` · source no longer reachable `unlink` |
 | Pending | `loader-2` (as `Spinner`) |
+
+`globe` is "public on the atproto network" and `eye-off` is its opposite — the
+pair that says whether a recipe or a collection has left the household.
+`eye-off` is the only privacy glyph; `lock` never carries that meaning, and
+`folder-lock` is the Collections nav icon, not a privacy signal. `unlink` is a
+separate statement about provenance, not visibility: the recipe's original web
+source is no longer reachable.
 
 **In this design system**, Lucide is loaded from CDN
 (`https://unpkg.com/lucide@0.474.0/dist/umd/lucide.js`) and rendered through the

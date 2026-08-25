@@ -1,14 +1,16 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowLeftRight, Home, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
+import { ArrowLeftRight, Home, LifeBuoy, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { signOutAndGoHome, useHydratedSession } from "../lib/auth-client";
 import { useSessionSnapshot } from "#/lib/offline/use-household";
 import UserAvatar from "./UserAvatar";
+import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
 import { Skeleton } from "#/components/ui/skeleton";
 import { serviceNameFromPds } from "#/lib/atproto/service-name";
 import { useOnboardingVerdict } from "#/lib/hooks/use-onboarding-verdict";
 import { useTheme, type ThemeMode } from "#/lib/hooks/use-theme";
+import { useSupport } from "#/lib/support";
 import type { OnboardingVerdict } from "#/lib/api";
 
 // Single-item theme control: clicking cycles light → dark → auto. The icon and
@@ -102,6 +104,12 @@ export default function UserMenu() {
   const snapshot = useSessionSnapshot();
   const verdict = useOnboardingVerdict();
   const { mode, setMode } = useTheme();
+  // The only way into support: the item below opens Buttery's own support
+  // dialog, rather than PostHog's bubble floating over every page (see
+  // `lib/support`). `available` is false outside production and until the
+  // conversations bundle has loaded, and the item is left out rather than
+  // offering a dead end.
+  const support = useSupport();
 
   if (isPending) {
     return <Skeleton className="size-9 rounded-full" />;
@@ -157,6 +165,21 @@ export default function UserMenu() {
           <ThemeIcon aria-hidden="true" />
           Theme: {THEME_META[mode].label}
         </DropdownMenuItem>
+
+        {/* The unread count is the ONLY notice a reply ever gets: PostHog does
+            not email widget-channel replies, so if it is not here the answer
+            sits unread. */}
+        {support.available ? (
+          <DropdownMenuItem onClick={support.open}>
+            <LifeBuoy aria-hidden="true" />
+            Help &amp; support
+            {support.unread > 0 ? (
+              <Badge size="xs" className="ml-auto" aria-label={`${support.unread} unread ${support.unread === 1 ? "reply" : "replies"}`}>
+                {support.unread}
+              </Badge>
+            ) : null}
+          </DropdownMenuItem>
+        ) : null}
 
         <DropdownMenuSeparator />
 

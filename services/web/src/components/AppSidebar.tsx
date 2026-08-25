@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { BookOpenText, CalendarRange, Dices, FolderLock, Home, ShoppingBasket } from "lucide-react";
+import { BookOpenText, CalendarRange, Dices, Home, ShoppingBasket } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -27,7 +27,6 @@ type NavEntry = {
 const NAV_ENTRIES: Array<NavEntry> = [
   { label: "Home", icon: Home, to: "/household", exact: true },
   { label: "Recipes", icon: BookOpenText, to: "/household/recipes" },
-  { label: "Collections", icon: FolderLock, soon: true },
   { label: "Shopping list", icon: ShoppingBasket, to: "/household/list" },
   { label: "Meal planner", icon: CalendarRange, to: "/household/plan" },
   { label: "Randomizer", icon: Dices, soon: true },

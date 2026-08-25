@@ -407,3 +407,37 @@ describeDb("saveRecipe — dedupe keys (§6, §6.6 writer 1)", () => {
     expect(rows).toEqual([{ ns: "dedupe", key: "content_fp" }]);
   });
 });
+
+describeDb("publishRecipe — publishing a draft that already exists", () => {
+  /**
+   * The regression this file was missing. `buildRecordFromRow` assembles the
+   * record from the author's columns only, and `createdAt`/`updatedAt` are the
+   * server's to stamp (`recipe-record.ts`) — so before the stamp was added,
+   * every publish of an existing draft came back
+   * `invalid: Missing required key "createdAt"` and nothing ever reached a PDS.
+   *
+   * The kill switch is forced OFF for the assertion, which puts
+   * `publish_disabled` immediately after the validation gate in
+   * `runPublishExisting`: reaching it proves the record validated, and stops the
+   * test one step short of a PDS this suite has no session for.
+   */
+  it("gets past the lexicon gate — the record is stamped, not rejected for a missing createdAt", async () => {
+    const saved = await save({
+      record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
+      visibility: "private",
+      publish: false,
+    });
+    expect(saved.status).toBe("ok");
+    if (saved.status !== "ok") return;
+
+    const previous = process.env.ATPROTO_PUBLISH_ENABLED;
+    process.env.ATPROTO_PUBLISH_ENABLED = "false";
+    try {
+      const result = await write.publishRecipe({ data: { recipeId: saved.recipeId } });
+      expect(result.status).toBe("publish_disabled");
+    } finally {
+      if (previous === undefined) delete process.env.ATPROTO_PUBLISH_ENABLED;
+      else process.env.ATPROTO_PUBLISH_ENABLED = previous;
+    }
+  });
+});

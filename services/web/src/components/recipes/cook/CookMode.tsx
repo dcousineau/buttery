@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AArrowDown, AArrowUp, Maximize, Minimize, X } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
+import { useSupport } from "#/lib/support";
 import { Dialog, DialogContent, DialogTitle } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
 import { CheckboxRow } from "#/components/ui/checkbox";
@@ -57,6 +58,7 @@ interface FsDocument extends Document {
  */
 export default function CookMode({ recipe, onClose }: { recipe: CookRecipe; onClose: () => void }) {
   const { posthog } = useAnalytics();
+  const { close: closeSupport } = useSupport();
   const { factor, setFactor, metric, setMetric } = useRecipeScale();
   const { arm } = useTimers();
   const { scale, increase, decrease, canIncrease, canDecrease } = useCookTextScale();
@@ -84,27 +86,13 @@ export default function CookMode({ recipe, onClose }: { recipe: CookRecipe; onCl
 
   useWakeLock(phase === "cook" && resume !== "pending");
 
-  // Hide the PostHog Conversations support widget while cook mode is open — its
-  // floating bubble would overlap the immersive surface. Poll briefly to also
-  // catch a late-loading widget, then restore it on exit. `__root` re-shows it
-  // on signed-in routes, so a plain show() on cleanup is enough.
+  // Close the support dialog if it is open — cook mode is the fullscreen dialog
+  // variant, and two stacked dialogs would fight over the screen and the focus
+  // trap. Nothing to restore on exit: support is opened from the account menu,
+  // never on its own (see `lib/support`).
   useEffect(() => {
-    const conversations = posthog.conversations;
-    if (!conversations) return;
-    conversations.hide();
-    const timer = setInterval(() => {
-      if (conversations.isAvailable()) {
-        conversations.hide();
-        clearInterval(timer);
-      }
-    }, 500);
-    const stop = setTimeout(() => clearInterval(timer), 10_000);
-    return () => {
-      clearInterval(timer);
-      clearTimeout(stop);
-      conversations.show();
-    };
-  }, [posthog]);
+    closeSupport();
+  }, [closeSupport]);
 
   // Persist cook-view state (debounced), but only once the Resume choice is made.
   useEffect(() => {

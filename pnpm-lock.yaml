@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@danilocampos/coherence':
+        specifier: ^0.37.1
+        version: 0.37.1
       '@resvg/resvg-js':
         specifier: ^2.6.2
         version: 2.6.2
@@ -1874,6 +1877,11 @@ packages:
     engines: {node: '>=18'}
     peerDependencies:
       postcss: ^8.4
+
+  '@danilocampos/coherence@0.37.1':
+    resolution: {integrity: sha512-1084I2ZFPfbX6GPqjajlICetNbb2MV9+bqntH2rbXs2IBwUXDuPls8uThyCMxyU8U0srZbStiguXvN4ydt/x2Q==}
+    engines: {node: '>=22'}
+    hasBin: true
 
   '@did-plc/lib@0.0.1':
     resolution: {integrity: sha512-RkY5w9DbYMco3SjeepqIiMveqz35exjlVDipCs2gz9AXF4/cp9hvmrp9zUWEw2vny+FjV8vGEN7QpaXWaO6nhg==}
@@ -10399,6 +10407,9 @@ packages:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
     engines: {node: '>= 8'}
 
+  web-tree-sitter@0.26.13:
+    resolution: {integrity: sha512-5bUZ7vbQ1kcondet96wzP974+JfCZDeQ7bTpacICm2nnvHpa5cO0ByRsoMcAhUP+743vpkb4m0BFlVSm+Ye9VA==}
+
   web-vitals@5.3.0:
     resolution: {integrity: sha512-q6LWsLatGYZp5VGBIOvbTj6JBV2nOmC8KvWztXBmwJcfFAzhwKwbOxhUH306XY3CcaZDUlSmSuNPBsCn0bFu+g==}
 
@@ -12837,6 +12848,10 @@ snapshots:
   '@csstools/utilities@2.0.0(postcss@8.5.25)':
     dependencies:
       postcss: 8.5.25
+
+  '@danilocampos/coherence@0.37.1':
+    dependencies:
+      web-tree-sitter: 0.26.13
 
   '@did-plc/lib@0.0.1(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
@@ -22612,6 +22627,8 @@ snapshots:
   web-namespaces@2.0.1: {}
 
   web-streams-polyfill@3.3.3: {}
+
+  web-tree-sitter@0.26.13: {}
 
   web-vitals@5.3.0: {}
 

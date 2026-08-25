@@ -23,12 +23,13 @@
  */
 
 import { hashKey, mutationOptions, type QueryClient } from "@tanstack/react-query";
+import { withCollectionEdited, withCollectionRecipesReordered, withCollectionsReordered, withRecipeUnfiled, withRecipesFiled } from "#/components/collections/optimistic";
 import { withAllCleared, withCheckedCleared, withItemChecked, withItemEdited, withItemRemoved } from "#/components/grocery/optimistic";
 import { withEntriesAppended, withEntryCooked, withEntryMoved, withEntryRemoved, withNoteBody } from "#/components/plan/optimistic";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
 import { keys } from "./keys";
 import * as api from "./transport";
-import type { GroceryListPayload, HouseholdRecipeDetail, HouseholdRecipeRow, PlanEntry, PlanWeek } from "./types";
+import type { CollectionSummary, GroceryListPayload, HouseholdRecipeDetail, HouseholdRecipeRow, PlanEntry, PlanWeek } from "./types";
 
 /**
  * Mutation keys. Flat strings, one per write, because M2 registers
@@ -48,6 +49,11 @@ export const mutationKeys = {
   planEntriesAdded: ["plan-entries-added"] as const,
   planNoteSaved: ["plan-note-saved"] as const,
   recipeFavorite: ["recipe-favorite"] as const,
+  collectionEdited: ["collection-edited"] as const,
+  collectionsReordered: ["collections-reordered"] as const,
+  collectionRecipesReordered: ["collection-recipes-reordered"] as const,
+  collectionRecipesFiled: ["collection-recipes-filed"] as const,
+  collectionRecipeUnfiled: ["collection-recipe-unfiled"] as const,
 } as const;
 
 /**
@@ -284,6 +290,101 @@ export function saveMealPlanNoteMutation(queryClient: QueryClient, householdId: 
         vars.entryId ? withNoteBody(current, vars.entryId, vars.body) : vars.optimisticEntry ? withEntriesAppended(current, vars.date, vars.slot, [vars.optimisticEntry]) : current,
       invalidateKey,
     ),
+  });
+}
+
+// --- collections --------------------------------------------------------
+
+/**
+ * The five collection writes that can be patched from the client, all over the
+ * one `keys.household.collections(hid)` entry (collections plan §6).
+ *
+ * Create, publish, unpublish and delete are **not** here, and the reason is the
+ * same for all four: the server assigns something the client cannot guess — a
+ * ULID, a PDS-minted TID, the renumbered positions of every surviving row. They
+ * call the transport directly and invalidate, which costs a round trip on a
+ * gesture that already involves a dialog.
+ *
+ * Every one of these is online-only in M1 (`OFFLINE_WRITE_HINT`), like every
+ * other write in this file.
+ */
+export function updateCollectionMutation(queryClient: QueryClient, householdId: string) {
+  const queryKey = keys.household.collections(householdId);
+  type Vars = { collectionId: string; name?: string; description?: string | null };
+  return mutationOptions({
+    mutationKey: mutationKeys.collectionEdited,
+    mutationFn: (vars: Vars) => api.updateCollection(vars),
+    ...optimisticOver<CollectionSummary[], Vars, { updated: boolean }>(queryClient, queryKey, (list, vars) =>
+      withCollectionEdited(list, vars.collectionId, { name: vars.name, description: vars.description }),
+    ),
+  });
+}
+
+/** The household-wide list order. Local-only — it never reaches a PDS (§2.10). */
+export function reorderCollectionsMutation(queryClient: QueryClient, householdId: string) {
+  const queryKey = keys.household.collections(householdId);
+  return mutationOptions({
+    mutationKey: mutationKeys.collectionsReordered,
+    mutationFn: (vars: { orderedIds: string[] }) => api.reorderCollections(vars.orderedIds),
+    ...optimisticOver<CollectionSummary[], { orderedIds: string[] }, { reordered: boolean }>(queryClient, queryKey, (list, vars) =>
+      withCollectionsReordered(list, vars.orderedIds),
+    ),
+  });
+}
+
+/** The order inside one collection — which IS the published `recipes` array order. */
+export function reorderCollectionRecipesMutation(queryClient: QueryClient, householdId: string) {
+  const queryKey = keys.household.collections(householdId);
+  type Vars = { collectionId: string; orderedRecipeIds: string[] };
+  return mutationOptions({
+    mutationKey: mutationKeys.collectionRecipesReordered,
+    mutationFn: (vars: Vars) => api.reorderCollectionRecipes(vars),
+    ...optimisticOver<CollectionSummary[], Vars, { reordered: boolean }>(queryClient, queryKey, (list, vars) =>
+      withCollectionRecipesReordered(list, vars.collectionId, vars.orderedRecipeIds),
+    ),
+  });
+}
+
+/**
+ * Filing recipes into a collection.
+ *
+ * The optimistic patch appends them even though the call can come back
+ * `{ ok: false, reason: "recipes_unpublished" }` — that is a *resolved* answer,
+ * not a thrown error, so `onError` never fires and the rollback never runs. The
+ * `onSettled` invalidation is what corrects the list, and the caller is
+ * responsible for showing the blocked rows. Patching optimistically anyway is
+ * still right: the refusal only happens against a published collection, which
+ * is the rarer half of the cases.
+ */
+export function addRecipesToCollectionMutation(queryClient: QueryClient, householdId: string) {
+  const queryKey = keys.household.collections(householdId);
+  type Vars = { collectionId: string; recipeIds: string[]; publishRecipeIds?: string[] };
+  return mutationOptions({
+    mutationKey: mutationKeys.collectionRecipesFiled,
+    mutationFn: (vars: Vars) => api.addRecipesToCollection(vars),
+    ...optimisticOver<CollectionSummary[], Vars, Awaited<ReturnType<typeof api.addRecipesToCollection>>>(queryClient, queryKey, (list, vars) =>
+      withRecipesFiled(list, vars.collectionId, vars.recipeIds),
+    ),
+    /**
+     * The "Publish recipe & add" combo (§5) changes something this key does not
+     * hold: the recipes it published stopped being private. `keys.household.recipes`
+     * is the prefix of `keys.household.recipe(hid, id)`, so one invalidation
+     * covers both the box list (the private chip, the Unpublished smart row) and
+     * every recipe detail under it — and it only runs when a recipe was actually
+     * published, so an ordinary filing still touches exactly one cache entry.
+     */
+    onSuccess: (_data: unknown, vars: Vars) => (vars.publishRecipeIds?.length ? queryClient.invalidateQueries({ queryKey: keys.household.recipes(householdId) }) : undefined),
+  });
+}
+
+/** Unfiling one recipe from one collection. */
+export function removeRecipeFromCollectionMutation(queryClient: QueryClient, householdId: string) {
+  const queryKey = keys.household.collections(householdId);
+  type Vars = { collectionId: string; recipeId: string };
+  return mutationOptions({
+    mutationKey: mutationKeys.collectionRecipeUnfiled,
+    mutationFn: (vars: Vars) => api.removeRecipeFromCollection(vars),
+    ...optimisticOver<CollectionSummary[], Vars, { removed: boolean }>(queryClient, queryKey, (list, vars) => withRecipeUnfiled(list, vars.collectionId, vars.recipeId)),
   });
 }
 

@@ -1,11 +1,13 @@
-import { useRef, useState } from "react";
-import { GripVertical, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
+import { DragHandle, DropLine, insertionPointAt } from "#/components/ui/drag-reorder";
 import { FieldWarning } from "#/components/ui/field";
 import { Input } from "#/components/ui/input";
 import { Textarea } from "#/components/ui/textarea";
 import { useDragHandle } from "#/lib/hooks/use-drag-source";
+import { moveToInsertionPoint } from "#/lib/reorder";
 import { cn } from "#/lib/utils";
 
 export type EditorMode = "paste" | "rows";
@@ -58,7 +60,6 @@ export function LineEditor({
    */
   rowProblem?: (index: number) => string | null;
 }) {
-  const rowsRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<number | null>(null);
   /**
    * Where the dragged row would land, as an *insertion point* — 0…lines.length,
@@ -88,23 +89,8 @@ export function LineEditor({
   }
   /** `at` is an insertion point (see `dropAt`), not a row index. */
   function moveRow(from: number, at: number) {
-    // Pulling the row out shifts everything below it up one, so an insertion
-    // point past the row's old home is one too high once it is gone.
-    const to = at > from ? at - 1 : at;
-    if (from === to) return;
-    const next = [...lines];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    onChange(next);
-  }
-  /** The gap the pointer is nearest: the first row whose midpoint it is above, else the end. */
-  function insertionPointAt(clientY: number): number {
-    const rows = rowsRef.current?.querySelectorAll<HTMLElement>("[data-line-row]") ?? [];
-    for (const [i, row] of rows.entries()) {
-      const box = row.getBoundingClientRect();
-      if (clientY < box.top + box.height / 2) return i;
-    }
-    return rows.length;
+    const next = moveToInsertionPoint(lines, from, at);
+    if (next !== lines) onChange(next);
   }
   function endDrag() {
     setDragging(null);
@@ -161,7 +147,6 @@ export function LineEditor({
         </div>
       ) : (
         <div
-          ref={rowsRef}
           // Reordering listens at the list, not at each row: the 10px gaps between
           // rows belong to no row, and a drag read row-by-row goes blind exactly
           // where the drop line is drawn.
@@ -169,7 +154,7 @@ export function LineEditor({
             if (dragging === null) return;
             e.preventDefault();
             e.dataTransfer.dropEffect = "move";
-            setDropAt(insertionPointAt(e.clientY));
+            setDropAt(insertionPointAt(e.currentTarget, e.clientY, "[data-line-row]"));
           }}
           onDragLeave={(e) => {
             // Only a departure from the list itself counts — crossing between two
@@ -210,9 +195,7 @@ export function LineEditor({
                   {/* The grip is the whole drag affordance now, so it gets a padded box
                       to grab rather than 16 square pixels of icon. The negative margin
                       keeps the row drawn where it was. */}
-                  <span {...handleProps} aria-hidden="true" className={cn("-m-1 flex shrink-0 cursor-grab p-1 text-muted-foreground", multiline && "mt-1.5")}>
-                    <GripVertical className="size-4" />
-                  </span>
+                  <DragHandle label="Reorder" {...handleProps} className={cn(multiline && "mt-1.5")} />
                   {numbered && (
                     <span
                       className={cn(
@@ -265,23 +248,6 @@ export function LineEditor({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * The line the dragged row will land on: 3px of `foreground`, sitting in the gap
- * between two rows with a cap at each end so it reads as an insertion point and
- * not as a border someone drew on a row. `pointer-events-none` is load-bearing —
- * a drop line under the pointer would otherwise take the drop events the list is
- * measuring, and the line would fight the cursor it is following.
- */
-function DropLine({ className }: { className: string }) {
-  return (
-    <div aria-hidden="true" className={cn("pointer-events-none absolute inset-x-0 z-10 flex items-center", className)}>
-      <span className="size-[7px] shrink-0 rounded-full bg-foreground" />
-      <span className="h-[3px] flex-1 bg-foreground" />
-      <span className="size-[7px] shrink-0 rounded-full bg-foreground" />
     </div>
   );
 }
