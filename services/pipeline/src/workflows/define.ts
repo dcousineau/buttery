@@ -44,6 +44,21 @@ export interface FlowNode {
   children?: readonly FlowNode[];
 }
 
+/**
+ * One job, handed to a workflow other than this one. There is no `children`
+ * here on purpose: BullMQ's atomic multi-job write is `FlowProducer.add`, and
+ * that builds a tree on **one** queue. `enqueue` crosses queues, so it cannot
+ * offer that atomicity or that waiting relationship — it is `queue.add`, not a
+ * flow, and the shape says so.
+ */
+export interface EnqueueNode {
+  /** Which step the target workflow runs. Defaults to that workflow's `entry`. */
+  step?: string;
+  data?: unknown;
+  /** Merged over the *target* step's own `jobOptions` — see `hosts.ts`. */
+  opts?: JobsOptions;
+}
+
 /** What the children of a step returned, once they have all settled. */
 export interface ChildResults {
   /** Return values of the children that completed, in no particular order. */
@@ -78,6 +93,21 @@ export interface StepContext {
    * the opposite says so with `opts.failParentOnFailure`.
    */
   flow: (node: FlowNode) => Promise<void>;
+  /**
+   * Hand one job to a **different** workflow's queue. `flow()` builds a graph
+   * inside this workflow's own queue — a parent that waits on it, retries that
+   * belong to this run. `enqueue` deliberately cannot do either: a cross-workflow
+   * handoff must never become a flow child, because a step that waited on
+   * thousands of another workflow's jobs would hold whatever this run's own
+   * lock or schedule depends on for as long as that other workflow took to
+   * drain. `atproto-sync`'s `finalize` is the motivating case — it must not
+   * wait on the enrichment jobs it hands off, or the next scheduled sweep would
+   * find the lock still held and skip itself (D13,
+   * `docs/plans/2026-08-20-recipe-enrichment.md`). The target workflow gets its
+   * own run, its own retries, its own place on the board — this step neither
+   * waits for it nor hears back.
+   */
+  enqueue: (workflow: string, node: EnqueueNode) => Promise<void>;
   /** For a step that needs one — `lock.ts`, chiefly. */
   redis: Redis;
 }
@@ -157,6 +187,7 @@ export interface WorkflowHost {
   progress: (fraction: number) => Promise<void>;
   children: () => Promise<ChildResults>;
   flow: (node: FlowNode) => Promise<void>;
+  enqueue: (workflow: string, node: EnqueueNode) => Promise<void>;
 }
 
 export interface WorkflowRun {
@@ -237,6 +268,7 @@ export function defineWorkflow(spec: WorkflowSpec): Workflow {
         progress: run.host.progress,
         children: run.host.children,
         flow: run.host.flow,
+        enqueue: run.host.enqueue,
         redis: run.redis,
       });
     },
