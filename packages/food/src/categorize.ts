@@ -29,8 +29,8 @@
  * `categorize.test.ts` pins those non-matches explicitly.
  */
 
-import { type Aisle, DEFAULT_AISLE } from "./aisles";
-import { normalizeFoodName, singularizePhrase } from "./normalize";
+import { type Aisle, DEFAULT_AISLE } from "./aisles.ts";
+import { normalizeFoodName, singularizePhrase } from "./normalize.ts";
 
 export interface LexiconFood {
   /** Aisle. */

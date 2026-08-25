@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import traitsJson from "./traits.json" with { type: "json" };
-import { type TraitsFile, traitsFor } from "./traits";
+import { type TraitsFile, traitsFor } from "./traits.ts";
 
 /**
  * Runs over the real generated `traits.json`, not a hand-built fixture — the
