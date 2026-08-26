@@ -405,13 +405,13 @@ async function computeRecipeDebug(db: Kysely<DB>, householdId: string, recipeId:
   const privateLayers = [
     {
       table: "recipe_enrichment",
-      note: "Pipeline status for the derived allergen/diet classifier run. Never written back to `recipe.suitable_for_diet` or any `*_content` column, and never reaches a published record.",
+      note: "Pipeline status for the derived allergen/diet classifier run. `classifier_version` gates which slugs a missing recipe_enrichment_label row may be read as the default for (see that section's note) — never written back to `recipe.suitable_for_diet` or any `*_content` column, and never reaches a published record.",
       published: false,
       rows: enrichment ? [enrichment] : [],
     },
     {
       table: "recipe_enrichment_label",
-      note: "Derived allergen/diet verdicts, one row per (dimension, slug). `not_detected` is NOT a safety claim — it means the rules found nothing over free text they may not have fully parsed, never 'free of'.",
+      note: "Derived allergen/diet verdicts — SPARSE: a row exists only when it says something its dimension's default does not, so seeing fewer rows here than recipe_vocab has slugs is expected, not a broken classifier. Absence IS a verdict: for allergen it means not_detected, for diet it means not excluded — but only for slugs this recipe's classifier_version actually evaluated. `not_detected`, whether stored or implied by absence, is NOT a safety claim — it means the rules found nothing over free text they may not have fully parsed, never 'free of'.",
       published: false,
       rows: cap(enrichmentLabels, "recipe_enrichment_label", warnings),
     },

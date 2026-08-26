@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classify, CLASSIFIER_VERSION, RULES_METHOD } from "#/workflows/recipe-enrichment/classify.ts";
-import { ALLERGEN_SLUGS, TRAIT_MAYBE, TRAIT_NO, TRAIT_YES } from "#/workflows/recipe-enrichment/types.ts";
+import { ALLERGEN_SLUGS, EMITTED_DIET_SLUGS, TRAIT_MAYBE, TRAIT_NO, TRAIT_YES } from "#/workflows/recipe-enrichment/types.ts";
 import type { AllergenVerdict, ClassifierInput, ClassifierLine, DietVerdict, Label } from "#/workflows/recipe-enrichment/types.ts";
 
 /**
@@ -9,23 +9,14 @@ import type { AllergenVerdict, ClassifierInput, ClassifierLine, DietVerdict, Lab
  * otherwise have mislabelled by hand: a "vegetarian" curry with fish sauce, a
  * dessert with gelatin, Worcestershire, ghee, lard, marzipan, tahini, soy
  * sauce, oyster sauce.
+ *
+ * Labels are sparse (`types.ts`'s note, `classifiers/README.md`): a label
+ * row is written only when it says something the dimension's default does
+ * not. `allergenLabel`/`dietLabel` below throw when a slug has no label, on
+ * purpose — most tests assert a specific verdict and an absent label is a
+ * bug in the fixture, not a pass. Tests that want to assert absence itself
+ * check `labels` directly instead of going through those helpers.
  */
-
-const DIET_SLUGS = [
-  "vegetarian",
-  "vegan",
-  "pescatarian",
-  "dairy_free",
-  "gluten_free",
-  "halal",
-  "kosher",
-  "keto",
-  "low_carb",
-  "low_fat",
-  "low_calorie",
-  "diabetic",
-  "paleo",
-] as const;
 
 function line(partial: Partial<ClassifierLine> & { ordinal: number; text: string }): ClassifierLine {
   return {
@@ -67,37 +58,59 @@ const OLIVE_OIL = resolved(102, "2 tbsp olive oil", "en:olive-oil", { vg: TRAIT_
 
 describe("classify — exported surface", () => {
   it("exposes a stable version and the rules method", () => {
-    expect(CLASSIFIER_VERSION).toBe(1);
+    expect(CLASSIFIER_VERSION).toBe(2);
     expect(RULES_METHOD).toBe("rules@1");
-  });
-
-  it("emits a label for every allergen slug and every diet slug, every time", () => {
-    const labels = classify(recipe("Plain roast vegetables", [CARROT, ONION, OLIVE_OIL]));
-    expect(
-      labels
-        .filter((l) => l.dimension === "allergen")
-        .map((l) => l.slug)
-        .sort(),
-    ).toEqual([...ALLERGEN_SLUGS].sort());
-    expect(
-      labels
-        .filter((l) => l.dimension === "diet")
-        .map((l) => l.slug)
-        .sort(),
-    ).toEqual([...DIET_SLUGS].sort());
   });
 
   it("stamps every label with the rules method", () => {
     const labels = classify(recipe("Plain roast vegetables", [CARROT, ONION, OLIVE_OIL]));
+    expect(labels.length).toBeGreaterThan(0);
     for (const l of labels) expect(l.method).toBe(RULES_METHOD);
   });
 });
 
-describe("allergen — not_detected vs unknown (D5, §3.2, §8.1)", () => {
-  it("returns not_detected only when every line resolved and none carried the allergen", () => {
+/**
+ * `classify.ts` and `types.ts` pin the version-vs-emitted-slugs invariant
+ * together: absence is only safe to read as a dimension's default for slugs
+ * a row's `classifier_version` actually evaluated. This test is that pin —
+ * it is not testing behavior so much as fencing it in. If it fails, you
+ * (or a PR before you) added or removed a slug from `ALLERGEN_SLUGS` or
+ * `EMITTED_DIET_SLUGS` without bumping `CLASSIFIER_VERSION` in
+ * `classify.ts`. Bump it, then run a backfill (`POST
+ * /jobs/recipe-enrichment` `{"name":"backfill"}`) so every already-classified
+ * recipe re-evaluates under the new set — otherwise a recipe classified
+ * under the old version silently reports the new default for a slug nothing
+ * ever looked at, which for an allergen is exactly the failure this whole
+ * feature exists to prevent.
+ */
+describe("classifier_version — emitted slug sets are pinned to it", () => {
+  it("fails if ALLERGEN_SLUGS or EMITTED_DIET_SLUGS change without CLASSIFIER_VERSION changing", () => {
+    const snapshot = {
+      CLASSIFIER_VERSION,
+      allergenSlugs: [...ALLERGEN_SLUGS].sort(),
+      dietSlugs: [...EMITTED_DIET_SLUGS].sort(),
+    };
+    expect(
+      snapshot,
+      'emitted slug sets changed without a CLASSIFIER_VERSION bump — bump CLASSIFIER_VERSION in classify.ts and run a backfill (POST /jobs/recipe-enrichment {"name":"backfill"}) so every already-classified recipe re-evaluates the new set',
+    ).toEqual({
+      CLASSIFIER_VERSION: 2,
+      allergenSlugs: ["crustacean_shellfish", "egg", "fish", "gluten", "milk", "peanut", "sesame", "soy", "tree_nuts", "wheat"],
+      dietSlugs: ["dairy_free", "gluten_free", "halal", "kosher", "pescatarian", "vegan", "vegetarian"],
+    });
+  });
+});
+
+describe("allergen — sparse labels: not_detected is absence, not a row (D5, §3.2, §8.1, sparse-labels follow-up)", () => {
+  it("produces no allergen labels at all when every line resolved and none carried any allergen", () => {
     const labels = classify(recipe("Roasted vegetables", [CARROT, ONION, OLIVE_OIL]));
+    const allergenLabels = labels.filter((l) => l.dimension === "allergen");
+    expect(allergenLabels).toEqual([]);
+    // Absence is the point, not merely a filtered-out verdict: confirm no
+    // allergen label exists for any slug, not just that the array is empty
+    // by coincidence of which slugs happened to be checked.
     for (const slug of ALLERGEN_SLUGS) {
-      expect(allergenLabel(labels, slug).verdict).toBe("not_detected" satisfies AllergenVerdict);
+      expect(labels.find((l) => l.dimension === "allergen" && l.slug === slug)).toBeUndefined();
     }
   });
 
@@ -273,13 +286,11 @@ describe("diet — dairy_free / gluten_free fall out of the allergen facts (§8.
   });
 });
 
-describe("diet — halal and kosher never yield likely (D6, §8.2)", () => {
-  it("is unknown, never likely, for a plain harmless recipe", () => {
+describe("diet — halal and kosher: excluded, or no label at all (D6, §8.2, sparse-labels follow-up)", () => {
+  it("produces no halal or kosher label for a plain harmless recipe — never likely, and no longer unknown either", () => {
     const labels = classify(recipe("Roasted vegetables", [CARROT, ONION, OLIVE_OIL]));
-    expect(dietLabel(labels, "halal").verdict).not.toBe("likely" satisfies DietVerdict);
-    expect(dietLabel(labels, "kosher").verdict).not.toBe("likely" satisfies DietVerdict);
-    expect(dietLabel(labels, "halal").verdict).toBe("unknown" satisfies DietVerdict);
-    expect(dietLabel(labels, "kosher").verdict).toBe("unknown" satisfies DietVerdict);
+    expect(labels.find((l) => l.dimension === "diet" && l.slug === "halal")).toBeUndefined();
+    expect(labels.find((l) => l.dimension === "diet" && l.slug === "kosher")).toBeUndefined();
   });
 
   it("excludes halal and kosher for alcohol, and never returns likely for either regardless of input", () => {
@@ -292,22 +303,30 @@ describe("diet — halal and kosher never yield likely (D6, §8.2)", () => {
     const labels = classify(recipe("Cheeseburger", [resolved(1, "1 beef patty", "en:beef", { tg: ["meat"] }), resolved(2, "1 slice cheddar", "en:cheddar", { al: ["milk"] })]));
     expect(dietLabel(labels, "kosher").verdict).toBe("excluded" satisfies DietVerdict);
     expect(dietLabel(labels, "kosher").evidence.rule).toBe("meat-and-dairy-cooccurrence");
-    // Halal has no meat/dairy rule — the same recipe should not be excluded on that basis.
-    expect(dietLabel(labels, "halal").verdict).toBe("unknown" satisfies DietVerdict);
+    // Halal has no meat/dairy rule — the same recipe should get no halal
+    // label at all, not an excluded or unknown one, on that basis.
+    expect(labels.find((l) => l.dimension === "diet" && l.slug === "halal")).toBeUndefined();
   });
 });
 
-describe("diet — macro-dependent diets are always unknown until nutrition exists (§8.2, §13)", () => {
-  it.each(["keto", "low_carb", "low_fat", "low_calorie", "diabetic"])("%s is always unknown", (slug) => {
+describe("diet — deleted slugs produce nothing (§8.2, §13, sparse-labels follow-up)", () => {
+  it.each(["keto", "low_carb", "low_fat", "low_calorie", "diabetic", "paleo"])("%s has no rule any more and produces no label, on any recipe", (slug) => {
     const labels = classify(recipe("Anything", [CARROT, ONION, OLIVE_OIL]));
-    expect(dietLabel(labels, slug).verdict).toBe("unknown" satisfies DietVerdict);
+    expect(labels.find((l) => l.dimension === "diet" && l.slug === slug)).toBeUndefined();
   });
 
-  it("paleo is always unknown — plan §8.2 defines no rule for it", () => {
-    const labels = classify(recipe("Anything", [CARROT, ONION, OLIVE_OIL]));
-    const paleo = dietLabel(labels, "paleo");
-    expect(paleo.verdict).toBe("unknown" satisfies DietVerdict);
-    expect(paleo.evidence.rule).toBe("not-specified-in-plan");
+  it("a recipe with allergen and diet signal still produces no label for any deleted slug", () => {
+    // A busier fixture than the plain-vegetables one above, to confirm the
+    // deleted slugs stay gone even once the classifier has plenty else to say.
+    const labels = classify(
+      recipe("Peanut noodles with pork", [
+        resolved(1, "1/4 cup peanut butter", "en:peanut-butter", { al: ["peanut"] }),
+        resolved(2, "1 cup lard", "en:lard", { vg: TRAIT_NO, vt: TRAIT_NO, tg: ["pork"] }),
+      ]),
+    );
+    for (const slug of ["keto", "low_carb", "low_fat", "low_calorie", "diabetic", "paleo"]) {
+      expect(labels.find((l) => l.dimension === "diet" && l.slug === slug)).toBeUndefined();
+    }
   });
 });
 

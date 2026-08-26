@@ -17,8 +17,20 @@ import { RULES_METHOD } from "#/workflows/recipe-enrichment/classifiers/shared.t
  * do about the disagreement is the Randomizer's problem, not this one's.
  */
 
-/** Bumped when a rule changes what a verdict would be. Stored on `recipe_enrichment.classifier_version`. */
-export const CLASSIFIER_VERSION = 1;
+/**
+ * Bumped when a rule changes what a verdict would be — including when a slug
+ * is added to or removed from either emitted set (`ALLERGEN_SLUGS`,
+ * `EMITTED_DIET_SLUGS`). Stored on `recipe_enrichment.classifier_version`.
+ *
+ * v2: sparse labels (plan follow-up). Deleted the six diet slugs with no rule
+ * (`keto`, `low_carb`, `low_fat`, `low_calorie`, `diabetic`, `paleo`) and the
+ * halal/kosher `unknown` fallback, and stopped emitting allergen
+ * `not_detected` — see `classifiers/README.md`. The bump is what makes every
+ * already-classified recipe backfill-eligible: `enrich` deletes and
+ * reinserts a recipe's labels each run, so re-running under v2 clears the
+ * now-dead rows rather than leaving them stale forever.
+ */
+export const CLASSIFIER_VERSION = 2;
 
 /** The `method` every rules-derived label carries. Defined in `classifiers/shared.ts` (see there for why) and re-exported so this file has the one name `steps.ts` needs. */
 export { RULES_METHOD };
