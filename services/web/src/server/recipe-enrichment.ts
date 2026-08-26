@@ -1,6 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
 import type { Kysely } from "kysely";
-import * as z from "zod";
 import type { DB, JsonValue } from "#/db/types";
 
 /**
@@ -29,18 +27,20 @@ import type { DB, JsonValue } from "#/db/types";
  * may render `not_detected` as "free of", "safe" or anything else a reader
  * could act on.
  *
- * ── THE DEV GATE IS DOUBLE, AND THE SERVER SIDE IS THE REAL ONE (D16) ──────
- * The panel renders on the client only when `import.meta.env.DEV`, but that is
- * a build-time flag baked into the client bundle — a production bundle simply
- * never ships the panel's code, and nothing stops a caller from POSTing at
- * `getRecipeEnrichmentDebug` directly regardless of what shipped. So
- * `getRecipeEnrichmentDebug` below re-checks `process.env.NODE_ENV` on the
- * SERVER, which is the process actually deciding whether to run the query, and
- * refuses outright in production. Bypassing the client gate reaches nothing.
+ * ── THERE IS NO SERVER FN HERE ANY MORE ────────────────────────────────────
+ * This module used to also export a dev-gated `getRecipeEnrichmentDebug`
+ * server fn, feeding a panel pinned to the recipe detail route. Both are gone:
+ * the devtools Recipe inspector (`devtools/`, served by
+ * `server/recipe-debug.ts`) shows the same rows and a great deal more, so
+ * keeping a second dev-gated endpoint with no caller would have left a live
+ * route nobody was using. The double gate that mattered moved with it and is
+ * documented there.
+ *
+ * What remains is the plain read helper below — plan §10's read surface, whose
+ * declared consumer is the Randomizer. It takes `db` as a parameter and does no
+ * session work of its own, so any caller must bring its own authorization; the
+ * one in `recipe-debug.ts` is the model.
  */
-
-/** Recipe-id validator, mirroring the sibling server modules: non-empty, capped. */
-const recipeIdInput = z.object({ recipeId: z.string().min(1).max(512) });
 
 /** One `recipe_enrichment_label` row, as the panel wants to read it. */
 export interface RecipeEnrichmentLabelView {
@@ -114,48 +114,3 @@ export async function getRecipeEnrichment(db: Kysely<DB>, recipeId: string): Pro
     labels,
   };
 }
-
-/**
- * The panel's server fn. Authorized through the existing
- * `recipe-context.ts` / `authz.ts` path — the same membership chokepoint every
- * other household-scoped read uses — so this cannot leak another household's
- * recipe. `householdId` is never a client argument; it comes from
- * `activeContext()`'s server-validated session, exactly like every sibling
- * module.
- *
- * `null` covers two cases a client-side dev panel does not need to tell apart:
- * the recipe is not in this household's box (same as `getHouseholdRecipe`'s
- * authorization gate), or it is boxed but nothing has enriched it yet.
- */
-export const getRecipeEnrichmentDebug = createServerFn({ method: "GET" })
-  .validator((data: unknown) => recipeIdInput.parse(data))
-  .handler(async ({ data }): Promise<RecipeEnrichmentView | null> => {
-    // THE REAL GATE (D16). `import.meta.env.DEV` only decides whether the
-    // client ships the panel; this is what decides whether the server will run
-    // the query at all, checked against the process actually serving the
-    // request. A production deploy refuses here no matter what a caller sends.
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("The enrichment debug panel is not available in production.");
-    }
-
-    const { getDb } = await import("#/lib/db");
-    const { assertMember } = await import("./authz");
-    const { activeContext } = await import("./recipe-context");
-    const { householdScopedQuery } = await import("./household/scoped-query");
-
-    const { did, householdId } = await activeContext();
-    await assertMember(did, householdId);
-    const db = getDb();
-
-    // Same authorization `getHouseholdRecipe` uses: the recipe must be boxed in
-    // THIS household. Without this a live member could read another
-    // household's private recipe's diagnostics by guessing its id.
-    const boxed = await householdScopedQuery(db, did, householdId)
-      .innerJoin("household_recipe as hr", "hr.household_id", "hm.household_id")
-      .where("hr.recipe_id", "=", data.recipeId)
-      .select("hr.recipe_id")
-      .executeTakeFirst();
-    if (!boxed) return null;
-
-    return getRecipeEnrichment(db, data.recipeId);
-  });
