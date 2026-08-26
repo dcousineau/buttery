@@ -27,13 +27,32 @@ import type { FoodMatch } from "@buttery/food/categorize";
  * package exists to prevent (plan §5). Re-exported so this folder has one place
  * to look.
  */
-export type { EnrichPayload } from "@buttery/pipeline-contract";
+export type { EnrichPayload, LlmEnrichPayload } from "@buttery/pipeline-contract";
 
 /** `backfill`'s payload. Every field optional; the step owns the defaults and the cap. */
 export interface BackfillPayload {
   /** Recipes to claim this run. Defaults to 500, hard-capped at 5000 (plan §7.2). */
   limit?: number;
   /** Re-classify even when the fingerprint and classifier version already match. */
+  force?: boolean;
+  /** Claim only `origin='local'` recipes — somebody's own, not the network's. */
+  localOnly?: boolean;
+}
+
+/**
+ * `llm-backfill`'s payload. Same three fields as {@link BackfillPayload} and the
+ * same ownership of defaults by the step — a separate interface rather than a
+ * reuse because the two claims answer different questions (`classifier_version`
+ * vs `llm_version`) and are free to drift.
+ */
+export interface LlmBackfillPayload {
+  /** Recipes to claim this run. Defaults to 500, hard-capped at 5000. */
+  limit?: number;
+  /**
+   * Re-run the LLM pass even when the fingerprint and `llm_version` match — and,
+   * unlike the rules backfill, this is also the only way a `skipped` row (the
+   * flag said no) is claimed again while the flag is still off.
+   */
   force?: boolean;
   /** Claim only `origin='local'` recipes — somebody's own, not the network's. */
   localOnly?: boolean;
@@ -144,6 +163,29 @@ export type AllergenVerdict = "contains" | "may_contain" | "not_detected" | "unk
  * `classify.ts` pins this with a test: the emitted slug sets are a snapshot,
  * and changing either without changing `CLASSIFIER_VERSION` fails the suite.
  * That test is the invariant — the comment is only its explanation.
+ *
+ * ── TWO VERSION COLUMNS, NOT ONE (llm plan §3.4) ────────────────────────────
+ *
+ * A second provider writes into the same table under its own `method` prefix
+ * (`llm:<provider>:<model>@vN`, see `llm/merge.ts`), so "which version
+ * evaluated this slug" is now a question with two answers, and the right one
+ * is chosen by whichever provider owns the slug:
+ *
+ *   - Slugs the rules emit (`ALLERGEN_SLUGS`, `EMITTED_DIET_SLUGS`): absence
+ *     reads as the default when `recipe_enrichment.classifier_version` covered
+ *     them, exactly as above. The LLM only ever ADDS to or escalates these; it
+ *     never makes an absence mean less than the rules already made it mean.
+ *   - Slugs only the LLM emits (`cuisine/*`, `meal_type/*`, `spice_level/*`,
+ *     and the six macro/paleo diets rules have no rule for): absence means
+ *     NOTHING unless `recipe_enrichment.llm_status = 'ok'` and
+ *     `recipe_enrichment.llm_version` covered that slug. A recipe the flag
+ *     skipped has no cuisine row and has never been asked about cuisine —
+ *     those two states are the same shape in the table and are told apart
+ *     only by the `llm_*` columns.
+ *
+ * `llm/schema.ts` pins the LLM half the same way `classify.ts` pins the rules
+ * half: the emitted slug sets are snapshotted against `LLM_ENRICHMENT_VERSION`
+ * in `llm/schema.test.ts`, and changing one without the other fails the suite.
  */
 
 /**
@@ -172,7 +214,15 @@ export type EmittedDietSlug = (typeof EMITTED_DIET_SLUGS)[number];
  */
 export type DietVerdict = "excluded" | "likely" | "unknown";
 
-export type Dimension = "allergen" | "diet";
+/**
+ * The `recipe_vocab` dimensions a label may be filed under.
+ *
+ * The first two are exclusion-shaped and shared: rules and the LLM both write
+ * them. The last three are tag-shaped, LLM-only, and carry exactly one stored
+ * verdict (`likely`) — see `llm/schema.ts` and the check constraint the
+ * `llm_recipe_enrichment` migration installs.
+ */
+export type Dimension = "allergen" | "diet" | "cuisine" | "meal_type" | "spice_level";
 
 /** One ingredient line that made a verdict what it is. */
 export interface EvidenceLine {
@@ -210,6 +260,32 @@ export interface Label {
    */
   method: string;
   evidence: Evidence;
+}
+
+/**
+ * One place the LLM and the rules reached different verdicts about the same
+ * slug, and the rules won.
+ *
+ * The merge is safety-asymmetric (llm plan L2): the LLM may escalate an
+ * allergen and may fill an absence, but it may never talk one down, and it may
+ * never overturn a rules `excluded`. Every time it tries, the attempt is thrown
+ * away as a label and kept as one of these — captured to PostHog as an
+ * `llm_enrichment_disagreement` event, where it becomes the raw feed for the
+ * judge evaluations and the goldens dataset (plan §5.4, §5.5).
+ *
+ * That is the whole loosening path: the policy stays asymmetric until there is
+ * enough evidence in these events to say it should not be. Carries no
+ * ingredient text — recipe id and origin only, same redaction line as the rest
+ * of the capture layer.
+ */
+export interface Disagreement {
+  dimension: Dimension;
+  slug: string;
+  /** What the rules row said. `null` where the rules had no row and the LLM was refused for another reason. */
+  rulesVerdict: string | null;
+  /** What the LLM wanted to say instead. */
+  llmVerdict: string;
+  llmConfidence: number;
 }
 
 /**

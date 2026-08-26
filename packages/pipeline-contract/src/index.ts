@@ -21,11 +21,30 @@ export const BACKFILL_STEP = "backfill";
 /** Fold a `backfill` run's children and log how many candidates remain. */
 export const BACKFILL_REPORT_STEP = "backfill-report";
 
+/**
+ * A second label provider on the same queue: after the rules classifier writes,
+ * `llm-enrich` asks a model to read the lines the lexicon missed and to judge
+ * the dimensions no rule covers. Flag-gated and fail-closed — see the workflow's
+ * `llm/posthog.ts`.
+ *
+ * These names live here for the same reason the rules trio's do: the step name
+ * is a string BullMQ will happily accept from anyone, and the one place both
+ * sides can agree on its spelling is a module they both import.
+ */
+export const LLM_ENRICH_STEP = "llm-enrich";
+/** Claim a batch of recipes whose LLM pass is missing, errored, or behind `LLM_ENRICHMENT_VERSION`. */
+export const LLM_BACKFILL_STEP = "llm-backfill";
+/** Fold an `llm-backfill` run's children and log how many candidates remain. */
+export const LLM_BACKFILL_REPORT_STEP = "llm-backfill-report";
+
 /** Every step name, in one frozen object, so neither side can drift from the other's spelling. */
 export const RECIPE_ENRICHMENT_STEPS = Object.freeze({
   enrich: ENRICH_STEP,
   backfill: BACKFILL_STEP,
   backfillReport: BACKFILL_REPORT_STEP,
+  llmEnrich: LLM_ENRICH_STEP,
+  llmBackfill: LLM_BACKFILL_STEP,
+  llmBackfillReport: LLM_BACKFILL_REPORT_STEP,
 });
 
 export type RecipeEnrichmentStep = (typeof RECIPE_ENRICHMENT_STEPS)[keyof typeof RECIPE_ENRICHMENT_STEPS];
@@ -57,4 +76,29 @@ export interface EnrichPayload {
  */
 export function enrichJobId(recipeId: string): string {
   return `enrich_${encodeURIComponent(recipeId)}`;
+}
+
+// --- the LLM second opinion (llm-enrichment plan §4) ----------------------
+
+/** Payload for the `llm-enrich` step. Mirrors {@link EnrichPayload} — same recipe, same force semantics. */
+export interface LlmEnrichPayload {
+  recipeId: string;
+  /**
+   * Re-run the LLM pass even when the content hash and `llm_version` already
+   * match. Also what makes a `skipped` row (the flag said no last time) a
+   * candidate again.
+   */
+  force?: boolean;
+}
+
+/**
+ * A deterministic BullMQ job id for `llm-enrich`, so an `enrich` handoff and a
+ * concurrent `llm-backfill` claim for the same recipe collapse into one job.
+ *
+ * `_` separator and `encodeURIComponent`, for exactly the reasons {@link enrichJobId}
+ * spells out — read that doc comment before touching either. The prefix differs
+ * so the two steps' jobs never collide on one id.
+ */
+export function llmEnrichJobId(recipeId: string): string {
+  return `llm-enrich_${encodeURIComponent(recipeId)}`;
 }

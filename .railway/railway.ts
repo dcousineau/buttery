@@ -236,6 +236,50 @@ export default defineRailway((ctx) => {
       // (plan D15), reached with POST /jobs/recipe-enrichment.
       RECIPE_ENRICHMENT_MAX_IN_FLIGHT: "16",
 
+      // --- workflow: recipe-enrichment, LLM second opinion --------------------
+      // The `llm-enrich` step (services/pipeline/src/workflows/recipe-enrichment/
+      // llm/). Read by the WORKER, which is the only process that ever calls a
+      // model — the same set is on `pipeline` so a `run:once` from that
+      // container behaves identically instead of silently skipping.
+      //
+      // FAIL-CLOSED, twice over. `LLM_ENRICHMENT_ENABLED` is left UNSET here on
+      // purpose: unset means "defer to the PostHog flag", and the flag
+      // (`llm-enrichment-enabled`) starts at 0% rollout, so landing this deploy
+      // spends nothing. Setting it to "true" here would bypass the flag for the
+      // whole corpus in one apply — the override exists for dev and emergencies,
+      // not for rollout. Ratchet the flag in PostHog instead.
+      LLM_ENRICHMENT_PROVIDER: "moonshot",
+      // No default in code (llm plan §6.1): Moonshot renames models, and a wrong
+      // id should be a runtime error someone reads at deploy rather than a
+      // constant that quietly rots in the source tree. Verify against
+      // platform.moonshot.ai before changing it.
+      LLM_ENRICHMENT_MODEL: "kimi-k2-0905-preview",
+      MOONSHOT_BASE_URL: "https://api.moonshot.ai/v1",
+
+      // PostHog, for the flag, the prompt and `$ai_generation` capture. Same
+      // project as web's — the gate and the ingestion host are the same
+      // variables, read by the pipeline's own posthog-node client
+      // (llm/posthog.ts, which copies services/web/src/lib/posthog-server.ts).
+      POSTHOG_ENABLED: "true",
+      POSTHOG_PROJECT_TOKEN: posthogProjectToken,
+      POSTHOG_HOST: "https://us.i.posthog.com",
+      // The prompts API is the odd one out: it authenticates with a PERSONAL api
+      // key against the APP host, not the project token against the ingestion
+      // host (llm plan §5.2). Project id 538428 is the "Buttery" project.
+      POSTHOG_PROJECT_ID: "538428",
+
+      // MOONSHOT_API_KEY and POSTHOG_PERSONAL_API_KEY are deliberately NOT
+      // declared here, for the same reason RAILWAY_API_TOKEN is not (see the
+      // autoscaler block): IaC cannot mint either, and a declared-but-empty
+      // variable would clobber a hand-set one on the next apply. Set them on
+      // both services in the dashboard — the personal key needs exactly the
+      // `llm_prompt:read` scope. Until MOONSHOT_API_KEY exists the provider
+      // refuses to build and the step records an error rather than guessing.
+      //
+      // LLM_INPUT_TOKEN_PRICE_USD / LLM_OUTPUT_TOKEN_PRICE_USD are also unset:
+      // they are only needed if PostHog cannot price the Kimi model itself
+      // (llm plan §5.3) — check the first real generations before setting them.
+
       // --- autoscaler --------------------------------------------------------
       // The loop is opt-in and OFF until a Railway API token exists.
       //
@@ -285,6 +329,50 @@ export default defineRailway((ctx) => {
       // through plc.directory, which is what production wants.
       RELAY_URL: "https://relay1.us-east.bsky.network",
       NODE_ENV: "production",
+
+      // --- workflow: recipe-enrichment, LLM second opinion --------------------
+      // The `llm-enrich` step (services/pipeline/src/workflows/recipe-enrichment/
+      // llm/). Read by the WORKER, which is the only process that ever calls a
+      // model — the same set is on `pipeline` so a `run:once` from that
+      // container behaves identically instead of silently skipping.
+      //
+      // FAIL-CLOSED, twice over. `LLM_ENRICHMENT_ENABLED` is left UNSET here on
+      // purpose: unset means "defer to the PostHog flag", and the flag
+      // (`llm-enrichment-enabled`) starts at 0% rollout, so landing this deploy
+      // spends nothing. Setting it to "true" here would bypass the flag for the
+      // whole corpus in one apply — the override exists for dev and emergencies,
+      // not for rollout. Ratchet the flag in PostHog instead.
+      LLM_ENRICHMENT_PROVIDER: "moonshot",
+      // No default in code (llm plan §6.1): Moonshot renames models, and a wrong
+      // id should be a runtime error someone reads at deploy rather than a
+      // constant that quietly rots in the source tree. Verify against
+      // platform.moonshot.ai before changing it.
+      LLM_ENRICHMENT_MODEL: "kimi-k2-0905-preview",
+      MOONSHOT_BASE_URL: "https://api.moonshot.ai/v1",
+
+      // PostHog, for the flag, the prompt and `$ai_generation` capture. Same
+      // project as web's — the gate and the ingestion host are the same
+      // variables, read by the pipeline's own posthog-node client
+      // (llm/posthog.ts, which copies services/web/src/lib/posthog-server.ts).
+      POSTHOG_ENABLED: "true",
+      POSTHOG_PROJECT_TOKEN: posthogProjectToken,
+      POSTHOG_HOST: "https://us.i.posthog.com",
+      // The prompts API is the odd one out: it authenticates with a PERSONAL api
+      // key against the APP host, not the project token against the ingestion
+      // host (llm plan §5.2). Project id 538428 is the "Buttery" project.
+      POSTHOG_PROJECT_ID: "538428",
+
+      // MOONSHOT_API_KEY and POSTHOG_PERSONAL_API_KEY are deliberately NOT
+      // declared here, for the same reason RAILWAY_API_TOKEN is not (see the
+      // autoscaler block): IaC cannot mint either, and a declared-but-empty
+      // variable would clobber a hand-set one on the next apply. Set them on
+      // both services in the dashboard — the personal key needs exactly the
+      // `llm_prompt:read` scope. Until MOONSHOT_API_KEY exists the provider
+      // refuses to build and the step records an error rather than guessing.
+      //
+      // LLM_INPUT_TOKEN_PRICE_USD / LLM_OUTPUT_TOKEN_PRICE_USD are also unset:
+      // they are only needed if PostHog cannot price the Kimi model itself
+      // (llm plan §5.3) — check the first real generations before setting them.
     },
   });
 

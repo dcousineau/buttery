@@ -308,6 +308,64 @@ export interface RecipeEnrichment {
   fat_g: Numeric | null;
   fiber_g: Numeric | null;
   input_hash: string | null;
+  llm_enriched_at: Timestamp | null;
+  llm_error: string | null;
+  llm_input_hash: string | null;
+  llm_model: string | null;
+  llm_prompt_version: number | null;
+  /**
+   * null | 'ok' | 'error' | 'skipped' (llm plan §3.1).
+   *
+   * null    -- never attempted. The llm-backfill claim signal, same role null plays
+   *            nowhere on the rules side (rules always run synchronously in enrich;
+   *            the LLM pass is the one that can be gated off before it starts).
+   * 'ok'    -- llm-enrich ran to completion and wrote its labels. llm_version,
+   *            llm_input_hash, llm_model, llm_prompt_version and llm_enriched_at
+   *            are the record of that run; llm_error is null.
+   * 'error' -- llm-enrich ran and failed (schema-invalid model output after
+   *            retries, timeout, provider error). llm_error carries the message,
+   *            not a stack -- an error nobody can see is a failure nobody can see
+   *            (same lesson the sibling 'error' column and atproto_sync_run share).
+   * 'skipped' -- the step ran but the gate said no: the env override forced it
+   *            off, the PostHog flag was off/unreachable (fail-closed), or a
+   *            precondition failed (rules row not status='ok', or its input_hash
+   *            is stale for the current content). Recorded, rather than left null,
+   *            so a backfill run while the flag is off does not re-claim the same
+   *            rows on every pass -- the claim query only re-considers 'skipped'
+   *            rows when force or a version bump says to (plan §9.2).
+   */
+  llm_status: string | null;
+  /**
+   * The llm-enrich run that produced (or, for slugs it found nothing to say about,
+   * deliberately omitted) this recipe's llm:-owned recipe_enrichment_label rows.
+   * Defaults to 0, meaning "never run" -- distinct from llm_status IS NULL only in
+   * that this column always has a value; llm_status is the field that actually
+   * gates whether it means anything yet.
+   *
+   * TWO VERSION COLUMNS, NOT ONE: a second provider writes into
+   * recipe_enrichment_label under its own method prefix (llm:<provider>:<model>@vN,
+   * alongside the rules' rules@N), so "which version evaluated this slug" now has
+   * two answers, chosen by whichever provider owns the slug:
+   *
+   *   - Slugs the rules classifier also emits (every allergen, and the diet slugs
+   *     in EMITTED_DIET_SLUGS): absence still reads as the default once
+   *     recipe_enrichment.classifier_version covered them, exactly as before this
+   *     migration. The LLM only ever ADDS to or escalates these rows; it can never
+   *     make an absence mean less than the rules already made it mean.
+   *   - Slugs only the LLM ever emits (cuisine/*, meal_type/*, spice_level/*, and
+   *     the six macro/paleo diet slugs rules have no rule for): absence means
+   *     NOTHING -- not "not this one", not "not_detected", nothing -- unless
+   *     recipe_enrichment.llm_status = 'ok' AND this column's value covered that
+   *     slug at the time it ran. A recipe the flag skipped and a recipe the LLM
+   *     genuinely evaluated and found nothing for are the same shape in
+   *     recipe_enrichment_label; llm_status and llm_version are the only way to
+   *     tell them apart.
+   *
+   * llm/schema.ts pins the LLM half the same way classify.ts pins the rules half:
+   * the emitted slug sets are snapshotted against LLM_ENRICHMENT_VERSION in
+   * llm/schema.test.ts, and changing one without the other fails the suite.
+   */
+  llm_version: Generated<number>;
   nutrition_confidence: Numeric | null;
   nutrition_method: string | null;
   protein_g: Numeric | null;
@@ -330,12 +388,18 @@ export interface RecipeEnrichmentLabel {
    * allergen: contains | may_contain | not_detected | unknown -- not_detected is also
    * the default implied when a (recipe, allergen, slug) row is absent.
    * diet: excluded | likely | unknown -- "not excluded" is the default implied when a
-   * (recipe, diet, slug) row is absent.
+   * (recipe, diet, slug) row is absent. Six slugs under this dimension (keto,
+   * low_carb, low_fat, low_calorie, diabetic, paleo) are LLM-only -- the rules
+   * classifier never emits them; see the table comment.
+   * cuisine, meal_type, spice_level: likely -- the only verdict these tag-shaped
+   * dimensions ever store. There is no "not this cuisine" verdict; confidence
+   * carries strength and absence carries "not this one" (see the table comment for
+   * the llm_status / llm_version gate that makes that reading safe).
    *
    * not_detected -- stored or implied by absence -- is NOT a safety claim. It means
-   * the rules found nothing over text they may not have fully parsed. Consumers
-   * exclude on contains and may_contain; never render not_detected, or the absence
-   * of a row, as "free of".
+   * the responsible classifier found nothing over text it may not have fully
+   * parsed. Consumers exclude on contains and may_contain; never render
+   * not_detected, or the absence of a row, as "free of".
    */
   verdict: string;
 }
