@@ -10,6 +10,7 @@ import AppShell from "../components/AppShell";
 import { POSTHOG_CLIENT_CONFIG, useAnalytics } from "../lib/analytics";
 import { SupportDialog } from "../components/SupportDialog";
 import { useCachePartition } from "#/lib/offline/use-cache-partition";
+import { recipeInspectorPlugin } from "#/devtools/plugin";
 import { absolute, seo } from "../lib/seo";
 
 import appCss from "../styles.css?url";
@@ -172,6 +173,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               name: "Tanstack Query",
               render: <ReactQueryDevtoolsPanel />,
             },
+            // Raw internal data for the recipe currently being viewed — the
+            // atproto record, dedupe counterparts, and every private sidecar
+            // table, undecorated. Dev-only twice over: `plugin.tsx` swaps in
+            // a no-op for production builds, and the server fn behind it
+            // re-checks `NODE_ENV` regardless (`devtools/types.ts`).
+            recipeInspectorPlugin,
           ]}
         />
         <Scripts />

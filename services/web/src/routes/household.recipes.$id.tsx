@@ -6,7 +6,6 @@ import { householdRecipeQuery } from "#/lib/api";
 import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { Button } from "#/components/ui/button";
 import { DetailPane } from "#/components/recipes/DetailPane";
-import { EnrichmentDebugPanel } from "#/components/recipes/EnrichmentDebugPanel";
 
 /**
  * The recipe detail child route (plan §5.1). Renders in the ledger's right pane
@@ -67,37 +66,21 @@ function RecipeDetailRoute() {
   if (!recipe) return <NotInBox />;
   // Key by recipeId so switching recipes remounts the pane (resets favorite,
   // scroll, and the note editor without any setState-in-effect).
+  //
+  // The dev-only enrichment diagnostics that used to float here as a fixed
+  // overlay (recipe-enrichment plan §10, D16) moved to the "Recipe inspector"
+  // TanStack Devtools plugin (`src/devtools/`) — same data plus the rest of
+  // the recipe's internals, reached from the devtools tray instead of a panel
+  // pinned over the recipe itself.
   return (
-    <>
-      <DetailPane
-        key={recipe.recipeId}
-        recipe={recipe}
-        autoOpenCook={search.cook === true}
-        // Drop the param once cook mode has been closed, so the deep link is
-        // consumed exactly once and a reload does not re-enter the apron.
-        onCookModeClosed={() => void navigate({ search: (prev) => ({ ...prev, cook: undefined }), replace: true })}
-      />
-      {/* Dev-only enrichment diagnostics (recipe-enrichment plan §10, D16).
-        `import.meta.env.DEV` is the CLIENT half of the double gate — a
-        production build never ships this branch at all. The server half
-        (`getRecipeEnrichmentDebug` refusing outside dev) is what actually
-        matters; this is only the reason nobody sees it who isn't looking.
-        Rendered as a fixed, non-modal overlay rather than composed into
-        `DetailPane` (out of scope to edit here). `--z-popover` (styles.css)
-        is "opened by a pointer and being aimed at RIGHT NOW" — the panel is
-        a `<details>` disclosure the reader deliberately clicks open to read,
-        the same interaction the token is written for, and its value (70)
-        clears both the sticky header (`--z-sticky`, 50) and any stacking
-        context `DetailPane`'s own content establishes. `--z-banner` (40,
-        "pinned but never urgent") was tried first and lost to both. */}
-      {import.meta.env.DEV && (
-        <div className="pointer-events-none fixed inset-x-3 bottom-3 z-(--z-popover) flex justify-end lg:inset-x-auto lg:right-3">
-          <div className="pointer-events-auto w-full lg:w-96">
-            <EnrichmentDebugPanel recipeId={recipe.recipeId} />
-          </div>
-        </div>
-      )}
-    </>
+    <DetailPane
+      key={recipe.recipeId}
+      recipe={recipe}
+      autoOpenCook={search.cook === true}
+      // Drop the param once cook mode has been closed, so the deep link is
+      // consumed exactly once and a reload does not re-enter the apron.
+      onCookModeClosed={() => void navigate({ search: (prev) => ({ ...prev, cook: undefined }), replace: true })}
+    />
   );
 }
 
