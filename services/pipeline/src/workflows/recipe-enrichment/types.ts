@@ -110,7 +110,66 @@ export const ALLERGEN_SLUGS: readonly AllergenSlug[] = ["milk", "egg", "fish", "
 /** Four-state (plan D5). Read the `not_detected` note at the top of this file. */
 export type AllergenVerdict = "contains" | "may_contain" | "not_detected" | "unknown";
 
-/** Three-state (plan D6). There is no "certified", and there never will be from rules. */
+/**
+ * ── LABELS ARE SPARSE: ABSENCE IS A VERDICT ─────────────────────────────────
+ *
+ * A label row is written ONLY when it says something the dimension's default
+ * does not. Everything else is absent, and absence is read as the default:
+ *
+ *   | dimension | absence means  | stored verdicts                   |
+ *   | --------- | -------------- | --------------------------------- |
+ *   | allergen  | `not_detected` | `contains`, `may_contain`, `unknown` |
+ *   | diet      | `not excluded` | `excluded`, `likely`, `unknown`   |
+ *
+ * Two thirds of the rows under the old dense encoding were `not_detected` or
+ * `unknown` — verdicts the Randomizer's exclusion scan never reads. Storing a
+ * constant once per recipe per slug is a cost that grows with the corpus and
+ * buys nothing, so it is not paid.
+ *
+ * `unknown` is still STORED for allergens, deliberately. It is the one negative
+ * that differs from the default: `not_detected` means the rules read every line
+ * and found nothing, `unknown` means they could not read every line. Collapsing
+ * both into absence would lose exactly the distinction this feature is careful
+ * about, so `unknown` earns its row and `not_detected` does not.
+ *
+ * ── THE INVARIANT THAT MAKES THIS SAFE ──────────────────────────────────────
+ *
+ * Absence may be read as the default ONLY for slugs the row's
+ * `classifier_version` actually evaluated. Add a slug to either set below
+ * without bumping `CLASSIFIER_VERSION`, and every already-classified recipe
+ * silently reports the default for a slug nothing ever looked at — turning
+ * "never evaluated" into "we checked and found nothing". For an allergen that
+ * is the exact failure this whole feature exists to avoid.
+ *
+ * `classify.ts` pins this with a test: the emitted slug sets are a snapshot,
+ * and changing either without changing `CLASSIFIER_VERSION` fails the suite.
+ * That test is the invariant — the comment is only its explanation.
+ */
+
+/**
+ * The diet slugs the classifier actually has a rule for.
+ *
+ * NOT the same as the `diet` dimension in `recipe_vocab`, which also carries
+ * `keto`, `low_carb`, `low_fat`, `low_calorie`, `diabetic` and `paleo`. Those
+ * are upstream `exchange.recipe.defs#diet*` tokens with `recipe_vocab_alias`
+ * rows; they stay in the vocabulary because `render.ts` resolves them for
+ * AUTHOR-DECLARED diets on `recipe.suitable_for_diet`. The classifier simply
+ * has nothing true to say about them — see `classifiers/README.md`.
+ */
+export const EMITTED_DIET_SLUGS = ["vegetarian", "vegan", "pescatarian", "dairy_free", "gluten_free", "halal", "kosher"] as const;
+
+export type EmittedDietSlug = (typeof EMITTED_DIET_SLUGS)[number];
+
+/**
+ * Three-state (plan D6). There is no "certified", and there never will be from
+ * rules.
+ *
+ * `halal` and `kosher` emit `excluded` and nothing else. They used to also emit
+ * an `unknown` carrying "no rule can certify a kitchen", which is true and is
+ * now simply assumed: somebody keeping kosher either keeps a kitchen to spec or
+ * does not, and knows they must source certified ingredients either way. A row
+ * per recipe restating that told them nothing they did not already know.
+ */
 export type DietVerdict = "excluded" | "likely" | "unknown";
 
 export type Dimension = "allergen" | "diet";

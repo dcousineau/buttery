@@ -11,10 +11,19 @@ import type { TextPattern } from "#/workflows/recipe-enrichment/classifiers/alle
  * The full `diet` vocabulary seeded by the migration is eleven upstream slugs
  * (`diabetic, gluten_free, halal, keto, kosher, low_calorie, low_carb,
  * low_fat, paleo, vegan, vegetarian`) plus two this plan adds (`pescatarian,
- * dairy_free`) — thirteen total, and every one of them gets a label. A slug
- * with no label and a slug with `unknown` read differently to a consumer of
- * this table, and only the latter is true here.
+ * dairy_free`) — thirteen total. This module has a real rule for seven of
+ * them (`EMITTED_DIET_SLUGS` in `types.ts`); the other six get no label at
+ * all, on purpose — see `classifiers/README.md`. Labels are sparse
+ * (`types.ts`'s note on the subject): a slug this module never rules on is
+ * absent, which reads as "not excluded", the diet dimension's default —
+ * never as `unknown`, and never as a positive claim.
  *
+ * ── Halal / kosher are sparse too ───────────────────────────────────────
+ * Both only ever emit `excluded`. Absent an explicit exclusion neither
+ * returns a label at all, rather than an `unknown` restating that no rule
+ * can certify a kitchen — see the module doc above `classifyHalal`.
+ *
+
  * ── Never author-declared data as evidence ─────────────────────────────
  * This module never reads `recipe.suitable_for_diet` (it isn't even on
  * `ClassifierInput` — pure functions don't reach for it as an out-of-band
@@ -53,18 +62,11 @@ import type { TextPattern } from "#/workflows/recipe-enrichment/classifiers/alle
  *                           used for a `weak`/`carrier` unresolved animal
  *                           match, which is the same kind of "not enough to
  *                           call it either way" gap.
- * CONF_UNKNOWN_STRUCTURAL  halal/kosher's default. Not a coverage problem —
- *                           no rule over an ingredient list can ever
- *                           establish a supervised kitchen, and the schema
- *                           has no state that would let us pretend otherwise
- *                           (D6). Absent an explicit exclusion this is
- *                           *always* `unknown`, regardless of coverage.
- * CONF_UNKNOWN_MACRO       keto/low_carb/low_fat/low_calorie/diabetic/paleo.
- *                           Not a partial signal — a structural "cannot be
- *                           answered from ingredient names alone" (plan §13
- *                           for the first five; see `paleoUnknown` below for
- *                           paleo). Zero, not merely low: there is no rule at
- *                           all here to have partial confidence in.
+ * halal/kosher no longer have a `CONF_UNKNOWN_STRUCTURAL` tier — see the
+ * module doc above `classifyHalal`/`classifyKosher` for why "no rule can
+ * certify a kitchen" is no longer stored at all, and `classifiers/README.md`
+ * for the six diet slugs (five macro-dependent plus `paleo`) that used to
+ * live at the bottom of this file and are now gone entirely.
  */
 
 // --- confidence -------------------------------------------------------------
@@ -73,8 +75,6 @@ const CONF_EXCLUDED = 0.9;
 const CONF_EXCLUDED_TEXT_PATTERN = 0.75;
 const CONF_LIKELY = 0.7;
 const CONF_UNKNOWN_COVERAGE = 0.3;
-const CONF_UNKNOWN_STRUCTURAL = 0.2;
-const CONF_UNKNOWN_MACRO = 0;
 
 // --- unresolved-line animal-origin patterns ---------------------------------
 
@@ -338,27 +338,28 @@ function classifyGlutenFree(lines: readonly ClassifierLine[]): Label {
   return makeLabel("diet", "gluten_free", "likely", CONF_LIKELY, "no-wheat-or-gluten-trait-found", []);
 }
 
-// --- halal / kosher: excluded-or-unknown only, never likely (plan D6, §8.2) -
+// --- halal / kosher: excluded, or nothing at all (plan D6, §8.2, sparse-labels
+// follow-up) ------------------------------------------------------------------
 // There is no rule over an ingredient list that establishes a supervised
-// kitchen, and the schema has no state that would let us pretend otherwise.
-// So absent an explicit exclusion, both are *always* `unknown` — coverage
-// never upgrades either one to `likely`.
+// kitchen, and the schema has no state that would let us pretend otherwise —
+// so absent an explicit exclusion, coverage never upgrades either one to
+// `likely`, and there is nothing more specific to say than "not excluded",
+// which is the diet dimension's default (`types.ts`). Both used to also emit
+// an `unknown` carrying exactly that ("no-rule-can-certify-a-kitchen"), which
+// is true and is now simply assumed: somebody keeping kosher either keeps a
+// kitchen to spec or does not, and knows they must source certified
+// ingredients regardless. A row per recipe restating that told them nothing
+// they did not already know, so it is gone — see `classifiers/README.md`.
+// These two functions return `null` for "no label", same as absence anywhere
+// else in this pass.
 
-function classifyHalal(lines: readonly ClassifierLine[]): Label {
+function classifyHalal(lines: readonly ClassifierLine[]): Label | null {
   const excluded = lines.filter((line) => line.foodSlug !== null && (hasTag(line, "pork") || hasTag(line, "alcohol")));
-  if (excluded.length > 0) return makeLabel("diet", "halal", "excluded", CONF_EXCLUDED, "pork-or-alcohol-tag", excluded);
-  return makeLabel(
-    "diet",
-    "halal",
-    "unknown",
-    CONF_UNKNOWN_STRUCTURAL,
-    "no-rule-can-certify-a-kitchen",
-    [],
-    "no ingredient-list rule can confirm halal preparation; only exclusion is possible from rules",
-  );
+  if (excluded.length === 0) return null;
+  return makeLabel("diet", "halal", "excluded", CONF_EXCLUDED, "pork-or-alcohol-tag", excluded);
 }
 
-function classifyKosher(lines: readonly ClassifierLine[]): Label {
+function classifyKosher(lines: readonly ClassifierLine[]): Label | null {
   const porkOrAlcohol = lines.filter((line) => line.foodSlug !== null && (hasTag(line, "pork") || hasTag(line, "alcohol")));
   // Buttery's taxonomy only tracks `crustacean_shellfish` (D7) — kosher
   // actually excludes all shellfish, crustacean and mollusc alike, but there
@@ -372,42 +373,14 @@ function classifyKosher(lines: readonly ClassifierLine[]): Label {
   if (meat.length > 0 && dairy.length > 0) {
     return makeLabel("diet", "kosher", "excluded", CONF_EXCLUDED, "meat-and-dairy-cooccurrence", [...meat, ...dairy]);
   }
-  return makeLabel(
-    "diet",
-    "kosher",
-    "unknown",
-    CONF_UNKNOWN_STRUCTURAL,
-    "no-rule-can-certify-a-kitchen",
-    [],
-    "no ingredient-list rule can confirm kosher preparation; only exclusion is possible from rules",
-  );
+  return null;
 }
 
-// --- macro-dependent diets: always unknown until nutrition exists (§13) ----
-
-const MACRO_SLUGS = ["keto", "low_carb", "low_fat", "low_calorie", "diabetic"] as const;
-
-function macroUnknown(slug: string): Label {
-  return makeLabel(
-    "diet",
-    slug,
-    "unknown",
-    CONF_UNKNOWN_MACRO,
-    "macro-dependent-not-yet-computed",
-    [],
-    "needs per-ingredient nutrition data (plan §13); not answerable from ingredient names alone",
-  );
-}
-
-/**
- * `paleo` is the eleventh upstream diet slug. Plan §8.2 does not mention it
- * at all — no rule, no verdict shape, nothing. Emitting `unknown` rather than
- * inventing a rule the plan never specified. Flagged as a plan gap in the
- * report; see also the results doc.
- */
-function paleoUnknown(): Label {
-  return makeLabel("diet", "paleo", "unknown", CONF_UNKNOWN_MACRO, "not-specified-in-plan", [], "plan §8.2 defines no rule for paleo; emitting unknown rather than inventing one");
-}
+// The five macro-dependent diets (`keto`, `low_carb`, `low_fat`,
+// `low_calorie`, `diabetic`) and `paleo` used to live here, each emitting a
+// constant `unknown` on every recipe. Deleted along with the rest of the
+// dense encoding — see `classifiers/README.md` for why, and for what each one
+// emitted before it was removed.
 
 export const dietClassifier: Classifier = (input) => {
   const { lines } = input;
@@ -419,7 +392,5 @@ export const dietClassifier: Classifier = (input) => {
     classifyGlutenFree(lines),
     classifyHalal(lines),
     classifyKosher(lines),
-    ...MACRO_SLUGS.map((slug) => macroUnknown(slug)),
-    paleoUnknown(),
-  ];
+  ].filter((label): label is Label => label !== null);
 };

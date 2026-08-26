@@ -12,6 +12,13 @@ import { makeLabel, MEANINGFUL_UNRESOLVED_SHARE, unresolvedShare, wordBoundary }
  * sentence is in the migration and at the top of `types.ts`, and it is the
  * single most important line in this plan.
  *
+ * `not_detected` is also the allergen dimension's default (`types.ts`'s
+ * sparse-labels note), so `classifyOne` below never writes a row for it —
+ * `every line resolved and none carried this allergen` returns `null`, not a
+ * label. The verdict still exists conceptually (this doc keeps discussing it
+ * below), it is just never the reason a `recipe_enrichment_label` row exists.
+ *
+
  * ── Confidence ──────────────────────────────────────────────────────────
  * CONF_CONTAINS            lexicon-confirmed: the matched food's own traits
  *                           carry this allergen.
@@ -28,9 +35,6 @@ import { makeLabel, MEANINGFUL_UNRESOLVED_SHARE, unresolvedShare, wordBoundary }
  *                           ("stock", "sauce", "may contain") where neither
  *                           the dish nor the allergen is pinned down — the
  *                           weakest of the three `may_contain` tiers.
- * CONF_NOT_DETECTED        every line resolved and none carried it —
- *                           reasonably confident, but rules can't see
- *                           cross-contact or a mislabelled product, so not 1.
  * CONF_UNKNOWN_PARTIAL     some lines unresolved, below
  *                           `MEANINGFUL_UNRESOLVED_SHARE` — a small gap, not
  *                           a blind guess.
@@ -80,7 +84,6 @@ const CONF_CONTAINS = 0.95;
 const CONF_MAY_CONTAIN_STRONG = 0.65;
 const CONF_MAY_CONTAIN_WEAK = 0.45;
 const CONF_MAY_CONTAIN_CARRIER = 0.25;
-const CONF_NOT_DETECTED = 0.7;
 const CONF_UNKNOWN_PARTIAL = 0.4;
 const CONF_UNKNOWN_LOW = 0.15;
 
@@ -258,7 +261,7 @@ function matchTextPatterns(lines: readonly ClassifierLine[], slug: AllergenSlug)
   return { strong, weak, carrier };
 }
 
-function classifyOne(slug: AllergenSlug, lines: readonly ClassifierLine[]): Label {
+function classifyOne(slug: AllergenSlug, lines: readonly ClassifierLine[]): Label | null {
   if (lines.length === 0) {
     return makeLabel("allergen", slug, "unknown", CONF_UNKNOWN_LOW, "no-ingredient-lines", [], "recipe has no ingredient lines to classify");
   }
@@ -291,8 +294,11 @@ function classifyOne(slug: AllergenSlug, lines: readonly ClassifierLine[]): Labe
     );
   }
 
-  // Every line resolved, and none of them carried this allergen.
-  return makeLabel("allergen", slug, "not_detected", CONF_NOT_DETECTED, "fully-resolved-no-match", []);
+  // Every line resolved, and none of them carried this allergen. This is
+  // `not_detected` — the allergen dimension's default (`types.ts`) — so no
+  // label is written; a row here would say nothing a missing row doesn't
+  // already say.
+  return null;
 }
 
-export const allergenClassifier: Classifier = (input) => ALLERGEN_SLUGS.map((slug) => classifyOne(slug, input.lines));
+export const allergenClassifier: Classifier = (input) => ALLERGEN_SLUGS.map((slug) => classifyOne(slug, input.lines)).filter((label): label is Label => label !== null);
