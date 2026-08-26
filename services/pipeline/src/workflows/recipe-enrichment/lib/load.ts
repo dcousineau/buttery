@@ -20,7 +20,35 @@ import type { ClassifierLine, Label } from "#/workflows/recipe-enrichment/types.
  * cover writes too — `enrich`'s one transaction and `backfill`'s claim query
  * live here rather than in `steps.ts` for the same test-independence reason:
  * a `*.db.test.ts` importing `steps.ts` would drag `classify.ts` in with it.
+ *
+ * The LLM half (llm plan §9.1, §9.2) lives here too, for the identical reason
+ * one level over: `llm/schema.ts` — the module that owns `LLM_ENRICHMENT_VERSION`
+ * and the `llmMethod()`/`LLM_METHOD_PREFIX` constants — was being written by
+ * another agent in parallel with this file, and importing it pulls in `zod` on
+ * top, a dependency this module otherwise has no reason to carry. So exactly
+ * like `classifierVersion` above, every LLM-side function takes `llmVersion` as
+ * a parameter rather than importing `LLM_ENRICHMENT_VERSION`, and the `"llm:"`
+ * prefix is restated locally below as `LLM_METHOD_PREFIX` rather than imported
+ * — see that constant's own comment. `steps.ts` is the one place that imports
+ * `llm/schema.ts` and threads both through.
  */
+
+/**
+ * The `method` prefix every LLM-written label carries — `llm:<provider>:<model>@vN`
+ * (llm plan L9, `llm/schema.ts`'s `llmMethod()`). This is the string
+ * `writeLlmEnrichment`'s delete and every rules/LLM on-conflict clause below
+ * matches on to tell an LLM-owned row from a rules-owned one.
+ *
+ * Restated here rather than imported from `llm/schema.ts`'s own
+ * `LLM_METHOD_PREFIX` export for the same reason `classifierVersion` is a
+ * parameter instead of an import of `classify.ts`'s `CLASSIFIER_VERSION` (see
+ * the module doc above): keeping this file dependency-free of the concurrently
+ * written `llm/` folder, and of the `zod` import that folder drags in. Keep
+ * the two constants in sync by hand if the prefix ever changes — `llm/schema.ts`
+ * is the source of truth for its shape.
+ */
+const LLM_METHOD_PREFIX = "llm:";
+const LLM_METHOD_LIKE_PATTERN = `${LLM_METHOD_PREFIX}%`;
 
 // --- reading a recipe --------------------------------------------------
 
@@ -31,6 +59,15 @@ export interface IngredientRow {
 
 export interface LoadedRecipe {
   name: string;
+  /**
+   * `'local'` (somebody's own) or `'sync'` (pulled from the network). Read here
+   * rather than separately in `steps.ts` because it is one more column on a
+   * query that was already happening, and because it decides something
+   * load-bearing: the LLM capture layer sends a generation's input and output
+   * CONTENT to PostHog only for `sync` recipes (llm plan L10). Public network
+   * content may be inspected in a trace; a person's own recipe may not.
+   */
+  origin: string;
   lines: readonly IngredientRow[];
 }
 
@@ -40,12 +77,12 @@ export interface LoadedRecipe {
  * recipe is not a failure, jobs outlive rows (plan §7.1 step 1).
  */
 export async function loadRecipe(pool: Pool, recipeId: string): Promise<LoadedRecipe | null> {
-  const recipeRes = await pool.query<{ name: string }>(`select name from recipe where id = $1`, [recipeId]);
+  const recipeRes = await pool.query<{ name: string; origin: string }>(`select name, origin from recipe where id = $1`, [recipeId]);
   const recipe = recipeRes.rows[0];
   if (!recipe) return null;
 
   const linesRes = await pool.query<IngredientRow>(`select ordinal, text from recipe_ingredient where recipe_id = $1 order by ordinal`, [recipeId]);
-  return { name: recipe.name, lines: linesRes.rows };
+  return { name: recipe.name, origin: recipe.origin, lines: linesRes.rows };
 }
 
 // --- parse + match: recipe_ingredient rows -> ClassifierLine[] ---------
@@ -108,15 +145,138 @@ export async function getEnrichmentState(pool: Pool, recipeId: string): Promise<
   return row ? { status: row.status, classifierVersion: row.classifier_version, inputHash: row.input_hash } : null;
 }
 
+/**
+ * Both halves of one `recipe_enrichment` row that `llm-enrich` needs before it
+ * may even think about calling a model (llm plan §9.2 steps 3–4):
+ *
+ *   - `status`/`inputHash` — the RULES pass's own state. `llm-enrich` requires
+ *     `status === 'ok'` and `inputHash` to match the current content
+ *     fingerprint before it runs at all: the rules pass runs first, always,
+ *     and an LLM judging content the rules haven't finished classifying (or
+ *     classified against stale content) has nothing current to be a second
+ *     opinion ABOUT. A `false` here means "mark `skipped`, the next `enrich`
+ *     re-enqueues us" — not an error.
+ *   - `llmStatus`/`llmVersion`/`llmInputHash` — the LLM pass's own short-circuit
+ *     state (plan §3.1), read the same way `getEnrichmentState` reads the
+ *     rules half.
+ *
+ * One query, not two `getEnrichmentState`-shaped round trips, on purpose: both
+ * checks read the same row, and `llm-enrich` needs both answers before it can
+ * decide anything (plan §9.2 steps 3 and 4 back to back).
+ */
+export interface LlmEnrichmentState {
+  /** The rules pass's own `status` — must be `'ok'` before `llm-enrich` may run. */
+  status: string;
+  /** The rules pass's own `input_hash` — must match the current fingerprint before `llm-enrich` may run. */
+  inputHash: string | null;
+  /**
+   * The rules pass's own `classifier_version`. `llm-enrich` requires it to equal
+   * the deployed `CLASSIFIER_VERSION` before it runs, because that step
+   * RE-DERIVES the rules labels rather than reading them back out of the table
+   * — and re-deriving under a different classifier than the one that wrote the
+   * rows would leave the merge reasoning about labels that are not there.
+   */
+  classifierVersion: number;
+  /** `null` | `'ok'` | `'error'` | `'skipped'` — see the migration's column comment. */
+  llmStatus: string | null;
+  llmVersion: number;
+  llmInputHash: string | null;
+}
+
+/** The current `recipe_enrichment` row's rules AND LLM state, or `null` when this recipe has never been classified at all. */
+export async function getLlmEnrichmentState(pool: Pool, recipeId: string): Promise<LlmEnrichmentState | null> {
+  const res = await pool.query<{
+    status: string;
+    input_hash: string | null;
+    classifier_version: number;
+    llm_status: string | null;
+    llm_version: number;
+    llm_input_hash: string | null;
+  }>(`select status, input_hash, classifier_version, llm_status, llm_version, llm_input_hash from recipe_enrichment where recipe_id = $1`, [recipeId]);
+  const row = res.rows[0];
+  return row
+    ? {
+        status: row.status,
+        inputHash: row.input_hash,
+        classifierVersion: row.classifier_version,
+        llmStatus: row.llm_status,
+        llmVersion: row.llm_version,
+        llmInputHash: row.llm_input_hash,
+      }
+    : null;
+}
+
 // --- the write transaction (plan §7.1 step 5) -----------------------------
 
 /**
- * Replace this recipe's labels wholesale and mark it `ok`, in one transaction:
- * delete every existing `recipe_enrichment_label` row, insert the fresh set,
- * upsert `recipe_enrichment`. Wholesale delete-then-insert rather than a diff
- * is deliberate — a verdict a classifier no longer emits (a rule that used to
- * fire and stopped) must not survive as a stale row nobody is looking at
- * anymore, the same reasoning `render.ts`'s dedupe-key replace uses.
+ * The one new option `writeEnrichment` gains for the LLM split (llm plan
+ * §9.1). A dedicated options object rather than a bare trailing boolean —
+ * `writeEnrichment(pool, id, hash, 2, labels, true)` reads as noise at the
+ * call site; `{ contentChanged: true }` reads as what it is.
+ */
+export interface WriteEnrichmentOptions {
+  /**
+   * `true` when the step's freshly computed content fingerprint differs from
+   * the previously stored `input_hash` — i.e. the recipe's ingredients
+   * actually changed since the last classification, not just that a
+   * classifier version bumped. Passed down rather than recomputed here: the
+   * step already has both hashes in hand from its own short-circuit check
+   * (plan §7.1 step 2 / §3.1), so recomputing would mean a second read of
+   * `recipe_enrichment` this function has no other reason to do.
+   */
+  contentChanged: boolean;
+}
+
+/**
+ * Replace this recipe's labels and mark it `ok`, in one transaction: delete
+ * the existing `recipe_enrichment_label` rows THIS classifier owns, insert
+ * the fresh set, upsert `recipe_enrichment`. Delete-then-insert rather than a
+ * diff is deliberate — a verdict a classifier no longer emits (a rule that
+ * used to fire and stopped) must not survive as a stale row nobody is looking
+ * at anymore, the same reasoning `render.ts`'s dedupe-key replace uses.
+ *
+ * ── METHOD-SCOPED DELETE (llm plan §9.1, L9) — the one behavioral change ──
+ *
+ * The delete used to be unconditional: every row for this recipe, rules or
+ * not, because there was only one provider. Now there are two providers
+ * writing into the same table under disjoint `method` prefixes (`rules@N` and
+ * `llm:<provider>:<model>@vN`, see `types.ts`'s "TWO VERSION COLUMNS" note),
+ * and a rules re-run must not delete the other provider's work:
+ *
+ *   - `contentChanged: false` (the common case — a `CLASSIFIER_VERSION` bump,
+ *     a `force` reclassify, or just noticing this recipe is stale) deletes
+ *     only `method not like 'llm:%'` — the rules' own rows. The LLM's rows
+ *     for this recipe are untouched; they still describe the same ingredients.
+ *   - `contentChanged: true` deletes EVERYTHING, LLM rows included. LLM labels
+ *     were derived by reading THIS recipe's ingredient lines; once those lines
+ *     have actually changed, every LLM verdict is evidence about food that no
+ *     longer exists in the recipe and is worse than having no opinion at all.
+ *     `enrich` re-enqueues `llm-enrich` for every successful write (plan §9.2
+ *     "`enrich` change"), so the LLM rebuilds its half unconditionally — the
+ *     rules pass never has to know or care that it just orphaned it.
+ *
+ * ── ON CONFLICT: a rules insert can now collide with an LLM-owned row ──────
+ *
+ * Sparing `llm:%` rows on delete has a consequence for the INSERT half too:
+ * this recipe's LLM rows can include one for a slug this classifier is ALSO
+ * about to write (llm plan §8 — the LLM writes `allergen/fish` when it
+ * resolves a rules `unknown`, replacing that row and taking over its
+ * `(recipe_id, dimension, slug)` primary key). If the rules classifier later
+ * re-runs on unchanged content — a version bump backfill, most likely — and
+ * independently computes a verdict for that same slug, a plain `insert` hits
+ * that same primary key and the whole transaction dies on a real 23505 unique
+ * violation, not the "should be impossible" 23503 case `describeWriteError`
+ * exists for.
+ *
+ * `on conflict (recipe_id, dimension, slug) do update` fixes the crash, and is
+ * accepted as correct rather than merely tolerated: it only fires when the
+ * rules classifier re-computes a value for a slug the LLM currently owns, on
+ * content that has not changed enough to trigger the full cascade above.
+ * `enrich` always re-enqueues `llm-enrich` immediately after this write
+ * succeeds (plan §9.2), so any rules row that just overwrote an LLM
+ * resolution is corrected within one more job — a rules row is never left
+ * silently masking an LLM verdict for good, only until the next `llm-enrich`
+ * lands.
  *
  * Throws on failure and writes nothing — `steps.ts`'s `enrich` step is what
  * catches that and records `status='error'`, deliberately OUTSIDE this
@@ -131,11 +291,22 @@ export async function getEnrichmentState(pool: Pool, recipeId: string): Promise<
  * seeded slugs), but a `describeWriteError` call away from being legible
  * instead of an opaque Postgres message if it ever does happen.
  */
-export async function writeEnrichment(pool: Pool, recipeId: string, inputHash: string, classifierVersion: number, labels: readonly Label[]): Promise<void> {
+export async function writeEnrichment(
+  pool: Pool,
+  recipeId: string,
+  inputHash: string,
+  classifierVersion: number,
+  labels: readonly Label[],
+  opts: WriteEnrichmentOptions,
+): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query("begin");
-    await client.query(`delete from recipe_enrichment_label where recipe_id = $1`, [recipeId]);
+    if (opts.contentChanged) {
+      await client.query(`delete from recipe_enrichment_label where recipe_id = $1`, [recipeId]);
+    } else {
+      await client.query(`delete from recipe_enrichment_label where recipe_id = $1 and method not like $2`, [recipeId, LLM_METHOD_LIKE_PATTERN]);
+    }
 
     if (labels.length > 0) {
       const COLS = 7;
@@ -145,7 +316,15 @@ export async function writeEnrichment(pool: Pool, recipeId: string, inputHash: s
         values.push(recipeId, label.dimension, label.slug, label.verdict, label.confidence, label.method, JSON.stringify(label.evidence));
         return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7})`;
       });
-      await client.query(`insert into recipe_enrichment_label (recipe_id, dimension, slug, verdict, confidence, method, evidence) values ${placeholders.join(", ")}`, values);
+      // ON CONFLICT: see the doc comment above — an LLM-owned row can occupy
+      // this same (recipe_id, dimension, slug) key when content is unchanged.
+      await client.query(
+        `insert into recipe_enrichment_label (recipe_id, dimension, slug, verdict, confidence, method, evidence)
+         values ${placeholders.join(", ")}
+         on conflict (recipe_id, dimension, slug) do update
+           set verdict = excluded.verdict, confidence = excluded.confidence, method = excluded.method, evidence = excluded.evidence, updated_at = now()`,
+        values,
+      );
     }
 
     await client.query(
@@ -155,6 +334,106 @@ export async function writeEnrichment(pool: Pool, recipeId: string, inputHash: s
          set status = 'ok', classifier_version = excluded.classifier_version, input_hash = excluded.input_hash, enriched_at = excluded.enriched_at, error = null`,
       [recipeId, classifierVersion, inputHash],
     );
+
+    await client.query("commit");
+  } catch (err) {
+    await client.query("rollback").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * The LLM analogue of `writeEnrichment` (llm plan §9.1): one transaction that
+ * replaces only this recipe's `llm:%`-owned labels, inserts the merge's
+ * `writes` (llm plan §8), and marks the `llm_*` columns `ok`.
+ *
+ * Never touches `status`/`classifier_version`/`input_hash`/`enriched_at`/
+ * `error` — those are the rules pass's columns, and `llm-enrich` runs strictly
+ * after a successful rules write (plan §9.2 step 3 requires `status = 'ok'`
+ * before this is ever reached), so a `recipe_enrichment` row always already
+ * exists here. This is therefore a plain `update … where recipe_id = $1`, not
+ * an upsert — and, unlike `writeEnrichment`'s upsert, a zero-row update is
+ * treated as a bug, not a no-op: it means the precondition this function
+ * depends on did not hold (the row vanished between the step's check and this
+ * write), and writing labels while silently failing to record that they were
+ * written would leave `llm_status` claiming "never attempted" for a recipe
+ * that now has `llm:` rows — exactly the mismatch the short-circuit (plan
+ * §3.1) depends on never happening.
+ *
+ * ── ON CONFLICT: replacing a rules row IN PLACE (llm plan §8, THE subtle part) ──
+ *
+ * The delete only clears `method like 'llm:%'` rows — it must not touch the
+ * rules' own rows, that is the entire point of the split. But llm plan §8's
+ * merge table has a case where the LLM's write is supposed to REPLACE a rules
+ * row rather than sit beside it: "allergen, rules `unknown` (rules couldn't
+ * read the line), LLM says contains ⇒ write LLM row, replacing the rules
+ * `unknown` row." That rules row is still sitting on the
+ * `(recipe_id, dimension, slug)` primary key this insert wants — deleting only
+ * `llm:%` rows does not remove it, so a plain `insert` would hit that key and
+ * fail with a real 23505 unique violation. `on conflict (recipe_id, dimension,
+ * slug) do update` is what makes "replacing the rules row" true in SQL: the
+ * LLM's verdict, confidence, method and evidence overwrite the rules row in
+ * place, and the `method` column — now `llm:<provider>:<model>@vN` instead of
+ * `rules@N` — is the durable record that the LLM now owns that slug. This is
+ * the ONE place an LLM write is allowed to overwrite a rules row rather than
+ * only add beside it, and it is deliberate: it is how the merge's
+ * "resolves unknown" rows (llm plan §8) actually land.
+ *
+ * (The mirror-image collision — a later rules re-run finding an LLM-owned row
+ * on a slug it wants to write — is `writeEnrichment`'s problem, handled there
+ * with the same `on conflict` treatment; see that function's doc comment.)
+ */
+export interface LlmEnrichmentMeta {
+  /** `llm/schema.ts`'s `LLM_ENRICHMENT_VERSION` at the time this run happened. */
+  llmVersion: number;
+  /** Same content fingerprint as `input_hash` (D10) — the LLM classifies the same content the rules did. */
+  llmInputHash: string;
+  /** `'<provider>:<model>'` — which registry entry actually ran (plan §6.1), e.g. `'moonshot:kimi-k2-0905-preview'`. */
+  llmModel: string;
+  /** The PostHog prompt version actually used, or `null` when the code fallback ran (plan §6.2). */
+  llmPromptVersion: number | null;
+}
+
+export async function writeLlmEnrichment(pool: Pool, recipeId: string, meta: LlmEnrichmentMeta, labels: readonly Label[]): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query(`delete from recipe_enrichment_label where recipe_id = $1 and method like $2`, [recipeId, LLM_METHOD_LIKE_PATTERN]);
+
+    if (labels.length > 0) {
+      const COLS = 7;
+      const values: unknown[] = [];
+      const placeholders = labels.map((label, i) => {
+        const base = i * COLS;
+        values.push(recipeId, label.dimension, label.slug, label.verdict, label.confidence, label.method, JSON.stringify(label.evidence));
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7})`;
+      });
+      // ON CONFLICT: see the doc comment above — this is the deliberate
+      // "replace the rules row" case (llm plan §8's resolves-unknown rows).
+      await client.query(
+        `insert into recipe_enrichment_label (recipe_id, dimension, slug, verdict, confidence, method, evidence)
+         values ${placeholders.join(", ")}
+         on conflict (recipe_id, dimension, slug) do update
+           set verdict = excluded.verdict, confidence = excluded.confidence, method = excluded.method, evidence = excluded.evidence, updated_at = now()`,
+        values,
+      );
+    }
+
+    const updated = await client.query(
+      `update recipe_enrichment
+       set llm_status = 'ok', llm_version = $2, llm_input_hash = $3, llm_model = $4, llm_prompt_version = $5, llm_enriched_at = now(), llm_error = null
+       where recipe_id = $1`,
+      [recipeId, meta.llmVersion, meta.llmInputHash, meta.llmModel, meta.llmPromptVersion],
+    );
+    if (updated.rowCount === 0) {
+      // See the doc comment above: this function assumes a recipe_enrichment
+      // row already exists (the rules pass always runs first). If it does
+      // not, fail loudly and roll back rather than silently writing labels
+      // with no llm_status to show for them.
+      throw new Error(`writeLlmEnrichment: no recipe_enrichment row for recipe ${recipeId} — rules pass must run first`);
+    }
 
     await client.query("commit");
   } catch (err) {
@@ -177,6 +456,75 @@ export async function markError(pool: Pool, recipeId: string, message: string): 
     `insert into recipe_enrichment (recipe_id, status, error) values ($1, 'error', $2)
      on conflict (recipe_id) do update set status = 'error', error = excluded.error`,
     [recipeId, message],
+  );
+}
+
+/**
+ * The LLM analogue of `markError`. Touches only `llm_status` and `llm_error` —
+ * `llm_version` and `llm_input_hash` are left exactly as they were, same
+ * reasoning as `markError`: a fix that makes the next attempt succeed still
+ * has something correct to compare the new fingerprint/version against, and
+ * an error must not be readable as "ran successfully against an empty
+ * fingerprint".
+ *
+ * Upserts (works when no `recipe_enrichment` row exists yet at all), same as
+ * `markError` — though in practice `llm-enrich` only reaches an actual model
+ * error after plan §9.2 step 3's precondition (`status = 'ok'`) already
+ * passed, which means a row already exists. Kept as an upsert anyway: cheap,
+ * and it means this function never has to trust that precondition to hold.
+ */
+export async function markLlmError(pool: Pool, recipeId: string, message: string): Promise<void> {
+  await pool.query(
+    `insert into recipe_enrichment (recipe_id, llm_status, llm_error) values ($1, 'error', $2)
+     on conflict (recipe_id) do update set llm_status = 'error', llm_error = excluded.llm_error`,
+    [recipeId, message],
+  );
+}
+
+/**
+ * Records that `llm-enrich` ran but the gate said no (env override forced it
+ * off, the PostHog flag was off/unreachable, or plan §9.2 step 3's rules
+ * precondition failed) — plan §3.1: "recorded so a backfill doesn't re-claim
+ * it every run while the flag is off". Sets `llm_status = 'skipped'` and
+ * clears `llm_error` (a skip is not an error; leaving a stale error message
+ * behind would misreport why the row is in this state).
+ *
+ * ── DELIBERATELY DOES NOT TOUCH `llm_version` ───────────────────────────────
+ *
+ * This is the one place among the four LLM write functions that does NOT
+ * stamp `llm_version` to the version that "ran". Two readings were possible
+ * here and only one makes the plan's own claim-query language true:
+ *
+ *   - Stamp the current `LLM_ENRICHMENT_VERSION` on skip. Then a `skipped` row
+ *     reads as "the current version looked at this and declined" — but
+ *     `claimLlmBatch`'s non-force arm reclaims on `llm_status is null OR
+ *     llm_status = 'error' OR llm_version < llmVersion`. A skipped row stamped
+ *     to the current version would satisfy NONE of those once the flag turns
+ *     back on, so it would sit unclaimed forever without a `force` backfill —
+ *     directly contradicting plan §3.1's "cheap to reset by claiming
+ *     `llm_version < current` when the flag turns on".
+ *   - Leave `llm_version` untouched (this function's choice). A recipe
+ *     `llm-enrich` has never successfully finished for still carries whatever
+ *     `llm_version` it had before — the column's own `default 0` for a
+ *     brand-new row, per the migration. `0 < LLM_ENRICHMENT_VERSION` is true
+ *     for any real version, so the very next non-force `claimLlmBatch` call
+ *     after the flag flips on reclaims it automatically — no `force` needed.
+ *     This is exactly the "cheap to reset" plan §3.1 promises, and it is only
+ *     true because this function stays out of the way of the column that
+ *     makes it true.
+ *
+ * (A recipe that had already reached `llm_status = 'ok'` at the current
+ * version and is THEN skipped — e.g. the flag flaps off again — keeps that
+ * `llm_version` untouched too, so it is not auto-reclaimed until a version
+ * bump or an explicit `force`. That is consistent with the same sentence: the
+ * claim query treats `skipped` as a candidate via the version check or
+ * `force`, never unconditionally.)
+ */
+export async function markLlmSkipped(pool: Pool, recipeId: string): Promise<void> {
+  await pool.query(
+    `insert into recipe_enrichment (recipe_id, llm_status, llm_error) values ($1, 'skipped', null)
+     on conflict (recipe_id) do update set llm_status = 'skipped', llm_error = null`,
+    [recipeId],
   );
 }
 
@@ -294,6 +642,86 @@ export async function claimBatch(pool: Pool, opts: ClaimOptions): Promise<ClaimR
   // `count(*) over ()` is computed over every row the WHERE matched, before
   // LIMIT clips the result set — exactly "how many candidates exist", not
   // "how many this page returned".
+  const total = res.rows.length > 0 ? Number(res.rows[0].total) : 0;
+  return { ids, remaining: Math.max(0, total - ids.length) };
+}
+
+// --- llm-backfill claim (llm plan §9.2) -----------------------------------
+
+/**
+ * `llm-backfill`'s claim, driven entirely off `recipe_enrichment` — unlike
+ * `BACKFILL_CLAIM_SQL`'s `UNION` of "no row at all" with "row is out of date",
+ * there is no "no row at all" arm here, and there does not need to be: every
+ * arm of this predicate is gated on `e.status = 'ok'` (see `claimLlmBatch`'s
+ * doc comment for why), and a recipe with no `recipe_enrichment` row has no
+ * `status` to be `'ok'` — an inner join on the table already excludes it, the
+ * same as a `WHERE status = 'ok'` would. One query, one index
+ * (`recipe_enrichment_status_llm_version_idx`, on exactly
+ * `(status, llm_status, llm_version)`), no `UNION` needed.
+ *
+ * `force`'s meaning here differs from `claimBatch`'s: `BACKFILL_FORCE_SQL` is
+ * a second, index-bypassing query because `force` there means "ignore
+ * `recipe_enrichment` entirely, scan `recipe`". Here `force` still requires
+ * `status = 'ok'` (there is nothing to give a second opinion on otherwise) and
+ * only widens the `llm_status`/`llm_version` half of the predicate to
+ * "anything, including `skipped` and already-`ok`-at-the-current-version" — a
+ * single boolean bind (`$1`) does that without a second SQL string.
+ */
+const LLM_BACKFILL_CLAIM_SQL = `
+select e.recipe_id as id, r.origin, count(*) over () as total
+from recipe_enrichment e
+join recipe r on r.id = e.recipe_id
+where e.status = 'ok'
+  and (
+    $1::boolean = true
+    or e.llm_status is null
+    or e.llm_status = 'error'
+    or e.llm_version < $2
+  )
+  and ($3::boolean = false or r.origin = 'local')
+order by
+  (r.origin = 'local') desc,
+  exists (select 1 from household_recipe hr where hr.recipe_id = e.recipe_id) desc,
+  e.recipe_id
+limit $4
+`;
+
+export interface ClaimLlmOptions {
+  /** `llm/schema.ts`'s `LLM_ENRICHMENT_VERSION`, threaded in by `steps.ts` — see the module doc. */
+  llmVersion: number;
+  limit?: number;
+  /** Claim anything `status = 'ok'`, regardless of `llm_status`/`llm_version` — including `skipped` and already-current `ok` rows. */
+  force?: boolean;
+  localOnly?: boolean;
+}
+
+/**
+ * Claim a bounded batch for `llm-enrich` (llm plan §9.2). Same shape as
+ * `claimBatch` — `{ids, remaining}` via the same `count(*) over ()` trick,
+ * same local-first `ORDER BY`, same `limit` default/cap
+ * (`DEFAULT_BACKFILL_LIMIT`/`MAX_BACKFILL_LIMIT`, shared with the rules claim
+ * — one backfill-sizing policy for both providers) — but only ever considers
+ * recipes where the RULES pass already succeeded (`status = 'ok'`).
+ *
+ * That restriction is not an oversight, it is the whole relationship between
+ * the two providers: the LLM is a SECOND OPINION (llm plan L1/L2). There is
+ * nothing for it to be a second opinion ABOUT until the rules pass has
+ * produced a first one — a recipe the rules classifier has never successfully
+ * classified (`status` is `'stale'` or `'error'`, or the row does not exist
+ * yet) is the rules backfill's problem, not this one's. Once the rules pass
+ * succeeds, `enrich` enqueues `llm-enrich` for it directly (plan §9.2
+ * "`enrich` change") — `llm-backfill` exists for the recipes that fell
+ * through that path (a failed enqueue, a version bump, a flag that was off
+ * and is now on), not as the primary way recipes reach the LLM.
+ */
+export async function claimLlmBatch(pool: Pool, opts: ClaimLlmOptions): Promise<ClaimResult> {
+  const limit = Math.min(Math.max(1, Math.floor(opts.limit ?? DEFAULT_BACKFILL_LIMIT)), MAX_BACKFILL_LIMIT);
+  const localOnly = opts.localOnly === true;
+  const force = opts.force === true;
+
+  const res = await pool.query<{ id: string; total: string }>(LLM_BACKFILL_CLAIM_SQL, [force, opts.llmVersion, localOnly, limit]);
+
+  const ids = res.rows.map((row) => row.id);
   const total = res.rows.length > 0 ? Number(res.rows[0].total) : 0;
   return { ids, remaining: Math.max(0, total - ids.length) };
 }

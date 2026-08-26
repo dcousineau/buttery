@@ -75,12 +75,20 @@ export interface GenerationError {
  * `disagreements` describe the merge's output, not the raw model output, so
  * this input can only be built once both have happened.
  *
- * `messages`/`outputChoices` are typed as opaque record arrays rather than
+ * `messages`/`outputChoices` are typed as opaque `object` arrays rather than
  * imported from the `ai` package's message types: this file has no reason to
  * depend on the AI SDK's shapes, and `$ai_input`/`$ai_output_choices` are
  * PostHog properties that accept whatever JSON-serializable array the caller
  * sends. `classify.ts` passes the AI SDK's own `messages` array and
  * `result.object` wrapped as a one-element choices array straight through.
+ *
+ * `object` rather than `Record<string, unknown>` for a boring reason worth
+ * writing down, because it looks like a weakening and is not: an INTERFACE
+ * (which both `ModelMessage` and `classify.ts`'s `LlmOutputChoice` are) has no
+ * implicit index signature, so it does not satisfy `Record<string, unknown>`
+ * however record-shaped it looks. `object` says exactly what this file needs —
+ * "some JSON object, whose keys are none of my business" — and still rejects
+ * the array of primitives that a stray `Record` cast would have let through.
  */
 export interface GenerationEventInput {
   /** One id per `llm-enrich` run, `crypto.randomUUID()` at the top of the step — groups this generation in PostHog's Traces view. */
@@ -143,13 +151,13 @@ export interface GenerationEventInput {
    * `recipeOrigin === 'sync'` (L10) — see {@link buildGenerationEvent}'s doc
    * comment.
    */
-  messages: readonly Record<string, unknown>[];
+  messages: readonly object[];
   /**
    * The model's output, wrapped as a choices-shaped array (PostHog's
    * `$ai_output_choices` convention) — same `sync`-only redaction as
    * `messages`.
    */
-  outputChoices: readonly Record<string, unknown>[];
+  outputChoices: readonly object[];
   /**
    * Present when the call failed (schema rejection, timeout, provider
    * error) — see the `$ai_is_error`/`$ai_error` properties below. Absent on

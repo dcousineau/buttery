@@ -68,7 +68,7 @@ describe("fetchPrompt — fallback on failure (version: null in every case)", ()
       ok: true,
       status: 200,
       json: () => Promise.reject(new SyntaxError("Unexpected token in JSON")),
-    } as unknown);
+    });
     const result = await fetchPrompt({ env: CONFIGURED_ENV, fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(result).toEqual({ text: FALLBACK_PROMPT, version: null });
   });
