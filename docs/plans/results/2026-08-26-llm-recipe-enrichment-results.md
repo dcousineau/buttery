@@ -121,11 +121,35 @@ Both directions are covered by `load.db.test.ts` cases against a real database.
 - **No `mode: 'json'` fallback** (§7.1). `mode` does not exist on either function in `ai@7`;
   the schema-constrained strategy it used to name is what `Output.object` IS. There was
   nothing to fall back to, so nothing was built.
-- **`prompt-fetch.ts` uses REST, not posthog-node's `Prompts` client** (§6.2). The installed
-  `posthog-node@5.49.1` ships no prompt API — zero hits for "prompt" across its `.d.ts` files.
-  §6.2's REST fallback is therefore the only path, and it is the one implemented. Its response
-  shape is marked `UNVERIFIED-AGAINST-LIVE-POSTHOG` in the code; an unrecognised shape falls
-  back rather than crashing.
+- **`prompt-fetch.ts` uses `@posthog/ai`'s official `Prompts` client** (§6.2). The plan looks
+  for it in `posthog-node`, where it genuinely is not (5.49.1 has zero hits for "prompt" across
+  its `.d.ts` files), and then specifies a hand-rolled REST fallback. That fallback was built
+  first — a URL guess, a four-way response-shape guess, a module-level TTL cache, and a
+  prominent `UNVERIFIED-AGAINST-LIVE-POSTHOG` notice — and has since been **deleted** in favour
+  of the real client, which lives in a different package the plan never names here.
+
+  The deletion is the win: the response shape is the vendor's problem again rather than an
+  assumption being carried into production. It also gains three things the hand-rolled version
+  did not have — `source: 'stale_cache'` (serve the last good prompt when the API is down,
+  instead of dropping to the committed fallback), per-prompt cache invalidation, and a `version`
+  that is whatever PostHog says rather than whichever of `version`/`version_number` existed.
+
+  This does **not** reopen L7, which rejects `@posthog/ai`'s _OTel span processor_: that is a
+  separate subpath (`@posthog/ai/otel`) with its own peer dependencies. The root entry imports
+  only `@posthog/core` and `uuid` — checked against the built `dist/index.mjs`, and re-checked
+  through the boot-graph probe below — so no OTel stack reaches the worker, and `capture.ts`
+  still builds its own event.
+
+  Two knock-ons: the 2s fetch budget is now enforced by `prompt-fetch.ts` itself (`Prompts.get`
+  takes no timeout), and `POSTHOG_PROJECT_ID` is no longer read by anything — the client
+  identifies the project from `POSTHOG_PROJECT_TOKEN`, so the variable is gone from
+  `.env.example` and `.railway/railway.ts`.
+
+- **Generations carry `$ai_prompt_name`/`$ai_prompt_version`** as well as the plan's own
+  unprefixed `prompt_name`/`prompt_version` (§10). The prefixed pair is PostHog's convention for
+  tying a generation back to the Prompt Management version that produced it; the unprefixed pair
+  stays because §5.3's dashboard and §5.4's evaluations filter on custom properties. Both are
+  null together on a fallback run.
 - **`llm-enrich` re-derives the rules labels** rather than reading `recipe_enrichment_label`
   back. Sound because the step first requires `status='ok'`, `input_hash` equal to the current
   fingerprint, **and** `classifier_version` equal to the deployed `CLASSIFIER_VERSION`; under
@@ -186,10 +210,12 @@ agent had.
 2. **`$ai_generation` in PostHog** — visible in Traces/Generations with tokens and eventually
    cost, and a **local-origin** recipe's generation showing no input/output content (L10). The
    redaction logic is unit-tested; that it lands correctly in PostHog is not.
-3. **The prompt fetch against live PostHog.** The REST response shape in `prompt-fetch.ts` is a
-   documented assumption. If it is wrong, every recipe silently runs on the committed fallback
-   with `llm_prompt_version = null` — which is a query, not a mystery, and is the first thing
-   to check after the flag turns on.
+3. **The prompt fetch against live PostHog.** No longer a guess about the response shape — the
+   official client owns that now — but still unexercised against a real project: nobody has
+   confirmed that a `production`-labelled `recipe-llm-enrichment` prompt resolves with these
+   credentials. If it does not, every recipe silently runs on the committed fallback with
+   `llm_prompt_version = null`, which is a query rather than a mystery and is the first thing to
+   check after the flag turns on.
 4. **The flag path.** Override unset, `POSTHOG_ENABLED=true` against the prod flag at 0% →
    `skipped`; at 100% → runs.
 5. **`llm-backfill` end to end** — `POST /jobs/recipe-enrichment {"name":"llm-backfill","data":{"limit":20}}`,

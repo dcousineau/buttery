@@ -25,6 +25,7 @@
     "@buttery/pipeline-contract": "workspace:*",
     "@buttery/recipe-schemas": "workspace:*",
     "@fastify/basic-auth": "^6.3.0",
+    "@posthog/ai": "^8.8.1",
     "ai": "^7.0.79",
     "bullmq": "^6.1.2",
     "dayjs": "^1.11.23",

@@ -383,7 +383,6 @@ const llmEnrich: StepSpec = {
     const { classifyWithLlm, LlmClassifyError } = await import("#/workflows/recipe-enrichment/llm/classify.ts");
     const { mergeLlmLabels } = await import("#/workflows/recipe-enrichment/llm/merge.ts");
     const { fetchPrompt } = await import("#/workflows/recipe-enrichment/llm/prompt-fetch.ts");
-    const { PROMPT_NAME } = await import("#/workflows/recipe-enrichment/llm/prompt.ts");
     const { resolveProvider } = await import("#/workflows/recipe-enrichment/llm/provider.ts");
     const { sendDisagreementEvent, sendGenerationEvent } = await import("#/workflows/recipe-enrichment/llm/capture.ts");
 
@@ -447,7 +446,7 @@ const llmEnrich: StepSpec = {
         httpStatus: result.httpStatus ?? 200,
         recipeId,
         recipeOrigin: recipe.origin === "local" ? "local" : "sync",
-        promptName: PROMPT_NAME,
+        promptName: prompt.name,
         promptVersion: prompt.version,
         llmVersion: LLM_ENRICHMENT_VERSION,
         labelsWritten: writes.length,
@@ -484,7 +483,7 @@ const llmEnrich: StepSpec = {
         httpStatus: 0,
         recipeId,
         recipeOrigin: recipe.origin === "local" ? "local" : "sync",
-        promptName: PROMPT_NAME,
+        promptName: prompt.name,
         promptVersion: prompt.version,
         llmVersion: LLM_ENRICHMENT_VERSION,
         labelsWritten: 0,

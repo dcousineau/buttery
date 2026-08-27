@@ -159,6 +159,11 @@ describe("buildGenerationEvent — custom properties, exact spellings (plan §10
       recipe_origin: "sync",
       prompt_name: "recipe-llm-enrichment",
       prompt_version: 7,
+      // PostHog's own prompt-provenance convention, sent alongside the plain
+      // names so Prompt Management can tie this generation to the version that
+      // produced it (`@posthog/ai` documents this pairing with `Prompts.get`).
+      $ai_prompt_name: "recipe-llm-enrichment",
+      $ai_prompt_version: 7,
       llm_version: 1,
       labels_written: 5,
       disagreements: 2,
@@ -172,6 +177,10 @@ describe("buildGenerationEvent — custom properties, exact spellings (plan §10
     const { properties } = buildGenerationEvent(baseInput({ promptVersion: null }));
     expect(properties).toHaveProperty("prompt_version");
     expect(properties.prompt_version).toBeNull();
+    // Both spellings have to agree, or "which recipes ran on the fallback?"
+    // gets two different answers depending on which one somebody filters on.
+    expect(properties).toHaveProperty("$ai_prompt_version");
+    expect(properties.$ai_prompt_version).toBeNull();
   });
 
   it("$ai_span_name is the fixed classify-recipe span, regardless of origin or error", () => {

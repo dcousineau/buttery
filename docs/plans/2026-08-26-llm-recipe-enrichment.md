@@ -8,9 +8,10 @@ Related: `types.ts`'s sparse-labels invariant and `classifiers/README.md` (both 
 here), the `Label.method` per-label seam (plan §3.2 of the parent), the atproto publish gate in
 `services/web/src/lib/posthog-server.ts` (the fail-closed flag idiom this copies).
 
-> **Correction, 2026-08-27 (implementation).** Two SDK facts in this spec went stale between
-> writing and building, and the code deliberately departs from the text — see `[SDK-1]` and
-> `[SDK-2]` where they bite (L5, §4, §7.1, §9.2):
+> **Correction, 2026-08-27 (implementation).**
+> Three SDK facts in this spec went stale between writing and building, and the code
+> deliberately departs from the text — see `[SDK-1]`, `[SDK-2]` and `[SDK-3]` where they bite
+> (L5, §4, §6.2, §7.1, §9.2):
 >
 > - **`[SDK-1]` `generateObject` is deprecated; the code uses `generateText` + `Output.object`.**
 >   Upstream commit `614599a` deprecated `generateObject`/`streamObject` at `ai@6.0.0-beta.127`
@@ -23,6 +24,17 @@ here), the `Label.method` per-label seam (plan §3.2 of the parent), the atproto
 > - **`[SDK-2]` the dependency resolved to `ai@7`, not `ai@^6`.** §4 pins `^6` and also says
 >   "let pnpm resolve it; do not guess" — pnpm resolved 7.0.79. The `^6` was a guess at write
 >   time, not a constraint.
+> - **`[SDK-3]` the `Prompts` client exists, but in `@posthog/ai`, not `posthog-node`.** §6.2
+>   looks for it in `posthog-node` (it genuinely is not there, in 5.49.1) and then specifies a
+>   hand-rolled REST fallback. That fallback was built, and is now deleted: the official client
+>   is `import { Prompts } from "@posthog/ai"`, which brings its own cache, its own `fallback`
+>   option, `compile()`, and a `stale_cache` mode the hand-rolled version had no equivalent for.
+>   The URL guess and the four-way response-shape guess are gone with it. This does NOT reopen
+>   L7 — that decision rejects `@posthog/ai`'s **OTel span processor**, which is a separate
+>   subpath (`@posthog/ai/otel`); the root entry pulls only `@posthog/core` and `uuid`, verified
+>   against the built bundle, and `capture.ts` still builds its own `$ai_generation` event.
+>   `POSTHOG_PROJECT_ID` (§5.2, §11) is consequently no longer read by anything: the client
+>   identifies the project from `POSTHOG_PROJECT_TOKEN`.
 >
 > Implementer: log outcomes to `docs/plans/results/2026-08-26-llm-recipe-enrichment-results.md`
 > (what was built, how it was verified, deliberate deviations, and — explicitly — which items
@@ -339,14 +351,16 @@ Adding Qwen later = one `case "qwen"` (also OpenAI-compatible, DashScope baseURL
 
 ### 6.2 `llm/prompt-fetch.ts`
 
-- Try `posthog-node`'s Prompts client (`import { Prompts } from "posthog-node"` — verify the
+- **`[SDK-3]` — this whole subsection is superseded: the client is `@posthog/ai`'s `Prompts`,
+  and the REST fallback below was built and then deleted.** ~~Try `posthog-node`'s Prompts client (`import { Prompts } from "posthog-node"` — verify the
   export against the installed version; it is documented but recent):
   `prompts.get('recipe-llm-enrichment', { label: 'production', cacheTtlSeconds: 300, fallback: FALLBACK_PROMPT })`,
   host `https://us.posthog.com`, personal API key + project API key from env.
 - If the export is absent in the installed `posthog-node`, implement the same contract over
   REST: `GET /api/projects/${POSTHOG_PROJECT_ID}/llm_prompts/resolve/name/recipe-llm-enrichment/?label=production`
   with `Authorization: Bearer ${POSTHOG_PERSONAL_API_KEY}`, 5-minute in-memory cache,
-  fallback on any non-200/timeout (2s budget — a prompt fetch must never be the slow part).
+  fallback on any non-200/timeout (2s budget — a prompt fetch must never be the slow part).~~
+  (The 2s budget survives: `Prompts.get` takes no timeout, so `prompt-fetch.ts` races it.)
 - Returns `{ text, version: number | null }` — `version: null` means fallback was used, and
   is recorded in `llm_prompt_version` as null so "which recipes ran on the fallback" is a
   query, not a mystery.

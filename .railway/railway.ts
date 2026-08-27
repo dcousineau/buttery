@@ -263,10 +263,16 @@ export default defineRailway((ctx) => {
       POSTHOG_ENABLED: "true",
       POSTHOG_PROJECT_TOKEN: posthogProjectToken,
       POSTHOG_HOST: "https://us.i.posthog.com",
-      // The prompts API is the odd one out: it authenticates with a PERSONAL api
-      // key against the APP host, not the project token against the ingestion
-      // host (llm plan §5.2). Project id 538428 is the "Buttery" project.
-      POSTHOG_PROJECT_ID: "538428",
+      // The prompts API is the odd one out: @posthog/ai's `Prompts` client
+      // authenticates with a PERSONAL api key against the APP host, and uses
+      // the project TOKEN above to select the project — not the project token
+      // against the ingestion host (llm plan §5.2).
+      //
+      // POSTHOG_PROJECT_ID is deliberately NOT set: nothing reads it. The
+      // hand-rolled REST fetch it existed for is gone, and the official client
+      // identifies the project from POSTHOG_PROJECT_TOKEN. The id (538428, the
+      // "Buttery" project) is still what a human needs for the §5 PostHog-side
+      // setup — it just is not a variable this service consumes.
 
       // MOONSHOT_API_KEY and POSTHOG_PERSONAL_API_KEY are deliberately NOT
       // declared here, for the same reason RAILWAY_API_TOKEN is not (see the
@@ -357,10 +363,16 @@ export default defineRailway((ctx) => {
       POSTHOG_ENABLED: "true",
       POSTHOG_PROJECT_TOKEN: posthogProjectToken,
       POSTHOG_HOST: "https://us.i.posthog.com",
-      // The prompts API is the odd one out: it authenticates with a PERSONAL api
-      // key against the APP host, not the project token against the ingestion
-      // host (llm plan §5.2). Project id 538428 is the "Buttery" project.
-      POSTHOG_PROJECT_ID: "538428",
+      // The prompts API is the odd one out: @posthog/ai's `Prompts` client
+      // authenticates with a PERSONAL api key against the APP host, and uses
+      // the project TOKEN above to select the project — not the project token
+      // against the ingestion host (llm plan §5.2).
+      //
+      // POSTHOG_PROJECT_ID is deliberately NOT set: nothing reads it. The
+      // hand-rolled REST fetch it existed for is gone, and the official client
+      // identifies the project from POSTHOG_PROJECT_TOKEN. The id (538428, the
+      // "Buttery" project) is still what a human needs for the §5 PostHog-side
+      // setup — it just is not a variable this service consumes.
 
       // MOONSHOT_API_KEY and POSTHOG_PERSONAL_API_KEY are deliberately NOT
       // declared here, for the same reason RAILWAY_API_TOKEN is not (see the

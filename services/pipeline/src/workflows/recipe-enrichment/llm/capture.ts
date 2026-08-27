@@ -244,6 +244,18 @@ export function buildGenerationEvent(input: GenerationEventInput): { distinctId:
     ai_feature: AI_FEATURE,
     recipe_id: input.recipeId,
     recipe_origin: input.recipeOrigin,
+    // PostHog's own convention for prompt provenance on an LLM event, so the
+    // Prompt Management UI can tie a generation back to the version that
+    // produced it — `$ai_prompt_name`/`$ai_prompt_version` are what
+    // `@posthog/ai`'s docs tell you to send from `Prompts.get`'s result.
+    // `$ai_prompt_version` is null exactly when the committed fallback ran,
+    // which makes "which recipes did NOT run on a managed prompt" one filter.
+    $ai_prompt_name: input.promptName,
+    $ai_prompt_version: input.promptVersion,
+    // The same two under plain names, kept because the §5.4 evaluations and
+    // the §5.3 dashboard filter on unprefixed custom properties alongside
+    // `ai_feature`, and dropping them would silently break whatever a human
+    // has already built on top. Cheap; two strings per generation.
     prompt_name: input.promptName,
     prompt_version: input.promptVersion,
     llm_version: input.llmVersion,
