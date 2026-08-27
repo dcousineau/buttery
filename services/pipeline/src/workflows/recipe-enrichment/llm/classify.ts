@@ -1,11 +1,11 @@
-import { generateObject, NoObjectGeneratedError } from "ai";
+import { generateText, NoObjectGeneratedError, Output } from "ai";
 import type { CallWarning, FinishReason, LanguageModel, LanguageModelUsage, ModelMessage } from "ai";
 import { llmOutputSchema, type LlmOutput } from "#/workflows/recipe-enrichment/llm/schema.ts";
 import type { ClassifierLine, Label } from "#/workflows/recipe-enrichment/types.ts";
 
 /**
  * Orchestration for the LLM second opinion (llm plan §4): build messages
- * (pure) → `generateObject` → validate → hand back a validated {@link LlmOutput}
+ * (pure) → `generateText` → validate → hand back a validated {@link LlmOutput}
  * plus everything `capture.ts` needs to describe the call. No DB, no queue,
  * no `posthog-node` import — `steps.ts` (another module, built in parallel) is
  * the only caller that touches any of those, and it is also the only thing
@@ -96,7 +96,7 @@ const CLASSIFY_TRIGGER_MESSAGE = "Classify the recipe described above and return
 
 /**
  * Compile `{{recipe_json}}` into `promptText` and shape the result into the
- * message array `generateObject` takes (plan §6.2's REST fallback path: the
+ * message array `generateText` takes (plan §6.2's REST fallback path: the
  * PostHog Prompts SDK would compile this server-side, but `prompt-fetch.ts`
  * only ever hands this file plain `{text, version}` — the substitution has to
  * happen somewhere, and it happens here, once, next to the schema it feeds).
@@ -159,7 +159,7 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 
 /**
- * Thrown when `generateObject` could not produce output matching
+ * Thrown when `generateText` could not produce output matching
  * {@link llmOutputSchema} — Kimi returning prose-wrapped JSON, a truncated
  * object, or a value outside a closed enum are all the same failure shape
  * from here: the schema validated nothing, and there is a raw response worth
@@ -224,7 +224,7 @@ export interface LlmClassifyResult {
   messages: ModelMessage[];
   /** `result.usage` from the AI SDK, for `$ai_input_tokens`/`$ai_output_tokens`. */
   usage: LanguageModelUsage;
-  /** Wall-clock time of the `generateObject` call in milliseconds, for `$ai_latency` (`capture.ts` converts to seconds — plan §10 names the unit PostHog expects). */
+  /** Wall-clock time of the `generateText` call in milliseconds, for `$ai_latency` (`capture.ts` converts to seconds — plan §10 names the unit PostHog expects). */
   latencyMs: number;
   /** `result.finishReason` — surfaced so `capture.ts` can decide whether a `"length"` finish is worth its own signal (an output that hit `maxOutputTokens`). */
   finishReason: FinishReason;
@@ -248,34 +248,44 @@ export interface LlmClassifyResult {
 }
 
 /**
- * Build messages, call `generateObject` against {@link llmOutputSchema}, and
- * return the validated output plus the capture-ready call metadata (plan §4,
- * §7.1, §9.2 step 5).
+ * Build messages, call `generateText` with a schema-constrained `Output`
+ * against {@link llmOutputSchema}, and return the validated output plus the
+ * capture-ready call metadata (plan §4, §7.1, §9.2 step 5).
+ *
+ * ── THE PLAN SAYS `generateObject`; THE PLAN IS OUT OF DATE ────────────────
+ *
+ * Plan L5 and §7.1 both name `generateObject`, which was the AI SDK's
+ * structured-output entry point when the plan was written. It is
+ * `@deprecated` in the installed `ai@7.0.79` — upstream commit `614599a`
+ * deprecated it at v6.0.0-beta.127 in favour of stable structured output on
+ * `generateText`, and its own doc comment says "Use `generateText` with an
+ * `output` setting instead". This file follows the SDK, not the plan; the
+ * plan carries a dated correction note at both places, and the results file
+ * records the deviation.
+ *
+ * The migration is behaviour-preserving, which was checked rather than
+ * assumed, because the two things that could have made it not so are the two
+ * things this module's callers depend on:
+ *
+ *   - **Typing is not lost.** `Output.object`'s declared return type widens to
+ *     `JSONValue`, which reads as though the schema's inferred type is thrown
+ *     away — it is not. `result.output` types as the full `LlmOutput`,
+ *     confirmed by a probe that assigned it to a `number` and watched `tsc`
+ *     print the whole inferred shape back. No cast, no re-validation.
+ *   - **The error shape is identical.** A schema violation still throws
+ *     `NoObjectGeneratedError` with the model's raw text on `.text` — checked
+ *     against the mock model for prose-wrapped JSON, an out-of-enum value and
+ *     a flat refusal, all three of which threw exactly that, with the text
+ *     intact. So the catch below is unchanged, and `$ai_error` still carries
+ *     what the model actually said.
  *
  * No `mode: 'json'` fallback (plan §7.1 raised the possibility "on provider
- * JSON-mode quirks", contingent on what `ai@7` actually supports): the
- * installed `generateObject` signature
- * (`node_modules/ai/dist/index.d.ts`) has no `mode` option at all — the
- * `output` discriminant (`'object' | 'array' | 'enum' | 'no-schema'`) is the
- * only generation-strategy switch left, and this call already uses its
- * default (`'object'`), which is the schema-constrained mode `mode: 'json'`
- * used to name in the AI SDK's v4-era API. There is nothing to fall back to
- * and nothing this file can decide "by what the mock tests can express" that
- * the type signature does not already decide for it — if a live provider
- * quirk turns out to need one, that is a schema/prompt change (`schemaName`/
- * `schemaDescription`, both still present on `generateObject`'s options), not
- * a `mode` this SDK major exposes.
- *
- * `generateObject` is `@deprecated` in the installed `ai@7.0.79` (the
- * doc comment on it says "Use `generateText` with an `output` setting
- * instead") — noted here rather than silently worked around, because the
- * plan (L5) is explicit that this codebase uses `generateObject`, and
- * switching orchestration functions is a bigger, deliberate call than one
- * slice of one plan should make unilaterally. It still exists, is fully
- * typed, and behaves as documented against the mock model in
- * `classify.test.ts`; a migration to `generateText({ output })` is a future
- * decision for whoever owns this file next, once the deprecation has a
- * removal date attached to it.
+ * JSON-mode quirks", contingent on what `ai@7` actually supports). `mode` does
+ * not exist on either function in this SDK major; the schema-constrained
+ * strategy `mode: 'json'` used to name is what `Output.object` IS. There is
+ * nothing to fall back to. If a live provider quirk turns out to need help,
+ * that is a schema/prompt change — `Output.object` takes `name` and
+ * `description` for exactly that kind of provider guidance — not a `mode`.
  */
 export async function classifyWithLlm(args: ClassifyWithLlmArgs): Promise<LlmClassifyResult> {
   const recipeJson = buildRecipeJson({ recipeName: args.recipeName, lines: args.lines, rulesLabels: args.rulesLabels });
@@ -285,9 +295,15 @@ export async function classifyWithLlm(args: ClassifyWithLlmArgs): Promise<LlmCla
 
   const startedAt = performance.now();
   try {
-    const result = await generateObject({
+    const result = await generateText({
       model: args.model,
-      schema: llmOutputSchema,
+      // `Output.object` is the `generateObject` replacement (see this
+      // function's doc): same schema, same enforcement, same thrown error.
+      // `name`/`description` are deliberately not set — some providers pass
+      // them to the model as extra guidance, and the prompt already restates
+      // the schema in full (plan §6.3), so they would only be a second,
+      // drift-prone place saying the same thing.
+      output: Output.object({ schema: llmOutputSchema }),
       messages,
       // See buildMessages' doc comment: the compiled prompt is a system-role
       // message inside `messages`, which the AI SDK refuses by default.
@@ -297,7 +313,7 @@ export async function classifyWithLlm(args: ClassifyWithLlmArgs): Promise<LlmCla
     });
     const latencyMs = performance.now() - startedAt;
     return {
-      output: result.object,
+      output: result.output,
       messages,
       usage: result.usage,
       latencyMs,
@@ -305,7 +321,7 @@ export async function classifyWithLlm(args: ClassifyWithLlmArgs): Promise<LlmCla
       responseId: result.response?.id,
       httpStatus: undefined,
       warnings: result.warnings,
-      outputChoices: [{ role: "assistant", content: JSON.stringify(result.object) }],
+      outputChoices: [{ role: "assistant", content: JSON.stringify(result.output) }],
     };
   } catch (err) {
     // `NoObjectGeneratedError` is the AI SDK's name for "the response never

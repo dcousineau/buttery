@@ -8,6 +8,22 @@ Related: `types.ts`'s sparse-labels invariant and `classifiers/README.md` (both 
 here), the `Label.method` per-label seam (plan §3.2 of the parent), the atproto publish gate in
 `services/web/src/lib/posthog-server.ts` (the fail-closed flag idiom this copies).
 
+> **Correction, 2026-08-27 (implementation).** Two SDK facts in this spec went stale between
+> writing and building, and the code deliberately departs from the text — see `[SDK-1]` and
+> `[SDK-2]` where they bite (L5, §4, §7.1, §9.2):
+>
+> - **`[SDK-1]` `generateObject` is deprecated; the code uses `generateText` + `Output.object`.**
+>   Upstream commit `614599a` deprecated `generateObject`/`streamObject` at `ai@6.0.0-beta.127`
+>   in favour of stable structured output on `generateText`, and its own doc comment says to
+>   switch. Same schema, same enforcement, same thrown `NoObjectGeneratedError` carrying the
+>   model's raw text, and `result.output` keeps the schema's inferred type — all four measured
+>   against the mock, not assumed. There is consequently no `mode: 'json'` fallback to build:
+>   `mode` does not exist on either function in this SDK major, and the strategy it used to name
+>   is what `Output.object` IS.
+> - **`[SDK-2]` the dependency resolved to `ai@7`, not `ai@^6`.** §4 pins `^6` and also says
+>   "let pnpm resolve it; do not guess" — pnpm resolved 7.0.79. The `^6` was a guess at write
+>   time, not a constraint.
+>
 > Implementer: log outcomes to `docs/plans/results/2026-08-26-llm-recipe-enrichment-results.md`
 > (what was built, how it was verified, deliberate deviations, and — explicitly — which items
 > from §12.3 were left for the human because they need live LLM or PostHog access).
@@ -66,20 +82,20 @@ version actually evaluated.
 
 ## 2. Decisions locked
 
-| #   | Decision                                                                                                                                                                                                                                                               |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| L1  | **Second opinion + new dimensions.** The LLM evaluates every allergen/diet slug the rules do, plus `cuisine`, `meal_type`, `spice_level`, and the six macro/paleo diets rules can't judge.                                                                             |
-| L2  | **Safety-asymmetric merge.** The LLM may escalate and may fill absence; it may never downgrade a rules `contains`/`may_contain` (allergen) or override a rules `excluded` (diet). Disagreements become PostHog events, not label writes. See §8.                       |
-| L3  | **`llm-enrich` is a step in the existing workflow**, always enqueued by `enrich` after a successful rules write; the gate lives inside the step. Not an async classifier in the `Classifier[]` array (that contract is pure/sync) and not a separate queue.            |
-| L4  | **Flag-gated, fail-closed, after every enrich.** PostHog flag `llm-enrichment-enabled` evaluated with `distinct_id = recipeId` (deterministic %-rollout over the corpus). No PostHog ⇒ no LLM call. `LLM_ENRICHMENT_ENABLED=true\|false` env override for dev.         |
-| L5  | **Vercel AI SDK, `generateObject`, provider registry.** Moonshot Kimi via `@ai-sdk/openai-compatible` (Moonshot's API is OpenAI-compatible). Provider chosen by env; adding Qwen/Gemini is one registry entry + one dependency.                                        |
-| L6  | **Prompt lives in PostHog Prompt Management** (name `recipe-llm-enrichment`, fetched by the `production` label, cached with TTL); the same prompt text is committed in code as the fallback and the version of record for review.                                      |
-| L7  | **Manual `$ai_generation` capture via `posthog-node`**, not `@posthog/ai`'s OTel span processor. The properties object is built by a pure function agents can test; no OTel stack in the worker; no coupling to the AI SDK major that OTel support pins.               |
-| L8  | **`LLM_ENRICHMENT_VERSION`** is the LLM analogue of `CLASSIFIER_VERSION`: an int constant covering the emitted slug sets and output schema. Same absence invariant, same pin-test idiom. Prompt _wording_ changes do NOT bump it; slug/schema changes MUST.            |
-| L9  | **Label ownership is split by `method` prefix.** Rules rows are `rules@N`; LLM rows are `llm:<provider>:<model>@vN`. `writeEnrichment` deletes only rules rows (except on content change, §9.1); the LLM writer replaces only `llm:%` rows.                            |
-| L10 | **Redaction for local recipes.** `$ai_input`/`$ai_output_choices` are captured only for `origin='sync'` recipes (public network content). `origin='local'` generations keep tokens/cost/latency/model but no content. Distinct id is a service identity, never a user. |
-| L11 | **No live-call tests, anywhere.** Everything LLM-shaped is exercised through the AI SDK's mock language model and fixture JSON; everything PostHog-shaped through injected fakes. §12 is the contract.                                                                 |
-| L12 | New-dimension slugs are a **closed, code-owned enum** (§7.2). The zod schema rejects anything outside it; the LLM cannot invent a cuisine, the same way D12 keeps hostile records from inventing an allergen.                                                          |
+| #   | Decision                                                                                                                                                                                                                                                                           |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L1  | **Second opinion + new dimensions.** The LLM evaluates every allergen/diet slug the rules do, plus `cuisine`, `meal_type`, `spice_level`, and the six macro/paleo diets rules can't judge.                                                                                         |
+| L2  | **Safety-asymmetric merge.** The LLM may escalate and may fill absence; it may never downgrade a rules `contains`/`may_contain` (allergen) or override a rules `excluded` (diet). Disagreements become PostHog events, not label writes. See §8.                                   |
+| L3  | **`llm-enrich` is a step in the existing workflow**, always enqueued by `enrich` after a successful rules write; the gate lives inside the step. Not an async classifier in the `Classifier[]` array (that contract is pure/sync) and not a separate queue.                        |
+| L4  | **Flag-gated, fail-closed, after every enrich.** PostHog flag `llm-enrichment-enabled` evaluated with `distinct_id = recipeId` (deterministic %-rollout over the corpus). No PostHog ⇒ no LLM call. `LLM_ENRICHMENT_ENABLED=true\|false` env override for dev.                     |
+| L5  | **Vercel AI SDK, ~~`generateObject`~~ → `generateText` + `Output.object` (`[SDK-1]`), provider registry.** Moonshot Kimi via `@ai-sdk/openai-compatible` (Moonshot's API is OpenAI-compatible). Provider chosen by env; adding Qwen/Gemini is one registry entry + one dependency. |
+| L6  | **Prompt lives in PostHog Prompt Management** (name `recipe-llm-enrichment`, fetched by the `production` label, cached with TTL); the same prompt text is committed in code as the fallback and the version of record for review.                                                  |
+| L7  | **Manual `$ai_generation` capture via `posthog-node`**, not `@posthog/ai`'s OTel span processor. The properties object is built by a pure function agents can test; no OTel stack in the worker; no coupling to the AI SDK major that OTel support pins.                           |
+| L8  | **`LLM_ENRICHMENT_VERSION`** is the LLM analogue of `CLASSIFIER_VERSION`: an int constant covering the emitted slug sets and output schema. Same absence invariant, same pin-test idiom. Prompt _wording_ changes do NOT bump it; slug/schema changes MUST.                        |
+| L9  | **Label ownership is split by `method` prefix.** Rules rows are `rules@N`; LLM rows are `llm:<provider>:<model>@vN`. `writeEnrichment` deletes only rules rows (except on content change, §9.1); the LLM writer replaces only `llm:%` rows.                                        |
+| L10 | **Redaction for local recipes.** `$ai_input`/`$ai_output_choices` are captured only for `origin='sync'` recipes (public network content). `origin='local'` generations keep tokens/cost/latency/model but no content. Distinct id is a service identity, never a user.             |
+| L11 | **No live-call tests, anywhere.** Everything LLM-shaped is exercised through the AI SDK's mock language model and fixture JSON; everything PostHog-shaped through injected fakes. §12 is the contract.                                                                             |
+| L12 | New-dimension slugs are a **closed, code-owned enum** (§7.2). The zod schema rejects anything outside it; the LLM cannot invent a cuisine, the same way D12 keeps hostile records from inventing an allergen.                                                                      |
 
 ---
 
@@ -176,7 +192,7 @@ services/pipeline/src/workflows/recipe-enrichment/
     schema.ts        ← zod output schema, LLM emitted-slug sets (closed enums, L12),
                         LLM_ENRICHMENT_VERSION. The pin test points here.
     provider.ts      ← provider registry: env → LanguageModel. 'moonshot' today.
-    classify.ts      ← orchestration: build messages (pure) → generateObject → validate →
+    classify.ts      ← orchestration: build messages (pure) → generateText → validate →
                         map to candidate Labels (pure). No DB, no queue.
     merge.ts         ← safety-asymmetric merge (pure): (rules labels, llm candidates) →
                         {writes, disagreements}. The most-tested file in this plan.
@@ -196,7 +212,8 @@ services/pipeline/src/workflows/recipe-enrichment/
 `_`-separator reasoning as `enrichJobId` — read its doc comment before touching it).
 
 New dependencies (`services/pipeline/package.json`): `ai`, `@ai-sdk/openai-compatible`, `zod`,
-`posthog-node`. Pin `ai@^6` with the matching `@ai-sdk/openai-compatible` major (let pnpm
+`posthog-node`. Pin `ai@^6` `[SDK-2: resolved to ai@7]` with the matching
+`@ai-sdk/openai-compatible` major (let pnpm
 resolve it; do not guess). The pipeline runs under Node's native TS type-stripping
 (`node src/server.ts`) — the same dependency rules as `atproto-cron-sync` apply: real ESM
 files, explicit subpath imports, no bundler-only packages. All four of these ship real ESM;
@@ -375,7 +392,9 @@ disagreement, not discover everything cold; evidence quality is what the judge e
   spam); an omitted allergen slug means the model found nothing (mapped per §8).
 - All slug fields are `z.enum` over the closed sets (L12). `generateObject` with this schema;
   on provider JSON-mode quirks fall back to `generateObject({ mode: 'json' })` — decide by
-  what the mock tests can express, not by live behavior.
+  what the mock tests can express, not by live behavior. **`[SDK-1]`** — both sentences are
+  superseded: the call is `generateText({ output: Output.object({ schema }) })`, and there is
+  no `mode` on either function in `ai@7` to fall back to.
 - A zod-rejected response is an error (`llm_status='error'`, `$ai_is_error` capture with the
   raw text in `$ai_error`) and retries per job options — Kimi occasionally drooling invalid
   JSON is an expected failure mode, and retry-then-error is honest.
@@ -449,7 +468,7 @@ feed for §5.4's evals and §5.5's dataset triage.
      `input_hash` = current content fingerprint (rules run first, always — if stale, mark
      `skipped`; the next `enrich` re-enqueues us).
   4. Short-circuit per §3.1.
-  5. Fetch prompt (§6.2), build messages (pure), `generateObject` with
+  5. Fetch prompt (§6.2), build messages (pure), `generateText` `[SDK-1]` with
      `abortSignal: AbortSignal.timeout(60_000)` and `maxOutputTokens` sized to the schema.
   6. Merge (§8) → `writeLlmEnrichment`.
   7. Capture `$ai_generation` (§10) and one `llm_enrichment_disagreement` per disagreement.

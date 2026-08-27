@@ -12,14 +12,21 @@ import type { ClassifierLine, Label } from "#/workflows/recipe-enrichment/types.
  * not a captured real response, because there are no keys to capture one
  * with.
  *
- * `generateObject` (ai@7.0.79) accepts `LanguageModelV4` directly —
- * confirmed against `node_modules/ai/dist/index.d.ts`'s `LanguageModel`
- * union — so {@link MockLanguageModelV4} (from `ai/test`) is the mock this
- * suite uses; `ai/test` also ships a V3 mock, but nothing in this workflow
- * ever constructs a V3 model (`provider.ts`'s `@ai-sdk/openai-compatible`
+ * `generateText` (ai@7.0.79) accepts `LanguageModelV4` directly — confirmed
+ * against `node_modules/ai/dist/index.d.ts`'s `LanguageModel` union — so
+ * {@link MockLanguageModelV4} (from `ai/test`) is the mock this suite uses;
+ * `ai/test` also ships a V3 mock, but nothing in this workflow ever
+ * constructs a V3 model (`provider.ts`'s `@ai-sdk/openai-compatible`
  * `chatModel()` returns `LanguageModelV4` — see that file), so pinning to V4
  * here is exercising the model shape this codebase actually produces, not
  * merely one this codebase could accept.
+ *
+ * The suite reads the same after the `generateObject` → `generateText` +
+ * `Output.object` migration because it was written against `classifyWithLlm`'s
+ * own contract rather than against the SDK's — the mock returns raw text and
+ * these tests assert on the validated output and the thrown error, both of
+ * which the migration left alone (see `classify.ts`'s doc for what was
+ * measured to establish that).
  */
 
 // --- a minimal, valid MockLanguageModelV4 doGenerate result -----------------
@@ -28,8 +35,8 @@ import type { ClassifierLine, Label } from "#/workflows/recipe-enrichment/types.
  * `MockLanguageModelV4.doGenerate`'s return shape
  * (`@ai-sdk/provider`'s `LanguageModelV4GenerateResult`) is considerably more
  * detailed than anything this file's assertions read — this builds exactly
- * enough of it (a single text content part carrying the raw JSON `generateObject`
- * will try to validate, a finish reason, and a token count) to drive
+ * enough of it (a single text content part carrying the raw JSON the schema-constrained
+ * `Output` will try to validate, a finish reason, and a token count) to drive
  * `classifyWithLlm` end to end without hand-rolling the full shape at every
  * call site below.
  */
@@ -42,7 +49,7 @@ function generateResultFor(rawText: string) {
       outputTokens: { total: 40, text: 40, reasoning: undefined },
     },
     response: { id: "resp_fixture_1", modelId: "kimi-test" },
-    // `generateObject` unconditionally logs `result.warnings` — an empty
+    // The SDK unconditionally reads `result.warnings` — an empty
     // array here is what a well-behaved provider with nothing to warn about
     // returns; MockLanguageModelV4 does not default this field itself.
     warnings: [],

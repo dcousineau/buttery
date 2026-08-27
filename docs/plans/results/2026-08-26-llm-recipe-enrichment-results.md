@@ -96,11 +96,31 @@ Both directions are covered by `load.db.test.ts` cases against a real database.
 ## Deviations from the plan, deliberate
 
 - **`ai@7`, not `ai@^6`** (§4). The plan says to pin `^6` and also says "let pnpm resolve it;
-  do not guess" — pnpm resolved 7.0.79. `generateObject` and the `ai/test` mock models are both
-  present, so the `^6` in the prose was a stale guess rather than a constraint.
-- **No `mode: 'json'` fallback** (§7.1). `ai@7`'s `generateObject` has no `mode` option at all
-  (removed upstream in `af9dab3`); the only generation-strategy switch left is `output`, and
-  the call uses its default `'object'`. There was nothing to fall back to, so nothing was built.
+  do not guess" — pnpm resolved 7.0.79, so the `^6` in the prose was a stale guess rather than
+  a constraint. The plan carries a dated correction note.
+- **`generateText` + `Output.object`, not `generateObject`** (L5, §7.1). `generateObject` is
+  `@deprecated` in `ai@7` — upstream `614599a` deprecated it at `6.0.0-beta.127` in favour of
+  stable structured output on `generateText`, and its own doc comment says to switch. The plan
+  predates that and is now annotated with a dated correction at both places it says otherwise.
+
+  The migration is behaviour-preserving, and both things that could have made it not so were
+  measured rather than assumed:
+
+  - **Typing survives.** `Output.object`'s declared return widens to `JSONValue`, which reads
+    as though the schema's inferred type is discarded. It is not: `result.output` types as the
+    full `LlmOutput`. Confirmed by assigning it to a `number` and watching `tsc` print the
+    whole inferred shape back — a check that would have passed silently had it been `any`.
+  - **The error shape is identical.** A schema violation still throws `NoObjectGeneratedError`
+    with the raw model text on `.text`. Checked against the mock for prose-wrapped JSON, an
+    out-of-enum value and a flat refusal; all three threw exactly that with the text intact. So
+    `classify.ts`'s catch is unchanged and `$ai_error` still carries what the model said.
+
+  `classify.test.ts` passed all 13 cases across the migration without a single assertion
+  changing, because it was written against `classifyWithLlm`'s contract rather than the SDK's.
+
+- **No `mode: 'json'` fallback** (§7.1). `mode` does not exist on either function in `ai@7`;
+  the schema-constrained strategy it used to name is what `Output.object` IS. There was
+  nothing to fall back to, so nothing was built.
 - **`prompt-fetch.ts` uses REST, not posthog-node's `Prompts` client** (§6.2). The installed
   `posthog-node@5.49.1` ships no prompt API — zero hits for "prompt" across its `.d.ts` files.
   §6.2's REST fallback is therefore the only path, and it is the one implemented. Its response
@@ -117,9 +137,6 @@ Both directions are covered by `load.db.test.ts` cases against a real database.
   over-confident model behind a constant instead of surfacing it.
 - **`markLlmSkipped` does not stamp `llm_version`.** §3.1 wants a skipped row "cheap to reset
   by claiming `llm_version < current`", which only works if the skip leaves the column alone.
-- **`generateObject` is `@deprecated` in `ai@7`** (upstream commit `614599a`, in favour of
-  structured output on `generateText`). No removal version is announced anywhere through
-  7.0.79, so L5's pin is safe today. Worth revisiting, not urgent.
 
 ## Verification
 
