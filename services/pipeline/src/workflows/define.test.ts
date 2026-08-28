@@ -209,7 +209,7 @@ describe("defineWorkflow", () => {
 
       it("throws on an unknown target workflow, the same way a bad entry step does", async () => {
         const workflow = defineWorkflow({ name: "caller", description: "", entry: "one", steps: [step("one", () => Promise.resolve())] });
-        const host = jobHost(NO_JOB, workflow, NO_FLOWS, new Map());
+        const host = jobHost(NO_JOB, workflow, NO_FLOWS, new Map(), () => undefined);
 
         await expect(host.enqueue("does-not-exist", {})).rejects.toThrow(/no workflow named "does-not-exist"/);
       });

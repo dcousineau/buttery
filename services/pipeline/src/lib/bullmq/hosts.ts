@@ -1,13 +1,19 @@
 import type { FlowProducer, Job, Queue } from "bullmq";
 import { log } from "#/log.ts";
 import { flowJobFor, type ChildResults, type EnqueueNode, type FlowNode, type Workflow, type WorkflowHost } from "#/lib/bullmq/kernel.ts";
-import { findWorkflow } from "#/workflows/index.ts";
 
 /** The two things a step can report to and submit flows through: a BullMQ job, and a terminal for the one-shot CLI. */
 
 const NO_CHILDREN: ChildResults = { values: [], failures: [] };
 
-export function jobHost(job: Job, workflow: Workflow, flows: FlowProducer, queues: Map<string, Queue>): WorkflowHost {
+/**
+ * `resolve` is how a step's `enqueue` finds the workflow it is targeting. It is
+ * an argument rather than a module-level registry lookup because there are now
+ * two registries — the old `WORKFLOWS` array and the workflow plugin's own Map
+ * — and this module must not know which one its caller lives in. It also keeps
+ * `lib/bullmq/` from importing out of `workflows/`, which was backwards.
+ */
+export function jobHost(job: Job, workflow: Workflow, flows: FlowProducer, queues: Map<string, Queue>, resolve: (name: string) => Workflow | undefined): WorkflowHost {
   return {
     runId: `job:${job.id ?? "?"}`,
     log: async (message) => {
@@ -25,7 +31,7 @@ export function jobHost(job: Job, workflow: Workflow, flows: FlowProducer, queue
     },
 
     enqueue: async (targetName: string, node: EnqueueNode) => {
-      const target = findWorkflow(targetName);
+      const target = resolve(targetName);
       if (!target) {
         throw new Error(`ctx.enqueue: no workflow named "${targetName}"`);
       }

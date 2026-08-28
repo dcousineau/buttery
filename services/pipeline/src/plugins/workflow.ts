@@ -144,10 +144,15 @@ export default fp(
         for (const registration of registrations.values()) {
           const { spec, workflow } = registration;
 
-          const worker = new Worker(spec.name, (job) => workflow.run({ step: job.name, payload: job.data, host: jobHost(job, workflow, flows, queues), redis: fastify.redis }), {
-            connection: fastify.redis,
-            concurrency: spec.concurrency ?? fastify.env.PIPELINE_WORKER_CONCURRENCY,
-          });
+          const worker = new Worker(
+            spec.name,
+            (job) =>
+              workflow.run({ step: job.name, payload: job.data, host: jobHost(job, workflow, flows, queues, (name) => registrations.get(name)?.workflow), redis: fastify.redis }),
+            {
+              connection: fastify.redis,
+              concurrency: spec.concurrency ?? fastify.env.PIPELINE_WORKER_CONCURRENCY,
+            },
+          );
 
           worker.on("failed", (job, err) => {
             fastify.log.error({ queue: spec.name, jobId: job?.id, name: job?.name, attempt: job?.attemptsMade, err: err.message }, "job failed");

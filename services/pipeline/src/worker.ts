@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import { loadConfig } from "#/config.ts";
-import { WORKFLOWS } from "#/workflows/index.ts";
+import { WORKFLOWS, findWorkflow } from "#/workflows/index.ts";
 import { jobHost } from "#/lib/bullmq/hosts.ts";
 import { log, setLogRole } from "#/log.ts";
 import { closeQueues, getFlowProducer, getQueues } from "#/queues.ts";
@@ -39,7 +39,7 @@ function start(): void {
 
   const workers = WORKFLOWS.map((workflow) => {
     // A job's name is the step it runs; the kernel looks it up and calls it.
-    const worker = new Worker(workflow.name, (job) => workflow.run({ step: job.name, payload: job.data, host: jobHost(job, workflow, flows, queues), redis }), {
+    const worker = new Worker(workflow.name, (job) => workflow.run({ step: job.name, payload: job.data, host: jobHost(job, workflow, flows, queues, findWorkflow), redis }), {
       connection,
       concurrency: workflow.concurrency ?? config.worker.concurrency,
     });
