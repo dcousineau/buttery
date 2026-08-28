@@ -13,6 +13,7 @@ import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
 import { CookModeLauncher } from "#/components/recipes/CookModeLauncher";
+import { RecipeTagStrip } from "#/components/recipes/RecipeTagStrip";
 import type { CookRecipe } from "#/components/recipes/cook/CookMode";
 
 export const Route = createFileRoute("/recipes/$id")({
@@ -123,8 +124,6 @@ function RecipeDetail({ recipe }: { recipe: RecipeDetailData }) {
     recipe.totalTime && { label: "Total", value: formatDuration(recipe.totalTime) },
   ].filter(Boolean) as Array<{ label: string; value: string }>;
 
-  const facets = [recipe.cuisine, recipe.category, recipe.cookingMethod, ...recipe.suitableForDiet].filter(Boolean) as string[];
-
   return (
     <article className="rise-in page-wrap px-4 pt-8 pb-16" itemScope itemType="https://schema.org/Recipe">
       {/* Machine-readable copy: full schema.org/Recipe as JSON-LD, so parsers
@@ -205,15 +204,11 @@ function RecipeDetail({ recipe }: { recipe: RecipeDetailData }) {
             </div>
           )}
 
-          {facets.length > 0 && (
-            <div className="mt-5 flex flex-wrap gap-2">
-              {facets.map((f) => (
-                <Badge key={f} variant="outline" size="xs">
-                  {f}
-                </Badge>
-              ))}
-            </div>
-          )}
+          <RecipeTagStrip
+            className="mt-5"
+            author={{ cuisine: recipe.cuisine, category: recipe.category, cookingMethod: recipe.cookingMethod, diets: recipe.suitableForDiet }}
+            labels={recipe.enrichment}
+          />
 
           {/* Cook mode — anyone can run the recipe hands-free (no account needed). */}
           {recipe.instructions.length > 0 && (

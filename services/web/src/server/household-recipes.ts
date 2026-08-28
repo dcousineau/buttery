@@ -247,6 +247,9 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
         "r.recipe_yield as recipe_yield",
         "r.total_time_seconds as total_time_seconds",
         "r.recipe_cuisine as recipe_cuisine",
+        // The AUTHOR's own declared diets — the tag strip shows these beside
+        // whatever the pipeline derived, and the author's wins on collision.
+        "r.suitable_for_diet as suitable_for_diet",
         "r.recipe_category as recipe_category",
         "r.calories as calories",
         "r.protein_content as protein_content",
@@ -269,8 +272,13 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
     // second copy of it here — and it is safe to call after the box row above
     // has already authorized this household + recipe pair.
     const { readPlannedUsage } = await import("./meal-plan");
+    // Same ride-along reasoning as `plannedUsage` above, with one extra
+    // consequence worth naming: riding on THIS payload is what puts enrichment
+    // into the offline IndexedDB cache, so a boxed recipe opened offline still
+    // shows its tags.
+    const { enrichmentTagLabels, getRecipeEnrichment } = await import("./recipe-enrichment");
 
-    const [images, pendingImage, ingredients, instructions, keywords, note, adder, plannedUsage] = await Promise.all([
+    const [images, pendingImage, ingredients, instructions, keywords, note, adder, plannedUsage, enrichment] = await Promise.all([
       db.selectFrom("recipe_image").select(["blob_cid", "blob_mime", "alt"]).where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
       // Draft/private hero fallback: a not-yet-published import keeps its photo as
       // a pending pointer (recipe_pending_image). No published recipe_image row
@@ -283,6 +291,7 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
       db.selectFrom("household_recipe_note").select(["body", "updated_at"]).where("household_id", "=", householdId).where("recipe_id", "=", data.recipeId).executeTakeFirst(),
       resolveAdderHandles(db, [boxed.added_by_did]).then((byDid) => byDid.get(boxed.added_by_did) ?? null),
       readPlannedUsage(db, householdId, data.recipeId),
+      getRecipeEnrichment(db, data.recipeId),
     ]);
 
     const { minutes, display } = minutesDisplay(row.total_time_seconds);
@@ -333,6 +342,8 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
       unavailableSince: row.acr_deleted_at ? new Date(row.acr_deleted_at).toISOString() : null,
       unpublished: row.visibility !== "public" || row.uri == null,
       plannedUsage,
+      suitableForDiet: (row.suitable_for_diet ?? []).map((slug) => prettify(slug)).filter((label): label is string => label !== null),
+      enrichment: enrichmentTagLabels(enrichment),
     };
   });
 

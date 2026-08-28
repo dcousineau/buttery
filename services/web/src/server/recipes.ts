@@ -152,11 +152,18 @@ export const getRecipe = createServerFn({ method: "GET" })
 
     if (!row) return null;
 
-    const [images, ingredients, instructions, keywords] = await Promise.all([
+    // Enrichment rides along in the same batch as everything else on the detail
+    // payload — the tag strip is part of the page, not a second request. Its
+    // read seam is `server/recipe-enrichment.ts`; this is that module's first
+    // production caller.
+    const { enrichmentTagLabels, getRecipeEnrichment } = await import("./recipe-enrichment");
+
+    const [images, ingredients, instructions, keywords, enrichment] = await Promise.all([
       db.selectFrom("recipe_image").select(["blob_cid", "blob_mime", "alt", "aspect_w", "aspect_h"]).where("recipe_id", "=", id).orderBy("ordinal").execute(),
       db.selectFrom("recipe_ingredient").select("text").where("recipe_id", "=", id).orderBy("ordinal").execute(),
       db.selectFrom("recipe_instruction").select("text").where("recipe_id", "=", id).orderBy("ordinal").execute(),
       db.selectFrom("recipe_keyword").select("keyword").where("recipe_id", "=", id).execute(),
+      getRecipeEnrichment(db, id),
     ]);
 
     const card = toCard({
@@ -168,6 +175,9 @@ export const getRecipe = createServerFn({ method: "GET" })
 
     return {
       ...card,
+      // Derived, never published: nothing here reaches the JSON-LD or the
+      // microdata, both of which are built from raw author fields only.
+      enrichment: enrichmentTagLabels(enrichment),
       uri: row.uri,
       did: row.did,
       images: images

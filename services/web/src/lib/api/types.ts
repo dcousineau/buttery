@@ -21,6 +21,7 @@
 import type { Aisle } from "@buttery/food/aisles";
 import type { UnitDim } from "@buttery/food/units";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
+import type { RecipeTagLabel } from "#/lib/recipe-tags";
 
 // --- provenance ---------------------------------------------------------
 
@@ -108,6 +109,26 @@ export interface HouseholdRecipeDetail {
    * built before the planner shipped.
    */
   plannedUsage: PlannedUsage | null;
+  /**
+   * Diets the AUTHOR declared on the recipe itself (`recipe.suitable_for_diet`),
+   * prettified. Distinct from anything the enrichment pipeline derived — see
+   * `enrichment` below, and `lib/recipe-tags.ts` for how the two merge.
+   *
+   * Optional for the same reason `plannedUsage` is nullable: a payload built
+   * before this shipped and still sitting in IndexedDB has no such key.
+   */
+  suitableForDiet?: string[];
+  /**
+   * Enrichment labels for the tag strip, riding along on the detail payload so
+   * they land in the offline cache with everything else rather than needing a
+   * second request the browser cannot make offline.
+   *
+   * Three states, all meaningful: an array (enriched), `null` (never enriched
+   * — no pipeline row exists at all), and ABSENT (a pre-feature payload out of
+   * a stale IndexedDB cache). The last is why this is optional; enrichment
+   * appears on the next refetch, and nothing new has to be invalidated.
+   */
+  enrichment?: RecipeTagLabel[] | null;
 }
 
 /** One picker result (global public search, excludes already-boxed). */
@@ -464,6 +485,13 @@ export interface RecipeCardData {
 }
 
 export interface RecipeDetailData extends RecipeCardData {
+  /**
+   * Enrichment labels for the tag strip. NOT optional here, unlike
+   * `HouseholdRecipeDetail`'s: this payload comes from a route loader on every
+   * render and is never cached in IndexedDB, so there is no pre-feature shape
+   * to guard against.
+   */
+  enrichment: RecipeTagLabel[] | null;
   uri: string | null;
   did: string | null;
   images: Array<{ url: string; alt: string | null; aspectW: number | null; aspectH: number | null }>;

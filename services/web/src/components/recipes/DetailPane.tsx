@@ -23,6 +23,7 @@ import { useRecipeScale } from "./scale";
 import { SourceLink } from "./SourceLink";
 import { ScalePanel } from "./ScalePanel";
 import { NutritionStrip } from "./NutritionStrip";
+import { RecipeTagStrip } from "./RecipeTagStrip";
 import { UnavailableBanner } from "./UnavailableBanner";
 import { StepText } from "./StepText";
 import { CookModeLauncher } from "./CookModeLauncher";
@@ -403,6 +404,8 @@ export function DetailPane({
             )}
 
             <NutritionStrip nutrition={recipe.nutrition} servings={displayServings} />
+
+            <RecipeTagStrip author={{ cuisine: recipe.cuisine, category: recipe.category, diets: recipe.suitableForDiet ?? [] }} labels={recipe.enrichment} />
           </div>
 
           {/* Right column */}
