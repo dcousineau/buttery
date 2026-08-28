@@ -1,6 +1,6 @@
 import type { Queue } from "bullmq";
 import { describe, expect, it } from "vitest";
-import { readBacklog } from "#/backlog.ts";
+import { readBacklog } from "#/lib/bullmq/backlog.ts";
 
 /** The two members `readBacklog` touches, which is all a queue needs to be here. */
 function stubQueue(name: string, counts: Record<string, number>): Queue {

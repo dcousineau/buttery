@@ -1,6 +1,6 @@
 import type { Redis } from "ioredis";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { StepContext } from "#/workflows/define.ts";
+import type { StepContext } from "#/lib/bullmq/kernel.ts";
 
 /**
  * `sync-repo`'s enrichment fan-out (recipe-enrichment plan §9): it enqueues

@@ -1,8 +1,8 @@
 import { loadConfig } from "#/config.ts";
 import { log, setLogRole } from "#/log.ts";
 import { closeRedis, getRedis } from "#/redis.ts";
-import type { ChildResults, Workflow } from "#/workflows/define.ts";
-import { consoleHost } from "#/workflows/hosts.ts";
+import type { ChildResults, Workflow } from "#/lib/bullmq/kernel.ts";
+import { consoleHost } from "#/lib/bullmq/hosts.ts";
 import { WORKFLOW_NAMES, findWorkflow } from "#/workflows/index.ts";
 
 setLogRole("cli");

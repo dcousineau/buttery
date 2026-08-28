@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import { loadConfig } from "#/config.ts";
 import { WORKFLOWS } from "#/workflows/index.ts";
-import { jobHost } from "#/workflows/hosts.ts";
+import { jobHost } from "#/lib/bullmq/hosts.ts";
 import { log, setLogRole } from "#/log.ts";
 import { closeQueues, getFlowProducer, getQueues } from "#/queues.ts";
 import { closeRedis, connectionFor, getRedis } from "#/redis.ts";

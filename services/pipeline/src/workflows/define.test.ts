@@ -1,9 +1,9 @@
 import type { FlowProducer, Job, Queue } from "bullmq";
 import type { Redis } from "ioredis";
 import { describe, expect, it } from "vitest";
-import { consoleHost, jobHost } from "#/workflows/hosts.ts";
+import { consoleHost, jobHost } from "#/lib/bullmq/hosts.ts";
 import { demo } from "#/workflows/demo/index.ts";
-import { defineWorkflow, flowJobFor, type ChildResults, type EnqueueNode, type StepSpec, type Workflow, type WorkflowHost } from "#/workflows/define.ts";
+import { defineWorkflow, flowJobFor, type ChildResults, type EnqueueNode, type StepSpec, type Workflow, type WorkflowHost } from "#/lib/bullmq/kernel.ts";
 
 /**
  * The kernel, on its own. Everything here is in-memory: the console host runs a

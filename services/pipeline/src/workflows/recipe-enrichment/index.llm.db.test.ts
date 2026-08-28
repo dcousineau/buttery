@@ -1,7 +1,7 @@
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { LLM_ENRICH_STEP } from "@buttery/pipeline-contract";
-import type { WorkflowHost } from "#/workflows/define.ts";
+import type { WorkflowHost } from "#/lib/bullmq/kernel.ts";
 import { recipeEnrichment } from "#/workflows/recipe-enrichment/index.ts";
 
 /**

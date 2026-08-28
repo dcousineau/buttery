@@ -1,7 +1,7 @@
 import { UnrecoverableError } from "bullmq";
 import { generateText, Output } from "ai";
 import { ENRICH_STEP, LLM_ENRICH_STEP, llmEnrichJobId, type LlmEnrichPayload, RECIPE_ENRICHMENT_QUEUE } from "@buttery/pipeline-contract";
-import { defineWorkflow, type StepSpec } from "#/workflows/define.ts";
+import { defineWorkflow, type StepSpec } from "#/lib/bullmq/kernel.ts";
 import { log } from "#/log.ts";
 import { closeDb, getPool } from "#/workflows/recipe-enrichment/lib/db.ts";
 import {

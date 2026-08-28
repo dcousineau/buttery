@@ -1,7 +1,7 @@
 import { atprotoSync } from "#/workflows/atproto-sync/index.ts";
 import { demo } from "#/workflows/demo/index.ts";
 import { recipeEnrichment } from "#/workflows/recipe-enrichment/index.ts";
-import type { Workflow } from "#/workflows/define.ts";
+import type { Workflow } from "#/lib/bullmq/kernel.ts";
 
 /**
  * Every workflow this service knows about. The one list; `server.ts`,

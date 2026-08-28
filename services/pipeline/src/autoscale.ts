@@ -1,6 +1,6 @@
 import type { Queue } from "bullmq";
 import type { AutoscaleConfig } from "#/config.ts";
-import { readBacklog } from "#/backlog.ts";
+import { readBacklog } from "#/lib/bullmq/backlog.ts";
 import { log } from "#/log.ts";
 
 /**

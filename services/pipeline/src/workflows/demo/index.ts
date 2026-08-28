@@ -1,5 +1,5 @@
-import type { StepSpec } from "#/workflows/define.ts";
-import { defineWorkflow } from "#/workflows/define.ts";
+import type { StepSpec } from "#/lib/bullmq/kernel.ts";
+import { defineWorkflow } from "#/lib/bullmq/kernel.ts";
 import { log } from "#/log.ts";
 
 /**

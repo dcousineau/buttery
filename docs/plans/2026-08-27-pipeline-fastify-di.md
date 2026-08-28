@@ -267,6 +267,18 @@ One trap S3 must handle: `atproto-sync/steps.test.ts:33` does `vi.mock("#/workfl
 ...)`. Deleting that module breaks the mock — repoint the test at whatever the step reads instead, and do
 not "fix" it by keeping the module alive.
 
+**Cross-workflow `enqueue` still resolves through the old registry (S4).** Found in S2 and left standing
+deliberately (conjecture `d-e3d34eda`): `lib/bullmq/hosts.ts`'s `jobHost` resolves an `enqueue(workflow, …)`
+target with the module-level `findWorkflow()` against the old `WORKFLOWS` array, not against
+`plugins/workflow.ts`'s own `Map`. Harmless today because nothing is registered through the plugin path,
+and invisible while only one workflow has migrated — the first real failure needs a migrated workflow
+enqueueing into another migrated workflow. `recipe-enrichment`'s `enrich` step enqueues `llm-enrich`
+_within its own queue_, so even that case does not exercise it.
+
+S4 deletes `src/workflows/index.ts` and with it `WORKFLOWS`, so the resolution has to move to the plugin's
+`Map` in the same step. Do not let this survive as "works on the machines we tested" — the symptom is a
+silently unroutable enqueue, not a crash.
+
 **S4 — the composition root.** `src/app.ts` with `@fastify/autoload` over `src/plugins/` and
 `src/workflows/`; `server.ts` / `worker.ts` become thin role bootstraps; `run-once.ts` moves to
 `src/cli/`. Delete `src/workflows/index.ts`, `define.ts`, `hosts.ts`, `src/queues.ts`, `src/reconcile.ts`,

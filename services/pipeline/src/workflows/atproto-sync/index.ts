@@ -1,4 +1,4 @@
-import { defineWorkflow } from "#/workflows/define.ts";
+import { defineWorkflow } from "#/lib/bullmq/kernel.ts";
 import { closeDb } from "#/workflows/atproto-sync/lib/db.ts";
 import { steps } from "#/workflows/atproto-sync/steps.ts";
 

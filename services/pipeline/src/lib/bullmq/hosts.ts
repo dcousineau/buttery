@@ -1,6 +1,6 @@
 import type { FlowProducer, Job, Queue } from "bullmq";
 import { log } from "#/log.ts";
-import { flowJobFor, type ChildResults, type EnqueueNode, type FlowNode, type Workflow, type WorkflowHost } from "#/workflows/define.ts";
+import { flowJobFor, type ChildResults, type EnqueueNode, type FlowNode, type Workflow, type WorkflowHost } from "#/lib/bullmq/kernel.ts";
 import { findWorkflow } from "#/workflows/index.ts";
 
 /** The two things a step can report to and submit flows through: a BullMQ job, and a terminal for the one-shot CLI. */

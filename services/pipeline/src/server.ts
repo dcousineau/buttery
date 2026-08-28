@@ -5,13 +5,13 @@ import basicAuth from "@fastify/basic-auth";
 import Fastify from "fastify";
 import { timingSafeEqual } from "node:crypto";
 import { Autoscaler, DISABLED_STATE } from "#/autoscale.ts";
-import { readBacklog } from "#/backlog.ts";
+import { readBacklog } from "#/lib/bullmq/backlog.ts";
 import { loadAutoscaleConfig, loadConfig } from "#/config.ts";
 import { WORKFLOWS, findWorkflow } from "#/workflows/index.ts";
 import { log } from "#/log.ts";
 import { closeQueues, getQueues } from "#/queues.ts";
 import { closeRedis } from "#/redis.ts";
-import { reconcileQueues } from "#/reconcile.ts";
+import { reconcileQueues } from "#/lib/bullmq/reconcile.ts";
 
 /**
  * The `pipeline` service: a Fastify server that hosts the Bull Board UI, exposes

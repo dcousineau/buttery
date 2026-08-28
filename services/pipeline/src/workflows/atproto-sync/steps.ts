@@ -1,6 +1,6 @@
 import { UnrecoverableError } from "bullmq";
 import { ENRICH_STEP, RECIPE_ENRICHMENT_QUEUE, type EnrichPayload } from "@buttery/pipeline-contract";
-import type { StepSpec } from "#/workflows/define.ts";
+import type { StepSpec } from "#/lib/bullmq/kernel.ts";
 import { acquireLock, releaseLock } from "#/lock.ts";
 import { log } from "#/log.ts";
 import { emptySummary, foldRepos } from "#/workflows/atproto-sync/plan.ts";
