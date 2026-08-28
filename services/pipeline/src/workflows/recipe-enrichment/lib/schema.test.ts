@@ -10,7 +10,7 @@ import {
   llmOutputSchema,
   MEAL_TYPE_SLUGS,
   SPICE_LEVEL_SLUGS,
-} from "#/workflows/recipe-enrichment/llm/schema.ts";
+} from "#/workflows/recipe-enrichment/lib/schema.ts";
 
 /**
  * Two things, in the order they matter (llm plan §12.1):

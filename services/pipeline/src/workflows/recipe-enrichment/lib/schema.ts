@@ -18,7 +18,7 @@ import { ALLERGEN_SLUGS, EMITTED_DIET_SLUGS, type AllergenSlug } from "#/workflo
  *      pinned to those sets by `schema.test.ts`. Read `types.ts`'s "TWO VERSION
  *      COLUMNS, NOT ONE" note before changing anything here.
  *
- * Nothing in this file does I/O; `classify.ts` is what hands the schema to
+ * Nothing in this file does I/O; `index.ts` is what hands the schema to
  * `generateObject`.
  */
 
@@ -116,7 +116,7 @@ const confidence = z.number().min(0).max(1);
  * panel sees both providers pointing at the same numbered lines.
  *
  * Not validated against the recipe's actual ordinals here (the schema has never
- * seen the recipe); `classify.ts` resolves them and silently drops any the
+ * seen the recipe); `index.ts`'s call site resolves them and silently drops any the
  * recipe does not have — a hallucinated line number costs an evidence entry,
  * never a verdict.
  */
@@ -199,7 +199,7 @@ export const LLM_ENRICHMENT_VERSION = 1;
  * provider/model/version tail is what makes "which model said this?" a question
  * the dev panel can answer from the row alone.
  *
- * The rules' equivalent is `RULES_METHOD` in `classifiers/shared.ts`; the two
+ * The rules' equivalent is `RULES_METHOD` in `lib/classifiers/shared.ts`; the two
  * never collide because nothing rules-derived starts with `llm:`.
  */
 export function llmMethod(provider: string, model: string): string {

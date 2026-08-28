@@ -1,5 +1,5 @@
-import type { Disagreement } from "#/workflows/recipe-enrichment/types.ts";
-import { captureEvent } from "#/workflows/recipe-enrichment/llm/posthog.ts";
+import type { ClassifierLine, Disagreement, Label } from "#/workflows/recipe-enrichment/types.ts";
+import { captureEvent } from "#/workflows/recipe-enrichment/lib/posthog.ts";
 
 /**
  * Observability capture for `llm-enrich` — manual `$ai_generation` events via
@@ -22,7 +22,7 @@ import { captureEvent } from "#/workflows/recipe-enrichment/llm/posthog.ts";
  * The heart of this module is {@link buildGenerationEvent}: pure, no I/O, no
  * PostHog client. `send*` wrappers below are the only impure code here, and
  * they do nothing but hand the pure functions' output to
- * `llm/posthog.ts`'s `captureEvent`, which is itself fire-and-forget and
+ * `lib/posthog.ts`'s `captureEvent`, which is itself fire-and-forget and
  * never throws (plan §9.2 step 7). If PostHog is absent, capture is a total
  * no-op — the `writeLlmEnrichment` DB write already happened by the time
  * `llm-enrich` calls any function in this file, so observability failing
@@ -32,10 +32,10 @@ import { captureEvent } from "#/workflows/recipe-enrichment/llm/posthog.ts";
 // --- shared vocabulary -------------------------------------------------
 
 /**
- * Where the recipe came from — the same two-value distinction
- * `BackfillPayload.localOnly` and every `origin = 'local'` SQL predicate in
+ * Where the recipe came from — the same two-value distinction the backfill
+ * script's `--local-only` and every `origin = 'local'` SQL predicate in
  * `lib/load.ts` use, spelled as a type here because this is the one file in
- * the `llm/` folder that has to branch on it (L10). Not imported from
+ * `lib/` that has to branch on it (L10). Not imported from
  * anywhere: nothing in this codebase centralizes it as a shared type today
  * (the db layer just carries `origin: string`), so this is that type's first
  * appearance, and the natural place for it given L10 is this module's whole
@@ -142,7 +142,7 @@ export interface GenerationEventInput {
   /**
    * How many of those lines the rules classifier could not resolve
    * (`foodSlug === null`) — the same denominator `unresolvedShare` in
-   * `classifiers/shared.ts` reads, given to the LLM as context and worth
+   * `lib/classifiers/shared.ts` reads, given to the LLM as context and worth
    * correlating against disagreement rate.
    */
   unresolvedLineCount: number;
@@ -291,7 +291,7 @@ export function buildGenerationEvent(input: GenerationEventInput): { distinctId:
  * reads `process.env` — {@link buildGenerationEvent} stays pure and
  * deterministically testable by taking `pricing` as an explicit input field
  * instead, and this thin wrapper is what fills that field in for the real
- * call path. Fire-and-forget via `llm/posthog.ts`'s `captureEvent`: never
+ * call path. Fire-and-forget via `lib/posthog.ts`'s `captureEvent`: never
  * throws, no-ops when PostHog is absent.
  */
 export async function sendGenerationEvent(input: Omit<GenerationEventInput, "pricing">): Promise<void> {
@@ -355,11 +355,108 @@ export function buildDisagreementEvent(input: DisagreementEventInput): { distinc
 
 /**
  * Thin send for one disagreement — builds via {@link buildDisagreementEvent}
- * and hands it to `llm/posthog.ts`'s fire-and-forget `captureEvent`.
+ * and hands it to `lib/posthog.ts`'s fire-and-forget `captureEvent`.
  * `llm-enrich` calls this once per `Disagreement` the merge produced (plan
  * §9.2 step 7).
  */
 export async function sendDisagreementEvent(input: DisagreementEventInput): Promise<void> {
   const { distinctId, event, properties } = buildDisagreementEvent(input);
   await captureEvent(distinctId, event, properties);
+}
+
+// --- one-call-site wrappers for index.ts's llm-enrich step -----------------
+
+/** The provider/prompt identity a generation event names. */
+export interface GenerationProvider {
+  providerName: string;
+  modelId: string;
+  baseURL: string;
+}
+
+export interface GenerationPrompt {
+  name: string;
+  version: number | null;
+}
+
+export interface CaptureGenerationInput {
+  traceId: string;
+  recipeId: string;
+  recipeOrigin: RecipeOrigin;
+  provider: GenerationProvider;
+  prompt: GenerationPrompt;
+  lines: readonly ClassifierLine[];
+  messages: readonly object[];
+  outputChoices: readonly object[];
+  usage: GenerationUsage;
+  latencyMs: number;
+  llmVersion: number;
+  writes: readonly Label[];
+  disagreements: readonly Disagreement[];
+}
+
+/** Send the generation event and one disagreement event per disagreement, for a successful `llm-enrich` call. */
+export async function captureGeneration(input: CaptureGenerationInput): Promise<void> {
+  const unresolvedLineCount = input.lines.filter((line) => line.foodSlug === null).length;
+  await sendGenerationEvent({
+    traceId: input.traceId,
+    model: input.provider.modelId,
+    provider: input.provider.providerName,
+    baseUrl: input.provider.baseURL,
+    latencyMs: input.latencyMs,
+    usage: input.usage,
+    httpStatus: 200,
+    recipeId: input.recipeId,
+    recipeOrigin: input.recipeOrigin,
+    promptName: input.prompt.name,
+    promptVersion: input.prompt.version,
+    llmVersion: input.llmVersion,
+    labelsWritten: input.writes.length,
+    disagreements: input.disagreements.length,
+    lineCount: input.lines.length,
+    unresolvedLineCount,
+    messages: input.messages,
+    outputChoices: input.outputChoices,
+  });
+  for (const disagreement of input.disagreements) {
+    await sendDisagreementEvent({ recipeId: input.recipeId, recipeOrigin: input.recipeOrigin, disagreement });
+  }
+}
+
+export interface CaptureGenerationFailureInput {
+  traceId: string;
+  recipeId: string;
+  recipeOrigin: RecipeOrigin;
+  provider: GenerationProvider;
+  prompt: GenerationPrompt;
+  lines: readonly ClassifierLine[];
+  llmVersion: number;
+  message: string;
+  /** The model's raw text, when the failure was a schema rejection — appended to `message` for `$ai_error`. */
+  rawText: string | undefined;
+}
+
+/** Send the generation event for a failed `llm-enrich` call — zero counts, `httpStatus: 0`, the error message (plus raw model text, when there is one). */
+export async function captureGenerationFailure(input: CaptureGenerationFailureInput): Promise<void> {
+  const unresolvedLineCount = input.lines.filter((line) => line.foodSlug === null).length;
+  await sendGenerationEvent({
+    traceId: input.traceId,
+    model: input.provider.modelId,
+    provider: input.provider.providerName,
+    baseUrl: input.provider.baseURL,
+    latencyMs: 0,
+    usage: { inputTokens: undefined, outputTokens: undefined },
+    httpStatus: 0,
+    recipeId: input.recipeId,
+    recipeOrigin: input.recipeOrigin,
+    promptName: input.prompt.name,
+    promptVersion: input.prompt.version,
+    llmVersion: input.llmVersion,
+    labelsWritten: 0,
+    disagreements: 0,
+    lineCount: input.lines.length,
+    unresolvedLineCount,
+    messages: [],
+    outputChoices: [],
+    error: { message: input.rawText ? `${input.message} — raw: ${input.rawText}` : input.message },
+  });
 }

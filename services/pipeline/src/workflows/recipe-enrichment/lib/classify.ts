@@ -1,10 +1,10 @@
 import type { ClassifierInput, Label } from "#/workflows/recipe-enrichment/types.ts";
-import { CLASSIFIERS } from "#/workflows/recipe-enrichment/classifiers/index.ts";
-import { RULES_METHOD } from "#/workflows/recipe-enrichment/classifiers/shared.ts";
+import { CLASSIFIERS } from "#/workflows/recipe-enrichment/lib/classifiers/index.ts";
+import { RULES_METHOD } from "#/workflows/recipe-enrichment/lib/classifiers/shared.ts";
 
 /**
  * Pure composition root for the recipe-enrichment classifiers (plan §8).
- * `steps.ts`'s `enrich` step is the only caller: parse a recipe's ingredient
+ * `index.ts`'s `enrich` step is the only caller: parse a recipe's ingredient
  * lines, match them against the food lexicon, hand the result to `classify`,
  * and write what comes back. Nothing here touches a database or the network —
  * that split is what makes `classify.test.ts` a plain vitest suite with no
@@ -32,7 +32,7 @@ import { RULES_METHOD } from "#/workflows/recipe-enrichment/classifiers/shared.t
  */
 export const CLASSIFIER_VERSION = 2;
 
-/** The `method` every rules-derived label carries. Defined in `classifiers/shared.ts` (see there for why) and re-exported so this file has the one name `steps.ts` needs. */
+/** The `method` every rules-derived label carries. Defined in `lib/classifiers/shared.ts` (see there for why) and re-exported so this file has the one name `index.ts` needs. */
 export { RULES_METHOD };
 
 /** Run every classifier in `CLASSIFIERS` and return the union of their labels. */

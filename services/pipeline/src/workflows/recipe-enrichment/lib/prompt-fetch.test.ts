@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PromptResult } from "@posthog/ai";
-import { fetchPrompt, PROMPT_CACHE_TTL_SECONDS, type PromptsClient, resetPromptCache } from "#/workflows/recipe-enrichment/llm/prompt-fetch.ts";
-import { FALLBACK_PROMPT, PROMPT_NAME } from "#/workflows/recipe-enrichment/llm/prompt.ts";
+import { fetchPrompt, PROMPT_CACHE_TTL_SECONDS, type PromptsClient, resetPromptCache } from "#/workflows/recipe-enrichment/lib/prompt-fetch.ts";
+import { FALLBACK_PROMPT, PROMPT_NAME } from "#/workflows/recipe-enrichment/lib/prompt.ts";
 
 /**
  * `prompt-fetch.ts` against a fake `Prompts` client (plan §12.1).

@@ -125,7 +125,7 @@ export async function isLlmEnrichmentEnabled(recipeId: string): Promise<boolean>
  * total no-op when there is no client, which is the common case in every
  * environment without `POSTHOG_ENABLED=true`.
  *
- * `llm/capture.ts` is the only caller; it builds `event`/`properties` with
+ * `lib/capture.ts` is the only caller; it builds `event`/`properties` with
  * pure functions and hands them here. This function does no shaping of its
  * own on purpose — one place decides what an event looks like, one place
  * decides whether it gets sent.

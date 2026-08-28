@@ -1,35 +1,35 @@
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { LLM_ENRICH_STEP } from "@buttery/pipeline-contract";
-import type { StepContext } from "#/workflows/define.ts";
-import { steps } from "#/workflows/recipe-enrichment/steps.ts";
+import type { WorkflowHost } from "#/workflows/define.ts";
+import { recipeEnrichment } from "#/workflows/recipe-enrichment/index.ts";
 
 /**
- * The gate, end to end through the real step (llm plan §12.1's last bullet):
- * `llm-enrich` with `LLM_ENRICHMENT_ENABLED=false` marks the recipe `skipped`
- * and **never constructs a provider**.
+ * The gate, end to end through the real workflow: `llm-enrich` with
+ * `LLM_ENRICHMENT_ENABLED=false` marks the recipe `skipped` and **never
+ * constructs a provider**.
  *
  * This is the one behavior in the whole LLM half that has to be verified
  * against the database rather than a fake, because "marks the recipe skipped"
  * IS a column write — a unit test with a stubbed writer would only prove the
  * step calls the function the test told it to call. What matters is that
  * `recipe_enrichment.llm_status` actually reads `'skipped'` afterwards, since
- * that value is what stops `llm-backfill` re-claiming the same recipes on
- * every run while the flag is off (plan §3.1).
+ * that value is what stops a backfill re-claiming the same recipes on every
+ * run while the flag is off.
  *
  * ── HOW "NEVER CONSTRUCTS A PROVIDER" IS PROVEN ────────────────────────────
  *
  * Not by spying. `beforeAll` DELETES `LLM_ENRICHMENT_MODEL`, `MOONSHOT_API_KEY`
  * and `LLM_ENRICHMENT_PROVIDER` from the environment, which makes
- * `resolveProvider()` throw on sight (see `llm/provider.ts` — no default is
+ * `resolveProvider()` throw on sight (see `lib/provider.ts` — no default is
  * baked in for any of the three, deliberately). So if the gate ever stopped
  * short-circuiting and the step reached provider construction, this test would
  * fail with that throw rather than quietly passing. The absence of a model call
  * is enforced by the same fact: there is nothing to call one with.
  *
  * No live model call and no live PostHog call happens here or anywhere in this
- * package's suites (L11, §12.2) — the env override is checked BEFORE the flag
- * precisely so that this path needs neither.
+ * package's suites — the env override is checked BEFORE the flag precisely so
+ * that this path needs neither.
  *
  * Skips (never fails) without a reachable migrated database, exactly like
  * `lib/load.db.test.ts` — see that file's header for the convention.
@@ -67,18 +67,17 @@ const RUN = Date.now().toString(36).toUpperCase().padStart(10, "0").slice(-10);
 const GATED_ID = `test-llm-gate-${RUN}-off`;
 const GONE_ID = `test-llm-gate-${RUN}-gone`;
 
-const llmEnrich = steps.find((step) => step.name === LLM_ENRICH_STEP);
+const llmEnrichStep = recipeEnrichment.steps.find((step) => step.name === LLM_ENRICH_STEP);
 
 /**
- * A `StepContext` with only what `llm-enrich` actually reads. `flow`,
- * `enqueue`, `children`, `progress` and `redis` throw rather than no-op: this
- * step must not reach for any of them, and a silent stub would let a future
- * change start using one without anybody noticing.
+ * A `WorkflowHost` with only what `llm-enrich` actually reads. `flow`,
+ * `enqueue`, `children`, `progress` throw rather than no-op: this step must
+ * not reach for any of them, and a silent stub would let a future change
+ * start using one without anybody noticing.
  */
-function ctx(payload: unknown): StepContext {
+function host(): WorkflowHost {
   const lines: string[] = [];
   return {
-    payload,
     runId: "test",
     log: (message: string) => {
       lines.push(message);
@@ -96,8 +95,16 @@ function ctx(payload: unknown): StepContext {
     enqueue: () => {
       throw new Error("llm-enrich should not enqueue anything");
     },
-    redis: undefined as unknown as StepContext["redis"],
   };
+}
+
+function run(payload: unknown): Promise<unknown> {
+  return recipeEnrichment.run({
+    step: LLM_ENRICH_STEP,
+    payload,
+    host: host(),
+    redis: undefined as unknown as Parameters<typeof recipeEnrichment.run>[0]["redis"],
+  });
 }
 
 let client: PoolClient;
@@ -129,17 +136,17 @@ afterAll(async () => {
   await pool.end();
 });
 
-describe.skipIf(!pool)(`${LLM_ENRICH_STEP} — the fail-closed gate (llm plan §9.2 steps 1-2)`, () => {
+describe.skipIf(!pool)(`${LLM_ENRICH_STEP} — the fail-closed gate`, () => {
   it("is registered on the workflow", () => {
-    expect(llmEnrich, `${LLM_ENRICH_STEP} is missing from steps.ts's exported array`).toBeDefined();
+    expect(llmEnrichStep, `${LLM_ENRICH_STEP} is missing from index.ts's workflow`).toBeDefined();
   });
 
   it("marks the recipe skipped and never constructs a provider when LLM_ENRICHMENT_ENABLED=false", async () => {
-    const result = await llmEnrich?.run(ctx({ recipeId: GATED_ID }));
+    const result = await run({ recipeId: GATED_ID });
     expect(result).toEqual({ status: "skipped" });
 
-    // The column write is the point: `skipped` is what stops `llm-backfill`
-    // re-claiming this recipe on every run while the flag is off (plan §3.1).
+    // The column write is the point: `skipped` is what stops a backfill
+    // re-claiming this recipe on every run while the flag is off.
     const row = await client.query<{ llm_status: string | null; llm_version: number; llm_error: string | null }>(
       `select llm_status, llm_version, llm_error from recipe_enrichment where recipe_id = $1`,
       [GATED_ID],
@@ -154,7 +161,7 @@ describe.skipIf(!pool)(`${LLM_ENRICH_STEP} — the fail-closed gate (llm plan §
   });
 
   it("rejects a payload with no recipeId without touching the database", async () => {
-    await expect(llmEnrich?.run(ctx({}))).rejects.toThrow(/recipeId/);
+    await expect(run({})).rejects.toThrow(/recipeId/);
   });
 
   it("completes as `gone` for a recipe that no longer exists, rather than failing the job", async () => {
@@ -164,7 +171,7 @@ describe.skipIf(!pool)(`${LLM_ENRICH_STEP} — the fail-closed gate (llm plan §
     try {
       // `markLlmSkipped` is not reached either: there is no row to mark, and a
       // deleted recipe is not a failure — jobs outlive rows.
-      expect(await llmEnrich?.run(ctx({ recipeId: GONE_ID }))).toEqual({ status: "gone" });
+      expect(await run({ recipeId: GONE_ID })).toEqual({ status: "gone" });
     } finally {
       process.env.LLM_ENRICHMENT_ENABLED = "false";
     }

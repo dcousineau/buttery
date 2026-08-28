@@ -1,6 +1,6 @@
 import type { Classifier } from "#/workflows/recipe-enrichment/types.ts";
-import { allergenClassifier } from "#/workflows/recipe-enrichment/classifiers/allergen.ts";
-import { dietClassifier } from "#/workflows/recipe-enrichment/classifiers/diet.ts";
+import { allergenClassifier } from "#/workflows/recipe-enrichment/lib/classifiers/allergen.ts";
+import { dietClassifier } from "#/workflows/recipe-enrichment/lib/classifiers/diet.ts";
 
 /**
  * The ordered classifier array — this line is the entire LLM seam (plan D2).

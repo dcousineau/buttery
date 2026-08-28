@@ -1,5 +1,5 @@
 import { Prompts, type PromptResult } from "@posthog/ai";
-import { FALLBACK_PROMPT, PROMPT_NAME } from "#/workflows/recipe-enrichment/llm/prompt.ts";
+import { FALLBACK_PROMPT, PROMPT_NAME } from "#/workflows/recipe-enrichment/lib/prompt.ts";
 
 /**
  * PostHog Prompt Management fetch (plan §6.2) — resolves the `production`
@@ -37,7 +37,7 @@ import { FALLBACK_PROMPT, PROMPT_NAME } from "#/workflows/recipe-enrichment/llm/
  * `Prompts` talks to the APP host (`https://us.posthog.com`) with a PERSONAL
  * API key (`POSTHOG_PERSONAL_API_KEY`, scope `llm_prompt:read`) — a human
  * identity, because prompt content is a workspace asset, not an event. That is
- * deliberately different from `llm/posthog.ts`'s event capture and flag
+ * deliberately different from `lib/posthog.ts`'s event capture and flag
  * evaluation, which use the PROJECT token against the INGESTION host
  * (`https://us.i.posthog.com`, `POSTHOG_HOST`). Both credentials are needed
  * here: the personal key authenticates, the project token selects the project.
@@ -59,7 +59,7 @@ export const PROMPT_CACHE_TTL_SECONDS = 300;
  * A prompt fetch competes with nothing in `llm-enrich`'s critical path worth
  * waiting seconds for — if PostHog is slow, the committed fallback is a better
  * outcome than a stalled job, which is why this is so tight next to the 60s
- * `classify.ts` gives the model call. The losing fetch is deliberately NOT
+ * `index.ts` gives the model call. The losing fetch is deliberately NOT
  * aborted: it keeps running and populates the SDK's cache, so the run after a
  * slow one usually gets the real prompt for free.
  */
@@ -69,7 +69,7 @@ const FETCH_TIMEOUT_MS = 2000;
 const DEFAULT_POSTHOG_APP_HOST = "https://us.posthog.com";
 
 export interface ResolvedPrompt {
-  /** The prompt template, still carrying `{{recipe_json}}` — `classify.ts` compiles it. */
+  /** The prompt template, still carrying `{{recipe_json}}` — `lib/llm-messages.ts`'s `buildMessages` compiles it. */
   text: string;
   /** The prompt name PostHog resolved, or `prompt.ts`'s `PROMPT_NAME` on a fallback. Sent as `$ai_prompt_name`. */
   name: string;
@@ -117,7 +117,7 @@ function warn(message: string, err?: unknown): void {
  * is not configured for prompt management.
  *
  * `PromptsDirectOptions` rather than `{ posthog }` on purpose: the client in
- * `llm/posthog.ts` is gated by `POSTHOG_ENABLED` and carries no personal key,
+ * `lib/posthog.ts` is gated by `POSTHOG_ENABLED` and carries no personal key,
  * and prompt fetching is a different question from event capture with a
  * different credential. Reusing that client would tie "can we read the prompt?"
  * to "may we write events?", which are allowed to differ — most visibly when
@@ -155,7 +155,7 @@ function getClient(env: Record<string, string | undefined>): PromptsClient | nul
 const CODE_FALLBACK: ResolvedPrompt = { text: FALLBACK_PROMPT, name: PROMPT_NAME, version: null, source: "code_fallback" };
 
 /**
- * Resolve the prompt `classify.ts` should compile with `{{recipe_json}}`
+ * Resolve the prompt `lib/llm-messages.ts` should compile with `{{recipe_json}}`
  * (plan §6.2).
  *
  * Never throws. Every failure — no credentials, a non-200, a timeout, an

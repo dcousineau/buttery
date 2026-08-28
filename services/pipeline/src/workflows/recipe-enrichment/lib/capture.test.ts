@@ -6,8 +6,8 @@ import {
   buildGenerationEvent,
   DISAGREEMENT_EVENT,
   PIPELINE_DISTINCT_ID,
-} from "#/workflows/recipe-enrichment/llm/capture.ts";
-import type { GenerationEventInput } from "#/workflows/recipe-enrichment/llm/capture.ts";
+} from "#/workflows/recipe-enrichment/lib/capture.ts";
+import type { GenerationEventInput } from "#/workflows/recipe-enrichment/lib/capture.ts";
 import type { Disagreement } from "#/workflows/recipe-enrichment/types.ts";
 
 /**

@@ -2,50 +2,23 @@ import type { Pool } from "pg";
 import { categorizeWith, loadLexicon } from "@buttery/food/categorize";
 import { parseIngredientLine } from "@buttery/food/parse";
 import { loadTraits, traitsFor } from "@buttery/food/traits";
+import { contentFingerprint } from "@buttery/recipe-schemas/normalize";
 import type { ClassifierLine, Label } from "#/workflows/recipe-enrichment/types.ts";
 
 /**
- * Everything `enrich` and `backfill` need from Postgres and from `@buttery/food`
- * — deliberately **not** `classify.ts`. The one thing every function here needs
- * from that module is `CLASSIFIER_VERSION`, and every function below takes it
- * as a parameter instead of importing the constant, on purpose: `classify.ts`
- * is being written in parallel by another agent and did not exist for part of
- * this file's own development. Keeping this module classify-free means its own
- * `*.db.test.ts` runs against the real thing today, rather than either
- * stubbing `classify.ts` (which the task forbids) or blocking on it landing
- * first. `steps.ts` is the one place that imports `classify.ts` and threads
- * `CLASSIFIER_VERSION` through.
- *
- * Named `load.ts` per the plan's suggested layout, though it has grown to
- * cover writes too — `enrich`'s one transaction and `backfill`'s claim query
- * live here rather than in `steps.ts` for the same test-independence reason:
- * a `*.db.test.ts` importing `steps.ts` would drag `classify.ts` in with it.
- *
- * The LLM half (llm plan §9.1, §9.2) lives here too, for the identical reason
- * one level over: `llm/schema.ts` — the module that owns `LLM_ENRICHMENT_VERSION`
- * and the `llmMethod()`/`LLM_METHOD_PREFIX` constants — was being written by
- * another agent in parallel with this file, and importing it pulls in `zod` on
- * top, a dependency this module otherwise has no reason to carry. So exactly
- * like `classifierVersion` above, every LLM-side function takes `llmVersion` as
- * a parameter rather than importing `LLM_ENRICHMENT_VERSION`, and the `"llm:"`
- * prefix is restated locally below as `LLM_METHOD_PREFIX` rather than imported
- * — see that constant's own comment. `steps.ts` is the one place that imports
- * `llm/schema.ts` and threads both through.
+ * Everything `enrich`/`llm-enrich` need from Postgres and `@buttery/food` —
+ * deliberately not `classify.ts` or `lib/schema.ts`. `CLASSIFIER_VERSION` and
+ * `LLM_ENRICHMENT_VERSION` come in as parameters rather than imports, so this
+ * module stays free of `zod` and its own `*.db.test.ts` has no dependency on
+ * either. `index.ts` is the one place that imports both and threads them
+ * through.
  */
 
 /**
  * The `method` prefix every LLM-written label carries — `llm:<provider>:<model>@vN`
- * (llm plan L9, `llm/schema.ts`'s `llmMethod()`). This is the string
- * `writeLlmEnrichment`'s delete and every rules/LLM on-conflict clause below
- * matches on to tell an LLM-owned row from a rules-owned one.
- *
- * Restated here rather than imported from `llm/schema.ts`'s own
- * `LLM_METHOD_PREFIX` export for the same reason `classifierVersion` is a
- * parameter instead of an import of `classify.ts`'s `CLASSIFIER_VERSION` (see
- * the module doc above): keeping this file dependency-free of the concurrently
- * written `llm/` folder, and of the `zod` import that folder drags in. Keep
- * the two constants in sync by hand if the prefix ever changes — `llm/schema.ts`
- * is the source of truth for its shape.
+ * (`lib/schema.ts`'s `llmMethod()`). Restated here rather than imported, for
+ * the same classify/schema-free reason as above — keep the two in sync by
+ * hand if the prefix ever changes.
  */
 const LLM_METHOD_PREFIX = "llm:";
 const LLM_METHOD_LIKE_PATTERN = `${LLM_METHOD_PREFIX}%`;
@@ -61,7 +34,7 @@ export interface LoadedRecipe {
   name: string;
   /**
    * `'local'` (somebody's own) or `'sync'` (pulled from the network). Read here
-   * rather than separately in `steps.ts` because it is one more column on a
+   * rather than separately in `index.ts` because it is one more column on a
    * query that was already happening, and because it decides something
    * load-bearing: the LLM capture layer sends a generation's input and output
    * CONTENT to PostHog only for `sync` recipes (llm plan L10). Public network
@@ -83,6 +56,14 @@ export async function loadRecipe(pool: Pool, recipeId: string): Promise<LoadedRe
 
   const linesRes = await pool.query<IngredientRow>(`select ordinal, text from recipe_ingredient where recipe_id = $1 order by ordinal`, [recipeId]);
   return { name: recipe.name, origin: recipe.origin, lines: linesRes.rows };
+}
+
+/** Content fingerprint for a loaded recipe — order-independent, so re-ordering ingredients never trips a reclassify on its own. */
+export function fingerprintRecipe(recipe: Pick<LoadedRecipe, "name" | "lines">): Promise<string> {
+  return contentFingerprint(
+    recipe.name,
+    recipe.lines.map((line) => line.text),
+  );
 }
 
 // --- parse + match: recipe_ingredient rows -> ClassifierLine[] ---------
@@ -206,7 +187,34 @@ export async function getLlmEnrichmentState(pool: Pool, recipeId: string): Promi
     : null;
 }
 
-// --- the write transaction (plan §7.1 step 5) -----------------------------
+// --- freshness predicates ---------------------------------------------
+//
+// `classifierVersion`/`llmVersion` come in as parameters rather than imports
+// of `classify.ts`'s `CLASSIFIER_VERSION` / `lib/schema.ts`'s
+// `LLM_ENRICHMENT_VERSION`, for the same reason the rest of this module does:
+// see the module doc at the top of this file.
+
+/** The rules pass already covers this content at this classifier version — `enrich` may short-circuit. */
+export function isRulesFresh(state: EnrichmentState | null, inputHash: string, classifierVersion: number, force: boolean): boolean {
+  return !force && state !== null && state.status === "ok" && state.classifierVersion === classifierVersion && state.inputHash === inputHash;
+}
+
+/** The recipe's ingredients changed since the last classification — not just a version bump. Decides whether a rules re-write also cascades away the LLM's rows. */
+export function contentChanged(state: EnrichmentState | LlmEnrichmentState | null, inputHash: string): boolean {
+  return state?.inputHash != null && state.inputHash !== inputHash;
+}
+
+/** The rules pass has finished, on this content, under the deployed classifier — `llm-enrich`'s precondition before it may reason about the rules labels at all. */
+export function rulesPassCurrent(state: LlmEnrichmentState | null, inputHash: string, classifierVersion: number): state is LlmEnrichmentState {
+  return state !== null && state.status === "ok" && state.inputHash === inputHash && state.classifierVersion === classifierVersion;
+}
+
+/** The LLM pass already covers this content at this LLM version — `llm-enrich` may short-circuit. Prompt version is deliberately not part of this. */
+export function isLlmFresh(state: LlmEnrichmentState, inputHash: string, llmVersion: number, force: boolean): boolean {
+  return !force && state.llmStatus === "ok" && state.llmVersion === llmVersion && state.llmInputHash === inputHash;
+}
+
+// --- the write transaction -------------------------------------------------
 
 /**
  * The one new option `writeEnrichment` gains for the LLM split (llm plan
@@ -278,7 +286,7 @@ export interface WriteEnrichmentOptions {
  * silently masking an LLM verdict for good, only until the next `llm-enrich`
  * lands.
  *
- * Throws on failure and writes nothing — `steps.ts`'s `enrich` step is what
+ * Throws on failure and writes nothing — `index.ts`'s `enrich` step is what
  * catches that and records `status='error'`, deliberately OUTSIDE this
  * transaction (plan §7.1 step 5, the `atproto_sync_run` lesson: a failure
  * that writes nothing is a failure nobody can see).
@@ -386,7 +394,7 @@ export async function writeEnrichment(
  * with the same `on conflict` treatment; see that function's doc comment.)
  */
 export interface LlmEnrichmentMeta {
-  /** `llm/schema.ts`'s `LLM_ENRICHMENT_VERSION` at the time this run happened. */
+  /** `lib/schema.ts`'s `LLM_ENRICHMENT_VERSION` at the time this run happened. */
   llmVersion: number;
   /** Same content fingerprint as `input_hash` (D10) — the LLM classifies the same content the rules did. */
   llmInputHash: string;
@@ -596,8 +604,8 @@ limit $3
 
 /**
  * `force`'s claim: every recipe (subject to `localOnly`), ignoring
- * `recipe_enrichment` entirely — `BackfillPayload.force`'s "re-classify even
- * when the fingerprint and classifier version already match" only means
+ * `recipe_enrichment` entirely — the backfill script's `--force`'s "re-classify
+ * even when the fingerprint and classifier version already match" only means
  * something if the claim itself can select rows the default query's
  * staleness predicate would exclude. A deliberate, rare, full-corpus op (an
  * operator asking to reprocess without a `CLASSIFIER_VERSION` bump), so it
@@ -616,7 +624,7 @@ limit $2
 `;
 
 export interface ClaimOptions {
-  /** `classify.ts`'s `CLASSIFIER_VERSION`, threaded in by `steps.ts` — see the module doc. */
+  /** `classify.ts`'s `CLASSIFIER_VERSION`, threaded in by `index.ts` — see the module doc. */
   classifierVersion: number;
   limit?: number;
   force?: boolean;
@@ -687,7 +695,7 @@ limit $4
 `;
 
 export interface ClaimLlmOptions {
-  /** `llm/schema.ts`'s `LLM_ENRICHMENT_VERSION`, threaded in by `steps.ts` — see the module doc. */
+  /** `lib/schema.ts`'s `LLM_ENRICHMENT_VERSION`, threaded in by `index.ts` — see the module doc. */
   llmVersion: number;
   limit?: number;
   /** Claim anything `status = 'ok'`, regardless of `llm_status`/`llm_version` — including `skipped` and already-current `ok` rows. */

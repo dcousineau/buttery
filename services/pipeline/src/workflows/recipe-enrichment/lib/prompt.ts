@@ -1,4 +1,4 @@
-import { CUISINE_SLUGS, LLM_ALLERGEN_SLUGS, LLM_DIET_SLUGS, MEAL_TYPE_SLUGS, SPICE_LEVEL_SLUGS } from "#/workflows/recipe-enrichment/llm/schema.ts";
+import { CUISINE_SLUGS, LLM_ALLERGEN_SLUGS, LLM_DIET_SLUGS, MEAL_TYPE_SLUGS, SPICE_LEVEL_SLUGS } from "#/workflows/recipe-enrichment/lib/schema.ts";
 
 /**
  * THE PROMPT (plan §4, §6.3) — the one file a human opens to change what the
@@ -43,7 +43,7 @@ export const PROMPT_NAME = "recipe-llm-enrichment";
 /**
  * The sole `{{...}}` variable this prompt takes. Model params (temperature,
  * max tokens, retries, timeouts) deliberately stay in code (`provider.ts` /
- * `classify.ts`), not in the prompt's PostHog `config` — a behavior change
+ * `index.ts`), not in the prompt's PostHog `config` — a behavior change
  * rides a deploy, not a label move in the PostHog UI (plan §5.2).
  */
 export const PROMPT_VARIABLE = "recipe_json";

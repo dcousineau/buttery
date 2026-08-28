@@ -1,12 +1,12 @@
 import type { ClassifierLine, Dimension, Disagreement, Evidence, EvidenceLine, Label } from "#/workflows/recipe-enrichment/types.ts";
-import { llmMethod } from "#/workflows/recipe-enrichment/llm/schema.ts";
-import type { LlmAllergenJudgment, LlmDietJudgment, LlmOutput } from "#/workflows/recipe-enrichment/llm/schema.ts";
+import { llmMethod } from "#/workflows/recipe-enrichment/lib/schema.ts";
+import type { LlmAllergenJudgment, LlmDietJudgment, LlmOutput } from "#/workflows/recipe-enrichment/lib/schema.ts";
 
 /**
  * Safety-asymmetric merge of the LLM's second opinion into the rules'
  * labels (llm plan §8, L2). Pure: no database, no network, no clock, no
  * randomness — same input, same `{writes, disagreements}`, always. Read
- * `types.ts`'s "TWO VERSION COLUMNS, NOT ONE" note and `classifiers/shared.ts`
+ * `types.ts`'s "TWO VERSION COLUMNS, NOT ONE" note and `lib/classifiers/shared.ts`
  * before touching this file; the shapes here are deliberately the same
  * family as `makeLabel`/`evidenceLine`, just stamped with `llmMethod(...)`
  * instead of `RULES_METHOD`.
@@ -167,7 +167,7 @@ function composeNote(modelNote: string | undefined, replacesVerdict: string | un
 
 /**
  * Assemble one LLM-authored `Label`. Every write in this module goes
- * through here, mirroring `classifiers/shared.ts`'s `makeLabel` — the two
+ * through here, mirroring `lib/classifiers/shared.ts`'s `makeLabel` — the two
  * never drift on evidence shape, and `method` is always `llmMethod(...)`,
  * never `RULES_METHOD`.
  */

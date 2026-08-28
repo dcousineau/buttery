@@ -90,10 +90,10 @@ const PROVIDERS: Readonly<Record<string, ProviderFactory>> = {
  * for each way the env can be wrong: no provider named, an unrecognized
  * provider name, no model id, or (inside the entry) a missing provider key.
  * Every one of these is a configuration mistake meant to be caught by
- * whoever is standing up the deploy, not retried by BullMQ — `steps.ts` is
+ * whoever is standing up the deploy, not retried by BullMQ — `index.ts` is
  * expected to let this throw propagate as a real job failure rather than
  * catching it into a `skipped` row (that outcome is reserved for the flag
- * gate, `llm/posthog.ts`'s job, not this one's).
+ * gate, `lib/posthog.ts`'s job, not this one's).
  *
  * `env` defaults to `process.env` and is otherwise only ever overridden by
  * tests — production code should call `resolveProvider()` with no argument.

@@ -1,8 +1,8 @@
 import { TRAIT_MAYBE, TRAIT_NO } from "#/workflows/recipe-enrichment/types.ts";
 import type { Classifier, ClassifierLine, Label } from "#/workflows/recipe-enrichment/types.ts";
-import { makeLabel, MEANINGFUL_UNRESOLVED_SHARE, unresolvedShare, wordBoundary } from "#/workflows/recipe-enrichment/classifiers/shared.ts";
-import { TEXT_PATTERNS as ALLERGEN_TEXT_PATTERNS } from "#/workflows/recipe-enrichment/classifiers/allergen.ts";
-import type { TextPattern } from "#/workflows/recipe-enrichment/classifiers/allergen.ts";
+import { makeLabel, MEANINGFUL_UNRESOLVED_SHARE, unresolvedShare, wordBoundary } from "#/workflows/recipe-enrichment/lib/classifiers/shared.ts";
+import { TEXT_PATTERNS as ALLERGEN_TEXT_PATTERNS } from "#/workflows/recipe-enrichment/lib/classifiers/allergen.ts";
+import type { TextPattern } from "#/workflows/recipe-enrichment/lib/classifiers/allergen.ts";
 
 /**
  * Diet verdicts (plan D6, §8.2). Three-state — `excluded`, `likely`,

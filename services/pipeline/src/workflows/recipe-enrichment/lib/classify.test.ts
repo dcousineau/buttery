@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classify, CLASSIFIER_VERSION, RULES_METHOD } from "#/workflows/recipe-enrichment/classify.ts";
+import { classify, CLASSIFIER_VERSION, RULES_METHOD } from "#/workflows/recipe-enrichment/lib/classify.ts";
 import { ALLERGEN_SLUGS, EMITTED_DIET_SLUGS, TRAIT_MAYBE, TRAIT_NO, TRAIT_YES } from "#/workflows/recipe-enrichment/types.ts";
 import type { AllergenVerdict, ClassifierInput, ClassifierLine, DietVerdict, Label } from "#/workflows/recipe-enrichment/types.ts";
 
