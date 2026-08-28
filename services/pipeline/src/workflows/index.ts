@@ -1,4 +1,3 @@
-import { atprotoSync } from "#/workflows/atproto-sync/index.ts";
 import { recipeEnrichment } from "#/workflows/recipe-enrichment/index.ts";
 import type { Workflow } from "#/lib/bullmq/kernel.ts";
 
@@ -12,7 +11,7 @@ import type { Workflow } from "#/lib/bullmq/kernel.ts";
  * drains it — and `atproto-sync/` for the layout a workflow with more than a
  * file's worth of code should follow.
  */
-export const WORKFLOWS: readonly Workflow[] = [atprotoSync, recipeEnrichment];
+export const WORKFLOWS: readonly Workflow[] = [recipeEnrichment];
 
 export const WORKFLOW_NAMES: readonly string[] = WORKFLOWS.map((workflow) => workflow.name);
 

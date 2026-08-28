@@ -1,6 +1,5 @@
-import { defineWorkflow } from "#/lib/bullmq/kernel.ts";
-import { closeDb } from "#/workflows/atproto-sync/lib/db.ts";
-import { steps } from "#/workflows/atproto-sync/steps.ts";
+import fp from "fastify-plugin";
+import { createSteps } from "#/workflows/atproto-sync/steps.ts";
 
 /**
  * Sweep the atproto network and reconcile the Postgres recipe index.
@@ -23,32 +22,34 @@ import { steps } from "#/workflows/atproto-sync/steps.ts";
  *   plan.ts      folding repo results into a summary — pure, and tested
  *   types.ts     what the steps hand each other, which is JSON in Redis
  *   lib/         the work itself, unchanged from when this was its own package:
- *                sweep.ts (one repo, and the run bookkeeping), config.ts,
- *                relay.ts + pds.ts + identity.ts + http.ts (the network),
- *                recipe.ts + render.ts (the writes), db.ts (the pool)
+ *                config.ts, relay.ts + pds.ts + identity.ts + http.ts (the
+ *                network), recipe.ts + render.ts (the writes), sweep.ts (one
+ *                repo, and the run bookkeeping) — the pool is `fastify.db` now,
+ *                so there is no db.ts here anymore
  */
-export const atprotoSync = defineWorkflow({
-  name: "atproto-sync",
-  description: "Sweep the atproto network and reconcile the Postgres recipe index",
-  entry: "enumerate",
-  steps,
+export default fp(
+  (fastify) => {
+    fastify.workflow({
+      name: "atproto-sync",
+      description: "Sweep the atproto network and reconcile the Postgres recipe index",
+      entry: "enumerate",
+      steps: createSteps(fastify),
 
-  // Hourly on Railway (see .railway/railway.ts), unset locally — a dev machine
-  // should not quietly sweep the live atmosphere in the background. Set
-  // ATPROTO_SYNC_SCHEDULE in services/pipeline/.env to turn it on.
-  schedule: () => process.env.ATPROTO_SYNC_SCHEDULE || undefined,
+      // Hourly on Railway (see .railway/railway.ts), unset locally — a dev machine
+      // should not quietly sweep the live atmosphere in the background. Set
+      // ATPROTO_SYNC_SCHEDULE in services/pipeline/.env to turn it on.
+      schedule: fastify.env.ATPROTO_SYNC_SCHEDULE || undefined,
 
-  // How many repos this sweep may have in flight at once, across every replica.
-  // The sweep fans out every repo it found in one call and lets the queue hold
-  // them; this is what decides how many of them actually run, and it is the only
-  // limit that survives the autoscaler changing the replica count underneath it.
-  //
-  // Eight is a polite number of simultaneous requests to point at the atmosphere
-  // from one sweep. Raise it in the environment when a sweep's wall-clock starts
-  // to matter more than that politeness does.
-  globalConcurrency: () => Number(process.env.ATPROTO_SYNC_MAX_IN_FLIGHT || 8) || undefined,
-
-  // The sweep opens a pg pool on first use and reuses it across runs. Ending it
-  // on drain is what lets a scaled-down replica's process actually exit.
-  close: closeDb,
-});
+      // How many repos this sweep may have in flight at once, across every replica.
+      // The sweep fans out every repo it found in one call and lets the queue hold
+      // them; this is what decides how many of them actually run, and it is the only
+      // limit that survives the autoscaler changing the replica count underneath it.
+      //
+      // Eight is a polite number of simultaneous requests to point at the atmosphere
+      // from one sweep. Raise it in the environment when a sweep's wall-clock starts
+      // to matter more than that politeness does.
+      globalConcurrency: Number(fastify.env.ATPROTO_SYNC_MAX_IN_FLIGHT || 8) || undefined,
+    });
+  },
+  { name: "workflow-atproto-sync", dependencies: ["workflow", "db", "redis"] },
+);

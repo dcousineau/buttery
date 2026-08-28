@@ -1,6 +1,6 @@
-import type { Redis } from "ioredis";
+import type { FastifyInstance } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { StepContext } from "#/lib/bullmq/kernel.ts";
+import type { StepContext } from "#/plugins/workflow.ts";
 
 /**
  * `sync-repo`'s enrichment fan-out (recipe-enrichment plan §9): it enqueues
@@ -9,6 +9,10 @@ import type { StepContext } from "#/lib/bullmq/kernel.ts";
  * nor its remaining ids (D3 — best-effort). `sweepDid` itself, and the config/db
  * plumbing around it, are mocked: this suite is about the enqueue wiring, not
  * the sweep mechanics `sweep.ts`'s own tests and the db suites already cover.
+ *
+ * `steps.ts` is a factory now (`createSteps(fastify)`) rather than a module
+ * that reaches for its own pool, so the fake here is a stub Fastify instance
+ * carrying `db` and `log` — no module mock for a pool that no longer exists.
  */
 
 // Typed, not bare `vi.fn()`: an untyped mock returns `any`, and the thin arrows
@@ -30,15 +34,17 @@ vi.mock("#/workflows/atproto-sync/lib/config.ts", () => ({
   RECIPE_COLLECTION: "exchange.recipe.recipe",
 }));
 
-vi.mock("#/workflows/atproto-sync/lib/db.ts", () => ({
-  getPool: vi.fn(() => ({})),
-}));
+const { createSteps } = await import("#/workflows/atproto-sync/steps.ts");
 
-const { steps } = await import("#/workflows/atproto-sync/steps.ts");
+const fakeFastify = {
+  db: {},
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  redis: {},
+} as unknown as FastifyInstance;
+
+const steps = createSteps(fakeFastify);
 const syncRepo = steps.find((s) => s.name === "sync-repo");
 if (!syncRepo) throw new Error("sync-repo step not found");
-
-const NO_REDIS = {} as Redis;
 
 function context(payload: unknown, enqueue: StepContext["enqueue"]): StepContext {
   return {
@@ -49,7 +55,6 @@ function context(payload: unknown, enqueue: StepContext["enqueue"]): StepContext
     children: vi.fn().mockResolvedValue({ values: [], failures: [] }),
     flow: vi.fn().mockResolvedValue(undefined),
     enqueue,
-    redis: NO_REDIS,
   };
 }
 
