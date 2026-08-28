@@ -46,247 +46,29 @@ import type { ClassifierLine, Disagreement, Label } from "#/queues/recipe-enrich
  */
 export type RecipeOrigin = "sync" | "local";
 
-/** Token counts from the AI SDK's `GenerateObjectResult['usage']` — same field names, so a caller can pass `result.usage` straight through without reshaping it. */
-export interface GenerationUsage {
-  inputTokens: number | undefined;
-  outputTokens: number | undefined;
-}
-
-/**
- * Custom per-token USD pricing, forwarded to PostHog only when the caller
- * supplies it (plan §5.3). PostHog prices well-known models automatically
- * from `$ai_model` + token counts; Kimi may not be in its price table yet,
- * and this is the manual override for that gap. `undefined` fields are
- * simply omitted from the properties object — there is no "send a zero
- * price" state, since a zero price is a real (if unusual) value a caller
- * could mean.
- */
-export interface GenerationPricing {
-  inputTokenPriceUsd?: number;
-  outputTokenPriceUsd?: number;
-}
-
-/** What went wrong, when it did. `message` becomes `$ai_error` verbatim — keep it short and free of ingredient text, same redaction discipline as everything else here. */
-export interface GenerationError {
-  message: string;
-}
-
-/**
- * Everything {@link buildGenerationEvent} needs to describe one `llm-enrich`
- * model call (llm plan §10). Assembled by the step after `generateObject`
- * returns (or throws) and the merge (§8) has run — `labelsWritten` and
- * `disagreements` describe the merge's output, not the raw model output, so
- * this input can only be built once both have happened.
- *
- * `messages`/`outputChoices` are typed as opaque `object` arrays rather than
- * imported from the `ai` package's message types: this file has no reason to
- * depend on the AI SDK's shapes, and `$ai_input`/`$ai_output_choices` are
- * PostHog properties that accept whatever JSON-serializable array the caller
- * sends. `classify.ts` passes the AI SDK's own `messages` array and
- * `result.object` wrapped as a one-element choices array straight through.
- *
- * `object` rather than `Record<string, unknown>` for a boring reason worth
- * writing down, because it looks like a weakening and is not: an INTERFACE
- * (which both `ModelMessage` and `classify.ts`'s `LlmOutputChoice` are) has no
- * implicit index signature, so it does not satisfy `Record<string, unknown>`
- * however record-shaped it looks. `object` says exactly what this file needs —
- * "some JSON object, whose keys are none of my business" — and still rejects
- * the array of primitives that a stray `Record` cast would have let through.
- */
-export interface GenerationEventInput {
-  /** One id per `llm-enrich` run, `crypto.randomUUID()` at the top of the step — groups this generation in PostHog's Traces view. */
-  traceId: string;
-  /** e.g. `kimi-k2-0905-preview` — `LLM_ENRICHMENT_MODEL` verbatim, not a display name. */
-  model: string;
-  /** e.g. `moonshot` — `LLM_ENRICHMENT_PROVIDER` verbatim. */
-  provider: string;
-  /** The provider's base URL, e.g. `https://api.moonshot.ai/v1` — lets a slow/misrouted endpoint show up in the trace without a log dig. */
-  baseUrl: string;
-  /**
-   * Wall-clock time for the `generateObject` call, in **milliseconds** —
-   * converted to seconds inside {@link buildGenerationEvent} because that is
-   * the unit `$ai_latency` expects.
-   */
-  latencyMs: number;
-  usage: GenerationUsage;
-  /**
-   * HTTP status of the underlying request, when known. `0` for a failure
-   * that never got a response (timeout, network error) — never omitted, so
-   * `$ai_http_status` is always present and a dashboard can group on it
-   * without a null case.
-   */
-  httpStatus: number;
-  recipeId: string;
-  recipeOrigin: RecipeOrigin;
-  /**
-   * The PostHog Prompt Management prompt name in effect for this call —
-   * `prompt-fetch.ts`'s `PROMPT_NAME`, passed in rather than imported so
-   * this file has no dependency on that module.
-   */
-  promptName: string;
-  /**
-   * The PostHog prompt *version* actually used, or `null` when the fallback
-   * in `prompt.ts` served instead (`prompt-fetch.ts`'s contract) — `null` is
-   * a real, queryable value, not a placeholder for "unknown" (plan §6.2).
-   */
-  promptVersion: number | null;
-  /** `LLM_ENRICHMENT_VERSION` at the time of this call (schema.ts). */
-  llmVersion: number;
-  /** How many `Label` rows the merge (§8) actually wrote for this recipe. */
-  labelsWritten: number;
-  /**
-   * How many `Disagreement`s the merge produced for this recipe — a count,
-   * not the disagreements themselves (those are separate
-   * `llm_enrichment_disagreement` events, one each, via {@link buildDisagreementEvent}).
-   */
-  disagreements: number;
-  /** Ingredient line count the recipe was classified over. */
-  lineCount: number;
-  /**
-   * How many of those lines the rules classifier could not resolve
-   * (`foodSlug === null`) — the same denominator `unresolvedShare` in
-   * `lib/classifiers/shared.ts` reads, given to the LLM as context and worth
-   * correlating against disagreement rate.
-   */
-  unresolvedLineCount: number;
-  /**
-   * The messages sent to `generateObject`. Captured to PostHog only for
-   * `recipeOrigin === 'sync'` (L10) — see {@link buildGenerationEvent}'s doc
-   * comment.
-   */
-  messages: readonly object[];
-  /**
-   * The model's output, wrapped as a choices-shaped array (PostHog's
-   * `$ai_output_choices` convention) — same `sync`-only redaction as
-   * `messages`.
-   */
-  outputChoices: readonly object[];
-  /**
-   * Present when the call failed (schema rejection, timeout, provider
-   * error) — see the `$ai_is_error`/`$ai_error` properties below. Absent on
-   * a clean success.
-   */
-  error?: GenerationError;
-  /**
-   * Custom per-token pricing, forwarded when the caller supplies it (plan
-   * §5.3). Left undefined by {@link buildGenerationEvent}'s callers in tests
-   * that don't care about pricing; {@link sendGenerationEvent} is what
-   * actually reads the env vars for the real send path.
-   */
-  pricing?: GenerationPricing;
-}
-
 /**
  * The distinct id every event in this module is captured against — a
  * SERVICE identity, never a user DID (L10, plan §10). Recipe content, even
  * redacted to just tokens/cost, must never be attributable to a person
  * through the distinct id it's filed under.
+ *
+ * Still the constant the OTel path uses too: `lib/ai/telemetry.ts` puts it on
+ * the span as `posthog.distinct_id`, so a generation and its domain events
+ * land against the same person key however they reach PostHog.
  */
 export const PIPELINE_DISTINCT_ID = "recipe-enrichment-pipeline";
 
-/** PostHog's own event name for a manually-captured LLM generation — the name the Traces/Generations tabs and the evaluations in plan §5.4 key off. */
-export const AI_GENERATION_EVENT = "$ai_generation";
-
 /**
- * The `ai_feature` value every `$ai_generation` this module sends carries.
+ * The `ai_feature` value every event from this LLM pass carries — the
+ * generation span (via `lib/ai/telemetry.ts`) and the domain events below.
  * Plan §5.4's evaluations are ALL condition-filtered to
- * `ai_feature = 'recipe-llm-enrichment'` — this constant is contractual, the
- * same way `LLM_ENRICHMENT_FLAG` is in `posthog.ts`.
+ * `ai_feature = 'recipe-llm-enrichment'`, so this constant is contractual.
  *
- * This happens to be the same string as `prompt.ts`'s `PROMPT_NAME` (both
- * are `recipe-llm-enrichment`, plan §5.2), which is a deliberate naming
- * choice at the PostHog-artifact level, not a code dependency: this constant
- * is defined independently, not imported from `prompt.ts`, so `capture.ts`
- * never has to know whether that module has landed yet.
+ * This happens to be the same string as `prompt.ts`'s `PROMPT_NAME`, which is
+ * a deliberate naming choice at the PostHog-artifact level, not a code
+ * dependency: it is defined independently rather than imported.
  */
 export const AI_FEATURE = "recipe-llm-enrichment";
-
-/**
- * Build the `$ai_generation` event for one `llm-enrich` call. Pure — no
- * PostHog client, no `Date.now()`, no randomness; every value it needs is in
- * `input`. This is what `llm/capture.test.ts` exercises directly (plan
- * §12.1); `sendGenerationEvent` below is the only thing standing between
- * this and a real `client.capture()`.
- *
- * **The redaction line (L10, plan §10):** `$ai_input` (the messages sent)
- * and `$ai_output_choices` (the model's output) are attached ONLY when
- * `input.recipeOrigin === 'sync'`. For `'local'` they are omitted from the
- * properties object entirely — not an empty array, not a redacted
- * placeholder string, simply absent as keys, because `expect(props).not.toHaveProperty(...)`
- * is the only assertion that actually proves nothing leaked. The reasoning:
- * recipe content must never be attachable to a person, and a `sync` recipe
- * is public network content that was already fetched from the open web,
- * while a `local` recipe is somebody's own — often hand-typed, sometimes a
- * family dish, sometimes annotated with things they'd never publish. Every
- * OTHER property (tokens, cost, latency, model, http status, the recipe id
- * and every custom property) is sent for `local` generations exactly as for
- * `sync` ones: none of that is recipe content, all of it is needed to see
- * whether the LLM pass is healthy and affordable across the whole corpus,
- * and none of it identifies a person either way (see `PIPELINE_DISTINCT_ID`'s
- * doc comment).
- */
-export function buildGenerationEvent(input: GenerationEventInput): { distinctId: string; event: string; properties: Record<string, unknown> } {
-  const properties: Record<string, unknown> = {
-    $ai_trace_id: input.traceId,
-    $ai_span_name: "classify-recipe",
-    $ai_model: input.model,
-    $ai_provider: input.provider,
-    $ai_input_tokens: input.usage.inputTokens,
-    $ai_output_tokens: input.usage.outputTokens,
-    // Every other timestamp/duration in this codebase's PostHog capture is
-    // whatever unit the source value already is in; `$ai_latency` is the one
-    // PostHog property that is contractually SECONDS, so the conversion
-    // lives right here rather than trusting every future caller to remember it.
-    $ai_latency: input.latencyMs / 1000,
-    $ai_http_status: input.httpStatus,
-    $ai_base_url: input.baseUrl,
-
-    // Custom properties — what flags, evals and dashboards filter on
-    // (plan §10). Spellings are contractual; do not rename without checking
-    // §5.4's evaluation conditions and any dashboard built on these.
-    ai_feature: AI_FEATURE,
-    recipe_id: input.recipeId,
-    recipe_origin: input.recipeOrigin,
-    // PostHog's own convention for prompt provenance on an LLM event, so the
-    // Prompt Management UI can tie a generation back to the version that
-    // produced it — `$ai_prompt_name`/`$ai_prompt_version` are what
-    // `@posthog/ai`'s docs tell you to send from `Prompts.get`'s result.
-    // `$ai_prompt_version` is null exactly when the committed fallback ran,
-    // which makes "which recipes did NOT run on a managed prompt" one filter.
-    $ai_prompt_name: input.promptName,
-    $ai_prompt_version: input.promptVersion,
-    // The same two under plain names, kept because the §5.4 evaluations and
-    // the §5.3 dashboard filter on unprefixed custom properties alongside
-    // `ai_feature`, and dropping them would silently break whatever a human
-    // has already built on top. Cheap; two strings per generation.
-    prompt_name: input.promptName,
-    prompt_version: input.promptVersion,
-    llm_version: input.llmVersion,
-    labels_written: input.labelsWritten,
-    disagreements: input.disagreements,
-    line_count: input.lineCount,
-    unresolved_line_count: input.unresolvedLineCount,
-  };
-
-  if (input.error) {
-    properties.$ai_is_error = true;
-    properties.$ai_error = input.error.message;
-  }
-
-  if (input.recipeOrigin === "sync") {
-    properties.$ai_input = input.messages;
-    properties.$ai_output_choices = input.outputChoices;
-  }
-
-  if (input.pricing?.inputTokenPriceUsd !== undefined) {
-    properties.$ai_input_token_price = input.pricing.inputTokenPriceUsd;
-  }
-  if (input.pricing?.outputTokenPriceUsd !== undefined) {
-    properties.$ai_output_token_price = input.pricing.outputTokenPriceUsd;
-  }
-
-  return { distinctId: PIPELINE_DISTINCT_ID, event: AI_GENERATION_EVENT, properties };
-}
 
 /**
  * Fire one event at `client`, fire-and-forget: never throws, no-ops when
@@ -302,35 +84,6 @@ function capture(client: PostHog | null, log: FastifyBaseLogger, distinctId: str
     log.warn({ err: String(err) }, `llm posthog capture failed: ${event}`);
   }
 }
-
-/**
- * Read the custom-pricing env vars (plan §5.3, §11) and send one
- * `$ai_generation` event for `input`. The only place in this module that
- * reads `process.env` — {@link buildGenerationEvent} stays pure and
- * deterministically testable by taking `pricing` as an explicit input field
- * instead, and this thin wrapper is what fills that field in for the real
- * call path. Fire-and-forget via {@link capture}: never throws, no-ops when
- * PostHog is absent. Synchronous, not `async` — there is no I/O left in this
- * path once the client is already in hand; callers still `await` it, which is
- * harmless on a non-`Promise` return.
- */
-export function sendGenerationEvent(client: PostHog | null, log: FastifyBaseLogger, input: Omit<GenerationEventInput, "pricing">): void {
-  const inputTokenPriceUsd = envFloat("LLM_INPUT_TOKEN_PRICE_USD");
-  const outputTokenPriceUsd = envFloat("LLM_OUTPUT_TOKEN_PRICE_USD");
-  const pricing: GenerationPricing | undefined = inputTokenPriceUsd !== undefined || outputTokenPriceUsd !== undefined ? { inputTokenPriceUsd, outputTokenPriceUsd } : undefined;
-
-  const { distinctId, event, properties } = buildGenerationEvent(pricing ? { ...input, pricing } : input);
-  capture(client, log, distinctId, event, properties);
-}
-
-function envFloat(name: string): number | undefined {
-  const raw = process.env[name];
-  if (!raw) return undefined;
-  const value = Number.parseFloat(raw);
-  return Number.isFinite(value) ? value : undefined;
-}
-
-// --- disagreements -----------------------------------------------------
 
 /**
  * What {@link buildDisagreementEvent} needs: the recipe identity plus one
@@ -383,9 +136,43 @@ export function sendDisagreementEvent(client: PostHog | null, log: FastifyBaseLo
   capture(client, log, distinctId, event, properties);
 }
 
-// --- one-call-site wrappers for index.ts's llm-enrich step -----------------
+// --- domain events: what the generation span cannot say -------------------
 
-/** The provider/prompt identity a generation event names. */
+/**
+ * Two events that exist because the native OTel path moved the generation
+ * itself out of our hands, and two things did not come with it.
+ *
+ * **The merge counts are too late for the span.** `labels_written` and
+ * `disagreements` describe what `mergeLlmLabels` produced, which only exists
+ * AFTER `generateText` has returned — and `enrichSpan` fires when a span is
+ * CREATED. There is no hook that runs late enough. So the pre-call facts
+ * (recipe, prompt, model, line counts) ride the generation span, and the
+ * post-merge outcome rides {@link ENRICHMENT_COMPLETED_EVENT}, keyed by the
+ * same `$ai_trace_id` so the two join in PostHog. The alternative — dropping
+ * them — would have cost the only numbers that say whether the LLM pass is
+ * doing anything useful.
+ *
+ * **A schema rejection is not a failed generation.** This is the sharper half.
+ * The old hand-rolled path emitted one `$ai_generation` with `$ai_is_error`
+ * for ANY throw, including `NoObjectGeneratedError`. On the native path that
+ * splits, and the split is more truthful than what it replaced:
+ *
+ *   - A transport failure (timeout, network, 4xx/5xx) happens inside
+ *     `doGenerate`, so the AI SDK's own span records the error and PostHog
+ *     gets a properly errored generation for free. Nothing here to do.
+ *   - A schema rejection happens ABOVE the model layer: `doGenerate`
+ *     succeeded, the tokens were spent, and only then did the output fail to
+ *     parse. The generation span records a success, because a success is what
+ *     it was.
+ *
+ * That is more accurate but it retires the `$ai_is_error` signal any dashboard
+ * built on it was reading, so {@link ENRICHMENT_FAILED_EVENT} carries it
+ * instead — same trace id, the error message, and the model's raw text when
+ * there is one. Deliberately NOT a second `$ai_generation`: one model call
+ * must not become two generations in the cost and volume numbers.
+ */
+
+/** The provider identity the domain events name. Kept as a type because `index.ts` passes `resolveProvider()`'s result straight through. */
 export interface GenerationProvider {
   providerName: string;
   modelId: string;
@@ -397,85 +184,95 @@ export interface GenerationPrompt {
   version: number | null;
 }
 
-export interface CaptureGenerationInput {
+/** Emitted once per successful `llm-enrich`, carrying what the merge produced. */
+export const ENRICHMENT_COMPLETED_EVENT = "llm_enrichment_completed";
+
+/** Emitted when the job failed AFTER the model answered — chiefly a schema rejection. See this section's doc comment. */
+export const ENRICHMENT_FAILED_EVENT = "llm_enrichment_failed";
+
+export interface EnrichmentCompletedInput {
   traceId: string;
   recipeId: string;
   recipeOrigin: RecipeOrigin;
   provider: GenerationProvider;
   prompt: GenerationPrompt;
   lines: readonly ClassifierLine[];
-  messages: readonly object[];
-  outputChoices: readonly object[];
-  usage: GenerationUsage;
-  latencyMs: number;
   llmVersion: number;
   writes: readonly Label[];
   disagreements: readonly Disagreement[];
 }
 
-/** Send the generation event and one disagreement event per disagreement, for a successful `llm-enrich` call. Synchronous — see {@link sendGenerationEvent}. */
-export function captureGeneration(client: PostHog | null, log: FastifyBaseLogger, input: CaptureGenerationInput): void {
-  const unresolvedLineCount = input.lines.filter((line) => line.foodSlug === null).length;
-  sendGenerationEvent(client, log, {
-    traceId: input.traceId,
-    model: input.provider.modelId,
-    provider: input.provider.providerName,
-    baseUrl: input.provider.baseURL,
-    latencyMs: input.latencyMs,
-    usage: input.usage,
-    httpStatus: 200,
-    recipeId: input.recipeId,
-    recipeOrigin: input.recipeOrigin,
-    promptName: input.prompt.name,
-    promptVersion: input.prompt.version,
-    llmVersion: input.llmVersion,
-    labelsWritten: input.writes.length,
-    disagreements: input.disagreements.length,
-    lineCount: input.lines.length,
-    unresolvedLineCount,
-    messages: input.messages,
-    outputChoices: input.outputChoices,
-  });
+/** Pure builder, so the property names are testable without a client. */
+export function buildEnrichmentCompletedEvent(input: EnrichmentCompletedInput): { distinctId: string; event: string; properties: Record<string, unknown> } {
+  return {
+    distinctId: PIPELINE_DISTINCT_ID,
+    event: ENRICHMENT_COMPLETED_EVENT,
+    properties: {
+      // The join key: same trace as the generation span this describes.
+      $ai_trace_id: input.traceId,
+      ai_feature: AI_FEATURE,
+      recipe_id: input.recipeId,
+      recipe_origin: input.recipeOrigin,
+      prompt_name: input.prompt.name,
+      prompt_version: input.prompt.version,
+      llm_version: input.llmVersion,
+      model: `${input.provider.providerName}:${input.provider.modelId}`,
+      // The two the span could not carry.
+      labels_written: input.writes.length,
+      disagreements: input.disagreements.length,
+      line_count: input.lines.length,
+      unresolved_line_count: input.lines.filter((line) => line.foodSlug === null).length,
+    },
+  };
+}
+
+/** Send the completion event and one disagreement event per disagreement. Fire-and-forget: a capture failure may never fail a job. */
+export function captureEnrichmentCompleted(client: PostHog | null, log: FastifyBaseLogger, input: EnrichmentCompletedInput): void {
+  const { distinctId, event, properties } = buildEnrichmentCompletedEvent(input);
+  capture(client, log, distinctId, event, properties);
   for (const disagreement of input.disagreements) {
     sendDisagreementEvent(client, log, { recipeId: input.recipeId, recipeOrigin: input.recipeOrigin, disagreement });
   }
 }
 
-export interface CaptureGenerationFailureInput {
+export interface EnrichmentFailedInput {
   traceId: string;
   recipeId: string;
   recipeOrigin: RecipeOrigin;
   provider: GenerationProvider;
   prompt: GenerationPrompt;
-  lines: readonly ClassifierLine[];
   llmVersion: number;
   message: string;
-  /** The model's raw text, when the failure was a schema rejection — appended to `message` for `$ai_error`. */
+  /** The model's raw text when the failure was a schema rejection — `undefined` for anything else. */
   rawText: string | undefined;
 }
 
-/** Send the generation event for a failed `llm-enrich` call — zero counts, `httpStatus: 0`, the error message (plus raw model text, when there is one). Synchronous — see {@link sendGenerationEvent}. */
-export function captureGenerationFailure(client: PostHog | null, log: FastifyBaseLogger, input: CaptureGenerationFailureInput): void {
-  const unresolvedLineCount = input.lines.filter((line) => line.foodSlug === null).length;
-  sendGenerationEvent(client, log, {
-    traceId: input.traceId,
-    model: input.provider.modelId,
-    provider: input.provider.providerName,
-    baseUrl: input.provider.baseURL,
-    latencyMs: 0,
-    usage: { inputTokens: undefined, outputTokens: undefined },
-    httpStatus: 0,
-    recipeId: input.recipeId,
-    recipeOrigin: input.recipeOrigin,
-    promptName: input.prompt.name,
-    promptVersion: input.prompt.version,
-    llmVersion: input.llmVersion,
-    labelsWritten: 0,
-    disagreements: 0,
-    lineCount: input.lines.length,
-    unresolvedLineCount,
-    messages: [],
-    outputChoices: [],
-    error: { message: input.rawText ? `${input.message} — raw: ${input.rawText}` : input.message },
-  });
+/** Pure builder, same reasoning as {@link buildEnrichmentCompletedEvent}. */
+export function buildEnrichmentFailedEvent(input: EnrichmentFailedInput): { distinctId: string; event: string; properties: Record<string, unknown> } {
+  const properties: Record<string, unknown> = {
+    $ai_trace_id: input.traceId,
+    ai_feature: AI_FEATURE,
+    recipe_id: input.recipeId,
+    recipe_origin: input.recipeOrigin,
+    prompt_name: input.prompt.name,
+    prompt_version: input.prompt.version,
+    llm_version: input.llmVersion,
+    model: `${input.provider.providerName}:${input.provider.modelId}`,
+    error: input.message,
+    // Whether the model answered at all is the useful distinction here: raw
+    // text present means it did and the output failed to parse (tokens spent,
+    // generation span green); absent means it never got that far.
+    schema_rejection: input.rawText !== undefined,
+  };
+  // The raw text is the model's OUTPUT, not the recipe — it is what the model
+  // said, which is exactly what someone debugging a rejection needs, and it
+  // exists only on the parse-failure path.
+  if (input.rawText !== undefined) properties.raw_output = input.rawText;
+  return { distinctId: PIPELINE_DISTINCT_ID, event: ENRICHMENT_FAILED_EVENT, properties };
+}
+
+/** Send the failure event. Fire-and-forget. */
+export function captureEnrichmentFailed(client: PostHog | null, log: FastifyBaseLogger, input: EnrichmentFailedInput): void {
+  const { distinctId, event, properties } = buildEnrichmentFailedEvent(input);
+  capture(client, log, distinctId, event, properties);
 }

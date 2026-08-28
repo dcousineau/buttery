@@ -1,91 +1,91 @@
 {
   "version": 1,
   "verify": {
-    "at": "2026-08-28T01:56:11.680Z",
-    "commit": "e958d1b",
+    "at": "2026-08-28T13:39:46.723Z",
+    "commit": "85fa3f6",
     "dirty": true,
     "tier": "full",
     "scope": null,
     "batched": true,
     "cost": {
-      "totalMs": 44.32916700000001,
+      "totalMs": 27.65375899999998,
       "claims": [
         {
           "node": "API port",
           "claim": "passes test \"has no `#/server/**` import outside the two port modules\"",
-          "ms": 38.064375,
+          "ms": 15.785251999999986,
           "source": "report"
         },
         {
           "node": "API port",
           "claim": "passes test \"scans a client tree that actually exists\"",
-          "ms": 5.507582999999997,
-          "source": "report"
-        },
-        {
-          "node": "API port",
-          "claim": "passes test \"keeps the import-flow contract module type-only\"",
-          "ms": 0.38066700000001674,
+          "ms": 10.747735000000006,
           "source": "report"
         },
         {
           "node": "API port",
           "claim": "passes test \"routes every server function through the transport, by name\"",
-          "ms": 0.3765420000000006,
+          "ms": 0.5656500000000051,
+          "source": "report"
+        },
+        {
+          "node": "API port",
+          "claim": "passes test \"keeps the import-flow contract module type-only\"",
+          "ms": 0.555121999999983,
           "source": "report"
         }
       ]
     },
     "lastFastAt": "2026-08-25T14:01:51.554Z",
-    "lastFullAt": "2026-08-28T01:56:11.680Z",
+    "lastFullAt": "2026-08-28T13:39:46.723Z",
     "claims": [
       {
         "node": "API port",
         "claim": "passes test \"scans a client tree that actually exists\"",
         "kind": "pass",
-        "at": "2026-08-28T01:56:11.680Z",
-        "commit": "e958d1b",
+        "at": "2026-08-28T13:39:46.723Z",
+        "commit": "85fa3f6",
         "tier": "full",
         "everFailed": false,
-        "runs": 7
+        "runs": 8
       },
       {
         "node": "API port",
         "claim": "passes test \"has no `#/server/**` import outside the two port modules\"",
         "kind": "pass",
-        "at": "2026-08-28T01:56:11.680Z",
-        "commit": "e958d1b",
+        "at": "2026-08-28T13:39:46.723Z",
+        "commit": "85fa3f6",
         "tier": "full",
         "everFailed": false,
-        "runs": 7
+        "runs": 8
       },
       {
         "node": "API port",
         "claim": "passes test \"keeps the import-flow contract module type-only\"",
         "kind": "pass",
-        "at": "2026-08-28T01:56:11.680Z",
-        "commit": "e958d1b",
+        "at": "2026-08-28T13:39:46.723Z",
+        "commit": "85fa3f6",
         "tier": "full",
         "everFailed": false,
-        "runs": 7
+        "runs": 8
       },
       {
         "node": "API port",
         "claim": "passes test \"routes every server function through the transport, by name\"",
         "kind": "pass",
-        "at": "2026-08-28T01:56:11.680Z",
-        "commit": "e958d1b",
+        "at": "2026-08-28T13:39:46.723Z",
+        "commit": "85fa3f6",
         "tier": "full",
         "everFailed": false,
-        "runs": 7
+        "runs": 8
       }
     ],
     "coverage": {
       "components": 1,
       "claimed": 1,
       "withWhy": 1,
-      "symbols": 1320,
-      "documented": 923
+      "symbols": 1293,
+      "documented": 912
     },
     "invariants": {
       "total": 0,
@@ -93,7 +93,7 @@
       "gaps": []
     },
     "narrative": null,
-    "jobs": 397,
+    "jobs": 381,
     "failures": 0
   }
 }

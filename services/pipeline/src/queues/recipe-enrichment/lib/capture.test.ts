@@ -1,240 +1,103 @@
-import { describe, expect, it } from "vitest";
-import { AI_FEATURE, AI_GENERATION_EVENT, buildDisagreementEvent, buildGenerationEvent, DISAGREEMENT_EVENT, PIPELINE_DISTINCT_ID } from "#/queues/recipe-enrichment/lib/capture.ts";
-import type { GenerationEventInput } from "#/queues/recipe-enrichment/lib/capture.ts";
-import type { Disagreement } from "#/queues/recipe-enrichment/types.ts";
+import { describe, expect, it, vi } from "vitest";
+import type { PostHog } from "posthog-node";
+import type { FastifyBaseLogger } from "fastify";
+import {
+  AI_FEATURE,
+  buildDisagreementEvent,
+  buildEnrichmentCompletedEvent,
+  buildEnrichmentFailedEvent,
+  captureEnrichmentCompleted,
+  captureEnrichmentFailed,
+  DISAGREEMENT_EVENT,
+  ENRICHMENT_COMPLETED_EVENT,
+  ENRICHMENT_FAILED_EVENT,
+  PIPELINE_DISTINCT_ID,
+} from "#/queues/recipe-enrichment/lib/capture.ts";
+import type { EnrichmentCompletedInput, EnrichmentFailedInput, GenerationProvider, GenerationPrompt } from "#/queues/recipe-enrichment/lib/capture.ts";
+import type { ClassifierLine, Disagreement, Label } from "#/queues/recipe-enrichment/types.ts";
 
 /**
- * Pure suite over {@link buildGenerationEvent} and {@link buildDisagreementEvent}
- * — no PostHog client, no network, exactly what plan §12.1 asks for
- * (`llm/capture.test.ts`: "sync recipe carries `$ai_input`; local recipe
- * carries neither content field but keeps tokens/costs; error shape; custom
- * props"). The `send*` wrappers in `capture.ts` are one line of glue over
- * these and are not separately tested — there is nothing left in them to get
- * wrong once these are pinned, and exercising `process.env` plus a real
- * `posthog-node` client is exactly the live-call territory L11 rules out.
+ * What this suite covers now that the generation itself moved off
+ * `posthog-node` and onto PostHog's native OTel path
+ * (`docs/plans/2026-08-28-posthog-native-ai-observability.md`):
+ *
+ * - {@link buildDisagreementEvent} / {@link sendDisagreementEvent} — unchanged,
+ *   still the raw feed for the judge evaluations and the goldens dataset, so
+ *   every case that pinned its shape stays.
+ * - {@link buildEnrichmentCompletedEvent} / {@link captureEnrichmentCompleted} —
+ *   NEW. The merge outcome (`labels_written`, `disagreements`, `line_count`,
+ *   `unresolved_line_count`) is computed AFTER `generateText` returns, but
+ *   `enrichSpan` (`lib/ai/telemetry.ts`) fires when the span is CREATED — so
+ *   these counts cannot ride the generation span and get their own event
+ *   instead, joined back to it by `$ai_trace_id`.
+ * - {@link buildEnrichmentFailedEvent} / {@link captureEnrichmentFailed} — NEW.
+ *   A schema rejection (`NoObjectGeneratedError`) happens ABOVE the model
+ *   layer: `doGenerate` already succeeded, so the AI SDK's own generation span
+ *   records a SUCCESS, truthfully — tokens were spent, the model answered. The
+ *   old `$ai_is_error` signal that dashboard built on it would otherwise lose
+ *   is preserved here instead, on a separate domain event, so one model call
+ *   never becomes two generations in the volume/cost numbers.
+ *
+ * What is gone and NOT replaced here: `buildGenerationEvent`,
+ * `sendGenerationEvent`, `captureGeneration`, `captureGenerationFailure`,
+ * `GenerationEventInput`, `AI_GENERATION_EVENT`. Those built and sent
+ * `$ai_generation` by hand; the AI SDK's own OTel spans do that job now
+ * (`lib/ai/telemetry.ts`, `lib/ai/telemetry.test.ts` — including the §4
+ * redaction proof that used to live in this file's now-deleted
+ * `content redaction is origin-gated` cases). This repo's convention is that
+ * tests serve the implementation, not the reverse: code for a deleted event
+ * gets its tests deleted along with it, not bent to keep passing.
  */
 
-function baseInput(overrides: Partial<GenerationEventInput> = {}): GenerationEventInput {
-  return {
-    traceId: "trace-abc-123",
-    model: "kimi-k2-0905-preview",
-    provider: "moonshot",
-    baseUrl: "https://api.moonshot.ai/v1",
-    latencyMs: 2500,
-    usage: { inputTokens: 800, outputTokens: 150 },
-    httpStatus: 200,
-    recipeId: "recipe-1",
-    recipeOrigin: "sync",
-    promptName: "recipe-llm-enrichment",
-    promptVersion: 3,
-    llmVersion: 1,
-    labelsWritten: 4,
-    disagreements: 0,
-    lineCount: 10,
-    unresolvedLineCount: 1,
-    messages: [{ role: "system", content: "you are a food classifier" }],
-    outputChoices: [{ allergens: [] }],
-    ...overrides,
-  };
+function fakeLog(): FastifyBaseLogger {
+  return { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as FastifyBaseLogger;
 }
 
-describe("buildGenerationEvent — distinct id and event name", () => {
-  it("always uses the service identity, never a recipe or user id, for both origins", () => {
-    const sync = buildGenerationEvent(baseInput({ recipeOrigin: "sync" }));
-    const local = buildGenerationEvent(baseInput({ recipeOrigin: "local" }));
-    expect(sync.distinctId).toBe(PIPELINE_DISTINCT_ID);
-    expect(local.distinctId).toBe(PIPELINE_DISTINCT_ID);
-    expect(sync.distinctId).toBe("recipe-enrichment-pipeline");
-    // Never the recipe id itself, even though it's right there on the input.
-    expect(sync.distinctId).not.toBe(sync.properties.recipe_id);
-  });
+function fakeClient(): { client: PostHog; capture: ReturnType<typeof vi.fn> } {
+  const capture = vi.fn();
+  return { client: { capture } as unknown as PostHog, capture };
+}
 
-  it("emits PostHog's own $ai_generation event name", () => {
-    const { event } = buildGenerationEvent(baseInput());
-    expect(event).toBe("$ai_generation");
-    expect(event).toBe(AI_GENERATION_EVENT);
-  });
-});
+/** The `event` name `capture` was called with on its Nth call — a named helper so call sites don't chain `?.[0]` into a property read. */
+function eventNameAt(capture: ReturnType<typeof vi.fn>, index: number): string {
+  const call = capture.mock.calls[index] as [{ event: string }] | undefined;
+  if (!call) throw new Error(`capture was not called a ${index + 1}th time`);
+  return call[0].event;
+}
 
-describe("buildGenerationEvent — content redaction is origin-gated (L10)", () => {
-  it("attaches $ai_input and $ai_output_choices for a sync recipe", () => {
-    const { properties } = buildGenerationEvent(baseInput({ recipeOrigin: "sync" }));
-    expect(properties).toHaveProperty("$ai_input");
-    expect(properties).toHaveProperty("$ai_output_choices");
-    expect(properties.$ai_input).toEqual([{ role: "system", content: "you are a food classifier" }]);
-    expect(properties.$ai_output_choices).toEqual([{ allergens: [] }]);
-  });
+function fakeProvider(overrides: Partial<GenerationProvider> = {}): GenerationProvider {
+  return { providerName: "moonshot", modelId: "kimi-k2-0905-preview", baseURL: "https://api.moonshot.ai/v1", ...overrides };
+}
 
-  it("omits $ai_input and $ai_output_choices ENTIRELY for a local recipe — absent keys, not empty/falsy values", () => {
-    const { properties } = buildGenerationEvent(baseInput({ recipeOrigin: "local" }));
-    // The load-bearing assertion: not toBeUndefined() (a key could be present
-    // and set to undefined and still pass that), but not present as a key at
-    // all, matching how a real PostHog capture call serializes the object.
-    expect(properties).not.toHaveProperty("$ai_input");
-    expect(properties).not.toHaveProperty("$ai_output_choices");
-    expect(Object.keys(properties)).not.toContain("$ai_input");
-    expect(Object.keys(properties)).not.toContain("$ai_output_choices");
-  });
+function fakePrompt(overrides: Partial<GenerationPrompt> = {}): GenerationPrompt {
+  return { name: "recipe-llm-enrichment", version: 3, ...overrides };
+}
 
-  it("keeps tokens, latency, model, provider and cost fields on a local recipe despite the content redaction", () => {
-    const { properties } = buildGenerationEvent(
-      baseInput({
-        recipeOrigin: "local",
-        usage: { inputTokens: 900, outputTokens: 200 },
-        latencyMs: 3000,
-        pricing: { inputTokenPriceUsd: 0.000002, outputTokenPriceUsd: 0.000006 },
-      }),
-    );
-    expect(properties.$ai_input_tokens).toBe(900);
-    expect(properties.$ai_output_tokens).toBe(200);
-    expect(properties.$ai_latency).toBe(3);
-    expect(properties.$ai_model).toBe("kimi-k2-0905-preview");
-    expect(properties.$ai_provider).toBe("moonshot");
-    expect(properties.$ai_input_token_price).toBe(0.000002);
-    expect(properties.$ai_output_token_price).toBe(0.000006);
-  });
-});
+function fakeLine(overrides: Partial<ClassifierLine> = {}): ClassifierLine {
+  return { ordinal: 1, text: "2 cups flour", name: "flour", quantity: 2, unit: "cups", foodSlug: "flour", via: "exact", traits: null, ...overrides };
+}
 
-describe("buildGenerationEvent — $ai_latency is seconds, input is milliseconds", () => {
-  it.each([
-    [1000, 1],
-    [2500, 2.5],
-    [60_000, 60],
-    [0, 0],
-  ])("converts %ims to %is", (latencyMs, expectedSeconds) => {
-    const { properties } = buildGenerationEvent(baseInput({ latencyMs }));
-    expect(properties.$ai_latency).toBe(expectedSeconds);
-  });
-});
-
-describe("buildGenerationEvent — error shape", () => {
-  it("sets $ai_is_error and $ai_error only when input.error is present", () => {
-    const ok = buildGenerationEvent(baseInput());
-    expect(ok.properties).not.toHaveProperty("$ai_is_error");
-    expect(ok.properties).not.toHaveProperty("$ai_error");
-
-    const failed = buildGenerationEvent(baseInput({ error: { message: "schema validation failed: unknown cuisine slug" }, httpStatus: 200 }));
-    expect(failed.properties.$ai_is_error).toBe(true);
-    expect(failed.properties.$ai_error).toBe("schema validation failed: unknown cuisine slug");
-  });
-
-  it("still carries http status, model and tokens alongside an error", () => {
-    const { properties } = buildGenerationEvent(baseInput({ error: { message: "timeout" }, httpStatus: 0, usage: { inputTokens: 800, outputTokens: 0 } }));
-    expect(properties.$ai_http_status).toBe(0);
-    expect(properties.$ai_input_tokens).toBe(800);
-    expect(properties.$ai_output_tokens).toBe(0);
-  });
-
-  it("redaction still applies on an error for a local recipe", () => {
-    const { properties } = buildGenerationEvent(baseInput({ recipeOrigin: "local", error: { message: "timeout" } }));
-    expect(properties.$ai_is_error).toBe(true);
-    expect(properties).not.toHaveProperty("$ai_input");
-    expect(properties).not.toHaveProperty("$ai_output_choices");
-  });
-});
-
-describe("buildGenerationEvent — custom properties, exact spellings (plan §10)", () => {
-  it("sends every contractual custom property with the exact name evals/dashboards filter on", () => {
-    const { properties } = buildGenerationEvent(
-      baseInput({
-        recipeId: "recipe-42",
-        promptVersion: 7,
-        llmVersion: 1,
-        labelsWritten: 5,
-        disagreements: 2,
-        lineCount: 12,
-        unresolvedLineCount: 3,
-      }),
-    );
-    expect(properties).toMatchObject({
-      ai_feature: "recipe-llm-enrichment",
-      recipe_id: "recipe-42",
-      recipe_origin: "sync",
-      prompt_name: "recipe-llm-enrichment",
-      prompt_version: 7,
-      // PostHog's own prompt-provenance convention, sent alongside the plain
-      // names so Prompt Management can tie this generation to the version that
-      // produced it (`@posthog/ai` documents this pairing with `Prompts.get`).
-      $ai_prompt_name: "recipe-llm-enrichment",
-      $ai_prompt_version: 7,
-      llm_version: 1,
-      labels_written: 5,
-      disagreements: 2,
-      line_count: 12,
-      unresolved_line_count: 3,
-    });
-    expect(properties.ai_feature).toBe(AI_FEATURE);
-  });
-
-  it("sends prompt_version: null verbatim when the prompt fetch fell back — null is a real value, not an absent key", () => {
-    const { properties } = buildGenerationEvent(baseInput({ promptVersion: null }));
-    expect(properties).toHaveProperty("prompt_version");
-    expect(properties.prompt_version).toBeNull();
-    // Both spellings have to agree, or "which recipes ran on the fallback?"
-    // gets two different answers depending on which one somebody filters on.
-    expect(properties).toHaveProperty("$ai_prompt_version");
-    expect(properties.$ai_prompt_version).toBeNull();
-  });
-
-  it("$ai_span_name is the fixed classify-recipe span, regardless of origin or error", () => {
-    expect(buildGenerationEvent(baseInput({ recipeOrigin: "sync" })).properties.$ai_span_name).toBe("classify-recipe");
-    expect(buildGenerationEvent(baseInput({ recipeOrigin: "local", error: { message: "x" } })).properties.$ai_span_name).toBe("classify-recipe");
-  });
-});
-
-describe("buildGenerationEvent — pricing passthrough (plan §5.3)", () => {
-  it("sends $ai_input_token_price and $ai_output_token_price when pricing is supplied", () => {
-    const { properties } = buildGenerationEvent(baseInput({ pricing: { inputTokenPriceUsd: 0.0000005, outputTokenPriceUsd: 0.0000015 } }));
-    expect(properties.$ai_input_token_price).toBe(0.0000005);
-    expect(properties.$ai_output_token_price).toBe(0.0000015);
-  });
-
-  it("omits both pricing properties entirely when pricing is not supplied", () => {
-    const { properties } = buildGenerationEvent(baseInput({ pricing: undefined }));
-    expect(properties).not.toHaveProperty("$ai_input_token_price");
-    expect(properties).not.toHaveProperty("$ai_output_token_price");
-  });
-
-  it("sends only the one price actually supplied when pricing is partial", () => {
-    const inputOnly = buildGenerationEvent(baseInput({ pricing: { inputTokenPriceUsd: 0.000001 } }));
-    expect(inputOnly.properties.$ai_input_token_price).toBe(0.000001);
-    expect(inputOnly.properties).not.toHaveProperty("$ai_output_token_price");
-
-    const outputOnly = buildGenerationEvent(baseInput({ pricing: { outputTokenPriceUsd: 0.000003 } }));
-    expect(outputOnly.properties).not.toHaveProperty("$ai_input_token_price");
-    expect(outputOnly.properties.$ai_output_token_price).toBe(0.000003);
-  });
-
-  it("treats an explicit zero price as a real value, not as absent", () => {
-    const { properties } = buildGenerationEvent(baseInput({ pricing: { inputTokenPriceUsd: 0, outputTokenPriceUsd: 0 } }));
-    expect(properties).toHaveProperty("$ai_input_token_price", 0);
-    expect(properties).toHaveProperty("$ai_output_token_price", 0);
-  });
-});
-
-describe("buildGenerationEvent — determinism", () => {
-  it("returns the same event for the same input", () => {
-    const input = baseInput();
-    expect(buildGenerationEvent(input)).toEqual(buildGenerationEvent(input));
-  });
-});
-
-// --- buildDisagreementEvent -------------------------------------------
-
-function disagreement(overrides: Partial<Disagreement> = {}): Disagreement {
+function fakeLabel(overrides: Partial<Label> = {}): Label {
   return {
     dimension: "allergen",
-    slug: "fish",
-    rulesVerdict: "contains",
-    llmVerdict: "not_detected",
-    llmConfidence: 0.4,
+    slug: "gluten",
+    verdict: "contains",
+    confidence: 0.9,
+    method: "llm:moonshot:kimi-k2-0905-preview@1",
+    evidence: { rule: "llm", lines: [] },
     ...overrides,
   };
 }
+
+function fakeDisagreement(overrides: Partial<Disagreement> = {}): Disagreement {
+  return { dimension: "allergen", slug: "fish", rulesVerdict: "contains", llmVerdict: "not_detected", llmConfidence: 0.4, ...overrides };
+}
+
+// --- buildDisagreementEvent / sendDisagreementEvent — unchanged behaviour ---
 
 describe("buildDisagreementEvent — shape (plan §8, §5.4, §5.5)", () => {
   it("carries the recipe identity, the service distinct id, and the Disagreement fields verbatim", () => {
-    const result = buildDisagreementEvent({ recipeId: "recipe-7", recipeOrigin: "sync", disagreement: disagreement() });
+    const result = buildDisagreementEvent({ recipeId: "recipe-7", recipeOrigin: "sync", disagreement: fakeDisagreement() });
     expect(result.distinctId).toBe(PIPELINE_DISTINCT_ID);
     expect(result.event).toBe("llm_enrichment_disagreement");
     expect(result.event).toBe(DISAGREEMENT_EVENT);
@@ -253,15 +116,15 @@ describe("buildDisagreementEvent — shape (plan §8, §5.4, §5.5)", () => {
     const result = buildDisagreementEvent({
       recipeId: "recipe-8",
       recipeOrigin: "local",
-      disagreement: disagreement({ dimension: "diet", slug: "keto", rulesVerdict: null, llmVerdict: "likely", llmConfidence: 0.55 }),
+      disagreement: fakeDisagreement({ dimension: "diet", slug: "keto", rulesVerdict: null, llmVerdict: "likely", llmConfidence: 0.55 }),
     });
     expect(result.properties.rules_verdict).toBeNull();
     expect(result.properties.recipe_origin).toBe("local");
   });
 
   it("uses the service distinct id, never the recipe id, for both origins", () => {
-    const sync = buildDisagreementEvent({ recipeId: "recipe-9", recipeOrigin: "sync", disagreement: disagreement() });
-    const local = buildDisagreementEvent({ recipeId: "recipe-9", recipeOrigin: "local", disagreement: disagreement() });
+    const sync = buildDisagreementEvent({ recipeId: "recipe-9", recipeOrigin: "sync", disagreement: fakeDisagreement() });
+    const local = buildDisagreementEvent({ recipeId: "recipe-9", recipeOrigin: "local", disagreement: fakeDisagreement() });
     expect(sync.distinctId).toBe("recipe-enrichment-pipeline");
     expect(local.distinctId).toBe("recipe-enrichment-pipeline");
   });
@@ -271,7 +134,7 @@ describe("buildDisagreementEvent — no ingredient text can leak in", () => {
   it("emits exactly the seven known keys and nothing else, for every dimension", () => {
     const expectedKeys = ["recipe_id", "recipe_origin", "dimension", "slug", "rules_verdict", "llm_verdict", "llm_confidence"].sort();
     for (const dimension of ["allergen", "diet", "cuisine", "meal_type", "spice_level"] as const) {
-      const { properties } = buildDisagreementEvent({ recipeId: "recipe-x", recipeOrigin: "sync", disagreement: disagreement({ dimension }) });
+      const { properties } = buildDisagreementEvent({ recipeId: "recipe-x", recipeOrigin: "sync", disagreement: fakeDisagreement({ dimension }) });
       expect(Object.keys(properties).sort()).toEqual(expectedKeys);
     }
   });
@@ -285,7 +148,7 @@ describe("buildDisagreementEvent — no ingredient text can leak in", () => {
     const { properties } = buildDisagreementEvent({
       recipeId: "recipe-y",
       recipeOrigin: "sync",
-      disagreement: disagreement({ slug: "fish", rulesVerdict: "contains", llmVerdict: "not_detected" }),
+      disagreement: fakeDisagreement({ slug: "fish", rulesVerdict: "contains", llmVerdict: "not_detected" }),
     });
     for (const [key, value] of Object.entries(properties)) {
       if (typeof value === "string") {
@@ -296,5 +159,161 @@ describe("buildDisagreementEvent — no ingredient text can leak in", () => {
     expect(properties).not.toHaveProperty("note");
     expect(properties).not.toHaveProperty("ingredients");
     expect(properties).not.toHaveProperty("lines");
+  });
+});
+
+// --- buildEnrichmentCompletedEvent / captureEnrichmentCompleted -------------
+
+function completedInput(overrides: Partial<EnrichmentCompletedInput> = {}): EnrichmentCompletedInput {
+  return {
+    traceId: "trace-abc-123",
+    recipeId: "recipe-1",
+    recipeOrigin: "sync",
+    provider: fakeProvider(),
+    prompt: fakePrompt(),
+    lines: [fakeLine({ ordinal: 1, foodSlug: "flour" }), fakeLine({ ordinal: 2, foodSlug: "sugar" })],
+    llmVersion: 1,
+    writes: [fakeLabel()],
+    disagreements: [],
+    ...overrides,
+  };
+}
+
+describe("buildEnrichmentCompletedEvent — shape and the join key", () => {
+  it("carries the trace id, ai_feature, and the recipe/prompt/model identity", () => {
+    const { distinctId, event, properties } = buildEnrichmentCompletedEvent(completedInput());
+    expect(distinctId).toBe(PIPELINE_DISTINCT_ID);
+    expect(event).toBe(ENRICHMENT_COMPLETED_EVENT);
+    expect(event).toBe("llm_enrichment_completed");
+    expect(properties).toMatchObject({
+      // The join key back to the generation span this event describes.
+      $ai_trace_id: "trace-abc-123",
+      ai_feature: AI_FEATURE,
+      recipe_id: "recipe-1",
+      recipe_origin: "sync",
+      prompt_name: "recipe-llm-enrichment",
+      prompt_version: 3,
+      llm_version: 1,
+      model: "moonshot:kimi-k2-0905-preview",
+    });
+  });
+
+  it("computes labels_written, disagreements, line_count and unresolved_line_count from writes/disagreements/lines, not passed through", () => {
+    const { properties } = buildEnrichmentCompletedEvent(
+      completedInput({
+        writes: [fakeLabel({ slug: "gluten" }), fakeLabel({ slug: "dairy" }), fakeLabel({ slug: "soy" })],
+        disagreements: [fakeDisagreement(), fakeDisagreement({ slug: "shellfish" })],
+        lines: [
+          fakeLine({ ordinal: 1, foodSlug: "flour" }),
+          fakeLine({ ordinal: 2, foodSlug: null }),
+          fakeLine({ ordinal: 3, foodSlug: null }),
+          fakeLine({ ordinal: 4, foodSlug: "egg" }),
+        ],
+      }),
+    );
+    expect(properties.labels_written).toBe(3);
+    expect(properties.disagreements).toBe(2);
+    expect(properties.line_count).toBe(4);
+    // Only the two lines with foodSlug: null are unresolved — computed by
+    // filtering, not a count handed in verbatim.
+    expect(properties.unresolved_line_count).toBe(2);
+  });
+
+  it("prompt_version: null rides through verbatim — the committed fallback prompt ran, and that is a real value, not an absent key", () => {
+    const { properties } = buildEnrichmentCompletedEvent(completedInput({ prompt: fakePrompt({ version: null }) }));
+    expect(properties).toHaveProperty("prompt_version", null);
+  });
+
+  it("recipe_origin passes through both origins, and line_count/unresolved_line_count are zero for an empty line set", () => {
+    const local = buildEnrichmentCompletedEvent(completedInput({ recipeOrigin: "local", lines: [], writes: [], disagreements: [] }));
+    expect(local.properties.recipe_origin).toBe("local");
+    expect(local.properties.line_count).toBe(0);
+    expect(local.properties.unresolved_line_count).toBe(0);
+    expect(local.properties.labels_written).toBe(0);
+    expect(local.properties.disagreements).toBe(0);
+  });
+});
+
+describe("captureEnrichmentCompleted — emits one completion event plus one disagreement event per disagreement", () => {
+  it("sends exactly 1 + N capture calls for N disagreements, completion first", () => {
+    const { client, capture } = fakeClient();
+    const log = fakeLog();
+    const disagreements = [fakeDisagreement({ slug: "fish" }), fakeDisagreement({ slug: "shellfish" }), fakeDisagreement({ slug: "peanut" })];
+
+    captureEnrichmentCompleted(client, log, completedInput({ disagreements }));
+
+    expect(capture).toHaveBeenCalledTimes(4);
+    const events = capture.mock.calls.map((call) => (call[0] as { event: string }).event);
+    expect(events[0]).toBe(ENRICHMENT_COMPLETED_EVENT);
+    expect(events.slice(1)).toEqual([DISAGREEMENT_EVENT, DISAGREEMENT_EVENT, DISAGREEMENT_EVENT]);
+  });
+
+  it("sends only the completion event when there are no disagreements", () => {
+    const { client, capture } = fakeClient();
+    captureEnrichmentCompleted(client, fakeLog(), completedInput({ disagreements: [] }));
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(eventNameAt(capture, 0)).toBe(ENRICHMENT_COMPLETED_EVENT);
+  });
+
+  it("no-ops safely with a null client — never throws, and there is nothing to assert calls on", () => {
+    expect(() => captureEnrichmentCompleted(null, fakeLog(), completedInput({ disagreements: [fakeDisagreement()] }))).not.toThrow();
+  });
+});
+
+// --- buildEnrichmentFailedEvent / captureEnrichmentFailed -------------------
+
+function failedInput(overrides: Partial<EnrichmentFailedInput> = {}): EnrichmentFailedInput {
+  return {
+    traceId: "trace-fail-1",
+    recipeId: "recipe-2",
+    recipeOrigin: "sync",
+    provider: fakeProvider(),
+    prompt: fakePrompt(),
+    llmVersion: 1,
+    message: "schema validation failed: unknown cuisine slug",
+    rawText: undefined,
+    ...overrides,
+  };
+}
+
+describe("buildEnrichmentFailedEvent — shape and the schema-rejection split", () => {
+  it("carries the trace id (join key), ai_feature, and the error message", () => {
+    const { distinctId, event, properties } = buildEnrichmentFailedEvent(failedInput());
+    expect(distinctId).toBe(PIPELINE_DISTINCT_ID);
+    expect(event).toBe(ENRICHMENT_FAILED_EVENT);
+    expect(event).toBe("llm_enrichment_failed");
+    expect(properties).toMatchObject({
+      $ai_trace_id: "trace-fail-1",
+      ai_feature: AI_FEATURE,
+      error: "schema validation failed: unknown cuisine slug",
+    });
+  });
+
+  it("schema_rejection: true and a raw_output property when rawText is present — doGenerate succeeded, parsing failed", () => {
+    const { properties } = buildEnrichmentFailedEvent(failedInput({ rawText: '{"cuisine": "not-a-real-slug"}' }));
+    expect(properties.schema_rejection).toBe(true);
+    expect(properties).toHaveProperty("raw_output", '{"cuisine": "not-a-real-slug"}');
+  });
+
+  it("schema_rejection: false and NO raw_output key when rawText is absent — the model never answered", () => {
+    const { properties } = buildEnrichmentFailedEvent(failedInput({ rawText: undefined }));
+    expect(properties.schema_rejection).toBe(false);
+    // Not toBeUndefined() — a key can be present and set to undefined and
+    // still pass that. This is the same "absent key, not a falsy value"
+    // discipline the old redaction tests used for $ai_input/$ai_output_choices.
+    expect(properties).not.toHaveProperty("raw_output");
+  });
+});
+
+describe("captureEnrichmentFailed — sends exactly one event, no-ops safely with a null client", () => {
+  it("sends the failed event once", () => {
+    const { client, capture } = fakeClient();
+    captureEnrichmentFailed(client, fakeLog(), failedInput());
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(eventNameAt(capture, 0)).toBe(ENRICHMENT_FAILED_EVENT);
+  });
+
+  it("never throws with a null client", () => {
+    expect(() => captureEnrichmentFailed(null, fakeLog(), failedInput({ rawText: "raw model text" }))).not.toThrow();
   });
 });

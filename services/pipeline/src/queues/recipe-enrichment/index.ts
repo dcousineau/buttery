@@ -25,7 +25,8 @@ import { LLM_ENRICHMENT_VERSION, llmOutputSchema } from "#/queues/recipe-enrichm
 import { isLlmEnrichmentEnabled } from "#/queues/recipe-enrichment/lib/posthog.ts";
 import { FALLBACK_PROMPT, PROMPT_NAME } from "#/queues/recipe-enrichment/lib/prompt.ts";
 import { mergeLlmLabels } from "#/queues/recipe-enrichment/lib/merge.ts";
-import { captureGeneration, captureGenerationFailure } from "#/queues/recipe-enrichment/lib/capture.ts";
+import { AI_FEATURE, captureEnrichmentCompleted, captureEnrichmentFailed, PIPELINE_DISTINCT_ID } from "#/queues/recipe-enrichment/lib/capture.ts";
+import { generationTelemetry } from "#/lib/ai/telemetry.ts";
 import { buildMessages, buildRecipeJson } from "#/queues/recipe-enrichment/lib/llm-messages.ts";
 
 /**
@@ -199,7 +200,6 @@ export async function runLlmEnrich(fastify: FastifyInstance, job: Job): Promise<
     const recipeJson = buildRecipeJson({ recipeName: recipe.name, lines, rulesLabels });
     const messages = buildMessages({ promptText: prompt.text, recipeJson });
 
-    const startedAt = performance.now();
     const result = await generateText({
       model: provider.model,
       output: Output.object({ schema: llmOutputSchema }),
@@ -209,9 +209,51 @@ export async function runLlmEnrich(fastify: FastifyInstance, job: Job): Promise<
       providerOptions: provider.providerOptions,
       maxOutputTokens: LLM_MAX_OUTPUT_TOKENS,
       abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+      // PostHog gets this generation from the AI SDK's own spans now, not from
+      // an event we assemble — see `lib/ai/telemetry.ts` and
+      // `plugins/telemetry.ts`. Latency, tokens, model and the error case all
+      // come for free; what is left here is the recipe context PostHog cannot
+      // know, and the redaction decision it must not guess.
+      telemetry: generationTelemetry({
+        enabled: fastify.telemetry.enabled,
+        traceId,
+        distinctId: PIPELINE_DISTINCT_ID,
+        functionId: "classify-recipe",
+        // THE redaction line (L10): a `sync` recipe is public network content
+        // that was already fetched from the open web; a `local` one is
+        // somebody's own, often hand-typed. Prompt and output text reach
+        // PostHog only for the former. `lib/ai/telemetry.test.ts` proves the
+        // negative rather than asserting the flag.
+        recordContent: recipeOrigin === "sync",
+        attributes: {
+          ai_feature: AI_FEATURE,
+          recipe_id: recipeId,
+          recipe_origin: recipeOrigin,
+          prompt_name: prompt.name,
+          // Both spellings, deliberately: the `$ai_`-prefixed pair is
+          // PostHog's own convention for tying a generation to its Prompt
+          // Management version, and the unprefixed pair is what the §5.3
+          // dashboard and §5.4 evaluations already filter on. Dropping either
+          // silently breaks something somebody built.
+          prompt_version: prompt.version,
+          $ai_prompt_name: prompt.name,
+          $ai_prompt_version: prompt.version,
+          llm_version: LLM_ENRICHMENT_VERSION,
+          // Known before the call, so they ride the span. The merge counts are
+          // not, and ride `llm_enrichment_completed` instead — see capture.ts.
+          line_count: lines.length,
+          unresolved_line_count: lines.filter((line) => line.foodSlug === null).length,
+          // Unit prices, forwarded only when configured. UNVERIFIED against
+          // live PostHog: whether OTLP ingestion honours these the way
+          // `posthog-node` capture did is not something this environment can
+          // establish (no project access) — see the results file's §5 note.
+          // Emitting them cannot produce WRONG cost data, only ignored
+          // attributes, which is why they stay rather than being deleted.
+          $ai_input_token_price: fastify.env.LLM_INPUT_TOKEN_PRICE_USD ? Number(fastify.env.LLM_INPUT_TOKEN_PRICE_USD) : null,
+          $ai_output_token_price: fastify.env.LLM_OUTPUT_TOKEN_PRICE_USD ? Number(fastify.env.LLM_OUTPUT_TOKEN_PRICE_USD) : null,
+        },
+      }),
     });
-    const latencyMs = performance.now() - startedAt;
-    const outputChoices = [{ role: "assistant", content: JSON.stringify(result.output) }];
 
     const { writes, disagreements } = mergeLlmLabels({
       rulesLabels,
@@ -228,17 +270,16 @@ export async function runLlmEnrich(fastify: FastifyInstance, job: Job): Promise<
       writes,
     );
 
-    captureGeneration(fastify.posthog.client, fastify.log, {
+    // What the generation span could not carry, because it did not exist yet
+    // when the span was created: the merge outcome. Same `$ai_trace_id`, so
+    // the two join in PostHog.
+    captureEnrichmentCompleted(fastify.posthog.client, fastify.log, {
       traceId,
       recipeId,
       recipeOrigin,
       provider,
       prompt,
       lines,
-      messages,
-      outputChoices,
-      usage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
-      latencyMs,
       llmVersion: LLM_ENRICHMENT_VERSION,
       writes,
       disagreements,
@@ -250,13 +291,17 @@ export async function runLlmEnrich(fastify: FastifyInstance, job: Job): Promise<
     const message = describeWriteError(err);
     fastify.log.error({ recipeId, err: message }, "llm-enrich failed");
     await markLlmError(pool, recipeId, message);
-    captureGenerationFailure(fastify.posthog.client, fastify.log, {
+    // NOT a second `$ai_generation`. A transport failure already produced an
+    // errored generation span inside the SDK; a schema rejection produced a
+    // SUCCESSFUL one, because the model answered and the tokens were spent —
+    // only the parse failed. Either way one model call stays one generation,
+    // and this event is where the failure signal lives. See capture.ts.
+    captureEnrichmentFailed(fastify.posthog.client, fastify.log, {
       traceId,
       recipeId,
       recipeOrigin,
       provider,
       prompt,
-      lines,
       llmVersion: LLM_ENRICHMENT_VERSION,
       message,
       rawText: fastify.ai.modelRawText(err),
