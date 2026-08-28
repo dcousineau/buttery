@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mergeLlmLabels } from "#/workflows/recipe-enrichment/lib/merge.ts";
 import { llmMethod } from "#/workflows/recipe-enrichment/lib/schema.ts";
 import type { LlmOutput } from "#/workflows/recipe-enrichment/lib/schema.ts";
-import { RULES_METHOD } from "#/workflows/recipe-enrichment/lib/classifiers/shared.ts";
+import { RULES_METHOD } from "@buttery/food/classify";
 import type { ClassifierLine, Evidence, Label } from "#/workflows/recipe-enrichment/types.ts";
 
 /**

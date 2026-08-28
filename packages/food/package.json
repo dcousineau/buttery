@@ -10,7 +10,8 @@
     "./parse": "./src/parse.ts",
     "./units": "./src/units.ts",
     "./categorize": "./src/categorize.ts",
-    "./traits": "./src/traits.ts"
+    "./traits": "./src/traits.ts",
+    "./classify": "./src/classify.ts"
   },
   "scripts": {
     "test": "vitest run",

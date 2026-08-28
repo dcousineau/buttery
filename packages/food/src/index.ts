@@ -10,6 +10,9 @@
  *   categorize/  ingredient name -> food -> aisle, over the vendored lexicon
  *   traits/      food -> vegan/vegetarian/allergen/tag facts (SERVER ONLY —
  *                see the module doc in `traits.ts`, plan D9)
+ *   classify/    traits -> rules-based recipe allergen/diet verdicts
+ *                (SERVER ONLY, inherited from `traits.ts` — see `classify.ts`'s
+ *                module doc). Internals live in `classifiers/`.
  *
  * Pure and dependency-free apart from `parse-ingredient`: no DB, no DOM, so the
  * identical modules run in a browser, a server function, and the pipeline.
@@ -24,3 +27,4 @@ export * from "./parse.ts";
 export * from "./units.ts";
 export * from "./categorize.ts";
 export * from "./traits.ts";
+export * from "./classify.ts";

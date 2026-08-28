@@ -3,7 +3,7 @@ import { categorizeWith, loadLexicon } from "@buttery/food/categorize";
 import { parseIngredientLine } from "@buttery/food/parse";
 import { loadTraits, traitsFor } from "@buttery/food/traits";
 import { contentFingerprint } from "@buttery/recipe-schemas/normalize";
-import type { ClassifierLine, Label } from "#/workflows/recipe-enrichment/types.ts";
+import type { ClassifierLine, Label } from "@buttery/food/classify";
 
 /**
  * Everything `enrich`/`llm-enrich` need from Postgres and `@buttery/food` —

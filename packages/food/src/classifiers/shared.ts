@@ -1,11 +1,11 @@
-import type { ClassifierLine, Dimension, Evidence, EvidenceLine, Label } from "#/workflows/recipe-enrichment/types.ts";
+import type { ClassifierLine, Dimension, Evidence, EvidenceLine, Label } from "./types.ts";
 
 /**
  * Small pieces every classifier needs, factored out here (rather than
- * duplicated in `allergen.ts` and `diet.ts`, or hung off `classify.ts`) so
- * `classify.ts` can import `RULES_METHOD` without importing the classifier
- * array itself — `classify.ts` -> `lib/classifiers/index.ts` -> `allergen.ts` /
- * `diet.ts` -> `lib/classifiers/shared.ts` is a straight line, never a cycle.
+ * duplicated in `allergen.ts` and `diet.ts`, or hung off `../classify.ts`) so
+ * `../classify.ts` can import `RULES_METHOD` without importing the classifier
+ * array itself — `../classify.ts` -> `classifiers/index.ts` -> `allergen.ts` /
+ * `diet.ts` -> `classifiers/shared.ts` is a straight line, never a cycle.
  */
 
 /** The `method` every rules-derived label carries (plan §3.2). */

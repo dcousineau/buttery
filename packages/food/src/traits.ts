@@ -18,6 +18,8 @@ export type TriState = 0 | 1 | 2;
 /** FDA Big 9 plus gluten (plan D7). */
 export type AllergenSlug = "milk" | "egg" | "fish" | "crustacean_shellfish" | "tree_nuts" | "peanut" | "wheat" | "soy" | "sesame" | "gluten";
 
+export const ALLERGEN_SLUGS: readonly AllergenSlug[] = ["milk", "egg", "fish", "crustacean_shellfish", "tree_nuts", "peanut", "wheat", "soy", "sesame", "gluten"];
+
 /**
  * Curated ancestor tags for verdicts §4.1's `{vg, vt, al}` sketch cannot
  * answer on its own: halal/kosher need pork and alcohol, pescatarian needs

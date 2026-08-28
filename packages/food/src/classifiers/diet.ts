@@ -1,21 +1,22 @@
-import { TRAIT_MAYBE, TRAIT_NO } from "#/workflows/recipe-enrichment/types.ts";
-import type { Classifier, ClassifierLine, Label } from "#/workflows/recipe-enrichment/types.ts";
-import { makeLabel, MEANINGFUL_UNRESOLVED_SHARE, unresolvedShare, wordBoundary } from "#/workflows/recipe-enrichment/lib/classifiers/shared.ts";
-import { TEXT_PATTERNS as ALLERGEN_TEXT_PATTERNS } from "#/workflows/recipe-enrichment/lib/classifiers/allergen.ts";
-import type { TextPattern } from "#/workflows/recipe-enrichment/lib/classifiers/allergen.ts";
+import type { AllergenSlug, FoodTag } from "../traits.ts";
+import { TRAIT_MAYBE, TRAIT_NO } from "./types.ts";
+import type { Classifier, ClassifierLine, Label } from "./types.ts";
+import { makeLabel, MEANINGFUL_UNRESOLVED_SHARE, unresolvedShare, wordBoundary } from "./shared.ts";
+import { TEXT_PATTERNS as ALLERGEN_TEXT_PATTERNS } from "./allergen.ts";
+import type { TextPattern } from "./allergen.ts";
 
 /**
  * Diet verdicts (plan D6, §8.2). Three-state — `excluded`, `likely`,
  * `unknown` — and there is no "certified" state and never will be from rules.
  *
- * The full `diet` vocabulary seeded by the migration is eleven upstream slugs
- * (`diabetic, gluten_free, halal, keto, kosher, low_calorie, low_carb,
- * low_fat, paleo, vegan, vegetarian`) plus two this plan adds (`pescatarian,
- * dairy_free`) — thirteen total. This module has a real rule for seven of
- * them (`EMITTED_DIET_SLUGS` in `types.ts`); the other six get no label at
- * all, on purpose — see `classifiers/README.md`. Labels are sparse
- * (`types.ts`'s note on the subject): a slug this module never rules on is
- * absent, which reads as "not excluded", the diet dimension's default —
+ * The full `diet` vocabulary seeded by the pipeline's migration is eleven
+ * upstream slugs (`diabetic, gluten_free, halal, keto, kosher, low_calorie,
+ * low_carb, low_fat, paleo, vegan, vegetarian`) plus two this plan adds
+ * (`pescatarian, dairy_free`) — thirteen total. This module has a real rule
+ * for seven of them (`EMITTED_DIET_SLUGS` in `types.ts`); the other six get
+ * no label at all, on purpose — see `classifiers/README.md`. Labels are
+ * sparse (`types.ts`'s note on the subject): a slug this module never rules
+ * on is absent, which reads as "not excluded", the diet dimension's default —
  * never as `unknown`, and never as a positive claim.
  *
  * ── Halal / kosher are sparse too ───────────────────────────────────────
@@ -25,11 +26,11 @@ import type { TextPattern } from "#/workflows/recipe-enrichment/lib/classifiers/
  *
 
  * ── Never author-declared data as evidence ─────────────────────────────
- * This module never reads `recipe.suitable_for_diet` (it isn't even on
- * `ClassifierInput` — pure functions don't reach for it as an out-of-band
- * input either). When a declared diet contradicts a derived verdict, both
- * stand; reconciling them is the Randomizer's problem, and it needs both
- * halves to decide (plan D1, §8.3).
+ * This module never reads the pipeline's `recipe.suitable_for_diet` (it isn't
+ * even on `ClassifierInput` — pure functions don't reach for it as an
+ * out-of-band input either). When a declared diet contradicts a derived
+ * verdict, both stand; reconciling them is the Randomizer's problem, and it
+ * needs both halves to decide (plan D1, §8.3).
  *
  * ── Unresolved-line pass for vegetarian/vegan/pescatarian ──────────────
  * `vg`/`vt`/`tg` only exist on lines the lexicon resolved. Without a
@@ -181,11 +182,11 @@ function detectAnimalOrigin(lines: readonly ClassifierLine[]): AnimalMatch {
 
 // --- helpers -----------------------------------------------------------------
 
-function hasTag(line: ClassifierLine, tag: string): boolean {
+function hasTag(line: ClassifierLine, tag: FoodTag): boolean {
   return line.traits?.tg?.includes(tag) ?? false;
 }
 
-function hasAllergen(line: ClassifierLine, slug: string): boolean {
+function hasAllergen(line: ClassifierLine, slug: AllergenSlug): boolean {
   return line.traits?.al?.includes(slug) ?? false;
 }
 

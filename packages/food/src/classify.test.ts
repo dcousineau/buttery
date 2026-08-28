@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { classify, CLASSIFIER_VERSION, RULES_METHOD } from "#/workflows/recipe-enrichment/lib/classify.ts";
-import { ALLERGEN_SLUGS, EMITTED_DIET_SLUGS, TRAIT_MAYBE, TRAIT_NO, TRAIT_YES } from "#/workflows/recipe-enrichment/types.ts";
-import type { AllergenVerdict, ClassifierInput, ClassifierLine, DietVerdict, Label } from "#/workflows/recipe-enrichment/types.ts";
+import { classify, CLASSIFIER_VERSION, EMITTED_DIET_SLUGS, RULES_METHOD, TRAIT_MAYBE, TRAIT_NO, TRAIT_YES } from "./classify.ts";
+import type { AllergenVerdict, ClassifierInput, ClassifierLine, DietVerdict, Label } from "./classify.ts";
+import { ALLERGEN_SLUGS } from "./traits.ts";
 
 /**
  * Pure suite over hand-built `ClassifierInput`s (plan §8.3) — no database, no
@@ -10,10 +10,10 @@ import type { AllergenVerdict, ClassifierInput, ClassifierLine, DietVerdict, Lab
  * dessert with gelatin, Worcestershire, ghee, lard, marzipan, tahini, soy
  * sauce, oyster sauce.
  *
- * Labels are sparse (`types.ts`'s note, `classifiers/README.md`): a label
- * row is written only when it says something the dimension's default does
- * not. `allergenLabel`/`dietLabel` below throw when a slug has no label, on
- * purpose — most tests assert a specific verdict and an absent label is a
+ * Labels are sparse (`classifiers/types.ts`'s note, `classifiers/README.md`):
+ * a label row is written only when it says something the dimension's default
+ * does not. `allergenLabel`/`dietLabel` below throw when a slug has no label,
+ * on purpose — most tests assert a specific verdict and an absent label is a
  * bug in the fixture, not a pass. Tests that want to assert absence itself
  * check `labels` directly instead of going through those helpers.
  */
@@ -70,14 +70,14 @@ describe("classify — exported surface", () => {
 });
 
 /**
- * `classify.ts` and `types.ts` pin the version-vs-emitted-slugs invariant
- * together: absence is only safe to read as a dimension's default for slugs
- * a row's `classifier_version` actually evaluated. This test is that pin —
- * it is not testing behavior so much as fencing it in. If it fails, you
- * (or a PR before you) added or removed a slug from `ALLERGEN_SLUGS` or
- * `EMITTED_DIET_SLUGS` without bumping `CLASSIFIER_VERSION` in
- * `classify.ts`. Bump it, then run a backfill (`POST
- * /jobs/recipe-enrichment` `{"name":"backfill"}`) so every already-classified
+ * `classify.ts` and `classifiers/types.ts` pin the version-vs-emitted-slugs
+ * invariant together: absence is only safe to read as a dimension's default
+ * for slugs a row's `classifier_version` actually evaluated. This test is
+ * that pin — it is not testing behavior so much as fencing it in. If it
+ * fails, you (or a PR before you) added or removed a slug from
+ * `ALLERGEN_SLUGS` or `EMITTED_DIET_SLUGS` without bumping
+ * `CLASSIFIER_VERSION` in `classify.ts`. Bump it, then run a backfill
+ * (`pnpm --filter @buttery/pipeline backfill`) so every already-classified
  * recipe re-evaluates under the new set — otherwise a recipe classified
  * under the old version silently reports the new default for a slug nothing
  * ever looked at, which for an allergen is exactly the failure this whole
@@ -92,7 +92,7 @@ describe("classifier_version — emitted slug sets are pinned to it", () => {
     };
     expect(
       snapshot,
-      'emitted slug sets changed without a CLASSIFIER_VERSION bump — bump CLASSIFIER_VERSION in classify.ts and run a backfill (POST /jobs/recipe-enrichment {"name":"backfill"}) so every already-classified recipe re-evaluates the new set',
+      "emitted slug sets changed without a CLASSIFIER_VERSION bump — bump CLASSIFIER_VERSION in classify.ts and run a backfill (pnpm --filter @buttery/pipeline backfill) so every already-classified recipe re-evaluates the new set",
     ).toEqual({
       CLASSIFIER_VERSION: 2,
       allergenSlugs: ["crustacean_shellfish", "egg", "fish", "gluten", "milk", "peanut", "sesame", "soy", "tree_nuts", "wheat"],

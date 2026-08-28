@@ -1,6 +1,7 @@
-import type { AllergenSlug, Classifier, ClassifierLine, Label } from "#/workflows/recipe-enrichment/types.ts";
-import { ALLERGEN_SLUGS } from "#/workflows/recipe-enrichment/types.ts";
-import { makeLabel, MEANINGFUL_UNRESOLVED_SHARE, unresolvedShare, wordBoundary } from "#/workflows/recipe-enrichment/lib/classifiers/shared.ts";
+import type { AllergenSlug } from "../traits.ts";
+import { ALLERGEN_SLUGS } from "../traits.ts";
+import type { Classifier, ClassifierLine, Label } from "./types.ts";
+import { makeLabel, MEANINGFUL_UNRESOLVED_SHARE, unresolvedShare, wordBoundary } from "./shared.ts";
 
 /**
  * FDA Big 9 plus gluten (plan D7, §8.1).
