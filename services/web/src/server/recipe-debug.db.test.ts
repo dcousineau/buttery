@@ -1,6 +1,7 @@
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { CLASSIFIER_VERSION } from "@buttery/food/classify";
 import type { DB } from "#/db/types";
 import { ulid } from "./household/ids";
 
@@ -60,9 +61,10 @@ const R_COUNTERPART = `rec-debug-counterpart-${RUN}`; // shares R_PRIV's content
 const R_SHARED = `rec-debug-shared-${RUN}`; // boxed in BOTH households — the leak-check fixture
 const R_FOREIGN = `rec-debug-foreign-${RUN}`; // exists, but boxed only in HH2 — "foreign id" for HH
 const R_KEYWORDS = `rec-debug-keywords-${RUN}`; // 205 recipe_keyword rows — the truncation fixture
+const R_LLM = `rec-debug-llm-${RUN}`; // recipe_enrichment with BOTH a rules-owned and an llm-owned label — the LLM highlight fixture
 const R_UNKNOWN = `rec-debug-unknown-${RUN}`; // never inserted at all
 
-const RECIPES = [R_PUB, R_PRIV, R_COUNTERPART, R_SHARED, R_FOREIGN, R_KEYWORDS];
+const RECIPES = [R_PUB, R_PRIV, R_COUNTERPART, R_SHARED, R_FOREIGN, R_KEYWORDS, R_LLM];
 
 const SESSION_ID = `import-session-${RUN}`;
 
@@ -127,6 +129,7 @@ async function reset(): Promise<void> {
       { id: R_SHARED, origin: "local", visibility: "private", name: "Shared Fixture" },
       { id: R_FOREIGN, origin: "local", visibility: "private", name: "Foreign Fixture" },
       { id: R_KEYWORDS, origin: "local", visibility: "private", name: "Keyword Fixture" },
+      { id: R_LLM, origin: "local", visibility: "private", name: "LLM Highlight Fixture" },
     ])
     .execute();
 
@@ -162,6 +165,7 @@ async function reset(): Promise<void> {
       { household_id: HH2, recipe_id: R_SHARED, added_by_did: DID2 },
       { household_id: HH2, recipe_id: R_FOREIGN, added_by_did: DID2 },
       { household_id: HH, recipe_id: R_KEYWORDS, added_by_did: DID },
+      { household_id: HH, recipe_id: R_LLM, added_by_did: DID },
     ])
     .execute();
 
@@ -226,6 +230,38 @@ async function reset(): Promise<void> {
     .insertInto("recipe_keyword")
     .values(Array.from({ length: 205 }, (_, i) => ({ recipe_id: R_KEYWORDS, keyword: `kw-${String(i).padStart(3, "0")}` })))
     .execute();
+
+  // --- R_LLM: the LLM highlight fixture ------------------------------------
+  // `classifier_version` is set to the ACTUAL deployed `CLASSIFIER_VERSION`
+  // (imported above) rather than a hardcoded number, so `rulesVersionCurrent`
+  // reads `true` regardless of future version bumps — the point of this
+  // fixture is to exercise the "fresh, current, ok" happy path, not to pin a
+  // version number that will drift out from under the test.
+  await db
+    .insertInto("recipe_enrichment")
+    .values({
+      recipe_id: R_LLM,
+      status: "ok",
+      classifier_version: CLASSIFIER_VERSION,
+      input_hash: "sha256:llm-fixture-hash",
+      enriched_at: sql`now()`,
+      llm_status: "ok",
+      llm_version: 1,
+      llm_input_hash: "sha256:llm-fixture-hash", // matches input_hash — freshAgainstRules should read true
+      llm_model: "moonshot:kimi-test",
+      llm_prompt_version: null, // the fallback-prompt case (llm/prompt.ts ran, not "unknown")
+      llm_enriched_at: sql`now()`,
+    })
+    .execute();
+  await db
+    .insertInto("recipe_enrichment_label")
+    .values([
+      // Rules-owned: method has no `llm:` prefix.
+      { recipe_id: R_LLM, dimension: "allergen", slug: "tree_nuts", verdict: "not_detected", confidence: 0.4, method: `rules@${CLASSIFIER_VERSION}`, evidence: null },
+      // LLM-owned: an LLM-only dimension (cuisine) the rules classifier never emits at all.
+      { recipe_id: R_LLM, dimension: "cuisine", slug: "italian", verdict: "likely", confidence: 0.82, method: "llm:moonshot:kimi-test@v1", evidence: null },
+    ])
+    .execute();
 }
 
 if (db) {
@@ -243,7 +279,17 @@ const describeDb = db ? describe : describe.skip;
 describeDb("getRecipeDebug", () => {
   it("returns found:false for an id that was never inserted", async () => {
     const result = await mod.getRecipeDebug(db!, HH, R_UNKNOWN);
-    expect(result).toEqual({ recipeId: R_UNKNOWN, found: false, summary: null, atprotoRecord: null, counterparts: [], rendered: [], privateLayers: [], warnings: [] });
+    expect(result).toEqual({
+      recipeId: R_UNKNOWN,
+      found: false,
+      summary: null,
+      atprotoRecord: null,
+      counterparts: [],
+      llmEnrichment: null,
+      rendered: [],
+      privateLayers: [],
+      warnings: [],
+    });
   });
 
   it("returns found:false for a real recipe boxed only in a different household — a 'foreign id'", async () => {
@@ -265,6 +311,10 @@ describeDb("getRecipeDebug", () => {
     });
     // The raw jsonb, byte-for-byte: $type survives, nothing is reshaped or dropped.
     expect(result.atprotoRecord?.record).toMatchObject({ $type: "exchange.recipe.recipe", name: "Published Fixture", ingredients: ["1 cup flour"], instructions: ["Mix it."] });
+    // R_PUB has no recipe_enrichment row at all in this fixture set — nothing
+    // has ever classified it, rules or LLM — so the highlight is null rather
+    // than a summary full of zeroes/nulls pretending something ran.
+    expect(result.llmEnrichment).toBeNull();
   });
 
   it("an unpublished (local, no did/rkey) recipe returns atprotoRecord: null", async () => {
@@ -351,5 +401,55 @@ describeDb("getRecipeDebug", () => {
     const keywords = result.rendered.find((s) => s.table === "recipe_keyword");
     expect(keywords?.rows).toHaveLength(200);
     expect(result.warnings.some((w) => w.startsWith("recipe_keyword:") && /capped/.test(w))).toBe(true);
+  });
+
+  describe("llmEnrichment highlight", () => {
+    it("splits labels by the method column's llm: prefix, reports a null promptVersion as the fallback prompt (not 'unknown'), and reads fresh/current", async () => {
+      const result = await mod.getRecipeDebug(db!, HH, R_LLM);
+      const llm = result.llmEnrichment;
+      expect(llm).not.toBeNull();
+      expect(llm).toMatchObject({
+        status: "ok",
+        error: null,
+        model: "moonshot:kimi-test",
+        promptVersion: null,
+        llmVersion: 1,
+        classifierVersion: CLASSIFIER_VERSION,
+        rulesStatus: "ok",
+        rulesVersionCurrent: true,
+        inputHash: "sha256:llm-fixture-hash",
+        llmInputHash: "sha256:llm-fixture-hash",
+        freshAgainstRules: true,
+      });
+
+      // Rules-owned row (no llm: prefix) lands under its own dimension, tagged "rules".
+      expect(llm!.labelsByDimension.allergen).toEqual([
+        expect.objectContaining({ slug: "tree_nuts", verdict: "not_detected", source: "rules", method: `rules@${CLASSIFIER_VERSION}` }),
+      ]);
+      // LLM-owned row (llm: prefix) lands under ITS dimension, tagged "llm",
+      // with the full provenance string kept verbatim in `method`.
+      expect(llm!.labelsByDimension.cuisine).toEqual([expect.objectContaining({ slug: "italian", verdict: "likely", source: "llm", method: "llm:moonshot:kimi-test@v1" })]);
+
+      // The SAME rows are still visible raw, unedited, in the generic
+      // privateLayers section — the highlight is a second view, not a
+      // second source of truth.
+      const rawLabels = result.privateLayers.find((s) => s.table === "recipe_enrichment_label");
+      expect(rawLabels?.rows).toHaveLength(2);
+    });
+
+    it("recipe_enrichment exists but llm-enrich has never run: status/enrichedAt/model are null, llmVersion is 0, and it is NOT confused with 'never classified at all'", async () => {
+      const result = await mod.getRecipeDebug(db!, HH, R_PRIV);
+      // R_PRIV's fixture recipe_enrichment row (above) sets only the rules
+      // half — no llm_* columns — so this is the "rules ran, LLM never
+      // attempted" state, distinct from R_PUB's "nothing ran at all" (llmEnrichment: null).
+      expect(result.llmEnrichment).not.toBeNull();
+      expect(result.llmEnrichment).toMatchObject({ status: null, enrichedAt: null, model: null, promptVersion: null, llmVersion: 0, freshAgainstRules: false });
+      // R_PRIV's two rules@1 labels are both rules-owned — no llm: rows exist for it.
+      expect(
+        Object.values(result.llmEnrichment!.labelsByDimension)
+          .flat()
+          .every((l) => l.source === "rules"),
+      ).toBe(true);
+    });
   });
 });
