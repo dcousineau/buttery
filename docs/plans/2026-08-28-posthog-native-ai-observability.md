@@ -159,6 +159,13 @@ choice in the decision journal (see "Journal" below). Do not silently drop them.
 
 ### 4. Privacy / redaction — this is load-bearing, read it twice
 
+> **SUPERSEDED (2026-08-28, after implementation).** This section shipped as written
+> and was then reversed by the owner: prompt and output text are now recorded for
+> EVERY generation regardless of origin, and `recipe_origin` is a span attribute to
+> slice on rather than a gate. `POSTHOG_ENABLED` is the whole control. See
+> `lib/ai/telemetry.ts`'s doc comment and the results file. The rest of this section
+> is kept for the argument it records, not as an instruction.
+
 `buildGenerationEvent` in `capture.ts` attaches `$ai_input` and `$ai_output_choices`
 **only when `recipeOrigin === 'sync'`**. For `'local'` recipes the keys are omitted
 entirely — the doc comment explains why (a synced recipe is public web content; a
@@ -265,7 +272,7 @@ event still need it.
 2. `pnpm --filter @buttery/pipeline test`
 3. `pnpm lint` and `pnpm format:check`
 4. `pnpm why ai` from `services/pipeline` shows exactly one `ai` version.
-5. A test proving `local`-origin generations leak no prompt/output text (§4).
+5. A test proving prompt/output text is recorded for every origin (§4, as superseded).
 6. **An end-to-end check against the real PostHog project.** The repo already has a
    devtools "run LLM enrichment" button (commit `fa5e37d`) and a real-database test
    (`a13f7d9`) — use them. Run one enrichment with `POSTHOG_ENABLED=true` and confirm

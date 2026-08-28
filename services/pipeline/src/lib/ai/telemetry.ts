@@ -33,16 +33,22 @@ import type { Attributes } from "@opentelemetry/api";
  * attributes land on all three spans the SDK emits for one call
  * (`invoke_agent`, `step`, `chat`).
  *
- * ── CONTENT REDACTION IS A FLAG, AND THE FLAG IS THE WHOLE CONTROL ─────────
+ * ── PROMPT AND OUTPUT TEXT ARE ALWAYS RECORDED ─────────────────────────────
  *
  * `recordInputs`/`recordOutputs` decide whether the prompt and the model's
  * answer become `gen_ai.input.messages` / `gen_ai.output.messages` span
- * attributes. Setting them from the recipe's origin is what replaces the old
- * hand-built `$ai_input`/`$ai_output_choices` omission, and it is enforced by
- * the SDK rather than by us remembering to leave a key out. `telemetry.test.ts`
- * proves the negative — that a `local` recipe's prompt text appears in no
- * exported span attribute at all — because "the flag is set" is not the claim
- * worth making.
+ * attributes. Both are on, unconditionally, for every generation this service
+ * makes. An earlier revision made them a function of the recipe's origin —
+ * text for `sync` recipes, redaction for `local` ones — and that is gone
+ * deliberately: a generation you cannot read the prompt and the answer of is
+ * not much of a generation record, and the half of the corpus most worth
+ * inspecting (hand-entered recipes, where the model is likeliest to be wrong)
+ * was exactly the half being blanked. Origin still rides the span as the
+ * `recipe_origin` attribute, so PostHog can slice or filter on it; what it no
+ * longer does is decide what gets sent.
+ *
+ * The whole control is therefore `enabled`: no telemetry provider, no spans,
+ * no text. `plugins/telemetry.ts` owns that gate.
  */
 
 /** What one generation tells its span about itself, beyond what the AI SDK records on its own. */
@@ -66,8 +72,6 @@ export interface GenerationTelemetryInput {
   distinctId: string;
   /** `telemetry.functionId` — groups generations by call site in the AI SDK's own spans. */
   functionId: string;
-  /** `true` only for content the world can already read. Drives BOTH `recordInputs` and `recordOutputs`. */
-  recordContent: boolean;
   /**
    * Everything else, as OTel attributes. Values that are `null` or `undefined`
    * are dropped rather than sent: OTel `Attributes` has no null, and a
@@ -115,8 +119,10 @@ export function generationTelemetry(input: GenerationTelemetryInput): {
 
   return {
     isEnabled: true,
-    recordInputs: input.recordContent,
-    recordOutputs: input.recordContent,
+    // Unconditional — see the module doc comment. Explicit rather than left to
+    // the SDK's default so a default change cannot silently blank the corpus.
+    recordInputs: true,
+    recordOutputs: true,
     functionId: input.functionId,
     // Fires once per span the SDK creates for this call, and returns the same
     // attributes for each — so whichever span PostHog turns into the

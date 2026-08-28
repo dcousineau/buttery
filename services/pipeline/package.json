@@ -18,9 +18,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "^3.0.37",
+    "@ai-sdk/openai-compatible": "^3.0.39",
     "@ai-sdk/otel": "^1.0.83",
-    "@ai-sdk/provider-utils": "^5.0.30",
+    "@ai-sdk/provider-utils": "^5.0.32",
     "@bull-board/api": "^8.6.1",
     "@bull-board/fastify": "^8.6.1",
     "@buttery/food": "workspace:*",
@@ -32,7 +32,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
     "@opentelemetry/resources": "^2.10.0",
     "@opentelemetry/sdk-trace-base": "^2.10.0",
-    "@posthog/ai": "^8.8.1",
+    "@posthog/ai": "^8.9.0",
     "ai": "^7.0.83",
     "bullmq": "^6.1.2",
     "dayjs": "^1.11.23",
@@ -41,7 +41,7 @@
     "fastify-plugin": "^6.0.0",
     "ioredis": "^6.0.0",
     "pg": "^8.23.0",
-    "posthog-node": "^5.49.1",
+    "posthog-node": "^5.51.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {

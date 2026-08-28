@@ -211,20 +211,15 @@ export async function runLlmEnrich(fastify: FastifyInstance, job: Job): Promise<
       abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
       // PostHog gets this generation from the AI SDK's own spans now, not from
       // an event we assemble — see `lib/ai/telemetry.ts` and
-      // `plugins/telemetry.ts`. Latency, tokens, model and the error case all
-      // come for free; what is left here is the recipe context PostHog cannot
-      // know, and the redaction decision it must not guess.
+      // `plugins/telemetry.ts`. Latency, tokens, model, prompt text and the
+      // error case all come for free; what is left here is the recipe context
+      // PostHog cannot know. Every generation is recorded in full regardless of
+      // origin — `recipe_origin` below is a slice, not a gate.
       telemetry: generationTelemetry({
         enabled: fastify.telemetry.enabled,
         traceId,
         distinctId: PIPELINE_DISTINCT_ID,
         functionId: "classify-recipe",
-        // THE redaction line (L10): a `sync` recipe is public network content
-        // that was already fetched from the open web; a `local` one is
-        // somebody's own, often hand-typed. Prompt and output text reach
-        // PostHog only for the former. `lib/ai/telemetry.test.ts` proves the
-        // negative rather than asserting the flag.
-        recordContent: recipeOrigin === "sync",
         attributes: {
           ai_feature: AI_FEATURE,
           recipe_id: recipeId,

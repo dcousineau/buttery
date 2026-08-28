@@ -9,14 +9,13 @@ import { generationTelemetry } from "#/lib/ai/telemetry.ts";
 /**
  * `generationTelemetry` against a REAL `generateText` call and a REAL
  * in-memory OTel exporter — not a mock of the AI SDK's telemetry plumbing.
- * The one claim this suite exists to make load-bearing is §4 of
- * `docs/plans/2026-08-28-posthog-native-ai-observability.md`: a `local`
- * recipe's prompt and the model's answer must appear in NO exported span,
- * anywhere, in any form. "The flag is set" is not that claim — a boolean
- * could be threaded through correctly and the SDK could still leak the text
- * through some other attribute, or a future SDK version could change what
- * `recordInputs: false` actually suppresses. Only grepping the fully
- * serialized spans for the forbidden text proves the negative.
+ * The claim this suite makes load-bearing is the one the module doc comment
+ * argues for: every generation carries its prompt and the model's answer, for
+ * every recipe, with no origin-dependent redaction anywhere in the path.
+ * `recordInputs: true` being passed is not that claim — the SDK's defaults
+ * could change, or an integration could strip the messages back off — so the
+ * assertions grep the fully serialized spans for the sentinel text instead of
+ * asserting the flag.
  *
  * ── WHY `BasicTracerProvider`, NOT `NodeSDK` ────────────────────────────────
  *
@@ -74,15 +73,15 @@ function mockModel(): MockLanguageModelV4 {
   });
 }
 
-/** Every span attribute value, from every exported span, flattened into one string — the corpus the redaction proof greps. */
+/** Every span attribute value, from every exported span, flattened into one string — the corpus the sentinel assertions grep. */
 function allAttributesText(): string {
   return JSON.stringify(exporter.getFinishedSpans().map((span) => span.attributes));
 }
 
-describe("generationTelemetry — content redaction (docs/plans/2026-08-28-posthog-native-ai-observability.md §4)", () => {
-  it("recordContent: false — the sentinel prompt and the sentinel answer appear in NO exported span attribute", async () => {
-    const sentinelInput = "SENTINEL-INPUT-do-not-leak-93f1";
-    const sentinelOutput = "SENTINEL-OUTPUT-do-not-leak-93f1";
+describe("generationTelemetry — prompt and output text are always recorded", () => {
+  it("carries the sentinel prompt AND the sentinel answer into the exported span attributes", async () => {
+    const sentinelInput = "SENTINEL-INPUT-93f1";
+    const sentinelOutput = "SENTINEL-OUTPUT-93f1";
 
     const model = new MockLanguageModelV4({
       doGenerate: () =>
@@ -102,32 +101,28 @@ describe("generationTelemetry — content redaction (docs/plans/2026-08-28-posth
       allowSystemInMessages: true,
       telemetry: generationTelemetry({
         enabled: true,
-        traceId: "trace-redaction",
+        traceId: "trace-content",
         distinctId: "recipe-enrichment-pipeline",
         functionId: "classify-recipe",
-        recordContent: false,
         attributes: {},
       }),
     });
 
     const spans = exporter.getFinishedSpans();
     // Sanity: the three spans one `generateText` call is measured to emit
-    // actually landed, or the assertions below would pass vacuously with no
-    // spans at all.
+    // actually landed, or the assertions below would pass vacuously.
     expect(spans.length).toBeGreaterThan(0);
 
     const corpus = allAttributesText();
-    expect(corpus).not.toContain(sentinelInput);
-    expect(corpus).not.toContain(sentinelOutput);
+    expect(corpus).toContain(sentinelInput);
+    expect(corpus).toContain(sentinelOutput);
 
-    for (const span of spans) {
-      expect(span.attributes).not.toHaveProperty("gen_ai.input.messages");
-      expect(span.attributes).not.toHaveProperty("gen_ai.output.messages");
-    }
+    expect(spans.filter((span) => "gen_ai.input.messages" in span.attributes).length).toBeGreaterThan(0);
+    expect(spans.filter((span) => "gen_ai.output.messages" in span.attributes).length).toBeGreaterThan(0);
   });
 
-  it("negative control — recordContent: true DOES carry the sentinel prompt, so the case above isn't passing by accident", async () => {
-    const sentinelInput = "SENTINEL-INPUT-should-appear-2c7a";
+  it("records a `local`-origin generation exactly like a `sync` one — origin is a span attribute, not a gate", async () => {
+    const sentinelInput = "SENTINEL-LOCAL-2c7a";
 
     await generateText({
       model: mockModel(),
@@ -136,19 +131,18 @@ describe("generationTelemetry — content redaction (docs/plans/2026-08-28-posth
       allowSystemInMessages: true,
       telemetry: generationTelemetry({
         enabled: true,
-        traceId: "trace-control",
+        traceId: "trace-local",
         distinctId: "recipe-enrichment-pipeline",
         functionId: "classify-recipe",
-        recordContent: true,
-        attributes: {},
+        attributes: { recipe_origin: "local" },
       }),
     });
 
     const corpus = allAttributesText();
     expect(corpus).toContain(sentinelInput);
-
-    const withInput = exporter.getFinishedSpans().filter((span) => "gen_ai.input.messages" in span.attributes);
-    expect(withInput.length).toBeGreaterThan(0);
+    for (const span of exporter.getFinishedSpans()) {
+      expect(span.attributes).toMatchObject({ recipe_origin: "local" });
+    }
   });
 });
 
@@ -164,7 +158,6 @@ describe("generationTelemetry — custom attributes land on every span", () => {
         traceId: "trace-attrs-123",
         distinctId: "recipe-enrichment-pipeline",
         functionId: "classify-recipe",
-        recordContent: true,
         attributes: {
           ai_feature: "recipe-llm-enrichment",
           recipe_id: "recipe-42",
@@ -206,7 +199,6 @@ describe("generationTelemetry — custom attributes land on every span", () => {
         traceId: "trace-null-attr",
         distinctId: "recipe-enrichment-pipeline",
         functionId: "classify-recipe",
-        recordContent: true,
         attributes: {
           prompt_version: null,
           $ai_prompt_version: null,
@@ -233,7 +225,6 @@ describe("generationTelemetry — enabled: false", () => {
       traceId: "trace-disabled",
       distinctId: "recipe-enrichment-pipeline",
       functionId: "classify-recipe",
-      recordContent: true,
       attributes: { ai_feature: "recipe-llm-enrichment" },
     });
     expect(options).toEqual({ isEnabled: false });

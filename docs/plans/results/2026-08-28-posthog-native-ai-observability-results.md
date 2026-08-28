@@ -14,7 +14,7 @@ OpenTelemetry spans emitted by the AI SDK itself, through
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `src/plugins/telemetry.ts`             | **new** — registers the tracer provider + PostHog span processor; `forceFlush` on `onClose`               |
 | `src/lib/ai/telemetry.ts`              | **new** — `generationTelemetry(...)`, the per-call `telemetry` options builder                            |
-| `src/lib/ai/telemetry.test.ts`         | **new** — in-memory span exporter; the redaction proof                                                    |
+| `src/lib/ai/telemetry.test.ts`         | **new** — in-memory span exporter; proves prompt/output text is recorded for every origin                 |
 | `src/lib/ai/capture.ts`                | **deleted** — the generic `$ai_generation` builder                                                        |
 | `src/plugins/ai.ts`                    | `captureGeneration` removed; `dependencies` trimmed to `["env"]` (it no longer touches `fastify.posthog`) |
 | `.../recipe-enrichment/lib/capture.ts` | generation machinery deleted; two domain events added; disagreement event untouched                       |
@@ -93,7 +93,7 @@ across Railway, `process-compose` and `package.json`.
 | `pnpm --filter @buttery/pipeline test`      | see below                  |
 | `pnpm lint`                                 | clean                      |
 | `pnpm why ai` from `services/pipeline`      | exactly one — `ai@7.0.83`  |
-| §4 redaction proof                          | `lib/ai/telemetry.test.ts` |
+| §4 content-recording proof                  | `lib/ai/telemetry.test.ts` |
 
 **Fail-closed, measured both ways.** Booting the real app with PostHog disabled yields
 `NonRecordingSpan` / `isRecording() === false` — the API's no-op tracer, no provider, no
@@ -102,12 +102,18 @@ exporter, no background timer. With `POSTHOG_ENABLED=true` and a token it yields
 "registered a provider" and "spans actually go somewhere" are exactly the two things
 `NodeSDK` managed to disagree about.
 
-**Redaction (§4) is proved, not asserted.** The suite drives a real `generateText` call
-against a mock model and an in-memory span exporter, with sentinel strings in the
-prompt, and asserts those sentinels appear in **no exported span attribute** for a
-`local`-origin call, with `gen_ai.input.messages` / `gen_ai.output.messages` absent as
-keys. The `sync` mirror asserts the content _is_ there — without that negative control
-the first test would pass just as well if telemetry had silently broken entirely.
+**§4 was reversed after the fact: no origin-based redaction.** The plan specified
+`recordInputs: recipeOrigin === 'sync'`, and it shipped that way; it was then removed on
+the owner's call. Every generation now records its prompt and the model's answer, for
+`local` and `sync` recipes alike, and `recipe_origin` survives only as a span attribute
+to slice on. The reasoning: a generation record you cannot read the prompt and answer of
+is close to useless for the thing this instrumentation exists for (spotting bad model
+output), and `local` recipes — hand-typed, unusual, most likely to be misclassified — were
+exactly the half being blanked. `POSTHOG_ENABLED` is now the whole control. The suite
+follows: it drives a real `generateText` call against a mock model and an in-memory span
+exporter with sentinel strings in prompt and answer, and asserts both sentinels DO appear
+in the exported attributes, `local` origin included, with `gen_ai.input.messages` /
+`gen_ai.output.messages` present as keys.
 
 ## What is NOT verified
 
@@ -150,5 +156,5 @@ more.
 
 Against that: latency, tokens, model, provider, http status and transport errors are now
 recorded by the SDK rather than assembled by us, ~480 lines of hand-rolled event building
-are gone, and the redaction control is enforced by the SDK's own `recordInputs` /
-`recordOutputs` rather than by remembering to leave a key out of an object.
+are gone, and prompt/output text rides the SDK's own `recordInputs` / `recordOutputs`
+rather than being assembled key by key into a hand-built event.
