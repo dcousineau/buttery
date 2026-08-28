@@ -94,6 +94,34 @@ interface Registration {
   worker?: Worker;
 }
 
+/**
+ * The read side of the registry (S4): what `Registration` looks like to
+ * everything that only wants to look a workflow up, not mutate it. `worker` is
+ * deliberately absent — it is `Registration`'s own mutable, role-dependent
+ * bookkeeping, not part of what a workflow *is*. Structurally a `Registration`
+ * satisfies this interface as-is (a variable with extra fields is still
+ * assignable to a narrower type), so `get`/`list` below hand the same objects
+ * out directly rather than copying them.
+ */
+export interface WorkflowRegistration {
+  readonly spec: WorkflowSpec;
+  /** The kernel's runtime dispatch — what `run-once.ts` calls to execute a step in-process. */
+  readonly workflow: KernelWorkflow;
+  readonly queue: Queue;
+}
+
+/**
+ * `get`/`list` only. There is deliberately no third `queues()` accessor: every
+ * call site that wants queues (the board, `GET /queues`, `POST /jobs/:queue`)
+ * derives them from `list()` with one `.map()`, so a dedicated method would be
+ * a mechanism with no subject — don't re-add it without a consumer that
+ * `list().map(...)` can't already serve.
+ */
+export interface WorkflowRegistry {
+  get(name: string): WorkflowRegistration | undefined;
+  list(): readonly WorkflowRegistration[];
+}
+
 /** Prefix keeps schedulers distinguishable from any created by hand in the Bull Board UI. Same convention as `lib/bullmq/reconcile.ts`. */
 function schedulerId(queueName: string): string {
   return `${queueName}:scheduled`;
@@ -102,6 +130,7 @@ function schedulerId(queueName: string): string {
 declare module "fastify" {
   interface FastifyInstance {
     workflow: (spec: WorkflowSpec) => void;
+    workflows: WorkflowRegistry;
   }
 }
 
@@ -135,6 +164,14 @@ export default fp(
       });
 
       registrations.set(spec.name, { spec, workflow, queue });
+    });
+
+    // S4's read side: the Bull Board's queue list, `GET /workflows`,
+    // `GET /queues`, `POST /jobs/:queue` and `run-once.ts` all need to get a
+    // registration back out, not just put one in.
+    fastify.decorate("workflows", {
+      get: (name: string) => registrations.get(name),
+      list: () => [...registrations.values()],
     });
 
     fastify.addHook("onReady", async () => {

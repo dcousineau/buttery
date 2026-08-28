@@ -300,10 +300,38 @@ what makes the error legible if someone forgets one. Do not collapse the two pas
 recursive autoload over `src/` — that puts workflow registration and resource construction in one
 alphabetical namespace, which is exactly the ordering-by-luck D3 rejects.
 
-**S4 — the composition root.** `src/app.ts` with `@fastify/autoload` over `src/plugins/` and
-`src/workflows/`; `server.ts` / `worker.ts` become thin role bootstraps; `run-once.ts` moves to
-`src/cli/`. Delete `src/workflows/index.ts`, `define.ts`, `hosts.ts`, `src/queues.ts`, `src/reconcile.ts`,
-`src/config.ts`, `src/env.ts`.
+**S4 — the composition root.** Split in two, because the registry API S4b consumes has to be settled
+before three entry points are rewritten against it.
+
+_Between S3c and S4b the service does not run._ `WORKFLOWS` is `[]` and nothing registers the plugin
+path, so `server.ts` and `worker.ts` boot with zero queues. This is expected on a feature branch and is
+the cost of the migration order, but it means S4 is restoring function, not just tidying — "typecheck and
+tests are green" is not evidence the service works here, and S4b is not done until a real boot is observed.
+
+**S4a — the registry read side, and `app.ts`.** `plugins/workflow.ts` exposes only a write API today
+(`fastify.workflow(spec)`); the `Map` it fills cannot be read back. Four consumers need it — the Bull
+Board's queue list, `GET /workflows`, `GET /queues` + `POST /jobs/:queue`, and the CLI running a workflow
+in-process — so a `fastify.workflows` decorator (`get`/`list`) lands first. No `queues()` accessor: all
+three call sites derive queues from `list()` in one `.map()`.
+
+Then `src/app.ts` — `buildApp(role)`, two autoload passes, `plugins/` before `workflows/`. Autoload over
+`src/workflows/` recurses, so it must match only `workflows/<name>/index.ts`; `recipe-enrichment/index.llm.db.test.ts`
+is the file that proves the pattern is right or wrong.
+
+One trap worth naming, because it fails silently rather than loudly: `server.ts` builds Fastify with
+`logger: false`, and Fastify's disabled logger _discards_ rather than errors. Carrying that into `app.ts`
+would delete every `fastify.log.*` line the converted workflows already emit, with a green build. `app.ts`
+enables pino configured to `src/log.ts`'s line shape (string `level`, `svc`/`role`/`replica` on `base`,
+no `pid`/`hostname`), so the two agree while both exist.
+
+**S4b — the entry points.** `server.ts` / `worker.ts` become thin role bootstraps over `buildApp`;
+`run-once.ts` moves to `src/cli/` and drives `fastify.workflows.get(name)` through `consoleHost`.
+Delete `src/workflows/index.ts`, `src/queues.ts`, `src/redis.ts`, `lib/bullmq/reconcile.ts`.
+
+`src/config.ts` and `src/env.ts` **survive S4**, contrary to this plan's earlier draft: `autoscale.ts` and
+`autoscale.test.ts` still import `loadAutoscaleConfig`/`loadConfig`, and autoscale is explicitly deferred
+(§6). They die with it, not here. `lib/bullmq/hosts.ts` also survives — `consoleHost` and `jobHost` are
+both live, on the plugin path as much as the old one.
 
 **S5 — the logger sweep.** `src/log.ts` deleted, 14 importers moved to `fastify.log` (D8). Held to its own
 step because it is mechanical, wide, and touches files every earlier step also touches.
