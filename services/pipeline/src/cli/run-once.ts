@@ -1,9 +1,6 @@
 import { buildApp } from "#/app.ts";
-import { log, setLogRole } from "#/log.ts";
 import type { ChildResults, Workflow } from "#/lib/bullmq/kernel.ts";
 import { consoleHost } from "#/lib/bullmq/hosts.ts";
-
-setLogRole("cli");
 
 /**
  * Run one workflow to completion in this process, then exit.
@@ -62,9 +59,12 @@ async function main(): Promise<void> {
 
   const registration = invocation ? app.workflows.get(invocation.workflow) : undefined;
   if (!invocation || !registration) {
-    log.error("usage: run-once <workflow> [--flag] [--flag=value]", {
-      workflows: app.workflows.list().map((r) => r.spec.name),
-    });
+    app.log.error(
+      {
+        workflows: app.workflows.list().map((r) => r.spec.name),
+      },
+      "usage: run-once <workflow> [--flag] [--flag=value]",
+    );
     process.exitCode = 2;
     await app.close();
     return;
@@ -83,7 +83,7 @@ async function main(): Promise<void> {
     const result = await target.run({
       step,
       payload,
-      host: consoleHost({ workflow: target, runStep: (s, p, c) => runStep(target, s, p, c), concurrency: app.env.PIPELINE_WORKER_CONCURRENCY }, children),
+      host: consoleHost({ workflow: target, runStep: (s, p, c) => runStep(target, s, p, c), concurrency: app.env.PIPELINE_WORKER_CONCURRENCY, log: app.log }, children),
       redis: app.redis,
     });
     // The entry step returns before the graph it submitted has finished — the
@@ -95,9 +95,9 @@ async function main(): Promise<void> {
 
   try {
     await runStep(workflow, workflow.entry, invocation.payload, { values: [], failures: [] });
-    log.info("run complete", { workflow: workflow.name, step: outcome?.step, result: outcome?.result });
+    app.log.info({ workflow: workflow.name, step: outcome?.step, result: outcome?.result }, "run complete");
   } catch (err) {
-    log.error("run failed", { workflow: workflow.name, err: String(err) });
+    app.log.error({ workflow: workflow.name, err: String(err) }, "run failed");
     process.exitCode = 1;
   } finally {
     await app.close();

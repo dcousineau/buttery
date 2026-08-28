@@ -1,6 +1,6 @@
 import type { PostHog } from "posthog-node";
+import type { FastifyBaseLogger } from "fastify";
 import type { ClassifierLine, Disagreement, Label } from "#/workflows/recipe-enrichment/types.ts";
-import { log } from "#/log.ts";
 
 /**
  * Observability capture for `llm-enrich` — manual `$ai_generation` events via
@@ -294,12 +294,12 @@ export function buildGenerationEvent(input: GenerationEventInput): { distinctId:
  * used to do once it had resolved its own module-scope client — now that the
  * client is `plugins/posthog.ts`'s, callers hand it in instead.
  */
-function capture(client: PostHog | null, distinctId: string, event: string, properties: Record<string, unknown>): void {
+function capture(client: PostHog | null, log: FastifyBaseLogger, distinctId: string, event: string, properties: Record<string, unknown>): void {
   if (!client) return;
   try {
     client.capture({ distinctId, event, properties });
   } catch (err) {
-    log.warn(`llm posthog capture failed: ${event}`, { err: String(err) });
+    log.warn({ err: String(err) }, `llm posthog capture failed: ${event}`);
   }
 }
 
@@ -314,13 +314,13 @@ function capture(client: PostHog | null, distinctId: string, event: string, prop
  * path once the client is already in hand; callers still `await` it, which is
  * harmless on a non-`Promise` return.
  */
-export function sendGenerationEvent(client: PostHog | null, input: Omit<GenerationEventInput, "pricing">): void {
+export function sendGenerationEvent(client: PostHog | null, log: FastifyBaseLogger, input: Omit<GenerationEventInput, "pricing">): void {
   const inputTokenPriceUsd = envFloat("LLM_INPUT_TOKEN_PRICE_USD");
   const outputTokenPriceUsd = envFloat("LLM_OUTPUT_TOKEN_PRICE_USD");
   const pricing: GenerationPricing | undefined = inputTokenPriceUsd !== undefined || outputTokenPriceUsd !== undefined ? { inputTokenPriceUsd, outputTokenPriceUsd } : undefined;
 
   const { distinctId, event, properties } = buildGenerationEvent(pricing ? { ...input, pricing } : input);
-  capture(client, distinctId, event, properties);
+  capture(client, log, distinctId, event, properties);
 }
 
 function envFloat(name: string): number | undefined {
@@ -378,9 +378,9 @@ export function buildDisagreementEvent(input: DisagreementEventInput): { distinc
  * and hands it to {@link capture}, fire-and-forget. `llm-enrich` calls this
  * once per `Disagreement` the merge produced (plan §9.2 step 7).
  */
-export function sendDisagreementEvent(client: PostHog | null, input: DisagreementEventInput): void {
+export function sendDisagreementEvent(client: PostHog | null, log: FastifyBaseLogger, input: DisagreementEventInput): void {
   const { distinctId, event, properties } = buildDisagreementEvent(input);
-  capture(client, distinctId, event, properties);
+  capture(client, log, distinctId, event, properties);
 }
 
 // --- one-call-site wrappers for index.ts's llm-enrich step -----------------
@@ -414,9 +414,9 @@ export interface CaptureGenerationInput {
 }
 
 /** Send the generation event and one disagreement event per disagreement, for a successful `llm-enrich` call. Synchronous — see {@link sendGenerationEvent}. */
-export function captureGeneration(client: PostHog | null, input: CaptureGenerationInput): void {
+export function captureGeneration(client: PostHog | null, log: FastifyBaseLogger, input: CaptureGenerationInput): void {
   const unresolvedLineCount = input.lines.filter((line) => line.foodSlug === null).length;
-  sendGenerationEvent(client, {
+  sendGenerationEvent(client, log, {
     traceId: input.traceId,
     model: input.provider.modelId,
     provider: input.provider.providerName,
@@ -437,7 +437,7 @@ export function captureGeneration(client: PostHog | null, input: CaptureGenerati
     outputChoices: input.outputChoices,
   });
   for (const disagreement of input.disagreements) {
-    sendDisagreementEvent(client, { recipeId: input.recipeId, recipeOrigin: input.recipeOrigin, disagreement });
+    sendDisagreementEvent(client, log, { recipeId: input.recipeId, recipeOrigin: input.recipeOrigin, disagreement });
   }
 }
 
@@ -455,9 +455,9 @@ export interface CaptureGenerationFailureInput {
 }
 
 /** Send the generation event for a failed `llm-enrich` call — zero counts, `httpStatus: 0`, the error message (plus raw model text, when there is one). Synchronous — see {@link sendGenerationEvent}. */
-export function captureGenerationFailure(client: PostHog | null, input: CaptureGenerationFailureInput): void {
+export function captureGenerationFailure(client: PostHog | null, log: FastifyBaseLogger, input: CaptureGenerationFailureInput): void {
   const unresolvedLineCount = input.lines.filter((line) => line.foodSlug === null).length;
-  sendGenerationEvent(client, {
+  sendGenerationEvent(client, log, {
     traceId: input.traceId,
     model: input.provider.modelId,
     provider: input.provider.providerName,

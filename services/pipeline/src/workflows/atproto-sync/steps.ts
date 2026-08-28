@@ -130,8 +130,8 @@ export function createSteps(fastify: FastifyInstance): readonly StepSpec[] {
       } catch (err) {
         // Nothing downstream exists yet, so this job owns the cleanup: close the
         // row it opened and free the lock, or the schedule wedges for an hour.
-        await closeSyncRun(fastify.db, null, emptySummary(config.dryRun), String(err));
-        await releaseLock(fastify.redis, LOCK_KEY, lock);
+        await closeSyncRun(fastify.db, null, emptySummary(config.dryRun), String(err), fastify.log);
+        await releaseLock(fastify.redis, LOCK_KEY, lock, fastify.log);
         throw err;
       }
     },
@@ -180,7 +180,7 @@ export function createSteps(fastify: FastifyInstance): readonly StepSpec[] {
       const config = loadSyncConfig(scopeOf(payload));
 
       try {
-        const { outcome, advancedRecipeIds } = await sweepDid(fastify.db, config, did);
+        const { outcome, advancedRecipeIds } = await sweepDid(fastify.db, config, did, fastify.log);
         await line(`${outcome.upserted} upserted, ${outcome.deleted} deleted`);
 
         // Best-effort enqueue (D3): `renderRecipe` already wrote `status='stale'`
@@ -215,7 +215,7 @@ export function createSteps(fastify: FastifyInstance): readonly StepSpec[] {
       } catch (err) {
         const permanent = err instanceof HttpError && err.status !== undefined && err.status !== 429 && err.status >= 400 && err.status < 500;
         fastify.log.error({ did, permanent, err: String(err) }, "repo sweep failed");
-        if (!config.dryRun) await markRepoError(fastify.db, did, String(err));
+        if (!config.dryRun) await markRepoError(fastify.db, did, String(err), fastify.log);
         if (permanent) throw new UnrecoverableError(`${did}: ${String(err)}`);
         throw err;
       }
@@ -257,19 +257,19 @@ export function createSteps(fastify: FastifyInstance): readonly StepSpec[] {
           summary = { ...summary, reposMarkedMissing: await markMissingRepos(fastify.db, input.dids) };
           fastify.log.info({ count: summary.reposMarkedMissing }, "marked missing repos");
         }
-        await closeSyncRun(fastify.db, input.syncRunId, summary, null);
+        await closeSyncRun(fastify.db, input.syncRunId, summary, null, fastify.log);
         await line(`sweep complete: ${JSON.stringify(summary)}`);
         fastify.log.info({ ...summary }, "sweep complete");
         return summary;
       } catch (err) {
         // Without this the row says `running` forever and the table stops being a
         // usable record of what happened.
-        await closeSyncRun(fastify.db, input.syncRunId, { ...summary, status: "error" }, String(err));
+        await closeSyncRun(fastify.db, input.syncRunId, { ...summary, status: "error" }, String(err), fastify.log);
         throw err;
       } finally {
         // Whatever happened, the next sweep gets to start. This job is the last
         // one in the graph, so there is nowhere else the lock could be freed.
-        await releaseLock(fastify.redis, LOCK_KEY, input.lock);
+        await releaseLock(fastify.redis, LOCK_KEY, input.lock, fastify.log);
       }
     },
   };

@@ -1,7 +1,7 @@
 import type { Queue } from "bullmq";
+import type { FastifyBaseLogger } from "fastify";
 import type { AutoscaleConfig } from "#/config.ts";
 import { readBacklog } from "#/lib/bullmq/backlog.ts";
-import { log } from "#/log.ts";
 
 /**
  * Autoscaling the worker fleet.
@@ -95,9 +95,15 @@ function headersFor(style: TokenStyle, token: string): Record<string, string> {
 class RailwayApi {
   #token: string;
   #style: TokenStyle = "project";
+  #log: FastifyBaseLogger;
 
-  constructor(token: string) {
+  // Not mentioned in S5's Autoscaler-only brief, but `gql`'s token-style
+  // fallback below logs too, and this class has no Fastify instance of its
+  // own — its only construction site is `Autoscaler`'s constructor, which now
+  // has one to hand down.
+  constructor(token: string, log: FastifyBaseLogger) {
     this.#token = token;
+    this.#log = log;
   }
 
   async #post(style: TokenStyle, query: string, variables: Record<string, unknown>): Promise<{ data?: unknown; errors?: unknown }> {
@@ -120,7 +126,7 @@ class RailwayApi {
       const other: TokenStyle = this.#style === "project" ? "bearer" : "project";
       const retried = await this.#post(other, query, variables);
       if (!retried.errors) {
-        log.info("autoscale: switched Railway token style", { style: other });
+        this.#log.info({ style: other }, "autoscale: switched Railway token style");
         this.#style = other;
       }
       body = retried;
@@ -170,16 +176,22 @@ export class Autoscaler {
   #config: AutoscaleConfig;
   #queues: Iterable<Queue>;
   #api: RailwayApi;
+  #log: FastifyBaseLogger;
   #timer: NodeJS.Timeout | undefined;
   #stopped = false;
   #serviceId: string | undefined;
   #lastScaleDownAt: number | undefined;
   #state: AutoscalerState;
 
-  constructor(config: AutoscaleConfig, queues: Iterable<Queue>) {
+  // Extra ctor param rather than folding onto `AutoscaleConfig`: that type is
+  // the env-loaded shape from `config.ts` (see `loadAutoscaleConfig`), and a
+  // logger is not a config value — it comes from the one Fastify instance
+  // that constructs this (`server.ts`).
+  constructor(config: AutoscaleConfig, queues: Iterable<Queue>, log: FastifyBaseLogger) {
     this.#config = config;
     this.#queues = queues;
-    this.#api = new RailwayApi(config.apiToken);
+    this.#log = log;
+    this.#api = new RailwayApi(config.apiToken, log);
     this.#serviceId = config.targetServiceId;
     this.#state = {
       enabled: true,
@@ -219,7 +231,7 @@ export class Autoscaler {
 
     this.#serviceId = match.node.id;
     this.#state.targetServiceId = match.node.id;
-    log.info("autoscale: resolved target service", { service: this.#config.targetServiceName, serviceId: match.node.id });
+    this.#log.info({ service: this.#config.targetServiceName, serviceId: match.node.id }, "autoscale: resolved target service");
     return match.node.id;
   }
 
@@ -250,12 +262,12 @@ export class Autoscaler {
     this.#state.lastError = undefined;
 
     if (!decision.changed) {
-      log.info("autoscale: no change", { pending: snapshot.pending, replicas: current, reason: decision.reason });
+      this.#log.info({ pending: snapshot.pending, replicas: current, reason: decision.reason }, "autoscale: no change");
       return;
     }
 
     if (this.#config.dryRun) {
-      log.info("autoscale: dry run", { pending: snapshot.pending, from: current, to: decision.desired, reason: decision.reason });
+      this.#log.info({ pending: snapshot.pending, from: current, to: decision.desired, reason: decision.reason }, "autoscale: dry run");
       return;
     }
 
@@ -263,7 +275,7 @@ export class Autoscaler {
     if (decision.desired < current) this.#lastScaleDownAt = now;
     this.#state.lastReplicas = decision.desired;
 
-    log.info("autoscale: scaled", { pending: snapshot.pending, from: current, to: decision.desired, reason: decision.reason });
+    this.#log.info({ pending: snapshot.pending, from: current, to: decision.desired, reason: decision.reason }, "autoscale: scaled");
   }
 
   #schedule(): void {
@@ -284,20 +296,23 @@ export class Autoscaler {
       // A failing autoscaler must not take the board down with it — the fleet
       // simply stays where it is until the next tick succeeds.
       this.#state.lastError = String(err);
-      log.error("autoscale: tick failed", { err: String(err) });
+      this.#log.error({ err: String(err) }, "autoscale: tick failed");
     }
     this.#schedule();
   }
 
   start(): void {
-    log.info("autoscale: started", {
-      target: this.#config.targetServiceName,
-      min: this.#config.minReplicas,
-      max: this.#config.maxReplicas,
-      backlogPerReplica: this.#config.backlogPerReplica,
-      intervalSeconds: Math.round(this.#config.intervalMs / 1000),
-      dryRun: this.#config.dryRun,
-    });
+    this.#log.info(
+      {
+        target: this.#config.targetServiceName,
+        min: this.#config.minReplicas,
+        max: this.#config.maxReplicas,
+        backlogPerReplica: this.#config.backlogPerReplica,
+        intervalSeconds: Math.round(this.#config.intervalMs / 1000),
+        dryRun: this.#config.dryRun,
+      },
+      "autoscale: started",
+    );
     void this.#run();
   }
 

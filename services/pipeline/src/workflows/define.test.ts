@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { FlowProducer, Job, JobsOptions, Queue } from "bullmq";
 import type { Redis } from "ioredis";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -13,6 +13,7 @@ import { defineWorkflow, flowJobFor, type ChildResults, type EnqueueNode, type S
  */
 
 const NO_REDIS = {} as Redis;
+const NO_LOG = { info: () => {}, warn: () => {}, error: () => {} } as unknown as FastifyBaseLogger;
 const EMPTY: ChildResults = { values: [], failures: [] };
 
 /** Runs a whole graph the way `run-once.ts` does. Returns the entry step's value. */
@@ -21,7 +22,7 @@ function runInline(workflow: Workflow, payload: unknown = {}): Promise<unknown> 
     workflow.run({
       step,
       payload: data,
-      host: consoleHost({ workflow, runStep, concurrency: 4 }, children),
+      host: consoleHost({ workflow, runStep, concurrency: 4, log: NO_LOG }, children),
       redis: NO_REDIS,
     });
   return runStep(workflow.entry, payload, EMPTY);
@@ -51,17 +52,17 @@ describe("defineWorkflow", () => {
       steps: [step("one", () => Promise.resolve("first")), step("two", () => Promise.resolve("second"))],
     });
 
-    await expect(workflow.run({ step: "two", payload: {}, host: consoleHost({ workflow, runStep: () => Promise.resolve(), concurrency: 1 }), redis: NO_REDIS })).resolves.toBe(
-      "second",
-    );
+    await expect(
+      workflow.run({ step: "two", payload: {}, host: consoleHost({ workflow, runStep: () => Promise.resolve(), concurrency: 1, log: NO_LOG }), redis: NO_REDIS }),
+    ).resolves.toBe("second");
   });
 
   it("fails loudly on a job naming a step this build does not have", async () => {
     const workflow = defineWorkflow({ name: "test", description: "", entry: "one", steps: [step("one", () => Promise.resolve())] });
 
-    await expect(workflow.run({ step: "gone", payload: {}, host: consoleHost({ workflow, runStep: () => Promise.resolve(), concurrency: 1 }), redis: NO_REDIS })).rejects.toThrow(
-      /has no step "gone"/,
-    );
+    await expect(
+      workflow.run({ step: "gone", payload: {}, host: consoleHost({ workflow, runStep: () => Promise.resolve(), concurrency: 1, log: NO_LOG }), redis: NO_REDIS }),
+    ).rejects.toThrow(/has no step "gone"/);
   });
 
   describe("the graph", () => {
@@ -111,7 +112,7 @@ describe("defineWorkflow", () => {
 
       // The entry step returns its own value; the fold is what the parent saw.
       const runStep = (s: string, data: unknown, children: ChildResults): Promise<unknown> =>
-        workflow.run({ step: s, payload: data, host: consoleHost({ workflow, runStep, concurrency: 4 }, children), redis: NO_REDIS }).then((value) => {
+        workflow.run({ step: s, payload: data, host: consoleHost({ workflow, runStep, concurrency: 4, log: NO_LOG }, children), redis: NO_REDIS }).then((value) => {
           if (s === "collect") collected.push(value);
           return value;
         });
@@ -195,6 +196,7 @@ describe("defineWorkflow", () => {
             return Promise.resolve();
           },
           concurrency: 1,
+          log: NO_LOG,
         });
 
         await expect(host.enqueue("recipe-enrichment", { step: "enrich" })).resolves.toBeUndefined();

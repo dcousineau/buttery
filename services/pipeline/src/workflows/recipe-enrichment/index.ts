@@ -146,7 +146,7 @@ export default fp(
         const pool = fastify.db;
 
         // The gate FAILS CLOSED: no PostHog, or the flag not explicitly true, marks the recipe skipped and calls nothing.
-        if (!(await isLlmEnrichmentEnabled(fastify.posthog.client, recipeId))) {
+        if (!(await isLlmEnrichmentEnabled(fastify.posthog.client, recipeId, fastify.log))) {
           await markLlmSkipped(pool, recipeId);
           await line(`llm enrichment is not enabled for ${recipeId} — skipped`);
           return { status: "skipped" };
@@ -208,7 +208,7 @@ export default fp(
             writes,
           );
 
-          captureGeneration(fastify.posthog.client, {
+          captureGeneration(fastify.posthog.client, fastify.log, {
             traceId,
             recipeId,
             recipeOrigin,
@@ -230,7 +230,7 @@ export default fp(
           const message = describeWriteError(err);
           fastify.log.error({ recipeId, err: message }, "llm-enrich failed");
           await markLlmError(pool, recipeId, message);
-          captureGenerationFailure(fastify.posthog.client, {
+          captureGenerationFailure(fastify.posthog.client, fastify.log, {
             traceId,
             recipeId,
             recipeOrigin,

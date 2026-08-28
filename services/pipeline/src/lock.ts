@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Redis } from "ioredis";
-import { log } from "#/log.ts";
+import type { FastifyBaseLogger } from "fastify";
 
 /**
  * A Redis mutex, held across the worker fleet — and, unlike the usual shape,
@@ -42,9 +42,9 @@ export async function acquireLock(redis: Redis, key: string, ttlMs: number): Pro
   return acquired === "OK" ? token : undefined;
 }
 
-export async function releaseLock(redis: Redis, key: string, token: string): Promise<void> {
+export async function releaseLock(redis: Redis, key: string, token: string, log: FastifyBaseLogger): Promise<void> {
   await redis.eval(RELEASE, 1, key, token).catch((err: unknown) => {
     // The TTL is the backstop: an unreleased lock frees itself.
-    log.warn("lock release failed", { key, err: String(err) });
+    log.warn({ key, err: String(err) }, "lock release failed");
   });
 }

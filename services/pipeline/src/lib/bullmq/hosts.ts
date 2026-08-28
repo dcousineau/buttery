@@ -1,5 +1,5 @@
 import type { FlowProducer, Job, Queue } from "bullmq";
-import { log } from "#/log.ts";
+import type { FastifyBaseLogger } from "fastify";
 import { flowJobFor, type ChildResults, type EnqueueNode, type FlowNode, type Workflow, type WorkflowHost } from "#/lib/bullmq/kernel.ts";
 
 /** The two things a step can report to and submit flows through: a BullMQ job, and a terminal for the one-shot CLI. */
@@ -58,13 +58,15 @@ export interface ConsoleHostOptions {
   /** Supplied by `run-once.ts`, which owns the wiring. */
   runStep: (step: string, payload: unknown, children: ChildResults) => Promise<unknown>;
   concurrency: number;
+  /** `run-once.ts`'s `app.log` — this host has no Fastify instance of its own. */
+  log: FastifyBaseLogger;
 }
 
 export function consoleHost(options: ConsoleHostOptions, children: ChildResults = NO_CHILDREN): WorkflowHost {
-  const { workflow } = options;
+  const { workflow, log } = options;
 
   const line = (message: string): Promise<void> => {
-    log.info(message.trim(), { workflow: workflow.name });
+    log.info({ workflow: workflow.name }, message.trim());
     return Promise.resolve();
   };
 
@@ -87,7 +89,7 @@ export function consoleHost(options: ConsoleHostOptions, children: ChildResults 
             values.push(await runNode(child));
           } catch (err) {
             failures.push(String(err));
-            log.error("step failed", { workflow: workflow.name, step: child.step, err: String(err) });
+            log.error({ workflow: workflow.name, step: child.step, err: String(err) }, "step failed");
           }
         }
       });

@@ -1,8 +1,8 @@
 import type { Pool } from "pg";
+import type { FastifyBaseLogger } from "fastify";
 import type { RepoOutcome, SweepSummary } from "#/workflows/atproto-sync/types.ts";
 import type { SyncConfig } from "#/workflows/atproto-sync/lib/config.ts";
 import { RECIPE_COLLECTION } from "#/workflows/atproto-sync/lib/config.ts";
-import { log } from "#/log.ts";
 import { resolveIdentity } from "#/workflows/atproto-sync/lib/identity.ts";
 import { getRepoRev, listRecords } from "#/workflows/atproto-sync/lib/pds.ts";
 import { reconcileDeletes, toRecipeRow, upsertRecipe } from "#/workflows/atproto-sync/lib/recipe.ts";
@@ -69,12 +69,12 @@ export async function openSyncRun(pool: Pool, config: SyncConfig): Promise<strin
  * the row was opened) and never throws — bookkeeping must not be the thing that
  * turns a finished sweep into a failed job, nor mask the error that got here.
  */
-export async function closeSyncRun(pool: Pool, syncRunId: string | null, summary: SweepSummary, error: string | null): Promise<void> {
+export async function closeSyncRun(pool: Pool, syncRunId: string | null, summary: SweepSummary, error: string | null, log: FastifyBaseLogger): Promise<void> {
   if (!syncRunId) return;
   await pool
     .query(FINISH_RUN_SQL, [syncRunId, error ? "error" : "ok", summary.reposSeen, summary.recordsUpserted, summary.recordsDeleted, summary.reposFailed, error])
     .catch((err: unknown) => {
-      log.error("failed to close sync run row", { syncRunId, err: String(err) });
+      log.error({ syncRunId, err: String(err) }, "failed to close sync run row");
     });
 }
 
@@ -121,7 +121,7 @@ export interface SweepResult {
  * that exhausts its attempts is one counted failure that the batch steps over.
  * Swallowing the error here would take both of those away from the queue.
  */
-export async function sweepDid(pool: Pool, config: SyncConfig, did: string): Promise<SweepResult> {
+export async function sweepDid(pool: Pool, config: SyncConfig, did: string, log: FastifyBaseLogger): Promise<SweepResult> {
   const outcome: RepoOutcome = { did, upserted: 0, deleted: 0 };
   const advancedRecipeIds: string[] = [];
 
@@ -172,7 +172,7 @@ export async function sweepDid(pool: Pool, config: SyncConfig, did: string): Pro
     await pool.query(MARK_SYNCED_SQL, [did]);
   }
 
-  log.info("repo synced", { did, records: records.length, upserted: outcome.upserted, deleted: outcome.deleted });
+  log.info({ did, records: records.length, upserted: outcome.upserted, deleted: outcome.deleted }, "repo synced");
   return { outcome, advancedRecipeIds };
 }
 
@@ -184,8 +184,8 @@ export async function sweepDid(pool: Pool, config: SyncConfig, did: string): Pro
  * Best-effort by construction: a failure to write down a failure must not become
  * a second failure.
  */
-export async function markRepoError(pool: Pool, did: string, message: string): Promise<void> {
+export async function markRepoError(pool: Pool, did: string, message: string, log: FastifyBaseLogger): Promise<void> {
   await pool.query(MARK_REPO_ERROR_SQL, [did, message]).catch((err: unknown) => {
-    log.warn("could not record repo error", { did, err: String(err) });
+    log.warn({ did, err: String(err) }, "could not record repo error");
   });
 }

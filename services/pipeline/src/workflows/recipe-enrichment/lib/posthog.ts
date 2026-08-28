@@ -1,5 +1,5 @@
 import type { PostHog } from "posthog-node";
-import { log } from "#/log.ts";
+import type { FastifyBaseLogger } from "fastify";
 
 /**
  * The fail-closed gate that decides whether `llm-enrich` may call an LLM at
@@ -46,7 +46,7 @@ export const LLM_ENRICHMENT_FLAG = "llm-enrichment-enabled";
  *      resolve to `false`; only an explicit `true` serve lets the call
  *      through.
  */
-export async function isLlmEnrichmentEnabled(client: PostHog | null, recipeId: string): Promise<boolean> {
+export async function isLlmEnrichmentEnabled(client: PostHog | null, recipeId: string, log: FastifyBaseLogger): Promise<boolean> {
   const override = process.env.LLM_ENRICHMENT_ENABLED;
   if (override === "false") return false;
   if (override === "true") return true;
@@ -56,7 +56,7 @@ export async function isLlmEnrichmentEnabled(client: PostHog | null, recipeId: s
     const value = await client.isFeatureEnabled(LLM_ENRICHMENT_FLAG, recipeId);
     return value === true; // `undefined` (unreachable / missing) skips the LLM call
   } catch (err) {
-    log.warn("llm-enrichment flag eval failed; skipping LLM call", { recipeId, err: String(err) });
+    log.warn({ recipeId, err: String(err) }, "llm-enrichment flag eval failed; skipping LLM call");
     return false;
   }
 }

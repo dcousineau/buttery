@@ -1,7 +1,5 @@
+import type { FastifyInstance } from "fastify";
 import { buildApp } from "#/app.ts";
-import { log, setLogRole } from "#/log.ts";
-
-setLogRole("worker");
 
 /**
  * The `pipeline-worker` service: one `Worker` per workflow, nothing else.
@@ -24,14 +22,23 @@ setLogRole("worker");
  * process's Redis connection goes away.
  */
 
+// Hoisted so the top-level `.catch()` below — which runs when `buildApp`
+// itself rejects, before a Fastify instance exists to log through — can still
+// tell whether one got far enough to be built.
+let builtApp: FastifyInstance | undefined;
+
 async function start(): Promise<void> {
   const app = await buildApp("worker");
+  builtApp = app;
   // Builds the Workers — see `plugins/workflow.ts`'s `onReady` hook.
   await app.ready();
 
-  log.info("pipeline worker started", {
-    queues: app.workflows.list().map((registration) => registration.spec.name),
-  });
+  app.log.info(
+    {
+      queues: app.workflows.list().map((registration) => registration.spec.name),
+    },
+    "pipeline worker started",
+  );
 
   // Graceful drain. `app.close()` runs `plugins/workflow.ts`'s `preClose` hook
   // first, which calls `worker.close()` on every registration — stopping new
@@ -46,14 +53,14 @@ async function start(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
-    log.info("draining workers", { signal });
+    app.log.info({ signal }, "draining workers");
     await app.close();
-    log.info("workers drained", { signal });
+    app.log.info({ signal }, "workers drained");
   };
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => {
       void shutdown(signal).catch((err: unknown) => {
-        log.error("drain failed", { err: String(err) });
+        app.log.error({ err: String(err) }, "drain failed");
         process.exit(1);
       });
     });
@@ -61,6 +68,8 @@ async function start(): Promise<void> {
 }
 
 await start().catch((err: unknown) => {
-  log.error("pipeline worker failed to start", { err: String(err) });
+  // No Fastify instance if `buildApp` itself is what rejected.
+  if (builtApp) builtApp.log.error({ err: String(err) }, "pipeline worker failed to start");
+  else console.error("pipeline worker failed to start", err);
   process.exit(1);
 });

@@ -3,11 +3,11 @@ import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { FastifyAdapter } from "@bull-board/fastify";
 import basicAuth from "@fastify/basic-auth";
 import { timingSafeEqual } from "node:crypto";
+import type { FastifyInstance } from "fastify";
 import { buildApp } from "#/app.ts";
 import { Autoscaler, DISABLED_STATE } from "#/autoscale.ts";
 import { readBacklog } from "#/lib/bullmq/backlog.ts";
 import { loadAutoscaleConfig } from "#/config.ts";
-import { log } from "#/log.ts";
 
 /**
  * The `pipeline` service: a Fastify server that hosts the Bull Board UI, exposes
@@ -41,6 +41,11 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(left, right);
 }
 
+// Hoisted so the top-level `.catch()` below — which runs when `buildApp`
+// itself rejects, before a Fastify instance exists to log through — can still
+// tell whether one got far enough to be built.
+let builtApp: FastifyInstance | undefined;
+
 async function start(): Promise<void> {
   // `buildApp` autoloads `src/plugins/` (env, redis, db, workflow, health, ...)
   // then `src/workflows/` — so by the time this call resolves, `app.workflows`
@@ -49,6 +54,7 @@ async function start(): Promise<void> {
   // autoload passes even though nothing here awaits readiness directly — see
   // `app.ts`'s doc comment and the ordering finding in the decision journal.
   const app = await buildApp("server");
+  builtApp = app;
 
   const host = app.env.PIPELINE_HOST ?? (app.env.PRODUCTION ? "0.0.0.0" : "127.0.0.1");
   const auth = app.env.PIPELINE_AUTH_PASSWORD ? { username: app.env.PIPELINE_AUTH_USER ?? "buttery", password: app.env.PIPELINE_AUTH_PASSWORD } : undefined;
@@ -67,6 +73,7 @@ async function start(): Promise<void> {
     ? new Autoscaler(
         autoscaleConfig,
         app.workflows.list().map((registration) => registration.queue),
+        app.log,
       )
     : undefined;
 
@@ -129,7 +136,7 @@ async function start(): Promise<void> {
       // A job's name is the step it runs. Default to the graph's root; naming
       // another step is how you re-run one by hand from the board's payload.
       const job = await registration.queue.add(body.name ?? registration.spec.entry, body.data ?? {});
-      log.info("job enqueued", { queue: registration.spec.name, jobId: job.id, name: job.name });
+      app.log.info({ queue: registration.spec.name, jobId: job.id, name: job.name }, "job enqueued");
       return reply.status(202).send({ queue: registration.spec.name, jobId: job.id, name: job.name });
     });
   });
@@ -139,14 +146,17 @@ async function start(): Promise<void> {
   // the port is bound. A boot that cannot reach Redis fails there, as a failed
   // deployment, not as a healthy service with no schedules.
   await app.listen({ port: app.env.PORT, host });
-  log.info("pipeline server listening", {
-    url: `http://${host}:${app.env.PORT}${BOARD_PATH}`,
-    queues: app.workflows.list().map((registration) => registration.spec.name),
-    auth: auth ? "basic" : "none",
-  });
+  app.log.info(
+    {
+      url: `http://${host}:${app.env.PORT}${BOARD_PATH}`,
+      queues: app.workflows.list().map((registration) => registration.spec.name),
+      auth: auth ? "basic" : "none",
+    },
+    "pipeline server listening",
+  );
 
   if (!auth) {
-    log.warn("Bull Board is unauthenticated — set PIPELINE_AUTH_PASSWORD to require a login");
+    app.log.warn("Bull Board is unauthenticated — set PIPELINE_AUTH_PASSWORD to require a login");
   }
 
   autoscaler?.start();
@@ -159,14 +169,14 @@ async function start(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
-    log.info("shutting down", { signal });
+    app.log.info({ signal }, "shutting down");
     autoscaler?.stop();
     await app.close();
   };
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => {
       void shutdown(signal).catch((err: unknown) => {
-        log.error("shutdown failed", { err: String(err) });
+        app.log.error({ err: String(err) }, "shutdown failed");
         process.exit(1);
       });
     });
@@ -174,6 +184,8 @@ async function start(): Promise<void> {
 }
 
 await start().catch((err: unknown) => {
-  log.error("pipeline server failed to start", { err: String(err) });
+  // No Fastify instance if `buildApp` itself is what rejected.
+  if (builtApp) builtApp.log.error({ err: String(err) }, "pipeline server failed to start");
+  else console.error("pipeline server failed to start", err);
   process.exit(1);
 });

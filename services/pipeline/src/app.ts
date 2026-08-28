@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
 import autoload from "@fastify/autoload";
 import type { PipelineRole } from "#/plugins/workflow.ts";
+import { setLogRole } from "#/log.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -37,6 +38,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * breaking this again.
  */
 export async function buildApp(role: PipelineRole): Promise<FastifyInstance> {
+  // Before anything else logs: `src/log.ts`'s `role` field (read by its two
+  // remaining call sites) is set here, once, the same way `setLogRole` used to
+  // be called at the top of each entrypoint.
+  setLogRole(role);
+
   // Matches `src/log.ts`'s line shape exactly — both feed one log stream and
   // there is no reason for them to disagree. `logger: false` (what
   // `server.ts` uses today) would make every `fastify.log.*` call the
