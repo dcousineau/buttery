@@ -1,8 +1,7 @@
-import type { FlowProducer, Job, Queue } from "bullmq";
+import type { FlowProducer, Job } from "bullmq";
 import type { Redis } from "ioredis";
 import { describe, expect, it } from "vitest";
 import { consoleHost, jobHost } from "#/lib/bullmq/hosts.ts";
-import { demo } from "#/workflows/demo/index.ts";
 import { defineWorkflow, flowJobFor, type ChildResults, type EnqueueNode, type StepSpec, type Workflow, type WorkflowHost } from "#/lib/bullmq/kernel.ts";
 
 /**
@@ -215,40 +214,11 @@ describe("defineWorkflow", () => {
         await expect(host.enqueue("does-not-exist", {})).rejects.toThrow(/no workflow named "does-not-exist"/);
       });
 
-      it("throws when the named step is not one of the target workflow's", async () => {
-        const workflow = defineWorkflow({ name: "caller", description: "", entry: "one", steps: [step("one", () => Promise.resolve())] });
-        const host = jobHost(NO_JOB, workflow, NO_FLOWS, new Map());
-
-        await expect(host.enqueue("demo", { step: "not-a-real-step" })).rejects.toThrow(/workflow "demo" has no step "not-a-real-step"/);
-      });
-
-      it("defaults to the target's entry step and adds the job to the target's own queue with the target's own job options", async () => {
-        const workflow = defineWorkflow({
-          name: "caller",
-          description: "",
-          entry: "one",
-          // A distinct `attempts` from demo's "start" step, so a leak of the
-          // *caller's* job options instead of the target's would fail loudly.
-          steps: [step("one", () => Promise.resolve(), { attempts: 99 })],
-        });
-
-        const added: { name: string; data: unknown; opts: unknown }[] = [];
-        const demoQueue = {
-          add: (name: string, data: unknown, opts: unknown) => {
-            added.push({ name, data, opts });
-            return Promise.resolve({});
-          },
-        } as unknown as Queue;
-
-        const host = jobHost(NO_JOB, workflow, NO_FLOWS, new Map([["demo", demoQueue]]));
-        await host.enqueue("demo", { data: { tasks: 2 } });
-
-        expect(added).toHaveLength(1);
-        expect(added[0].name).toBe(demo.entry);
-        expect(added[0].data).toEqual({ tasks: 2 });
-        expect(added[0].opts).toMatchObject(demo.jobOptionsFor(demo.entry) ?? {});
-        expect((added[0].opts as { attempts?: number }).attempts).not.toBe(99);
-      });
+      // Coverage for a target workflow's own entry step and job options winning
+      // over the caller's used to live here, resolved through the module-level
+      // WORKFLOWS registry with `demo` as the fixture. That registry is being
+      // dissolved; the same behaviour is re-tested against the workflow
+      // plugin's own registrations once the lookup moves there.
     });
   });
 });

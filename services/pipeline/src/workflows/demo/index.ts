@@ -1,6 +1,5 @@
-import type { StepSpec } from "#/lib/bullmq/kernel.ts";
-import { defineWorkflow } from "#/lib/bullmq/kernel.ts";
-import { log } from "#/log.ts";
+import fp from "fastify-plugin";
+import type { StepSpec } from "#/plugins/workflow.ts";
 
 /**
  * A do-nothing workflow that exists to prove the wiring works end to end:
@@ -47,75 +46,80 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Fan out `tasks` children, and one report waiting on all of them. */
-const start: StepSpec = {
-  name: "start",
-  description: "Fan out the demo tasks",
-  jobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 50 } },
-  run: async ({ payload, flow, log: line }) => {
-    const demo = parse(payload);
-    await line(`fanning out ${demo.tasks} task(s)`);
-    await flow({
-      step: "report",
-      data: { label: demo.label },
-      children: Array.from({ length: demo.tasks }, (_, i) => ({
-        step: "task",
-        data: { ...demo, index: i + 1 },
-      })),
-    });
-    return { tasks: demo.tasks, label: demo.label };
-  },
-};
-
-/** One unit of pretend work, reporting progress as it goes. */
-const task: StepSpec = {
-  name: "task",
-  description: "Sleep, tick progress, and optionally fail",
-  jobOptions: {
-    // Three attempts with a short backoff: enough to watch a retry happen in the
-    // board without waiting around for it.
-    attempts: 3,
-    backoff: { type: "exponential", delay: 1_000 },
-    removeOnComplete: { count: 100 },
-    removeOnFail: { count: 100 },
-  },
-  run: async ({ payload, progress }) => {
-    const demo = parse(payload);
-    const raw = payload as { index?: number };
-    for (let i = 1; i <= TICKS; i++) {
-      await sleep(Math.round(demo.durationMs / TICKS));
-      await progress(i / TICKS);
-    }
-    if (demo.fail) {
-      throw new Error(`demo task ${raw.index ?? "?"} asked to fail (label=${demo.label})`);
-    }
-    return { index: raw.index ?? 0, label: demo.label };
-  },
-};
-
-/** Fold what the tasks returned. Runs once every one of them has settled. */
-const report: StepSpec = {
-  name: "report",
-  description: "Fold the task results into one return value",
-  jobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 50 } },
-  run: async ({ payload, children, log: line }) => {
-    const results = await children();
-    const raw = payload as { label?: string };
-    const summary = {
-      label: raw.label ?? "demo",
-      completed: results.values.length,
-      failed: results.failures.length,
-      finishedAt: new Date().toISOString(),
+export default fp(
+  (fastify) => {
+    /** Fan out `tasks` children, and one report waiting on all of them. */
+    const start: StepSpec = {
+      name: "start",
+      description: "Fan out the demo tasks",
+      jobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 50 } },
+      run: async ({ payload, flow, log: line }) => {
+        const demo = parse(payload);
+        await line(`fanning out ${demo.tasks} task(s)`);
+        await flow({
+          step: "report",
+          data: { label: demo.label },
+          children: Array.from({ length: demo.tasks }, (_, i) => ({
+            step: "task",
+            data: { ...demo, index: i + 1 },
+          })),
+        });
+        return { tasks: demo.tasks, label: demo.label };
+      },
     };
-    await line(`${summary.completed} completed, ${summary.failed} failed`);
-    log.info("demo complete", { ...summary });
-    return summary;
-  },
-};
 
-export const demo = defineWorkflow({
-  name: "demo",
-  description: "No-op fan-out — proves the queue, the flow, the workers and the board are wired together",
-  entry: "start",
-  steps: [start, task, report],
-});
+    /** One unit of pretend work, reporting progress as it goes. */
+    const task: StepSpec = {
+      name: "task",
+      description: "Sleep, tick progress, and optionally fail",
+      jobOptions: {
+        // Three attempts with a short backoff: enough to watch a retry happen in the
+        // board without waiting around for it.
+        attempts: 3,
+        backoff: { type: "exponential", delay: 1_000 },
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 100 },
+      },
+      run: async ({ payload, progress }) => {
+        const demo = parse(payload);
+        const raw = payload as { index?: number };
+        for (let i = 1; i <= TICKS; i++) {
+          await sleep(Math.round(demo.durationMs / TICKS));
+          await progress(i / TICKS);
+        }
+        if (demo.fail) {
+          throw new Error(`demo task ${raw.index ?? "?"} asked to fail (label=${demo.label})`);
+        }
+        return { index: raw.index ?? 0, label: demo.label };
+      },
+    };
+
+    /** Fold what the tasks returned. Runs once every one of them has settled. */
+    const report: StepSpec = {
+      name: "report",
+      description: "Fold the task results into one return value",
+      jobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 50 } },
+      run: async ({ payload, children, log: line }) => {
+        const results = await children();
+        const raw = payload as { label?: string };
+        const summary = {
+          label: raw.label ?? "demo",
+          completed: results.values.length,
+          failed: results.failures.length,
+          finishedAt: new Date().toISOString(),
+        };
+        await line(`${summary.completed} completed, ${summary.failed} failed`);
+        fastify.log.info({ ...summary }, "demo complete");
+        return summary;
+      },
+    };
+
+    fastify.workflow({
+      name: "demo",
+      description: "No-op fan-out — proves the queue, the flow, the workers and the board are wired together",
+      entry: "start",
+      steps: [start, task, report],
+    });
+  },
+  { name: "workflow-demo", dependencies: ["workflow"] },
+);

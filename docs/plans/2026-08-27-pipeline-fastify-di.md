@@ -267,8 +267,9 @@ One trap S3 must handle: `atproto-sync/steps.test.ts:33` does `vi.mock("#/workfl
 ...)`. Deleting that module breaks the mock — repoint the test at whatever the step reads instead, and do
 not "fix" it by keeping the module alive.
 
-**Cross-workflow `enqueue` still resolves through the old registry (S4).** Found in S2 and left standing
-deliberately (conjecture `d-e3d34eda`): `lib/bullmq/hosts.ts`'s `jobHost` resolves an `enqueue(workflow, …)`
+**Cross-workflow `enqueue` still resolves through the old registry — CONFIRMED LIVE (S4).** Predicted in S2
+as conjecture `d-e3d34eda`, then reproduced in S3a the moment the first workflow migrated and filed as
+defect `def-09f751da15af`: `lib/bullmq/hosts.ts`'s `jobHost` resolves an `enqueue(workflow, …)`
 target with the module-level `findWorkflow()` against the old `WORKFLOWS` array, not against
 `plugins/workflow.ts`'s own `Map`. Harmless today because nothing is registered through the plugin path,
 and invisible while only one workflow has migrated — the first real failure needs a migrated workflow
@@ -278,6 +279,26 @@ _within its own queue_, so even that case does not exercise it.
 S4 deletes `src/workflows/index.ts` and with it `WORKFLOWS`, so the resolution has to move to the plugin's
 `Map` in the same step. Do not let this survive as "works on the machines we tested" — the symptom is a
 silently unroutable enqueue, not a crash.
+
+Before converting `atproto-sync` or `recipe-enrichment`, check two things about it: whether any file
+outside its own directory imports its kernel `Workflow` export, and whether any workflow calls
+`ctx.enqueue` targeting it by name. Both misbehave the moment it leaves the `WORKFLOWS` array, and the
+second does so at runtime rather than at compile time.
+
+**S4 owes replacement coverage for two deleted kernel tests.** `define.test.ts` used `demo` as its fixture
+for "a cross-workflow enqueue uses the _target's_ entry step and job options, not the caller's" — resolving
+it through the module-level registry. The asserted behaviour survives the migration; the lookup it asserted
+through does not. Both tests were deleted rather than bent into passing, and S4 re-tests the same behaviour
+against `plugins/workflow.ts`'s own `Map`.
+
+**Two autoload passes, `plugins/` before `workflows/` (S4).** `plugins/workflow.ts` depends on `["env",
+"redis"]` and deliberately not on `db` — it never touches a pool itself. A workflow whose steps read
+`fastify.db` gets that access one of two ways, and both must hold: the workflow plugin declares
+`dependencies: ["workflow", "db"]` itself, and the composition root autoloads `src/plugins/` to completion
+before autoloading `src/workflows/`. The explicit dependency is what makes it correct; the load order is
+what makes the error legible if someone forgets one. Do not collapse the two passes into a single
+recursive autoload over `src/` — that puts workflow registration and resource construction in one
+alphabetical namespace, which is exactly the ordering-by-luck D3 rejects.
 
 **S4 — the composition root.** `src/app.ts` with `@fastify/autoload` over `src/plugins/` and
 `src/workflows/`; `server.ts` / `worker.ts` become thin role bootstraps; `run-once.ts` moves to
@@ -316,6 +337,14 @@ surface to a migration that has already been restarted twice. Pick it up once S1
   reconciles missing repos and releases the sweep lock, and genuinely needs `waiting-children`.
 
 ## 7. Verification
+
+Baseline as of S3a: `Test Files 12 passed | 2 skipped (14)`, `Tests 145 passed | 34 skipped (179)`.
+
+A moved count is a finding to report, never something to make go away. When a test fails because the
+refactor dissolved the concept it was asserting, **delete the test and say so** — do not reshape the
+implementation to keep it green, and do not adjust an assertion to match new output. A test that only
+passes because the code was bent around it has stopped measuring anything. Reshape the implementation only
+when the test pins behaviour that must survive.
 
 ```
 pnpm --filter @buttery/pipeline typecheck
