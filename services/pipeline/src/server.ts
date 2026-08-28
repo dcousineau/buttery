@@ -3,9 +3,8 @@ import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { FastifyAdapter } from "@bull-board/fastify";
 import basicAuth from "@fastify/basic-auth";
 import { timingSafeEqual } from "node:crypto";
-import type { FastifyInstance } from "fastify";
 import { buildApp } from "#/app.ts";
-import { Autoscaler, DISABLED_STATE } from "#/autoscale.ts";
+import { Autoscaler, DISABLED_STATE } from "#/lib/railway/autoscale.ts";
 import { readBacklog } from "#/lib/bullmq/backlog.ts";
 import { loadAutoscaleConfig } from "#/config.ts";
 
@@ -41,11 +40,6 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(left, right);
 }
 
-// Hoisted so the top-level `.catch()` below — which runs when `buildApp`
-// itself rejects, before a Fastify instance exists to log through — can still
-// tell whether one got far enough to be built.
-let builtApp: FastifyInstance | undefined;
-
 async function start(): Promise<void> {
   // `buildApp` autoloads `src/plugins/` (env, redis, db, workflow, health, ...)
   // then `src/workflows/` — so by the time this call resolves, `app.workflows`
@@ -54,7 +48,6 @@ async function start(): Promise<void> {
   // autoload passes even though nothing here awaits readiness directly — see
   // `app.ts`'s doc comment and the ordering finding in the decision journal.
   const app = await buildApp("server");
-  builtApp = app;
 
   const host = app.env.PIPELINE_HOST ?? (app.env.PRODUCTION ? "0.0.0.0" : "127.0.0.1");
   const auth = app.env.PIPELINE_AUTH_PASSWORD ? { username: app.env.PIPELINE_AUTH_USER ?? "buttery", password: app.env.PIPELINE_AUTH_PASSWORD } : undefined;
@@ -183,9 +176,4 @@ async function start(): Promise<void> {
   }
 }
 
-await start().catch((err: unknown) => {
-  // No Fastify instance if `buildApp` itself is what rejected.
-  if (builtApp) builtApp.log.error({ err: String(err) }, "pipeline server failed to start");
-  else console.error("pipeline server failed to start", err);
-  process.exit(1);
-});
+await start();

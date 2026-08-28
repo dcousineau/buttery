@@ -14,7 +14,7 @@ import duration from "dayjs/plugin/duration.js";
 // digests cannot drift (§6.6 requires them byte-identical).
 import { contentFingerprint, normalizeSourceUrl } from "@buttery/recipe-schemas/normalize";
 import type { RecipeRow } from "#/workflows/atproto-sync/lib/recipe.ts";
-import { log } from "#/log.ts";
+import { log } from "#/lib/log.ts";
 
 dayjs.extend(duration);
 

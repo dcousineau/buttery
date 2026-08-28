@@ -1,4 +1,4 @@
-import { log } from "#/log.ts";
+import { log } from "#/lib/log.ts";
 
 // Polite network citizen (plan §1 "Concurrency & ordering"): short per-request
 // timeout, bounded retries with exponential backoff on 429/5xx and transient

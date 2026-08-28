@@ -76,7 +76,7 @@ export function loadConfig(): Config {
 /**
  * Autoscaler settings. Separate from `Config` because the whole feature is
  * opt-in: without a Railway API token there is nothing to scale and the loop
- * never starts. See `autoscale.ts` for why this lives in the server process.
+ * never starts. See `lib/railway/autoscale.ts` for why this lives in the server process.
  */
 export interface AutoscaleConfig {
   apiToken: string;

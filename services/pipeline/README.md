@@ -178,7 +178,7 @@ a queue, which is exactly what an hourly schedule plus a sweep that runs long
 produces. The Railway cron this replaced got that from the platform, so losing it
 would be a regression.
 
-`atproto-sync` takes a Redis mutex ([`src/lock.ts`](src/lock.ts)) in `enumerate`
+`atproto-sync` takes a Redis mutex ([`src/lib/lock.ts`](src/lib/lock.ts)) in `enumerate`
 and releases it in `finalize` — so it spans the whole graph, not one job. A sweep
 that cannot take it **skips**: it completes with `{"status": "skipped"}` rather
 than failing, because the work is already being done and failing would only buy a
@@ -259,7 +259,7 @@ Railway has no built-in autoscaler. It grows each container's CPU and memory
 toward the plan limits on its own, but the **replica count is a setting you own**
 and it stays where you put it. Railway's documented pattern for worker services
 is to run a small process that measures load and moves `numReplicas` through the
-Public API — that is [`src/autoscale.ts`](src/autoscale.ts), running inside the
+Public API — that is [`src/lib/railway/autoscale.ts`](src/lib/railway/autoscale.ts), running inside the
 `pipeline` server because everything it needs (queue handles, Redis, a process
 that is always up) is already there.
 

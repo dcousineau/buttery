@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { UnrecoverableError } from "bullmq";
 import { ENRICH_STEP, RECIPE_ENRICHMENT_QUEUE, type EnrichPayload } from "@buttery/pipeline-contract";
 import type { StepSpec } from "#/plugins/workflow.ts";
-import { acquireLock, releaseLock } from "#/lock.ts";
+import { acquireLock, releaseLock } from "#/lib/lock.ts";
 import { emptySummary, foldRepos } from "#/workflows/atproto-sync/plan.ts";
 import { loadSyncConfig, RECIPE_COLLECTION } from "#/workflows/atproto-sync/lib/config.ts";
 import { HttpError } from "#/workflows/atproto-sync/lib/http.ts";
@@ -28,7 +28,7 @@ import type { FinalizePayload, RepoOutcome, SweepScope, SyncRepoPayload } from "
  * `createSteps(fastify)` closes the three steps over the Fastify instance
  * instead of a module-scope pool: `fastify.db` replaces the old `getPool`
  * (there is one pool for the whole service now, see `plugins/db.ts`), and
- * `fastify.log` / `fastify.redis` replace the old `#/log.ts` import and the
+ * `fastify.log` / `fastify.redis` replace the old bespoke logger import and the
  * step context's `redis` field, which this registration path does not carry
  * (see `plugins/workflow.ts`'s D5).
  */

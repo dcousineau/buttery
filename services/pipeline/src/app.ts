@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
 import autoload from "@fastify/autoload";
 import type { PipelineRole } from "#/plugins/workflow.ts";
-import { setLogRole } from "#/log.ts";
+import { setLogRole } from "#/lib/log.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,12 +38,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * breaking this again.
  */
 export async function buildApp(role: PipelineRole): Promise<FastifyInstance> {
-  // Before anything else logs: `src/log.ts`'s `role` field (read by its two
+  // Before anything else logs: `lib/log.ts`'s `role` field (read by its two
   // remaining call sites) is set here, once, the same way `setLogRole` used to
   // be called at the top of each entrypoint.
   setLogRole(role);
 
-  // Matches `src/log.ts`'s line shape exactly — both feed one log stream and
+  // Matches `lib/log.ts`'s line shape exactly — both feed one log stream and
   // there is no reason for them to disagree. `logger: false` (what
   // `server.ts` uses today) would make every `fastify.log.*` call the
   // converted workflows already make vanish with no error, which is worse
@@ -61,11 +61,11 @@ export async function buildApp(role: PipelineRole): Promise<FastifyInstance> {
       // Replaces pino's default `{pid, hostname}` base entirely (rather than
       // merging with it) — that's what drops `pid`/`hostname` from the line.
       base,
-      // `src/log.ts`'s lines carry no timestamp field; pino's does by
+      // `lib/log.ts`'s lines carry no timestamp field; pino's does by
       // default. Disabled so both sources agree on the same shape.
       timestamp: false,
       formatters: {
-        // pino's default `level` is a number; `log.ts`'s is the string name.
+        // pino's default `level` is a number; `lib/log.ts`'s is the string name.
         level: (label) => ({ level: label }),
       },
     },

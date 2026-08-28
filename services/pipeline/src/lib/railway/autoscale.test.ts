@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AutoscaleConfig } from "#/config.ts";
-import { decideReplicas } from "#/autoscale.ts";
+import { decideReplicas } from "#/lib/railway/autoscale.ts";
 
 const config: AutoscaleConfig = {
   apiToken: "test",

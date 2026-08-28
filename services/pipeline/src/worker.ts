@@ -1,4 +1,3 @@
-import type { FastifyInstance } from "fastify";
 import { buildApp } from "#/app.ts";
 
 /**
@@ -6,7 +5,7 @@ import { buildApp } from "#/app.ts";
  *
  * It runs no HTTP server and holds no state between jobs, which is what makes it
  * safe for Railway to add and remove replicas underneath it (see
- * `autoscale.ts`). Every replica runs this same file and competes for the same
+ * `lib/railway/autoscale.ts`). Every replica runs this same file and competes for the same
  * queues; BullMQ's Redis-side locking is what keeps a job from being handled
  * twice. A fanned-out workflow is what makes that worth having: the repos of one
  * sweep are thousands of independent jobs, and the fleet splits them.
@@ -22,14 +21,8 @@ import { buildApp } from "#/app.ts";
  * process's Redis connection goes away.
  */
 
-// Hoisted so the top-level `.catch()` below — which runs when `buildApp`
-// itself rejects, before a Fastify instance exists to log through — can still
-// tell whether one got far enough to be built.
-let builtApp: FastifyInstance | undefined;
-
 async function start(): Promise<void> {
   const app = await buildApp("worker");
-  builtApp = app;
   // Builds the Workers — see `plugins/workflow.ts`'s `onReady` hook.
   await app.ready();
 
@@ -67,9 +60,4 @@ async function start(): Promise<void> {
   }
 }
 
-await start().catch((err: unknown) => {
-  // No Fastify instance if `buildApp` itself is what rejected.
-  if (builtApp) builtApp.log.error({ err: String(err) }, "pipeline worker failed to start");
-  else console.error("pipeline worker failed to start", err);
-  process.exit(1);
-});
+await start();
