@@ -1,17 +1,18 @@
-import { recipeEnrichment } from "#/workflows/recipe-enrichment/index.ts";
 import type { Workflow } from "#/lib/bullmq/kernel.ts";
 
 /**
- * Every workflow this service knows about. The one list; `server.ts`,
- * `worker.ts`, `schedules.ts` and `queues.ts` all read it and nothing else in
- * the service is queue-aware.
+ * Every workflow still registered through the old `defineWorkflow` path
+ * (`fastify.workflow(spec)` is the other one — see `plugins/workflow.ts`).
+ * `server.ts`, `worker.ts`, `schedules.ts` and `queues.ts` all read this list
+ * and nothing else in the service is queue-aware through it.
  *
- * Adding a workflow is a folder under `workflows/` and one entry here. See
- * `define.ts` for what a workflow is — a queue, and the graph of steps that
- * drains it — and `atproto-sync/` for the layout a workflow with more than a
- * file's worth of code should follow.
+ * Empty now: `atproto-sync` and `recipe-enrichment`, the two workflows that
+ * used to live here, have both migrated to `fastify.workflow(spec)` and
+ * register themselves from inside their own plugin body instead. This file
+ * is not deleted yet — `findWorkflow`/`WORKFLOW_NAMES` still have other
+ * importers — but there is nothing left to add an entry for.
  */
-export const WORKFLOWS: readonly Workflow[] = [recipeEnrichment];
+export const WORKFLOWS: readonly Workflow[] = [];
 
 export const WORKFLOW_NAMES: readonly string[] = WORKFLOWS.map((workflow) => workflow.name);
 

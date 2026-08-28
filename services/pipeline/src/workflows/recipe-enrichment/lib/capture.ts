@@ -1,5 +1,6 @@
+import type { PostHog } from "posthog-node";
 import type { ClassifierLine, Disagreement, Label } from "#/workflows/recipe-enrichment/types.ts";
-import { captureEvent } from "#/workflows/recipe-enrichment/lib/posthog.ts";
+import { log } from "#/log.ts";
 
 /**
  * Observability capture for `llm-enrich` — manual `$ai_generation` events via
@@ -21,12 +22,14 @@ import { captureEvent } from "#/workflows/recipe-enrichment/lib/posthog.ts";
  *
  * The heart of this module is {@link buildGenerationEvent}: pure, no I/O, no
  * PostHog client. `send*` wrappers below are the only impure code here, and
- * they do nothing but hand the pure functions' output to
- * `lib/posthog.ts`'s `captureEvent`, which is itself fire-and-forget and
- * never throws (plan §9.2 step 7). If PostHog is absent, capture is a total
- * no-op — the `writeLlmEnrichment` DB write already happened by the time
- * `llm-enrich` calls any function in this file, so observability failing
- * here costs nothing load-bearing (plan §10).
+ * they do nothing but hand the pure functions' output to this file's own
+ * fire-and-forget `capture` helper, which never throws (plan §9.2 step 7).
+ * The client itself is `plugins/posthog.ts`'s now — every exported function
+ * here takes it as a leading parameter rather than reaching for one itself.
+ * If PostHog is absent (`client` is `null`), capture is a total no-op — the
+ * `writeLlmEnrichment` DB write already happened by the time `llm-enrich`
+ * calls any function in this file, so observability failing here costs
+ * nothing load-bearing (plan §10).
  */
 
 // --- shared vocabulary -------------------------------------------------
@@ -286,21 +289,38 @@ export function buildGenerationEvent(input: GenerationEventInput): { distinctId:
 }
 
 /**
+ * Fire one event at `client`, fire-and-forget: never throws, no-ops when
+ * `client` is `null` (PostHog absent). What `lib/posthog.ts`'s `captureEvent`
+ * used to do once it had resolved its own module-scope client — now that the
+ * client is `plugins/posthog.ts`'s, callers hand it in instead.
+ */
+function capture(client: PostHog | null, distinctId: string, event: string, properties: Record<string, unknown>): void {
+  if (!client) return;
+  try {
+    client.capture({ distinctId, event, properties });
+  } catch (err) {
+    log.warn(`llm posthog capture failed: ${event}`, { err: String(err) });
+  }
+}
+
+/**
  * Read the custom-pricing env vars (plan §5.3, §11) and send one
  * `$ai_generation` event for `input`. The only place in this module that
  * reads `process.env` — {@link buildGenerationEvent} stays pure and
  * deterministically testable by taking `pricing` as an explicit input field
  * instead, and this thin wrapper is what fills that field in for the real
- * call path. Fire-and-forget via `lib/posthog.ts`'s `captureEvent`: never
- * throws, no-ops when PostHog is absent.
+ * call path. Fire-and-forget via {@link capture}: never throws, no-ops when
+ * PostHog is absent. Synchronous, not `async` — there is no I/O left in this
+ * path once the client is already in hand; callers still `await` it, which is
+ * harmless on a non-`Promise` return.
  */
-export async function sendGenerationEvent(input: Omit<GenerationEventInput, "pricing">): Promise<void> {
+export function sendGenerationEvent(client: PostHog | null, input: Omit<GenerationEventInput, "pricing">): void {
   const inputTokenPriceUsd = envFloat("LLM_INPUT_TOKEN_PRICE_USD");
   const outputTokenPriceUsd = envFloat("LLM_OUTPUT_TOKEN_PRICE_USD");
   const pricing: GenerationPricing | undefined = inputTokenPriceUsd !== undefined || outputTokenPriceUsd !== undefined ? { inputTokenPriceUsd, outputTokenPriceUsd } : undefined;
 
   const { distinctId, event, properties } = buildGenerationEvent(pricing ? { ...input, pricing } : input);
-  await captureEvent(distinctId, event, properties);
+  capture(client, distinctId, event, properties);
 }
 
 function envFloat(name: string): number | undefined {
@@ -355,13 +375,12 @@ export function buildDisagreementEvent(input: DisagreementEventInput): { distinc
 
 /**
  * Thin send for one disagreement — builds via {@link buildDisagreementEvent}
- * and hands it to `lib/posthog.ts`'s fire-and-forget `captureEvent`.
- * `llm-enrich` calls this once per `Disagreement` the merge produced (plan
- * §9.2 step 7).
+ * and hands it to {@link capture}, fire-and-forget. `llm-enrich` calls this
+ * once per `Disagreement` the merge produced (plan §9.2 step 7).
  */
-export async function sendDisagreementEvent(input: DisagreementEventInput): Promise<void> {
+export function sendDisagreementEvent(client: PostHog | null, input: DisagreementEventInput): void {
   const { distinctId, event, properties } = buildDisagreementEvent(input);
-  await captureEvent(distinctId, event, properties);
+  capture(client, distinctId, event, properties);
 }
 
 // --- one-call-site wrappers for index.ts's llm-enrich step -----------------
@@ -394,10 +413,10 @@ export interface CaptureGenerationInput {
   disagreements: readonly Disagreement[];
 }
 
-/** Send the generation event and one disagreement event per disagreement, for a successful `llm-enrich` call. */
-export async function captureGeneration(input: CaptureGenerationInput): Promise<void> {
+/** Send the generation event and one disagreement event per disagreement, for a successful `llm-enrich` call. Synchronous — see {@link sendGenerationEvent}. */
+export function captureGeneration(client: PostHog | null, input: CaptureGenerationInput): void {
   const unresolvedLineCount = input.lines.filter((line) => line.foodSlug === null).length;
-  await sendGenerationEvent({
+  sendGenerationEvent(client, {
     traceId: input.traceId,
     model: input.provider.modelId,
     provider: input.provider.providerName,
@@ -418,7 +437,7 @@ export async function captureGeneration(input: CaptureGenerationInput): Promise<
     outputChoices: input.outputChoices,
   });
   for (const disagreement of input.disagreements) {
-    await sendDisagreementEvent({ recipeId: input.recipeId, recipeOrigin: input.recipeOrigin, disagreement });
+    sendDisagreementEvent(client, { recipeId: input.recipeId, recipeOrigin: input.recipeOrigin, disagreement });
   }
 }
 
@@ -435,10 +454,10 @@ export interface CaptureGenerationFailureInput {
   rawText: string | undefined;
 }
 
-/** Send the generation event for a failed `llm-enrich` call — zero counts, `httpStatus: 0`, the error message (plus raw model text, when there is one). */
-export async function captureGenerationFailure(input: CaptureGenerationFailureInput): Promise<void> {
+/** Send the generation event for a failed `llm-enrich` call — zero counts, `httpStatus: 0`, the error message (plus raw model text, when there is one). Synchronous — see {@link sendGenerationEvent}. */
+export function captureGenerationFailure(client: PostHog | null, input: CaptureGenerationFailureInput): void {
   const unresolvedLineCount = input.lines.filter((line) => line.foodSlug === null).length;
-  await sendGenerationEvent({
+  sendGenerationEvent(client, {
     traceId: input.traceId,
     model: input.provider.modelId,
     provider: input.provider.providerName,

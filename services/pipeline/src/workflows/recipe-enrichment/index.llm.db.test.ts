@@ -1,13 +1,13 @@
 import { Pool, type PoolClient } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { FastifyInstance } from "fastify";
 import { LLM_ENRICH_STEP } from "@buttery/pipeline-contract";
-import type { WorkflowHost } from "#/lib/bullmq/kernel.ts";
-import { recipeEnrichment } from "#/workflows/recipe-enrichment/index.ts";
+import type { StepContext, StepSpec, WorkflowSpec } from "#/plugins/workflow.ts";
+import recipeEnrichmentPlugin from "#/workflows/recipe-enrichment/index.ts";
 
 /**
- * The gate, end to end through the real workflow: `llm-enrich` with
- * `LLM_ENRICHMENT_ENABLED=false` marks the recipe `skipped` and **never
- * constructs a provider**.
+ * The gate, end to end through the real `llm-enrich` step: `LLM_ENRICHMENT_ENABLED=false`
+ * marks the recipe `skipped` and **never constructs a provider**.
  *
  * This is the one behavior in the whole LLM half that has to be verified
  * against the database rather than a fake, because "marks the recipe skipped"
@@ -17,19 +17,27 @@ import { recipeEnrichment } from "#/workflows/recipe-enrichment/index.ts";
  * that value is what stops a backfill re-claiming the same recipes on every
  * run while the flag is off.
  *
+ * `index.ts` is a Fastify plugin now (S3), not a `defineWorkflow` result with
+ * its own `.run(...)` — there is no more standalone `recipeEnrichment` export
+ * to import and drive. Reached the same way `atproto-sync/steps.test.ts`
+ * reaches a step: build a stub Fastify instance carrying only what
+ * `llm-enrich` actually touches (`db`, `log`, `ai`, `posthog`, `env`, and a
+ * `workflow` decorator that just records the spec it was handed), invoke the
+ * plugin function directly to register that spec, then call the `llm-enrich`
+ * `StepSpec.run` found on it with a hand-built `StepContext`.
+ *
  * ── HOW "NEVER CONSTRUCTS A PROVIDER" IS PROVEN ────────────────────────────
  *
- * Not by spying. `beforeAll` DELETES `LLM_ENRICHMENT_MODEL`, `MOONSHOT_API_KEY`
- * and `LLM_ENRICHMENT_PROVIDER` from the environment, which makes
- * `resolveProvider()` throw on sight (see `lib/provider.ts` — no default is
- * baked in for any of the three, deliberately). So if the gate ever stopped
- * short-circuiting and the step reached provider construction, this test would
- * fail with that throw rather than quietly passing. The absence of a model call
- * is enforced by the same fact: there is nothing to call one with.
+ * Not by deleting env vars — `fastify.ai.resolveProvider` is a stub here that
+ * THROWS if it is ever called at all. If the gate ever stopped
+ * short-circuiting and the step reached provider construction, this test
+ * would fail with that throw rather than quietly passing. `fastify.posthog.fetchPrompt`
+ * is stubbed the same way, since a prompt fetch is the other thing that only
+ * happens once the gate has let a run through.
  *
- * No live model call and no live PostHog call happens here or anywhere in this
- * package's suites — the env override is checked BEFORE the flag precisely so
- * that this path needs neither.
+ * No live model call and no live PostHog call happens here or anywhere in
+ * this package's suites — the env override is checked BEFORE the flag
+ * precisely so that this path needs neither.
  *
  * Skips (never fails) without a reachable migrated database, exactly like
  * `lib/load.db.test.ts` — see that file's header for the convention.
@@ -67,44 +75,60 @@ const RUN = Date.now().toString(36).toUpperCase().padStart(10, "0").slice(-10);
 const GATED_ID = `test-llm-gate-${RUN}-off`;
 const GONE_ID = `test-llm-gate-${RUN}-gone`;
 
-const llmEnrichStep = recipeEnrichment.steps.find((step) => step.name === LLM_ENRICH_STEP);
+/** Throws if called — `llm-enrich` must not reach this on any path this suite exercises. */
+function shouldNotBeCalled(what: string): () => never {
+  return () => {
+    throw new Error(`llm-enrich should not ${what}`);
+  };
+}
+
+let capturedSpec: WorkflowSpec | undefined;
+
+function buildStub(pool: Pool | null): FastifyInstance {
+  return {
+    db: pool,
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    env: { RECIPE_ENRICHMENT_MAX_IN_FLIGHT: undefined },
+    ai: {
+      resolveProvider: vi.fn(shouldNotBeCalled("construct a provider")),
+      captureGeneration: vi.fn(),
+      modelRawText: vi.fn(),
+    },
+    posthog: {
+      client: null,
+      fetchPrompt: vi.fn(shouldNotBeCalled("fetch a prompt")),
+    },
+    workflow: (spec: WorkflowSpec) => {
+      capturedSpec = spec;
+    },
+  } as unknown as FastifyInstance;
+}
+
+recipeEnrichmentPlugin(buildStub(pool));
+
+const llmEnrichStep: StepSpec | undefined = capturedSpec?.steps.find((step) => step.name === LLM_ENRICH_STEP);
 
 /**
- * A `WorkflowHost` with only what `llm-enrich` actually reads. `flow`,
- * `enqueue`, `children`, `progress` throw rather than no-op: this step must
- * not reach for any of them, and a silent stub would let a future change
- * start using one without anybody noticing.
+ * A `StepContext` with only what `llm-enrich` actually reads. `progress`,
+ * `children`, `flow`, `enqueue` throw rather than no-op: this step must not
+ * reach for any of them, and a silent stub would let a future change start
+ * using one without anybody noticing.
  */
-function host(): WorkflowHost {
-  const lines: string[] = [];
+function context(payload: unknown): StepContext {
   return {
+    payload,
     runId: "test",
-    log: (message: string) => {
-      lines.push(message);
-      return Promise.resolve();
-    },
-    progress: () => {
-      throw new Error("llm-enrich should not report progress");
-    },
-    children: () => {
-      throw new Error("llm-enrich has no children");
-    },
-    flow: () => {
-      throw new Error("llm-enrich should not fan out");
-    },
-    enqueue: () => {
-      throw new Error("llm-enrich should not enqueue anything");
-    },
+    log: () => Promise.resolve(),
+    progress: shouldNotBeCalled("report progress"),
+    children: shouldNotBeCalled("read children"),
+    flow: shouldNotBeCalled("fan out"),
+    enqueue: shouldNotBeCalled("enqueue anything"),
   };
 }
 
 function run(payload: unknown): Promise<unknown> {
-  return recipeEnrichment.run({
-    step: LLM_ENRICH_STEP,
-    payload,
-    host: host(),
-    redis: undefined as unknown as Parameters<typeof recipeEnrichment.run>[0]["redis"],
-  });
+  if (!llmEnrichStep) throw new Error(`${LLM_ENRICH_STEP} is missing from index.ts's workflow`);
+  return llmEnrichStep.run(context(payload));
 }
 
 let client: PoolClient;
@@ -116,8 +140,7 @@ beforeAll(async () => {
     savedEnv[key] = process.env[key];
     delete process.env[key];
   }
-  // The override under test. See the header for why the other four are DELETED
-  // rather than set to something harmless.
+  // The override under test.
   process.env.LLM_ENRICHMENT_ENABLED = "false";
 
   client = await pool.connect();
