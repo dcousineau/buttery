@@ -3,8 +3,10 @@ import fp from "fastify-plugin";
 
 /**
  * Environment parsing, service-wide (D2). Replaces `#/env.ts` (the
- * `.env`-file load) and `#/config.ts` (`loadConfig`/`loadAutoscaleConfig`) —
- * both collapse into one zod schema, decorated as `fastify.env`.
+ * `.env`-file load) and the former `#/config.ts` (`loadConfig`) — both
+ * collapse into one zod schema, decorated as `fastify.env`. The autoscaler's
+ * own opt-in settings are the one thing not folded in: they read off this
+ * schema in `lib/railway/config.ts`, next to the only code that uses them.
  *
  * `process.loadEnvFile` runs first, exactly where `#/env.ts` ran it, so
  * `services/pipeline/.env` is loaded before anything reads `process.env` —

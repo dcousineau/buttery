@@ -6,7 +6,7 @@ import { timingSafeEqual } from "node:crypto";
 import { buildApp } from "#/app.ts";
 import { Autoscaler, DISABLED_STATE } from "#/lib/railway/autoscale.ts";
 import { readBacklog } from "#/lib/bullmq/backlog.ts";
-import { loadAutoscaleConfig } from "#/config.ts";
+import { loadAutoscaleConfig } from "#/lib/railway/config.ts";
 
 /**
  * The `pipeline` service: a Fastify server that hosts the Bull Board UI, exposes
@@ -61,7 +61,7 @@ async function start(): Promise<void> {
   });
   serverAdapter.setBasePath(BOARD_PATH);
 
-  const autoscaleConfig = loadAutoscaleConfig();
+  const autoscaleConfig = loadAutoscaleConfig(app.env);
   const autoscaler = autoscaleConfig
     ? new Autoscaler(
         autoscaleConfig,

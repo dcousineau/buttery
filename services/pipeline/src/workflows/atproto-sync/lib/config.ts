@@ -2,7 +2,7 @@
 // (type-stripping) — keep everything erasable (no enum/namespace/param-props).
 //
 // This is the sweep's own configuration, separate from the service's
-// (`#/config.ts`): it answers "which network does a sweep read, and where does
+// (`plugins/env.ts`): it answers "which network does a sweep read, and where does
 // it write", which is a property of the sweep and not of the queue system
 // hosting it. Both read the one `services/pipeline/.env`.
 //

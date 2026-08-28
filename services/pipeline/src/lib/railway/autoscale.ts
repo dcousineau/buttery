@@ -1,6 +1,6 @@
 import type { Queue } from "bullmq";
 import type { FastifyBaseLogger } from "fastify";
-import type { AutoscaleConfig } from "#/config.ts";
+import type { AutoscaleConfig } from "#/lib/railway/config.ts";
 import { readBacklog } from "#/lib/bullmq/backlog.ts";
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutoscaleConfig } from "#/config.ts";
+import type { AutoscaleConfig } from "#/lib/railway/config.ts";
 import { decideReplicas } from "#/lib/railway/autoscale.ts";
 
 const config: AutoscaleConfig = {
