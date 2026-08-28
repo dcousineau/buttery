@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import type { Kysely } from "kysely";
 import * as z from "zod";
 import type { DB, Json } from "#/db/types";
-import type { CounterpartView, RecipeDebugPayload } from "#/devtools/types";
+import type { CounterpartView, LlmEnrichTriggerResult, RecipeDebugPayload } from "#/devtools/types";
 
 /**
  * Server read surface for the recipe devtools panel (`devtools/RecipeInspector`).
@@ -100,6 +100,25 @@ function cap<T>(rows: T[], table: string, warnings: string[]): T[] {
   if (rows.length <= MAX_SECTION_ROWS) return rows;
   warnings.push(`${table}: capped at ${MAX_SECTION_ROWS} rows (more exist).`);
   return rows.slice(0, MAX_SECTION_ROWS);
+}
+
+/** `numeric` comes back from `pg` as a string. Mirrors `recipe-enrichment.ts`'s `toNum` / `grocery.ts`'s equivalent. */
+function toNum(v: string | number | null | undefined): number {
+  if (v == null) return 0;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * The gate both the read (`computeRecipeDebug`) and the trigger
+ * (`triggerLlmEnrichPayload`) share: does `recipeId` belong to `householdId`'s
+ * box at all. Extracted so the trigger doesn't have to re-derive the "found:
+ * false collapses a deleted id and a foreign id" reasoning documented on
+ * `computeRecipeDebug` below — it reuses the exact same query.
+ */
+async function isRecipeBoxed(db: Kysely<DB>, householdId: string, recipeId: string): Promise<boolean> {
+  const boxed = await db.selectFrom("household_recipe").select("recipe_id").where("household_id", "=", householdId).where("recipe_id", "=", recipeId).executeTakeFirst();
+  return boxed !== undefined;
 }
 
 // --- (b) counterparts -------------------------------------------------------
@@ -200,6 +219,7 @@ async function computeRecipeDebug(db: Kysely<DB>, householdId: string, recipeId:
     summary: null,
     atprotoRecord: null,
     counterparts: [] as CounterpartView[],
+    llmEnrichment: null,
     rendered: [],
     privateLayers: [],
     warnings: [] as string[],
@@ -209,8 +229,7 @@ async function computeRecipeDebug(db: Kysely<DB>, householdId: string, recipeId:
   if (!recipe) return notFound();
 
   // The box check (recipe-enrichment.ts's gate, relocated — see module doc).
-  const boxed = await db.selectFrom("household_recipe").select("recipe_id").where("household_id", "=", householdId).where("recipe_id", "=", recipeId).executeTakeFirst();
-  if (!boxed) return notFound();
+  if (!(await isRecipeBoxed(db, householdId, recipeId))) return notFound();
 
   const warnings: string[] = [];
 
@@ -479,7 +498,71 @@ async function computeRecipeDebug(db: Kysely<DB>, householdId: string, recipeId:
       : []),
   ];
 
-  return { recipeId, found: true as const, summary, atprotoRecord, counterparts, rendered, privateLayers, warnings };
+  // --- (d) the LLM enrichment highlight ------------------------------------
+  //
+  // A typed VIEW of the SAME `enrichment` / `enrichmentLabels` rows already
+  // fetched above for the generic `recipe_enrichment` / `recipe_enrichment_label`
+  // privateLayers sections — no second query. See devtools/types.ts's
+  // `LlmEnrichmentSummary` doc for why this exists as a deliberate exception
+  // to "SECTIONS ARE GENERIC ON PURPOSE" (this file's own module doc).
+  //
+  // Not annotated `LlmEnrichmentSummary | null` — see the module doc's note
+  // on `unknown` vs createServerFn's serializability check; every field below
+  // is a plain string/number/boolean, so the annotation would add nothing
+  // besides opting back into the exact inference this file avoids elsewhere.
+  let llmEnrichment = null;
+  if (enrichment) {
+    // `@buttery/food/classify` is SERVER-ONLY (its own module doc) — dynamic
+    // import, same rule as `pg`/`bullmq` elsewhere in this app, so it never
+    // reaches the client bundle via this file's `getRecipeDebugPayload`
+    // re-export chain (`lib/api/transport.ts`).
+    const { CLASSIFIER_VERSION } = await import("@buttery/food/classify");
+
+    // `method`'s `llm:` prefix is the schema's actual ownership rule
+    // (db/types.ts's `recipe_enrichment_label.method` comment) — restated
+    // here rather than imported from services/pipeline, same "web does not
+    // depend on the pipeline's internals" reasoning as recipe-enrichment.ts's
+    // module doc.
+    const LLM_METHOD_PREFIX = "llm:";
+    const labelsByDimension: Record<
+      string,
+      { dimension: string; slug: string; verdict: string; confidence: number; source: "rules" | "llm"; method: string; updatedAt: string }[]
+    > = {};
+    for (const label of enrichmentLabels) {
+      const bucket = labelsByDimension[label.dimension] ?? (labelsByDimension[label.dimension] = []);
+      bucket.push({
+        dimension: label.dimension,
+        slug: label.slug,
+        verdict: label.verdict,
+        confidence: toNum(label.confidence),
+        source: label.method.startsWith(LLM_METHOD_PREFIX) ? "llm" : "rules",
+        method: label.method,
+        // `updated_at` is a non-null generated timestamp column; `iso()`
+        // only ever returns null for an unparseable Date, which a DB-written
+        // timestamp never is — the `?? ""` is a type-level fallback, not one
+        // this code path can actually reach.
+        updatedAt: iso(label.updated_at) ?? "",
+      });
+    }
+
+    llmEnrichment = {
+      status: enrichment.llm_status,
+      enrichedAt: iso(enrichment.llm_enriched_at),
+      error: enrichment.llm_error,
+      model: enrichment.llm_model,
+      promptVersion: enrichment.llm_prompt_version,
+      llmVersion: enrichment.llm_version,
+      classifierVersion: enrichment.classifier_version,
+      rulesStatus: enrichment.status,
+      rulesVersionCurrent: enrichment.classifier_version === CLASSIFIER_VERSION,
+      inputHash: enrichment.input_hash,
+      llmInputHash: enrichment.llm_input_hash,
+      freshAgainstRules: enrichment.llm_status === "ok" && enrichment.llm_input_hash !== null && enrichment.llm_input_hash === enrichment.input_hash,
+      labelsByDimension,
+    };
+  }
+
+  return { recipeId, found: true as const, summary, atprotoRecord, counterparts, llmEnrichment, rendered, privateLayers, warnings };
 }
 
 /**
@@ -531,4 +614,53 @@ export const getRecipeDebugPayload = createServerFn({ method: "GET" })
     await assertMember(did, householdId);
 
     return computeRecipeDebug(getDb(), householdId, data.recipeId);
+  });
+
+// --- the LLM enrichment trigger -----------------------------------------
+
+/**
+ * The devtools panel's "run LLM enrichment now" server fn (`LlmEnrichButton.tsx`,
+ * via `lib/api/transport.ts`'s `triggerLlmEnrich`). Same double gate as
+ * `getRecipeDebugPayload` above (`import.meta.env.DEV` client-side, this
+ * `NODE_ENV` check as the real server-side one), same authorization
+ * (`activeContext()` + `assertMember`), and the same box check
+ * (`isRecipeBoxed`) `computeRecipeDebug` uses — a caller must not be able to
+ * enqueue a job for a recipe id they cannot even read through this panel.
+ *
+ * `POST`, unlike the `GET` read above: this call has a side effect (it
+ * enqueues a BullMQ job), which is the whole reason it exists.
+ *
+ * Returns `LlmEnrichTriggerResult` (`devtools/types.ts`) — `enqueueLlmEnrich`'s
+ * `LlmEnrichEnqueueOutcome` widened to that structurally-identical, panel-
+ * owned type, mirroring how `getRecipeDebugPayload` widens its own return
+ * value to `RecipeDebugPayload`. No `unknown` is involved here (every field
+ * is a plain string), so unlike `computeRecipeDebug` this handler can be
+ * annotated directly without tripping createServerFn's serializability check.
+ */
+export const triggerLlmEnrichPayload = createServerFn({ method: "POST" })
+  .validator((data: unknown) => recipeIdInput.parse(data))
+  .handler(async ({ data }): Promise<LlmEnrichTriggerResult> => {
+    // THE REAL GATE — see getRecipeDebugPayload's identical comment above.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("The recipe debug panel is not available in production.");
+    }
+
+    const { getDb } = await import("#/lib/db");
+    const { assertMember } = await import("./authz");
+    const { activeContext } = await import("./recipe-context");
+    const { enqueueLlmEnrich } = await import("./enrichment-queue");
+
+    const { did, householdId } = await activeContext();
+    await assertMember(did, householdId);
+
+    const db = getDb();
+    if (!(await isRecipeBoxed(db, householdId, data.recipeId))) {
+      // Same "found: false" collapse as the read side (computeRecipeDebug's
+      // doc): a caller must not be able to tell "no such recipe" apart from
+      // "a real recipe in a household you can't see" by whether this action
+      // behaves differently from the read above.
+      return { status: "error", message: "no such recipe in your active household" };
+    }
+
+    return enqueueLlmEnrich(data.recipeId);
   });

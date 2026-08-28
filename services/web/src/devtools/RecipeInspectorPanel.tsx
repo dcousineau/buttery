@@ -4,7 +4,7 @@ import { AlertTriangle } from "lucide-react";
 import { getRecipeDebug } from "#/lib/api";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Spinner } from "#/components/ui/spinner";
-import { AtprotoRecordSection, CounterpartsSection, DebugSectionGroup, RecipeDebugHeader, WarningsSection } from "./RecipeDebugSections";
+import { AtprotoRecordSection, CounterpartsSection, DebugSectionGroup, LlmEnrichmentSection, RecipeDebugHeader, WarningsSection } from "./RecipeDebugSections";
 import { CopyButton } from "./CopyButton";
 import type { RecipeDebugPayload } from "./types";
 
@@ -113,6 +113,11 @@ function RecipeDebugBody({ recipeId }: { recipeId: string }) {
       <div className="flex flex-wrap items-start gap-2">
         {data.summary && <RecipeDebugHeader summary={data.summary} action={<CopyButton value={data} label="full payload" />} />}
       </div>
+      {/* The highlight: rendered first, right under the header, ahead of the
+          raw atproto record — a developer reaching for this panel to check
+          or trigger LLM enrichment shouldn't have to scroll past everything
+          else to find it. */}
+      <LlmEnrichmentSection recipeId={recipeId} summary={data.llmEnrichment} />
       <AtprotoRecordSection record={data.atprotoRecord} />
       <CounterpartsSection counterparts={data.counterparts} />
       <DebugSectionGroup title="Rendered layer" sections={data.rendered} />

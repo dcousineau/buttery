@@ -4,7 +4,8 @@ import { Badge } from "#/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { CopyButton } from "./CopyButton";
 import { JsonBlock } from "./JsonBlock";
-import type { AtprotoRecordView, CounterpartView, DebugSection, RecipeDebugPayload } from "./types";
+import { LlmEnrichButton } from "./LlmEnrichButton";
+import type { AtprotoRecordView, CounterpartView, DebugSection, LlmEnrichmentSummary, LlmHighlightLabel, RecipeDebugPayload } from "./types";
 
 /**
  * The section renderers for the recipe inspector panel. Two shapes:
@@ -141,6 +142,165 @@ export function CounterpartsSection({ counterparts }: { counterparts: Counterpar
           ))}
         </ul>
       )}
+    </SectionHeading>
+  );
+}
+
+// --- (d) the LLM enrichment highlight --------------------------------------
+//
+// The one deliberate exception to "SECTIONS ARE GENERIC ON PURPOSE"
+// (devtools/types.ts) — everything it shows is also visible, raw and
+// unedited, in the generic `recipe_enrichment` / `recipe_enrichment_label`
+// cards below (privateLayers); this block exists to answer the questions
+// those raw rows make a reader do arithmetic for (types.ts's
+// `LlmEnrichmentSummary` doc has the field-by-field reasoning).
+
+function LlmStatusBadge({ status }: { status: string | null }) {
+  if (status === "ok")
+    return (
+      <Badge size="xs" variant="secondary">
+        ok
+      </Badge>
+    );
+  if (status === "error")
+    return (
+      <Badge size="xs" variant="destructive">
+        error
+      </Badge>
+    );
+  if (status === "skipped")
+    return (
+      <Badge size="xs" variant="outline" className="border-warning text-warning bg-warning/15">
+        skipped
+      </Badge>
+    );
+  return (
+    <Badge size="xs" variant="outline">
+      never run
+    </Badge>
+  );
+}
+
+/**
+ * `source` is the visual distinction the LLM highlight exists to draw — a
+ * filled badge for the model's own rows, an outline one for the rules', with
+ * the full `method` string (e.g. `llm:moonshot:kimi-k2-0905-preview@v1`) in
+ * the title attribute for whoever wants the exact provenance without leaving
+ * this row.
+ */
+function LabelSourceBadge({ source, method }: { source: "rules" | "llm"; method: string }) {
+  return (
+    <Badge size="xs" variant={source === "llm" ? "default" : "outline"} title={method}>
+      {source}
+    </Badge>
+  );
+}
+
+function LlmLabelRow({ label }: { label: LlmHighlightLabel }) {
+  return (
+    <li className="flex flex-wrap items-center gap-1.5 rounded border border-border/50 bg-muted px-2 py-1 text-[0.6875rem]">
+      <LabelSourceBadge source={label.source} method={label.method} />
+      <span className="font-mono font-semibold text-foreground">{label.slug}</span>
+      <span className="text-muted-foreground">{label.verdict}</span>
+      <span className="text-muted-foreground">· {Math.round(label.confidence * 100)}%</span>
+    </li>
+  );
+}
+
+export function LlmEnrichmentSection({ recipeId, summary }: { recipeId: string; summary: LlmEnrichmentSummary | null }) {
+  const dimensions = summary ? Object.entries(summary.labelsByDimension).sort(([a], [b]) => a.localeCompare(b)) : [];
+
+  return (
+    <SectionHeading title="LLM enrichment">
+      <div className="flex flex-col gap-2 rounded-md border-2 border-border bg-card px-3 py-2.5">
+        {summary === null ? (
+          <p className="m-0 text-xs text-muted-foreground">
+            No <code className="font-mono">recipe_enrichment</code> row at all yet — nothing, rules or LLM, has classified this recipe. Triggering LLM enrichment will still queue
+            the job below, but it needs a rules pass first and will come back <code className="font-mono">skipped</code> until one exists.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <LlmStatusBadge status={summary.status} />
+              {summary.freshAgainstRules ? (
+                <Badge size="xs" variant="secondary">
+                  fresh vs rules
+                </Badge>
+              ) : (
+                <Badge size="xs" variant="outline">
+                  stale vs rules
+                </Badge>
+              )}
+              {!summary.rulesVersionCurrent && (
+                <Badge size="xs" variant="outline" className="border-warning text-warning bg-warning/15">
+                  rules pass not current — a run will likely come back skipped
+                </Badge>
+              )}
+            </div>
+
+            {summary.error && (
+              <Alert variant="destructive">
+                <AlertTriangle aria-hidden="true" />
+                <AlertTitle>llm-enrich failed</AlertTitle>
+                <AlertDescription>{summary.error}</AlertDescription>
+              </Alert>
+            )}
+
+            <dl className="m-0 grid grid-cols-[auto_1fr] items-baseline gap-x-2 gap-y-1 text-xs">
+              <FieldRow field="model" value={summary.model ?? "—"} />
+              <FieldRow
+                field="prompt"
+                value={
+                  summary.promptVersion !== null
+                    ? `v${summary.promptVersion} (PostHog)`
+                    : summary.status === "ok"
+                      ? "fallback prompt — the committed prompt.ts ran, not an unknown version"
+                      : "—"
+                }
+              />
+              <FieldRow field="enriched at" value={summary.enrichedAt ? new Date(summary.enrichedAt).toLocaleString() : "—"} />
+              <FieldRow field="llm_version" value={summary.llmVersion === 0 ? "0 (never run)" : String(summary.llmVersion)} />
+              <FieldRow
+                field="classifier_version"
+                value={`${summary.classifierVersion}${summary.rulesVersionCurrent ? " (current)" : " (stale — a newer rules classifier is deployed)"}`}
+              />
+              <FieldRow field="rules status" value={summary.rulesStatus} />
+              <FieldRow field="input_hash" value={summary.inputHash ?? "—"} />
+              <FieldRow field="llm_input_hash" value={summary.llmInputHash ?? "—"} />
+            </dl>
+
+            {dimensions.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {dimensions.map(([dimension, labels]) => (
+                  <div key={dimension} className="flex flex-col gap-1">
+                    <h4 className="m-0 text-[0.6875rem] font-semibold text-foreground">{dimension}</h4>
+                    <ul className="m-0 flex list-none flex-col gap-1 p-0">
+                      {labels.map((label) => (
+                        <LlmLabelRow key={`${label.dimension}:${label.slug}`} label={label} />
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* not_detected is never a safety claim, and absence is never a
+                negative verdict on its own — repeated here, in the LLM's own
+                words, because this block is exactly where a reader would
+                otherwise read "no cuisine label" as "the model checked and
+                found none" when it may just mean "never asked". */}
+            <p className="m-0 text-[0.6875rem] text-muted-foreground italic">
+              A missing slug above is never a negative verdict by itself. For allergen, and for the diet slugs the rules classifier also emits, absence means the rules' own default
+              (not_detected / not excluded) once classifier_version is current — see the recipe_enrichment_label card below for the exact wording, and note that{" "}
+              <span className="font-semibold text-foreground">not_detected is never a safety claim</span>, only "nothing matched in text the classifier may not have fully parsed".
+              For dimensions only the LLM ever judges (cuisine, meal_type, spice_level, and several diet slugs the rules have no rule for), absence means NOTHING was evaluated
+              unless status above is "ok" and llm_version covered it — this panel cannot tell "the model looked and found nothing" apart from "this was never asked" from the row
+              set alone.
+            </p>
+          </>
+        )}
+        <LlmEnrichButton recipeId={recipeId} />
+      </div>
     </SectionHeading>
   );
 }
