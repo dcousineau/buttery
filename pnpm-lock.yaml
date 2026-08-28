@@ -193,6 +193,9 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: ^3.0.37
         version: 3.0.37(zod@4.4.3)
+      '@ai-sdk/provider-utils':
+        specifier: ^5.0.30
+        version: 5.0.30(zod@4.4.3)
       '@bull-board/api':
         specifier: ^8.6.1
         version: 8.6.1(@bull-board/ui@8.6.1(bullmq@6.1.2(ioredis@6.0.0(supports-color@10.2.2))(pg@8.23.0)))(bullmq@6.1.2(ioredis@6.0.0(supports-color@10.2.2))(pg@8.23.0))

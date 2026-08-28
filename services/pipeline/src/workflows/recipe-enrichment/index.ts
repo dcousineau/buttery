@@ -187,6 +187,8 @@ export default fp(
             output: Output.object({ schema: llmOutputSchema }),
             messages,
             allowSystemInMessages: true,
+            // How this provider has to be called is the registry's business, not this step's — see lib/ai/provider.ts.
+            providerOptions: provider.providerOptions,
             maxOutputTokens: LLM_MAX_OUTPUT_TOKENS,
             abortSignal: AbortSignal.timeout(LLM_TIMEOUT_MS),
           });

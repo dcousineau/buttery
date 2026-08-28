@@ -1,4 +1,5 @@
 import type { LanguageModel } from "ai";
+import type { ProviderOptions } from "@ai-sdk/provider-utils";
 
 /**
  * The provider registry (llm plan §6.1, L5), copied here verbatim from
@@ -22,6 +23,11 @@ import type { LanguageModel } from "ai";
  * with no fallback constant anywhere in this file — an unset or wrong model
  * id is a deploy-time env problem that should surface as a clear, immediate
  * error, not a stale hardcoded default.
+ *
+ * **An entry may also carry per-request options**, because "how you call this
+ * provider" is the same kind of fact as "where you call it" — see
+ * {@link ResolvedProvider.providerOptions} and the `moonshot` entry's
+ * `reasoningEffort`.
  */
 
 /**
@@ -39,6 +45,15 @@ export interface ResolvedProvider {
   baseURL: string;
   /** The model instance a caller hands to `generateText`/`generateObject`. */
   model: LanguageModel;
+  /**
+   * Passed straight to `generateText`'s `providerOptions`. Keyed by provider
+   * name, because that is how `@ai-sdk/openai-compatible` finds them.
+   *
+   * This exists so a registry entry can state how its model must be CALLED,
+   * not just where it lives — the caller should not have to know that one
+   * provider needs a knob turned and another does not.
+   */
+  providerOptions: ProviderOptions;
 }
 
 /** The subset of `process.env` a provider factory may read. Matches `NodeJS.ProcessEnv`'s value type without requiring a real `process.env` object in tests. */
@@ -50,7 +65,7 @@ export type ProviderEnv = Readonly<Record<string, string | undefined>>;
  * import, so a missing key or a missing SDK dependency fails inside the one
  * entry that needed it.
  */
-type ProviderFactory = (env: ProviderEnv, modelId: string) => Promise<{ model: LanguageModel; baseURL: string }>;
+type ProviderFactory = (env: ProviderEnv, modelId: string) => Promise<{ model: LanguageModel; baseURL: string; providerOptions: ProviderOptions }>;
 
 const PROVIDERS: Readonly<Record<string, ProviderFactory>> = {
   // Moonshot's Kimi API is OpenAI-compatible, so `@ai-sdk/openai-compatible`
@@ -60,10 +75,23 @@ const PROVIDERS: Readonly<Record<string, ProviderFactory>> = {
     if (!apiKey) {
       throw new Error("LLM_ENRICHMENT_PROVIDER=moonshot but MOONSHOT_API_KEY is not set — set it in the pipeline env (services/pipeline/.env.example) before llm-enrich can run");
     }
-    const baseURL = env.MOONSHOT_BASE_URL ?? "https://api.moonshot.ai/v1";
+    // `||`, not `??`: `.env.example` ships `MOONSHOT_BASE_URL=` blank on purpose, and
+    // `process.loadEnvFile` reads that as `""` — which is a URL nothing can parse, not an absence.
+    const baseURL = env.MOONSHOT_BASE_URL || "https://api.moonshot.ai/v1";
     const { createOpenAICompatible } = await import("@ai-sdk/openai-compatible");
     const provider = createOpenAICompatible({ name: "moonshot", baseURL, apiKey });
-    return { model: provider.chatModel(modelId), baseURL };
+    // Kimi models report `supports_reasoning: true` and think by DEFAULT, which is
+    // wrong for this workload twice over. Classifying ingredient lines against a
+    // fixed vocabulary is recall, not deduction, so the chain of thought buys no
+    // accuracy — and it is spent from the same `maxOutputTokens` budget as the
+    // answer, so a recipe long enough to be worth classifying returns EMPTY
+    // content, or nothing at all before the timeout. Measured against
+    // api.moonshot.ai on kimi-k2.6: ~8.2s and an empty `content` with reasoning
+    // on, ~0.9s and a correct answer with it off. `reasoningEffort` is the
+    // openai-compatible provider's own option and reaches the wire as
+    // `reasoning_effort`; "none" is the value Moonshot honors ("minimal" still
+    // thinks).
+    return { model: provider.chatModel(modelId), baseURL, providerOptions: { moonshot: { reasoningEffort: "none" } } };
   },
 };
 
@@ -95,6 +123,6 @@ export async function resolveProvider(env: ProviderEnv = process.env): Promise<R
         'set it to the current id from platform.moonshot.ai (e.g. "kimi-k2-0905-preview", verified against the platform, not hardcoded here)',
     );
   }
-  const { model, baseURL } = await factory(env, modelId);
-  return { providerName, modelId, baseURL, model };
+  const { model, baseURL, providerOptions } = await factory(env, modelId);
+  return { providerName, modelId, baseURL, model, providerOptions };
 }

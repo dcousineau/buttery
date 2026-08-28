@@ -19,6 +19,21 @@ import { consoleHost } from "#/lib/bullmq/hosts.ts";
  * can: `--dry-run` is `{"dryRun": true}` and `--label=hello` is
  * `{"label": "hello"}`.
  *
+ * `--step=<name>` is the one reserved flag: it never reaches the payload, and
+ * it starts the run at that step instead of the workflow's entry. A workflow
+ * whose later steps are reached by `ctx.enqueue` cannot be driven to them from
+ * here otherwise — `consoleHost`'s `enqueue` logs the intent and stops, on
+ * purpose — so testing one of those steps against one row meant a worker, a
+ * queue and a wait. This makes it a command:
+ *
+ *   pnpm --filter @buttery/pipeline run:once recipe-enrichment \
+ *     --step=llm-enrich --recipe-id=<uuid> --force
+ *
+ * The step still gets whatever its own guards demand of it — `llm-enrich` above
+ * still needs a current rules pass in `recipe_enrichment` and still consults
+ * the fail-closed gate — because starting mid-graph skips the enqueue, not the
+ * preconditions.
+ *
  * Redis is still required: steps take locks on it, and a sweep by hand must not
  * run alongside a scheduled one just because a person started it.
  *
@@ -30,8 +45,13 @@ import { consoleHost } from "#/lib/bullmq/hosts.ts";
 
 interface Invocation {
   workflow: string;
+  /** `--step=`, or undefined for the workflow's entry step. */
+  step?: string;
   payload: Record<string, unknown>;
 }
+
+/** Consumed by this file rather than passed through as payload. */
+const STEP_FLAG = "--step=";
 
 /** `--dry-run` → `dryRun: true`; `--max-repos=3` → `maxRepos: "3"`. */
 function toPayloadKey(flag: string): string {
@@ -42,13 +62,18 @@ function parseArgv(argv: string[]): Invocation | undefined {
   const workflow = argv.filter((arg) => !arg.startsWith("--"))[0];
   if (!workflow) return undefined;
 
+  let step: string | undefined;
   const payload: Record<string, unknown> = {};
   for (const arg of argv.filter((a) => a.startsWith("--"))) {
+    if (arg.startsWith(STEP_FLAG)) {
+      step = arg.slice(STEP_FLAG.length);
+      continue;
+    }
     const eq = arg.indexOf("=");
     if (eq === -1) payload[toPayloadKey(arg)] = true;
     else payload[toPayloadKey(arg.slice(0, eq))] = arg.slice(eq + 1);
   }
-  return { workflow, payload };
+  return { workflow, step, payload };
 }
 
 async function main(): Promise<void> {
@@ -63,7 +88,7 @@ async function main(): Promise<void> {
       {
         workflows: app.workflows.list().map((r) => r.spec.name),
       },
-      "usage: run-once <workflow> [--flag] [--flag=value]",
+      "usage: run-once <workflow> [--step=name] [--flag] [--flag=value]",
     );
     process.exitCode = 2;
     await app.close();
@@ -71,6 +96,14 @@ async function main(): Promise<void> {
   }
 
   const workflow = registration.workflow;
+
+  const entry = invocation.step ?? workflow.entry;
+  if (!workflow.steps.some((s) => s.name === entry)) {
+    app.log.error({ workflow: workflow.name, step: entry, steps: workflow.steps.map((s) => s.name) }, "no such step");
+    process.exitCode = 2;
+    await app.close();
+    return;
+  }
 
   // The last step to finish is the graph's outcome — the root of the flow the
   // entry step submitted, which finishes after everything it waited on. The
@@ -89,12 +122,12 @@ async function main(): Promise<void> {
     // The entry step returns before the graph it submitted has finished — the
     // children and the step waiting on them all completed inside that call. So
     // the entry's own value only counts when nothing deeper produced one.
-    if (step !== target.entry || outcome === undefined) outcome = { step, result };
+    if (step !== entry || outcome === undefined) outcome = { step, result };
     return result;
   };
 
   try {
-    await runStep(workflow, workflow.entry, invocation.payload, { values: [], failures: [] });
+    await runStep(workflow, entry, invocation.payload, { values: [], failures: [] });
     app.log.info({ workflow: workflow.name, step: outcome?.step, result: outcome?.result }, "run complete");
   } catch (err) {
     app.log.error({ workflow: workflow.name, err: String(err) }, "run failed");
