@@ -7,11 +7,11 @@ Railway autoscales on queue depth.
 
 One package, three entrypoints — two deployed, one for a shell:
 
-| Process                             | Entrypoint        | What it is                                                          |
-| ----------------------------------- | ----------------- | ------------------------------------------------------------------- |
-| `pipeline` (Railway service)        | `src/server.ts`   | Producer + Bull Board UI + the autoscaler loop. Never runs a job.   |
-| `pipeline-worker` (Railway service) | `src/worker.ts`   | One `Worker` per queue. No HTTP, no state — safe to add and remove. |
-| `run:once` / `sync:once`            | `src/run-once.ts` | One workflow, start to finish, in this process. Not deployed.       |
+| Process                             | Entrypoint            | What it is                                                          |
+| ----------------------------------- | --------------------- | ------------------------------------------------------------------- |
+| `pipeline` (Railway service)        | `src/server.ts`       | Producer + Bull Board UI + the autoscaler loop. Never runs a job.   |
+| `pipeline-worker` (Railway service) | `src/worker.ts`       | One `Worker` per queue. No HTTP, no state — safe to add and remove. |
+| `run:once` / `sync:once`            | `src/cli/run-once.ts` | One workflow, start to finish, in this process. Not deployed.       |
 
 They are split because the two things scale for different reasons. The board has
 to be up whenever someone wants to look at it, and exactly one of it is enough;
@@ -55,7 +55,7 @@ Each workflow lives in one folder under `src/workflows/`:
 src/workflows/
   define.ts             the kernel: what a workflow is, and what running one means
   hosts.ts              where a step reports to — a BullMQ job, or a terminal
-  index.ts              the registry: WORKFLOWS
+  demo/                 the smallest complete example: index.ts only
   demo/index.ts         the reference implementation, in one file
   atproto-sync/         a workflow with real code: steps.ts, plan.ts, types.ts, lib/
   recipe-enrichment/    the second one: index.ts, types.ts, lib/
@@ -63,12 +63,17 @@ src/workflows/
 
 ```ts
 // src/workflows/my-thing/index.ts
-export const myThing = defineWorkflow({
-  name: "my-thing",
-  description: "One line, shown in /workflows and /queues",
-  entry: "fetch",
-  steps: [fetchIt, transformOne, writeAll],
-});
+export default fp(
+  (fastify) => {
+    fastify.workflow({
+      name: "my-thing",
+      description: "One line, shown in /workflows and /queues",
+      entry: "fetch",
+      steps: [fetchIt, transformOne, writeAll],
+    });
+  },
+  { name: "workflow-my-thing", dependencies: ["workflow", "db"] },
+);
 
 const fetchIt: StepSpec = {
   name: "fetch",
@@ -84,11 +89,18 @@ const fetchIt: StepSpec = {
 };
 ```
 
-Add it to `WORKFLOWS` in [`src/workflows/index.ts`](src/workflows/index.ts) and
-you are done: the server builds a `Queue` so the board lists it and
-`POST /jobs/my-thing` works, the worker builds a `Worker` for it, the autoscaler
-starts counting its backlog, and `run:once my-thing` runs it from a shell.
-Nothing else in the service is queue-aware.
+There is nothing to add it to. `src/app.ts` autoloads every
+`src/workflows/*/index.ts`, so the file existing is the registration: the server
+builds a `Queue` so the board lists it and `POST /jobs/my-thing` works, the
+worker builds a `Worker` for it, the autoscaler starts counting its backlog, and
+`run:once my-thing` runs it from a shell. Nothing else in the service is
+queue-aware.
+
+Steps reach their dependencies through the enclosing plugin's `fastify` —
+`fastify.db`, `fastify.redis`, `fastify.posthog`, `fastify.ai` — rather than
+constructing their own. Whatever a step touches goes in the `dependencies`
+array, and the plugin owning a resource is what closes it on shutdown, so a
+workflow has no teardown of its own to write.
 
 ### One job per step
 
@@ -130,7 +142,7 @@ tail step waits on: `atproto-sync`'s `finalize` would sit in `waiting-children`
 until every enrichment it triggered had finished, holding the sweep's hour-TTL
 lock the whole time, and the next scheduled sweep would be skipped. A name that
 is not a registered workflow, or a step that workflow does not define, throws at
-the call — the same bargain `defineWorkflow` makes about its entry step, for the
+the call — the same bargain workflow registration makes about its entry step, for the
 same reason. Under `run:once` there is no queue and no fleet, so the console host
 logs the intent and skips: cross-workflow work is another workflow's run, and
 pretending otherwise would make `sync:once` quietly enrich the whole corpus on a

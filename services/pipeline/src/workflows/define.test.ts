@@ -1,6 +1,8 @@
-import type { FlowProducer, Job } from "bullmq";
+import type { FastifyInstance } from "fastify";
+import type { FlowProducer, Job, JobsOptions, Queue } from "bullmq";
 import type { Redis } from "ioredis";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { buildApp } from "#/app.ts";
 import { consoleHost, jobHost } from "#/lib/bullmq/hosts.ts";
 import { defineWorkflow, flowJobFor, type ChildResults, type EnqueueNode, type StepSpec, type Workflow, type WorkflowHost } from "#/lib/bullmq/kernel.ts";
 
@@ -214,11 +216,64 @@ describe("defineWorkflow", () => {
         await expect(host.enqueue("does-not-exist", {})).rejects.toThrow(/no workflow named "does-not-exist"/);
       });
 
-      // Coverage for a target workflow's own entry step and job options winning
-      // over the caller's used to live here, resolved through the module-level
-      // WORKFLOWS registry with `demo` as the fixture. That registry is being
-      // dissolved; the same behaviour is re-tested against the workflow
-      // plugin's own registrations once the lookup moves there.
+      // Resolved through `fastify.workflows` (see `plugins/workflow.ts`) now
+      // that the module-level WORKFLOWS registry this used to run against has
+      // been dissolved — `demo` (registered by `workflows/demo/index.ts`) is
+      // the fixture, same as before.
+      describe("resolved against a real fastify.workflow registration", () => {
+        let app: FastifyInstance;
+
+        beforeAll(async () => {
+          // Same stubbing as `app.test.ts`: syntactically valid but
+          // unreachable, so `plugins/env.ts` is satisfied and nothing here
+          // actually dials Redis or Postgres.
+          vi.stubEnv("REDIS_URL", "redis://127.0.0.1:1");
+          vi.stubEnv("DATABASE_URL", "postgres://pipeline:pipeline@127.0.0.1:1/none");
+          app = await buildApp("cli");
+          await app.ready();
+        });
+
+        afterAll(async () => {
+          await app?.close();
+          vi.unstubAllEnvs();
+        });
+
+        it("a target workflow's own entry step and job options win over the caller's", async () => {
+          const target = app.workflows.get("demo");
+          if (!target) throw new Error("expected the demo workflow to be registered");
+
+          // The caller has its own "start" step, under different job options —
+          // same name as demo's entry, on purpose: this is what would leak if
+          // `enqueue` resolved options against the CALLER's steps instead of
+          // the TARGET's.
+          const caller = defineWorkflow({
+            name: "caller",
+            description: "",
+            entry: "hand-off",
+            steps: [step("hand-off", () => Promise.resolve()), step("start", () => Promise.resolve(), { attempts: 999 })],
+          });
+
+          const calls: { name: string; opts: JobsOptions | undefined }[] = [];
+          const queue = {
+            add: (name: string, _data: unknown, opts?: JobsOptions) => {
+              calls.push({ name, opts });
+              return Promise.resolve();
+            },
+          } as unknown as Queue;
+
+          const host = jobHost(NO_JOB, caller, NO_FLOWS, new Map([["demo", queue]]), (name) => app.workflows.get(name)?.workflow);
+
+          // No `step` given, so the default has to come from somewhere — this
+          // is demo's own entry ("start"), not the caller's ("hand-off").
+          await host.enqueue("demo", {});
+
+          expect(calls).toHaveLength(1);
+          expect(calls[0].name).toBe("start");
+          // demo's own jobOptions for "start" (attempts: 1), not the caller's
+          // same-named "start" step (attempts: 999).
+          expect(calls[0].opts?.attempts).toBe(1);
+        });
+      });
     });
   });
 });

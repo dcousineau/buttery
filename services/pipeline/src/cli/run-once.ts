@@ -1,9 +1,7 @@
-import { loadConfig } from "#/config.ts";
+import { buildApp } from "#/app.ts";
 import { log, setLogRole } from "#/log.ts";
-import { closeRedis, getRedis } from "#/redis.ts";
 import type { ChildResults, Workflow } from "#/lib/bullmq/kernel.ts";
 import { consoleHost } from "#/lib/bullmq/hosts.ts";
-import { WORKFLOW_NAMES, findWorkflow } from "#/workflows/index.ts";
 
 setLogRole("cli");
 
@@ -26,6 +24,11 @@ setLogRole("cli");
  *
  * Redis is still required: steps take locks on it, and a sweep by hand must not
  * run alongside a scheduled one just because a person started it.
+ *
+ * `buildApp("cli")` registers every workflow the same way the server and the
+ * worker do, but `plugins/workflow.ts`'s `onReady` builds no `Worker`s and
+ * reconciles nothing for this role — the registry exists purely so this file
+ * can look a workflow up and run its kernel `Workflow.run` in-process.
  */
 
 interface Invocation {
@@ -53,15 +56,21 @@ function parseArgv(argv: string[]): Invocation | undefined {
 
 async function main(): Promise<void> {
   const invocation = parseArgv(process.argv.slice(2));
-  const workflow = invocation ? findWorkflow(invocation.workflow) : undefined;
-  if (!invocation || !workflow) {
-    log.error("usage: run-once <workflow> [--flag] [--flag=value]", { workflows: WORKFLOW_NAMES });
+
+  const app = await buildApp("cli");
+  await app.ready();
+
+  const registration = invocation ? app.workflows.get(invocation.workflow) : undefined;
+  if (!invocation || !registration) {
+    log.error("usage: run-once <workflow> [--flag] [--flag=value]", {
+      workflows: app.workflows.list().map((r) => r.spec.name),
+    });
     process.exitCode = 2;
+    await app.close();
     return;
   }
 
-  const config = loadConfig();
-  const redis = getRedis(config.redisUrl);
+  const workflow = registration.workflow;
 
   // The last step to finish is the graph's outcome — the root of the flow the
   // entry step submitted, which finishes after everything it waited on. The
@@ -74,8 +83,8 @@ async function main(): Promise<void> {
     const result = await target.run({
       step,
       payload,
-      host: consoleHost({ workflow: target, runStep: (s, p, c) => runStep(target, s, p, c), concurrency: config.worker.concurrency }, children),
-      redis,
+      host: consoleHost({ workflow: target, runStep: (s, p, c) => runStep(target, s, p, c), concurrency: app.env.PIPELINE_WORKER_CONCURRENCY }, children),
+      redis: app.redis,
     });
     // The entry step returns before the graph it submitted has finished — the
     // children and the step waiting on them all completed inside that call. So
@@ -91,10 +100,7 @@ async function main(): Promise<void> {
     log.error("run failed", { workflow: workflow.name, err: String(err) });
     process.exitCode = 1;
   } finally {
-    // Both MUST happen or the process never exits: a pg pool and a Redis socket
-    // each keep the event loop alive on their own.
-    await workflow.close?.();
-    await closeRedis();
+    await app.close();
   }
 }
 
