@@ -208,6 +208,9 @@ importers:
       '@buttery/recipe-schemas':
         specifier: workspace:*
         version: link:../../packages/recipe-schemas
+      '@fastify/autoload':
+        specifier: ^6.5.0
+        version: 6.5.0
       '@fastify/basic-auth':
         specifier: ^6.3.0
         version: 6.3.0
@@ -229,6 +232,9 @@ importers:
       fastify:
         specifier: ^5.12.1
         version: 5.12.1
+      fastify-plugin:
+        specifier: ^6.0.0
+        version: 6.0.0
       ioredis:
         specifier: ^6.0.0
         version: 6.0.0(supports-color@10.2.2)
@@ -2378,6 +2384,9 @@ packages:
 
   '@fastify/ajv-compiler@4.0.6':
     resolution: {integrity: sha512-NtuzM0SfaMJbGlnjr9LWQUN5LzgSrbB8tf/wRZNas+4E1O/Nmzl53e7ruT61HDZyRCJGC6FxIogmNZO1c5ETBA==}
+
+  '@fastify/autoload@6.5.0':
+    resolution: {integrity: sha512-JkjNcIia6PW1EhHLhAbI4vR6sO++8dW7hBwkcZ/p3ewBTQzrjyPXvQ0ChaUpkd+3/wNqg7W6GLsc0Az+KpW0Qw==}
 
   '@fastify/basic-auth@6.3.0':
     resolution: {integrity: sha512-Yohe3nQ8J3xtYXoryDwrVj1bYEJRq+kNPU1Sdv7w0Nh45JyyflVpCttyfzioc/JnHJ/i0CKpVwW2K+5fGMW/pQ==}
@@ -14173,6 +14182,8 @@ snapshots:
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       fast-uri: 4.1.2
+
+  '@fastify/autoload@6.5.0': {}
 
   '@fastify/basic-auth@6.3.0':
     dependencies:

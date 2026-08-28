@@ -175,44 +175,125 @@ module-global logger.
   they read `process.env` lazily, after `.env` load. With `fastify.env` parsed at boot before any workflow
   registers, they can become plain values. Make them plain values.
 
-## 5. Phases — each ends at a green `pnpm typecheck && pnpm test`
+## 5. Steps — each ends at a green `pnpm typecheck && pnpm test`, one agent each
 
-**Phase 1 — infrastructure plugins.** `app.ts`, `plugins/{env,health,redis,db,posthog,ai}.ts`,
-`src/lib/ai/*`. Rewrite `server.ts` and `worker.ts` as role bootstraps. The workflow kernel still works the
-old way in this phase, bridged: `defineWorkflow` stays, but its consumers read `fastify.db` / `fastify.redis`
-instead of the deleted singletons. Delete `src/config.ts`, `src/env.ts`, `src/redis.ts`, both
-`workflows/*/lib/db.ts`.
+Revised after two agents were killed on the original ordering. The original Phase 1 deleted the resource
+singletons and told consumers to read `fastify.db` — but the consumers are step `run()` bodies declared at
+module scope, with no `fastify` in scope until `plugins/workflow.ts` turns each workflow into a plugin.
+That made the first phase unsolvable, and an agent with no valid solution reads the whole tree looking for
+the missing piece (69 reads / 0 writes, most files read twice after compaction). Recorded as
+`def-b0175c482231` and `d-2ebd74a9`.
 
-This phase also absorbs the separately-requested extraction: `capture.ts`, `provider.ts`, `prompt-fetch.ts`
-and `modelRawText` move out of `workflows/recipe-enrichment/lib/` into `src/lib/ai/`, behind
-`fastify.ai`. What stays workflow-owned is anything that knows what a recipe is: the
-`captureGeneration`/`captureGenerationFailure` wrappers, the disagreement event, `AI_FEATURE`,
-`PROMPT_NAME`, `LLM_ENRICHMENT_FLAG`, `buildRecipeJson`, `merge.ts`, `schema.ts`, `prompt.ts`,
-`classify.ts`, `classifiers/`, `load.ts`.
+The fix is to make every step additive. Nothing is deleted until the thing that replaces it has a working
+consumer.
 
-`provider.ts` reads `LLM_ENRICHMENT_MODEL`, `LLM_ENRICHMENT_PROVIDER` and `MOONSHOT_API_KEY` — names that
-are workflow-specific for a now-generic module. **Keep the names.** Renaming them is a Railway environment
-change, out of scope here. Leave a one-line note.
+**S1 — write the plugins, wire nothing.** `plugins/{health,redis,db,posthog,ai}.ts`, each `fp(fn, {name,
+dependencies})`, each decorating and each with its own teardown hook. `plugins/env.ts` already exists and
+is the house-style reference. No caller changes, no deletions: the old singletons stay exactly where they
+are and keep serving every current consumer. Pure addition, so the tree cannot go red.
 
-**Phase 2 — the workflow plugin.** `plugins/workflow.ts` (`fastify.workflow(spec)`), `src/lib/bullmq/*`,
-autoload of `src/workflows/`. Convert all three workflow modules to plugins. Delete `src/workflows/define.ts`,
-`hosts.ts`, `index.ts`, `src/queues.ts`, `src/reconcile.ts`. Move `board.ts` and `autoscale.ts` into plugins.
-Rewrite `run-once.ts` as `src/cli/run-once.ts`.
+**S1a — PostHog owns prompts, not `ai`.** S1 landed the five plugins with `fastify.posthog: PostHog | null`
+and put prompt fetching on `fastify.ai`. That split is wrong: a `Prompts` client is a PostHog client. It
+takes PostHog credentials, talks to a PostHog host, and its only reason to sit under `ai` was that
+`llm-enrich` happens to be the caller. Move it.
 
-**Phase 3 — the backfill CLI.** `src/cli/backfill.ts`, role `cli`. Consumes the `claimBatch` /
-`claimLlmBatch` SQL that already exists in `workflows/recipe-enrichment/lib/load.ts` (kept deliberately when
-the backfill _steps_ were deleted). Claims a batch, adds N plain jobs to the queue with the deterministic
-job ids (`enrichJobId` / `llmEnrichJobId`), prints the counts, exits. No parent job, no report step.
+`plugins/posthog.ts` builds both clients and decorates one service object:
+
+```ts
+interface PostHogService {
+  client: PostHog | null; // event capture, ingestion host, project token
+  fetchPrompt(name: string, fallbackText: string): Promise<ResolvedPrompt>;
+}
+```
+
+The two credentials sit together on purpose, and the plugin doc must keep S1's explanation of why they
+differ: capture uses the PROJECT token against the INGESTION host (`POSTHOG_HOST`,
+`https://us.i.posthog.com`); `Prompts` uses a PERSONAL API key against the APP host
+(`POSTHOG_APP_HOST`, `https://us.posthog.com`), because prompt content is a workspace asset rather than an
+event. One plugin holding both is what makes that contrast legible instead of scattered.
+
+A plugin calling into `lib/` is fine and expected — the plugin owns construction and lifecycle, the lib
+file stays a pure function of its arguments (D0). So `buildPromptsClient` moves into the plugin, and the
+fetch itself keeps living in a lib module the plugin calls, renamed `lib/ai/prompt-fetch.ts` →
+`lib/posthog/prompt-fetch.ts` to match its actual subject. `fetchPrompt(client, name, fallbackText)` keeps
+its signature; the plugin binds the first argument.
+
+`plugins/ai.ts` then drops `fetchPrompt`, `buildPromptsClient`, and its `POSTHOG_*` env reads, and passes
+`fastify.posthog.client` where it currently passes `fastify.posthog`. Its `dependencies: ["env", "posthog"]`
+is unchanged.
+
+One defect to fix in the same pass: `lib/ai/capture.ts`'s `captureAiGeneration` is `async` and contains no
+`await` (oxlint flags it). The only `await` it ever had was `getClient()`, which the plugin deleted —
+`client.capture()` is synchronous fire-and-forget. Make it sync and let `AiService.captureGeneration`
+return `void`; `await` at the call sites stays harmless.
+
+**PostHog dissolves the same way the pool does (S3).** `workflows/recipe-enrichment/lib/posthog.ts` is the
+same shape as `lib/db.ts` — a memoized lazy singleton plus a `shutdown()` that only exists to feed
+`close:`. Once `plugins/posthog.ts` owns the client and its `onClose`, `getClient`, `clientInit`,
+`isEnabled` and `shutdown` all have nothing left to do. What survives is genuinely recipe-specific and
+moves into the workflow plugin's closure: `LLM_ENRICHMENT_FLAG`, the `LLM_ENRICHMENT_ENABLED` env override,
+and the fail-closed ordering those two encode (override first, so a dev loop never pays for a
+`$feature_flag_called` event per job; then no-client → `false`; then an explicit `true` serve → `true`).
+Keep that ordering comment verbatim — it is the reason the function reads the way it does.
+
+**S2 — the workflow plugin.** `plugins/workflow.ts` decorating `fastify.workflow(spec)`, plus the kernel
+moved to `src/lib/bullmq/{kernel,hosts,reconcile,backlog}.ts`. Modelled on the reference's `plugins/sqs.ts`:
+a Map of registrations, `onReady` starts workers or reconciles schedules by role, `preClose` drains,
+`onClose` closes. `defineWorkflow` still exists and still works — this step adds the second path, it does
+not remove the first.
+
+**S3 — workflows become plugins.** One at a time: `demo`, then `atproto-sync`, then `recipe-enrichment`.
+Each `index.ts` becomes a `FastifyPluginAsync` whose body calls `fastify.workflow({...})`. **This is the
+step that puts `fastify` in the closure of every step body**, so it is also where each workflow's
+`getPool()` becomes `fastify.db`, its `log` becomes `fastify.log`, and its `close:` disappears. Delete
+`src/workflows/*/lib/db.ts` and `src/redis.ts` only once their last caller is gone.
+
+**`WorkflowSpec.close` is deleted, not just emptied (S2/S3).** Counted before assuming: it has exactly two
+implementations and two call sites, and every one of them is resource teardown that a plugin's `onClose`
+now owns.
+
+|                                  |                                                          |
+| -------------------------------- | -------------------------------------------------------- |
+| `recipe-enrichment/index.ts:247` | `Promise.allSettled([closeDb(), shutdownPosthog()])`     |
+| `atproto-sync/index.ts:53`       | `close: closeDb`                                         |
+| `worker.ts:83`                   | `WORKFLOWS.map((w) => w.close?.() ?? Promise.resolve())` |
+| `run-once.ts:96`                 | `await workflow.close?.()`                               |
+
+So `close?: () => Promise<void>` comes out of `WorkflowSpec` and `Workflow` in the kernel
+(`define.ts:80`, `:111`, `:147`) rather than surviving as an optional hook nobody implements. A workflow
+does not own a connection any more, and leaving the seam open invites the next one to re-acquire one.
+
+One trap S3 must handle: `atproto-sync/steps.test.ts:33` does `vi.mock("#/workflows/atproto-sync/lib/db.ts",
+...)`. Deleting that module breaks the mock — repoint the test at whatever the step reads instead, and do
+not "fix" it by keeping the module alive.
+
+**S4 — the composition root.** `src/app.ts` with `@fastify/autoload` over `src/plugins/` and
+`src/workflows/`; `server.ts` / `worker.ts` become thin role bootstraps; `run-once.ts` moves to
+`src/cli/`. Delete `src/workflows/index.ts`, `define.ts`, `hosts.ts`, `src/queues.ts`, `src/reconcile.ts`,
+`src/config.ts`, `src/env.ts`.
+
+**S5 — the logger sweep.** `src/log.ts` deleted, 14 importers moved to `fastify.log` (D8). Held to its own
+step because it is mechanical, wide, and touches files every earlier step also touches.
+
+**S6 — Bull Board.** `plugins/board.ts`: the board, basic auth, `/workflows`, `/queues`,
+`POST /jobs/:queue`, lifted out of `server.ts`.
+
+**S7 — the backfill CLI.** `src/cli/backfill.ts`, role `cli`. Consumes the `claimBatch` / `claimLlmBatch`
+SQL already in `workflows/recipe-enrichment/lib/load.ts`, kept deliberately when the backfill _steps_ were
+deleted. Claims a batch, adds N plain jobs with the deterministic ids (`enrichJobId` / `llmEnrichJobId`),
+prints counts, exits. No parent job, no report step. Add the script to `package.json`:
 
 ```
 pnpm --filter @buttery/pipeline backfill [--llm] [--limit=N] [--force] [--local-only]
 ```
 
-Add the `backfill` script to `services/pipeline/package.json`.
+**S8 — docs.** `services/pipeline/README.md` and the pipeline bullets in the repo-root `AGENTS.md`. Keep
+AGENTS.md terse and roughly its current length.
 
-**Phase 4 — docs.** `services/pipeline/README.md` (architecture section, the folder tree, the workflow
-table, the backfill instructions) and the pipeline bullets in the repo-root `AGENTS.md`. Keep AGENTS.md's
-terse style and its current length.
+**Deferred, not scheduled: the autoscaler.** `src/autoscale.ts` stays exactly where it is and keeps working
+as it does today. It is a `setInterval` poll loop that the D0 rule says should become a plugin, and it
+still should — but it is self-contained, nothing else depends on its shape, and folding it in now only adds
+surface to a migration that has already been restarted twice. Pick it up once S1–S8 have landed.
 
 ## 6. Out of scope
 
