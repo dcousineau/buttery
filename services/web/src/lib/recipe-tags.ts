@@ -290,10 +290,23 @@ export function mergeRecipeTags(input: MergeRecipeTagsInput): RecipeTag[] {
   const out: RecipeTag[] = [];
   for (const tag of derived) {
     const normalized = normalizeForDedupe(tag.label);
-    // An allergen warning is never dropped for colliding with an author facet:
-    // the author declaring "Dairy-free" does not un-say the classifier finding
-    // milk, and silencing the warning is the wrong way to resolve that
-    // disagreement. Every other group defers to the author.
+    // A warning is never dropped by the dedupe; every other group defers to the
+    // author.
+    //
+    // Be honest about how narrow this is. Dedupe compares NORMALIZED DISPLAY
+    // TEXT, so it only fires when an author facet reads literally like an
+    // allergen warning — an author whose cuisine or category is the string
+    // "Contains milk". The tempting example (author declares "Dairy-free", the
+    // classifier finds milk) does NOT reach here at all: "dairyfree" and
+    // "containsmilk" do not collide, so both tags render regardless of this
+    // branch. That case is handled by the two labels simply being different
+    // text, not by this guard.
+    //
+    // So this has essentially no realistic subject, and it stays anyway,
+    // because the two directions are not symmetric: a spurious duplicate tag is
+    // cosmetic, and a silently swallowed allergen warning is the failure this
+    // whole feature exists to avoid. A guard that costs one comparison and
+    // whose absence could drop a warning is worth keeping even unfired.
     if (claimed.has(normalized) && tag.tone !== "warning") continue;
     claimed.add(normalized);
     out.push(tag);

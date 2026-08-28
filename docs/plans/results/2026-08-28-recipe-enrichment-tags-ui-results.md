@@ -37,12 +37,26 @@ in the database, the merge and the telemetry — it simply never crosses the wir
 
 ## Decisions taken while implementing
 
-**An allergen warning survives the author-wins dedupe.** The plan says the
-author wins on collision, so a derived duplicate never gets an AI icon over a
-fact a person wrote down — right for cuisine and diets. But an author declaring
-"Dairy-free" does not un-say the classifier finding milk, and silencing the
-warning is the wrong way to resolve that disagreement. Encoded as a tone check
-inside `mergeRecipeTags`, not a special case at a call site.
+**An allergen warning survives the author-wins dedupe — and the example that
+motivated it turned out to be wrong.** The guard is real (a `tone` check inside
+`mergeRecipeTags`, not a special case at a call site), but the case I first
+used to justify it does not reach it. Dedupe compares NORMALIZED DISPLAY TEXT,
+and an author's "Dairy-free" normalizes to `dairyfree` while the derived tag is
+`containsmilk` — they never collide, so both render with or without the guard.
+
+Caught by the agent writing the tests, which is exactly what a test pass is for:
+asserting "both render" on that pairing would have passed just as well against a
+completely broken dedupe. The suite uses a literal textual collision instead
+(an author `cookingMethod` of "Contains milk"), which actually exercises the
+branch.
+
+Counting instances honestly: for an allergen tag to collide with an author
+facet, the author would have to have typed a string that reads like a warning
+into their cuisine, category, cooking method or diet field. That is close to no
+realistic subject. The guard stays anyway, because the two directions are not
+symmetric — a spurious duplicate tag is cosmetic, and a silently swallowed
+allergen warning is the failure this whole feature exists to prevent. The source
+comment now says all of this rather than the tidier story that was wrong.
 
 **The server mapper applies no verdict policy.** `enrichmentTagLabels` passes
 every verdict through, including `not_detected`; only `mergeRecipeTags` drops
