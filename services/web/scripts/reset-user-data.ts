@@ -10,7 +10,7 @@
  * Onboarding — sign-in, household creation, the first-run flow — is only
  * honestly testable from zero. But "from zero" via `db:migrate:down`/`up` also
  * throws away the synced atproto corpus (~4k recipes at time of writing), which
- * costs a full `sync:once` sweep to rebuild and has nothing to do with the
+ * costs a full `sync:trigger` sweep to rebuild and has nothing to do with the
  * account being reset. So this deletes the account/household half of the schema
  * and deliberately leaves the network-index half alone.
  *

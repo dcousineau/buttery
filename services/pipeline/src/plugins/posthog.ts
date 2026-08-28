@@ -31,7 +31,7 @@ import { fetchPrompt, type PromptsClient, type ResolvedPrompt, PROMPT_CACHE_TTL_
  * unconfigured, unreachable, or too slow (see `lib/posthog/prompt-fetch.ts`).
  *
  * `posthog-node` is imported dynamically, and only when PostHog is actually
- * enabled, so that a process which never enables it (`run:once`, most local
+ * enabled, so that a process which never enables it (the trigger CLI, most local
  * dev, most tests) never pulls the dependency in — the same rule the source
  * module follows for the same reason. `@posthog/ai`'s `Prompts` has no such
  * gate today because it is a much lighter import; this plugin still only

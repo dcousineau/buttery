@@ -11,18 +11,18 @@
 export const RECIPE_ENRICHMENT_QUEUE = "recipe-enrichment";
 
 /** Classify one recipe with the rules classifier. The workflow's entry step. */
-export const ENRICH_STEP = "enrich";
+export const ENRICH_JOB = "enrich";
 
 /** Second opinion: ask an LLM to judge what the rules classifier missed. Flag-gated, fail-closed. */
-export const LLM_ENRICH_STEP = "llm-enrich";
+export const LLM_ENRICH_JOB = "llm-enrich";
 
 /** Every step name, in one frozen object, so neither side can drift from the other's spelling. */
-export const RECIPE_ENRICHMENT_STEPS = Object.freeze({
-  enrich: ENRICH_STEP,
-  llmEnrich: LLM_ENRICH_STEP,
+export const RECIPE_ENRICHMENT_JOBS = Object.freeze({
+  enrich: ENRICH_JOB,
+  llmEnrich: LLM_ENRICH_JOB,
 });
 
-export type RecipeEnrichmentStep = (typeof RECIPE_ENRICHMENT_STEPS)[keyof typeof RECIPE_ENRICHMENT_STEPS];
+export type RecipeEnrichmentJob = (typeof RECIPE_ENRICHMENT_JOBS)[keyof typeof RECIPE_ENRICHMENT_JOBS];
 
 /** Payload for the `enrich` step. */
 export interface EnrichPayload {

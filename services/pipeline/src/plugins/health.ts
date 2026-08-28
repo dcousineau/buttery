@@ -6,18 +6,17 @@ import fp from "fastify-plugin";
  * whether a deployment is healthy, and it has no credentials, so it stays
  * outside the board's basic-auth scope.
  *
- * The workflow names come from `fastify.workflows` (S4's registry), read at
- * request time — not at boot, so `dependencies: ["workflow"]` costs nothing
- * here even though the registry is only fully populated once the second
- * autoload pass (`src/workflows/`) has run, well after this plugin's own
- * registration.
+ * The queue names come from `fastify.bullmq`'s registry, read at REQUEST time
+ * — not at boot, which is what makes `dependencies: ["bullmq"]` cheap here
+ * even though the registry is only fully populated once the second autoload
+ * pass (`src/queues/`) has run, well after this plugin's own registration.
  */
 export default fp(
   (fastify) => {
     fastify.get("/health", () => ({
       status: "ok",
-      queues: fastify.workflows.list().map((registration) => registration.spec.name),
+      queues: fastify.bullmq.list().map((registration) => registration.options.name),
     }));
   },
-  { name: "health", dependencies: ["workflow"] },
+  { name: "health", dependencies: ["bullmq"] },
 );

@@ -2,35 +2,36 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
 import autoload from "@fastify/autoload";
-import type { PipelineRole } from "#/plugins/workflow.ts";
+import type { PipelineRole } from "#/plugins/bullmq.ts";
 import { setLogRole } from "#/lib/log.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Assembles the Fastify instance every entrypoint — `server.ts`, `worker.ts`,
- * `run-once.ts` — shares: configured, but not yet listening (that's each
+ * `cli/trigger.ts` — shares: configured, but not yet listening (that's each
  * entrypoint's own job, since only `server.ts` actually calls `.listen()`).
  *
  * Two `@fastify/autoload` calls, in this order, not one recursive autoload
  * over `src/`:
  *
  * 1. `src/plugins/` — `role` is passed through as every plugin's `opts`,
- *    since `plugins/workflow.ts` branches its `onReady` on it (build a
- *    `Worker` for "worker", reconcile schedules for "server", do neither for
+ *    since `plugins/bullmq.ts` branches its `onReady` on it (build a
+ *    `Worker` for "worker", reconcile schedulers for "server", do neither for
  *    "cli"). Cross-file ordering *within* this call (`env` before
- *    `redis`/`db`, both before `workflow`, ...) comes from each plugin's own
+ *    `redis`/`db`, both before `bullmq`, ...) comes from each plugin's own
  *    `fp(fn, { dependencies })` — autoload's `registerPlugin` resolves those
  *    by name, but only among plugins registered through the SAME autoload
  *    call's own plugin tree.
- * 2. `src/workflows/` — the workflow plugins, each calling
- *    `fastify.workflow({...})` from its own body.
+ * 2. `src/queues/` — one plugin per queue, each calling
+ *    `fastify.bullmq.queue({...})` and `fastify.bullmq.worker(...)` from its
+ *    own body.
  *
  * That's also why (2) has to happen strictly after (1) has fully booted, and
- * why each workflow plugin's `dependencies: ["workflow", ...]` (declared in
+ * why each queue plugin's `dependencies: ["bullmq", ...]` (declared in
  * its own file) is not enough on its own: a dependency name only resolves
- * within one autoload call's plugin tree, and `workflow` lives in the OTHER
- * one. What actually guarantees `fastify.workflow` exists before a workflow
+ * within one autoload call's plugin tree, and `bullmq` lives in the OTHER
+ * one. What actually guarantees `fastify.bullmq` exists before a queue
  * plugin body runs is avvio not starting to boot the second `register()`
  * call until the first has fully readied. The `dependencies` arrays still
  * earn their keep — they're what stops someone reordering *within* a call
@@ -77,15 +78,14 @@ export async function buildApp(role: PipelineRole): Promise<FastifyInstance> {
   });
 
   await app.register(autoload, {
-    dir: path.join(__dirname, "workflows"),
-    // `src/workflows/` recurses (autoload's default): without this filter,
-    // every module under a workflow's `lib/` directory and every
+    dir: path.join(__dirname, "queues"),
+    // `src/queues/` recurses (autoload's default): without this filter,
+    // every module under a queue's `lib/` directory and every
     // `*.test.ts` file that isn't shadowed by a sibling `index.ts` gets
     // treated as its own standalone plugin candidate the moment autoload
     // walks into a directory with no `index.ts` of its own (e.g. `lib/`).
     // Restricting to exactly one path segment plus `index.ts` keeps:
-    //   - `workflows/index.ts` itself out (zero path segments — that file
-    //     is the old `defineWorkflow` registry, not a Fastify plugin);
+    //   - a future `queues/index.ts` out (zero path segments);
     //   - `steps.ts`, `types.ts`, `plan.ts` and anything under `lib/` out
     //     (wrong filename, or too many path segments);
     //   - every `*.test.ts` out, including

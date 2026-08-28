@@ -11,8 +11,8 @@
     "start:worker": "node src/worker.ts",
     "dev": "node --watch src/server.ts",
     "dev:worker": "node --watch src/worker.ts",
-    "run:once": "node src/cli/run-once.ts",
-    "sync:once": "node src/cli/run-once.ts atproto-sync",
+    "trigger": "node src/cli/trigger.ts",
+    "sync:trigger": "node src/cli/trigger.ts atproto-sync",
     "test": "vitest run",
     "test:db": "vitest run --project db",
     "typecheck": "tsc --noEmit"

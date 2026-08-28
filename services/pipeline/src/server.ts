@@ -20,8 +20,7 @@ import { loadAutoscaleConfig } from "#/lib/railway/config.ts";
  *   GET  /health          unauthenticated — Railway's healthcheck target (plugins/health.ts)
  *   GET  /                redirect to the board
  *   GET  /ui              Bull Board                       (basic auth)
- *   GET  /workflows       the graphs this build can run       (basic auth)
- *   GET  /queues          job counts per queue as JSON     (basic auth)
+ *   GET  /queues          every registered queue, its jobs and its backlog (basic auth)
  *   GET  /autoscale       last autoscaler decision as JSON (basic auth)
  *   POST /jobs/:queue     enqueue one job                  (basic auth)
  */
@@ -42,7 +41,7 @@ function safeEqual(a: string, b: string): boolean {
 
 async function start(): Promise<void> {
   // `buildApp` autoloads `src/plugins/` (env, redis, db, workflow, health, ...)
-  // then `src/workflows/` — so by the time this call resolves, `app.workflows`
+  // then `src/queues/` — so by the time this call resolves, `app.bullmq`
   // is fully populated. Everything below is registered strictly after that,
   // and avvio's FIFO `register` queue is what keeps it boot-ordered after both
   // autoload passes even though nothing here awaits readiness directly — see
@@ -56,7 +55,7 @@ async function start(): Promise<void> {
 
   const serverAdapter = new FastifyAdapter();
   createBullBoard({
-    queues: app.workflows.list().map((registration) => new BullMQAdapter(registration.queue)),
+    queues: app.bullmq.list().map((registration) => new BullMQAdapter(registration.queue)),
     serverAdapter,
   });
   serverAdapter.setBasePath(BOARD_PATH);
@@ -65,7 +64,7 @@ async function start(): Promise<void> {
   const autoscaler = autoscaleConfig
     ? new Autoscaler(
         autoscaleConfig,
-        app.workflows.list().map((registration) => registration.queue),
+        app.bullmq.list().map((registration) => registration.queue),
         app.log,
       )
     : undefined;
@@ -94,47 +93,54 @@ async function start(): Promise<void> {
     // its own links from comes from `setBasePath` above.
     await scope.register(serverAdapter.registerPlugin(), { prefix: BOARD_PATH });
 
-    // What this build knows how to run, straight off the registry: the steps a
-    // workflow will move through and the schedule it is on. The board shows jobs;
-    // this shows the shape they will take before any of them exist.
-    scope.get("/workflows", () =>
-      app.workflows.list().map(({ spec }) => ({
-        name: spec.name,
-        description: spec.description,
-        entry: spec.entry,
-        steps: spec.steps,
-        schedule: spec.schedule ?? null,
-        maxInFlight: spec.globalConcurrency ?? null,
-      })),
-    );
-
+    // One endpoint, not two: what this build can run and what is currently
+    // queued are the same question now that a queue is the unit rather than a
+    // workflow graph. `GET /workflows` is gone with the engine that needed it —
+    // there is no graph to describe ahead of time, only named jobs a processor
+    // handles and whatever flows they choose to fan out at runtime.
     scope.get("/queues", async () => {
-      const registrations = app.workflows.list();
-      const snapshot = await readBacklog(registrations.map((registration) => registration.queue));
+      const registrations = app.bullmq.list();
+      const backlog = await readBacklog(registrations.map((registration) => registration.queue));
       return {
-        ...snapshot,
-        descriptions: Object.fromEntries(registrations.map((registration) => [registration.spec.name, registration.spec.description])),
+        ...backlog,
+        queues: registrations.map(({ options }) => ({
+          name: options.name,
+          description: options.description,
+          jobs: options.jobs,
+          defaultJob: options.defaultJob,
+          schedule: options.schedule ?? null,
+          maxInFlight: options.globalConcurrency ?? null,
+        })),
       };
     });
 
     scope.get("/autoscale", () => autoscaler?.state ?? DISABLED_STATE);
 
     scope.post<{ Params: { queue: string }; Body: { name?: string; data?: unknown } | undefined }>("/jobs/:queue", async (req, reply) => {
-      const registration = app.workflows.get(req.params.queue);
+      const registration = app.bullmq.get(req.params.queue);
       if (!registration) {
         return reply.status(404).send({ error: `unknown queue "${req.params.queue}"` });
       }
 
       const body = req.body ?? {};
-      // A job's name is the step it runs. Default to the graph's root; naming
-      // another step is how you re-run one by hand from the board's payload.
-      const job = await registration.queue.add(body.name ?? registration.spec.entry, body.data ?? {});
-      app.log.info({ queue: registration.spec.name, jobId: job.id, name: job.name }, "job enqueued");
-      return reply.status(202).send({ queue: registration.spec.name, jobId: job.id, name: job.name });
+      const name = body.name ?? registration.options.defaultJob;
+      // Rejected here rather than enqueued: a job whose name no processor
+      // handles would otherwise sit in the failed tab with an "unknown job"
+      // error, which is a worse way to learn you typed it wrong.
+      if (!registration.options.jobs.some((job) => job.name === name)) {
+        return reply.status(400).send({
+          error: `queue "${registration.options.name}" has no job "${name}"`,
+          jobs: registration.options.jobs.map((job) => job.name),
+        });
+      }
+
+      const job = await registration.queue.add(name, body.data ?? {});
+      app.log.info({ queue: registration.options.name, jobId: job.id, name: job.name }, "job enqueued");
+      return reply.status(202).send({ queue: registration.options.name, jobId: job.id, name: job.name });
     });
   });
 
-  // `plugins/workflow.ts`'s `onReady` hook reconciles schedules and global
+  // `plugins/bullmq.ts`'s `onReady` hook reconciles schedulers and global
   // concurrency for role "server" — it runs during `app.listen()` below, before
   // the port is bound. A boot that cannot reach Redis fails there, as a failed
   // deployment, not as a healthy service with no schedules.
@@ -142,7 +148,7 @@ async function start(): Promise<void> {
   app.log.info(
     {
       url: `http://${host}:${app.env.PORT}${BOARD_PATH}`,
-      queues: app.workflows.list().map((registration) => registration.spec.name),
+      queues: app.bullmq.list().map((registration) => registration.options.name),
       auth: auth ? "basic" : "none",
     },
     "pipeline server listening",

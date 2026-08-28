@@ -239,7 +239,7 @@ export default defineRailway((ctx) => {
       // --- workflow: recipe-enrichment, LLM second opinion --------------------
       // The `llm-enrich` step (services/pipeline/src/workflows/recipe-enrichment/
       // llm/). Read by the WORKER, which is the only process that ever calls a
-      // model — the same set is on `pipeline` so a `run:once` from that
+      // model — the same set is on `pipeline` so a job triggered from that
       // container behaves identically instead of silently skipping.
       //
       // FAIL-CLOSED, twice over. `LLM_ENRICHMENT_ENABLED` is left UNSET here on
@@ -339,7 +339,7 @@ export default defineRailway((ctx) => {
       // --- workflow: recipe-enrichment, LLM second opinion --------------------
       // The `llm-enrich` step (services/pipeline/src/workflows/recipe-enrichment/
       // llm/). Read by the WORKER, which is the only process that ever calls a
-      // model — the same set is on `pipeline` so a `run:once` from that
+      // model — the same set is on `pipeline` so a job triggered from that
       // container behaves identically instead of silently skipping.
       //
       // FAIL-CLOSED, twice over. `LLM_ENRICHMENT_ENABLED` is left UNSET here on
@@ -396,7 +396,7 @@ export default defineRailway((ctx) => {
   // needs `railway config apply --confirm-destructive`. Nothing is lost with it:
   // the service held no volume and no state, and its DATABASE_URL and RELAY_URL
   // moved to `pipeline-worker`. The sweep is still runnable by hand, now as
-  // `pnpm --filter @buttery/pipeline sync:once`.
+  // `pnpm --filter @buttery/pipeline sync:trigger`.
 
   return project("buttery", {
     resources: [db, cache, uploads, web, pipeline, pipelineWorker],
