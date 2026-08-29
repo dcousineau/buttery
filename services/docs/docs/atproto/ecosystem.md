@@ -36,7 +36,28 @@ living in atproto accounts, with no backend of its own.
 
 ## kich.io
 
-[kich.io](https://kich.io/) is a pantry and recipe app built on atproto. It
+[kich.io](https://kich.io/) is a pantry and recipe app built on atproto, by
+[@hipstersmoothie.com](https://bsky.app/profile/hipstersmoothie.com). It
 predates the publication of the `exchange.recipe` lexicon, so it doesn't use it —
 it's on our radar as a fellow atproto recipe app, not as an `exchange.recipe`
 interop target.
+
+## AtChef
+
+[AtChef](https://atchef.eu/) is a recipe-sharing app built on atproto — recipes
+live under each user's own handle (`atchef.eu/profile/<handle>/recipe/<id>`).
+It defines its own `eu.atchef.recipe` lexicon rather than using `exchange.recipe`.
+
+## Flour Blend Calculator
+
+[Flour Blend Calculator](https://bakery.minomobi.com/) is a narrower tool for
+bakers — it composes custom flour ratios, hydration, and dough settings — but it
+saves those blends as `exchange.recipe.recipe` records on your PDS, the same
+lexicon Buttery reads and writes.
+
+## Defluffit!
+
+[Defluffit!](https://defluffit.duplicake.fyi/) strips the life-story preamble out
+of recipe blog posts, leaving just the ingredients and steps, and saves the result
+to your PDS for sharing on Bluesky. Built by
+[@duplicake.fyi](https://bsky.app/profile/duplicake.fyi).
