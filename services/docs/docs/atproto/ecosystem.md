@@ -32,7 +32,8 @@ the network. It's created and maintained by
 ## arecipe.app
 
 [arecipe](https://arecipe.app/) is a recipe app that reads and writes recipes
-living in atproto accounts, with no backend of its own.
+living in atproto accounts, with no backend of its own. Created by
+[@chase523.bsky.social](https://bsky.app/profile/chase523.bsky.social).
 
 ## kich.io
 
