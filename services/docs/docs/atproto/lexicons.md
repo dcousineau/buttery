@@ -15,7 +15,9 @@ with you.
 
 This page is the reference for those record types: what fields exist, what they
 mean, and — the part worth reading twice — where the **published schema and the
-data you'll actually see on the network diverge**.
+data you'll actually see on the network diverge**. Buttery isn't the only app in
+this part of the atproto ecosystem — see the [ecosystem page](./ecosystem.md) for
+others, and which lexicons each one speaks.
 
 ## About this reference
 
