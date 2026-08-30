@@ -1,5 +1,6 @@
 import { z } from "zod";
 import fp from "fastify-plugin";
+import type { PipelineRole } from "#/plugins/bullmq.ts";
 
 /**
  * Environment parsing, service-wide (D2). Replaces `#/env.ts` (the
@@ -85,14 +86,28 @@ export type Env = z.infer<typeof schema> & {
   PRODUCTION: boolean;
 };
 
-function parseEnv(): Env {
+function parseEnv(role: PipelineRole): Env {
   const parsed = schema.parse(process.env);
   const production = parsed.NODE_ENV === "production";
 
   // The board exposes every job payload and lets a visitor retry, promote and
   // delete jobs, so it is never left open on a deployed service (was
   // `loadConfig`'s own check).
-  if (production && !parsed.PIPELINE_AUTH_PASSWORD) {
+  //
+  // ROLE-SCOPED, and that is the whole point: this is the SERVER's invariant,
+  // not the process's. All three roles parse the same environment, but only
+  // `server` mounts Bull Board — `worker` runs no HTTP listener at all and
+  // `cli` exits after one `queue.add`. Requiring a board password from them
+  // rejects a perfectly safe container over a UI it does not have, which is
+  // exactly what happened: `pipeline-worker` is deployed with
+  // NODE_ENV=production and deliberately without PIPELINE_AUTH_PASSWORD (it is
+  // declared only on `pipeline` — see .railway/railway.ts), so every replica
+  // crash-looped at boot and no queue was drained.
+  //
+  // It still fires before anything binds a port, because `env` has no
+  // dependencies and therefore loads first: an unauthenticated board is never
+  // reachable, not merely torn down shortly after becoming reachable.
+  if (role === "server" && production && !parsed.PIPELINE_AUTH_PASSWORD) {
     throw new Error("PIPELINE_AUTH_PASSWORD is required in production — the Bull Board UI must not be public");
   }
 
@@ -100,8 +115,11 @@ function parseEnv(): Env {
 }
 
 export default fp(
-  (fastify) => {
-    fastify.decorate("env", Object.freeze(parseEnv()));
+  (fastify, opts: { role?: PipelineRole }) => {
+    // `app.ts` passes `{ role }` as every plugin's options. Absent (a bare
+    // `register` in a test), assume the strictest role rather than the
+    // laxest — a missing option must not be a way to skip the check above.
+    fastify.decorate("env", Object.freeze(parseEnv(opts.role ?? "server")));
   },
   { name: "env" },
 );

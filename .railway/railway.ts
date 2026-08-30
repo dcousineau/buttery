@@ -197,6 +197,13 @@ export default defineRailway((ctx) => {
     healthcheck: "/health",
     env: {
       REDIS_URL: cache.env.REDIS_URL,
+      // Every role autoloads `plugins/db.ts`, and `plugins/env.ts` requires
+      // DATABASE_URL to be present for all of them — so the server needs it to
+      // boot even though it runs no jobs. Omitting it here (on the theory that
+      // only the fleet touches the recipe index) crashed `pipeline` at env
+      // parse. The pool itself is lazy: `new Pool()` opens no socket until
+      // something queries, so an idle server costs postgres nothing.
+      DATABASE_URL: db.env.DATABASE_URL,
       // Read by the service to require a board password and to bind 0.0.0.0.
       NODE_ENV: "production",
       PIPELINE_AUTH_USER: "buttery",
