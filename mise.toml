@@ -30,8 +30,9 @@ description = "Install Railway skills into this project"
 run = "railway skills install"
 
 # Create each service's .env from its .env.example (with a generated
-# BETTER_AUTH_SECRET for web) when it's missing: services/web and
-# services/atproto-cron-sync. Runs before `setup:mcp` in the postinstall hook so
+# BETTER_AUTH_SECRET for web and a SEPARATE ADMIN_BETTER_AUTH_SECRET for admin)
+# when it's missing: services/web, services/atproto-cron-sync and
+# services/admin. Runs before `setup:mcp` in the postinstall hook so
 # the render has a real DATABASE_URL to bake in rather than the example's
 # placeholder. Per-file no-op once a .env exists — it never overwrites.
 [tasks."setup:env"]

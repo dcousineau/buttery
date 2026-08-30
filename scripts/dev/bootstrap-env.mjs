@@ -43,7 +43,17 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 // Every service whose `.env.example` should be materialized. Add a service here
 // when it grows a `.env.example`; nothing else in the script is service-aware.
-const SERVICES = [join(root, "services", "web"), join(root, "services", "atproto-cron-sync")];
+const SERVICES = [join(root, "services", "web"), join(root, "services", "atproto-cron-sync"), join(root, "services", "admin")];
+
+// Blank values this script mints. Matched anchored to a line end, so a variable
+// that already carries a value in the example is left alone.
+//
+// `ADMIN_BETTER_AUTH_SECRET` is separate from the web's `BETTER_AUTH_SECRET`
+// deliberately, and each file gets its OWN random value: the backoffice admin
+// and the app must not be able to verify each other's session tokens (see
+// services/admin/src/lib/auth.ts). One shared secret would make their separate
+// tables decoration.
+const SECRET_VARS = ["BETTER_AUTH_SECRET", "ADMIN_BETTER_AUTH_SECRET"];
 
 let failed = false;
 
@@ -62,24 +72,39 @@ for (const serviceDir of SERVICES) {
 
   const example = readFileSync(examplePath, "utf8");
 
-  // The web example carries `BETTER_AUTH_SECRET=` with an empty value; fill it
-  // with the same thing `openssl rand -base64 32` would produce. Local-only and
-  // disposable — rotating it just signs everyone out of the dev server. An
-  // example without that line (the cron's) is copied through untouched.
-  const secret = randomBytes(32).toString("base64");
-  const filled = example.replace(/^BETTER_AUTH_SECRET=\s*$/m, `BETTER_AUTH_SECRET=${secret}`);
+  // Each example carries its secret variable with an empty value; fill it with
+  // the same thing `openssl rand -base64 32` would produce. Local-only and
+  // disposable — rotating one just signs everyone out of that dev server. An
+  // example with no such line (the cron's) is copied through untouched.
+  let filled = example;
+  const generated = [];
+  const unfilled = [];
 
-  if (filled === example && /^BETTER_AUTH_SECRET=/m.test(example)) {
-    // The line exists but already has a value, or the example changed shape.
+  for (const name of SECRET_VARS) {
+    const blank = new RegExp(`^${name}=\\s*$`, "m");
+    if (blank.test(filled)) {
+      // A fresh value per variable per file. Never reuse `secret` across two
+      // names — that is the one outcome this whole block exists to avoid.
+      filled = filled.replace(blank, `${name}=${randomBytes(32).toString("base64")}`);
+      generated.push(name);
+    } else if (new RegExp(`^${name}=`, "m").test(filled)) {
+      // The line exists but already has a value, or the example changed shape.
+      unfilled.push(name);
+    }
+  }
+
+  if (unfilled.length > 0 && generated.length === 0) {
     // Copy verbatim rather than silently writing a .env the server will reject,
     // and say what is left to do.
     copyFileSync(examplePath, envPath);
-    console.error(`bootstrap-env: wrote ${label} but left BETTER_AUTH_SECRET as-is — set one by hand (openssl rand -base64 32).`);
+    console.error(`bootstrap-env: wrote ${label} but left ${unfilled.join(", ")} as-is — set by hand (openssl rand -base64 32).`);
     continue;
   }
 
   writeFileSync(envPath, filled);
-  console.log(filled === example ? `bootstrap-env: created ${label} from .env.example.` : `bootstrap-env: created ${label} from .env.example with a generated BETTER_AUTH_SECRET.`);
+  console.log(
+    generated.length === 0 ? `bootstrap-env: created ${label} from .env.example.` : `bootstrap-env: created ${label} from .env.example with a generated ${generated.join(", ")}.`,
+  );
 }
 
 if (failed) process.exit(1);

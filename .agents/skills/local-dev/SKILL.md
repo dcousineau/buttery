@@ -6,7 +6,7 @@ user-invocable: true
 
 # Local dev stack
 
-Whole local app = **one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project**: docker-compose containers (postgres, redis), migrations, atproto dev-env, web server.
+Whole local app = **one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project**: docker-compose containers (postgres, redis), migrations, atproto dev-env, web server. Two more boot `Disabled` (opt-in, see below): `docs`, `admin`.
 
 Files — no search for them:
 
@@ -70,19 +70,30 @@ Two restarts have side effects:
 
 **Order matter**: restart → wait ready → clear both (AFTER boot noise) → trigger → read. Clear after request throw away evidence. Empty log prove nothing; when need proof capture boot + request together.
 
+## Opt-in processes: `docs`, `admin`
+
+Both defined in `process-compose.yaml` but boot `Disabled` — nothing in the app need them and each is a second bundler.
+
+| Process | Port | Start it                                                                      |
+| ------- | ---- | ----------------------------------------------------------------------------- |
+| `docs`  | 3001 | `pc_process_start` / `process-compose process start docs`, or `BUTTERY_DOCS_DISABLED=false pnpm dev` |
+| `admin` | 3100 | `pc_process_start` / `process-compose process start admin`, or `BUTTERY_ADMIN_DISABLED=false pnpm dev` |
+
+`admin` = backoffice (`services/admin`). Same database as web, own auth entirely (own `admin` postgres schema, own secret, cookie prefix `buttery-admin.*`). Sign in with an operator account — **not** `chef.test`; mint one with `pnpm --filter @buttery/admin admin:create --email … --password … --name …`. Depend on `migrate`, so its tables exist before it boot.
+
 ## A second web server on another port
 
-Only when truly need two app instances at once (e.g. compare branches). Stack keep 3000; second one need own port **and** matching URL vars, else atproto OAuth build redirects for wrong origin:
+Only when truly need two app instances at once (e.g. compare branches). Stack keep 3000; second one need own port **and** matching URL vars, else atproto OAuth build redirects for wrong origin. Use **3200**, not 3100 — `admin` own 3100:
 
 ```bash
-env PORT=3100 BETTER_AUTH_URL=http://127.0.0.1:3100 VITE_APP_URL=http://127.0.0.1:3100 \
-  pnpm --filter @buttery/web exec vite dev --port 3100
+env PORT=3200 BETTER_AUTH_URL=http://127.0.0.1:3200 VITE_APP_URL=http://127.0.0.1:3200 \
+  pnpm --filter @buttery/web exec vite dev --port 3200
 ```
 
 - `env VAR=…` prefix overrides the same keys in `services/web/.env` — `process.loadEnvFile()` (vite.config.ts) never clobbers a var already in the environment.
 - Bypass `pnpm dev:web`, which hardcode `--port 3000`. Also skip lexicon build; run `pnpm --filter @buttery/lexicons build` first if `src/generated` stale.
 - Both servers share one database. Not isolated.
-- Not supervised — `pc_*` tools can't see or stop it. Kill by hand (`pkill -f "vite dev --port 3100"`).
+- Not supervised — `pc_*` tools can't see or stop it. Kill by hand (`pkill -f "vite dev --port 3200"`).
 
 ## Signing in with a local fake account
 

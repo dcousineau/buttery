@@ -24,7 +24,7 @@ Before edit files for big task:
 
 ## Sensitive Areas
 
-- Generated, never hand-edit: `src/routeTree.gen.ts`, `src/db/types.ts` (kysely-codegen), `src/lexicons/**` (from `lexicons/*.json` via `pnpm lex:build`).
+- Generated, never hand-edit: `src/routeTree.gen.ts`, `src/db/types.ts` (kysely-codegen), `src/lexicons/**` (from `lexicons/*.json` via `pnpm lex:build`). Same two generated files exist in `services/admin/` — its `db/types.ts` include `admin` schema too, web one exclude it.
 - Generated, never hand-edit: `services/web/public/fonts/**` + `services/web/src/fonts.css`, `services/docs/static/fonts/**` + `services/docs/src/css/fonts.css`. Brand webfont vendored local, no Google CDN. Change weight or refresh → edit + run `scripts/update-fonts.sh`.
 - Generated, never hand-edit: `services/web/src/lib/grocery/lexicon.json` (from Open Food Facts taxonomy via `node scripts/build-food-lexicon.ts`). Edit `scripts/food-aisle-map.ts`, `scripts/food-staples.ts`, `scripts/food-synonyms.ts` instead, then re-run script. Bump `SOURCE_COMMIT` in build script + regenerated JSON land same commit. ODbL derived data — `lexicon.LICENSE.md` beside it travel with it.
 - `src/db/migrations/` — never edit applied migration; always add new one.
@@ -43,6 +43,8 @@ Before edit files for big task:
 ## Architecture Decisions
 
 - Atproto OAuth only sign-in (better-auth + custom plugin, DID = identity, synthetic email). Records go through `@atproto/lex` codegen — `@atproto/api` removed on purpose.
+- `services/admin` = backoffice, read-only, NOT deployed. Same database, own everything else: `admin` postgres schema, own better-auth tables (`admin_user`/`admin_session`/…), own `ADMIN_BETTER_AUTH_SECRET`, own cookie prefix `buttery-admin.*`. Cookie prefix load-bearing — cookies ignore port, 3000 and 3100 share one jar. Stock shadcn (new-york/neutral), NOT `docs/BRAND.md` — visual distance deliberate. Read `services/admin/README.md` before touch it.
+- Admin never "pick a winner" between local `recipe` row and atproto record. It show both, mark disagreement. That refusal is whole reason tool exist — app read path already resolve, and resolving is what hide the bug.
 - One shared Kysely instance, `getDb()` in `src/lib/db.ts`; better-auth use it too. Prefer query-builder primitives over raw `sql`. In server fns, `import` dynamic inside handler so `pg` stay out of client bundles.
 - srvx host prod, NOT nitro vite plugin — nitro-nightly output self-fetch and break.
 - No Twitter/X-specific meta, ever. Standards-based `og:*` only; every platform read OG. `og:url`/canonical emitted globally in `__root.tsx`, not from `seo()`.
@@ -56,12 +58,13 @@ Before edit files for big task:
 - Cloud session, `node --version` say v22 (not v26) → setup script no finish. Fix self, no wait: `ln -sf "$HOME/.local/share/mise/shims"/* "$HOME/.local/bin/"` (that dir already first on PATH). Stopgap = wrap command in `bash -lc '…'`. Same break hit `git commit` (husky hook).
 - Node older than 26 → pnpm refuse install (`devEngines.runtime`). Fix = `mise install`, no bypass. Bypass need it anyway: use transient `--runtime-on-fail=ignore`. NEVER `--config.runtime-on-fail=ignore` — that one write `onFail: "ignore"` into package.json.
 - Global element CSS MUST live in `@layer base` — unlayered rules beat Tailwind utilities. `cursor: pointer` counter-rule for Tailwind v4 preflight live there too; no remove it.
-- Browse dev at `http://127.0.0.1:3000`, never `localhost` — atproto forbid `.localhost` in web client_ids, so OAuth and session cookies bind to loopback.
+- Browse dev at `http://127.0.0.1:3000`, never `localhost` — atproto forbid `.localhost` in web client_ids, so OAuth and session cookies bind to loopback. Admin sit on `:3100`, opt-in: `BUTTERY_ADMIN_DISABLED=false pnpm dev`, or `process-compose process start admin`.
 - Type-aware oxlint need built lexicons. Fresh clone or CI: `pnpm --filter @buttery/lexicons build` before `pnpm lint`, else `src/generated` missing → every lexicon import `error`-typed → hundreds of phantom `no-unsafe-*`.
 - Recipe ids ARE atproto rkeys (`-`, `.`, `_`, `:`, `~`, up to 512 chars). Never shape-validate them; regex reject real ids. DB existence only truth.
 
 ## Workflow Rules
 
+- Admin migrations live in web service too, named `<timestamp>_admin_<description>`: `pnpm --filter @buttery/web db:migrate:new admin_<thing>`. They build `admin` schema; after `db:migrate:up` run `pnpm --filter @buttery/admin db:codegen` as well as web one. May move to own pathway later — the `admin_` sub-prefix is what make them greppable as group.
 - Migrations: `pnpm --filter @buttery/web db:migrate:new <snake_case_name>`, then edit generated file. **Never hand-name one** — kysely-ctl stamp `Date.now()`; hand-picked prefix drift ahead of clock, next generated file sort before applied one, Kysely reject as corrupted. Plan docs saying "prefix greater than X" wrong; run CLI.
 - Right after `db:migrate:up`, run `db:codegen` so `src/db/types.ts` match schema.
 - Local stack one singleton process-compose project — never start second dev server. Load `local-dev` skill before boot, tear down, restart, or inspect it; skill own the how (CLI vs `pc_*` MCP tools, config-reload traps, log reading).
