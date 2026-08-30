@@ -15,8 +15,10 @@ import { type Kysely, sql } from "kysely";
  *      Two extra columns the rules side has no analogue for: `llm_model`
  *      (which provider:model actually ran — the registry is env-selected,
  *      §6.1 of the plan) and `llm_prompt_version` (the PostHog Prompt
- *      Management version used, recorded but deliberately NOT part of the
- *      short-circuit — see the column's own comment below and plan §3.1).
+ *      Management version used — see the column's own comment below and plan
+ *      §3.1). Both were record-only when this migration landed; `isLlmFresh`
+ *      has since made them part of the `llm-enrich` short-circuit, so a model
+ *      swap or a newly released prompt re-runs unchanged recipes.
  *      A matching claim index supports `llm-backfill` the same way
  *      `recipe_enrichment_status_version_idx` supports the rules `backfill`.
  *

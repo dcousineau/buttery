@@ -222,3 +222,52 @@ describe("buildMessages — {{recipe_json}} substitution", () => {
     expect(messages[0]?.content).not.toContain(RECIPE_JSON_VARIABLE);
   });
 });
+
+/** The system turn's text. `ModelMessage["content"]` is a union; `buildMessages` always puts a plain string in this one. */
+function systemText(messages: ReturnType<typeof buildMessages>): string {
+  const content = messages[0]?.content;
+  if (typeof content !== "string") throw new Error(`expected a string system message, got ${typeof content}`);
+  return content;
+}
+
+describe("buildMessages — the other prompt variables", () => {
+  it("substitutes every supplied variable, each occurrence", () => {
+    const promptText = `allergens: {{allergen_slugs}}\ndiets: {{diet_slugs}}\nreminder, allergens again: {{allergen_slugs}}\n${RECIPE_JSON_VARIABLE}`;
+    const messages = buildMessages({
+      promptText,
+      recipeJson: "{}",
+      variables: { allergen_slugs: "milk, egg", diet_slugs: "vegan, keto" },
+    });
+
+    const system = systemText(messages);
+    expect(system).toContain("allergens: milk, egg");
+    expect(system).toContain("diets: vegan, keto");
+    expect(system).toContain("reminder, allergens again: milk, egg");
+    expect(system).not.toContain("{{allergen_slugs}}");
+  });
+
+  it("leaves an unknown variable untouched rather than throwing — a PostHog version may predate one we send", () => {
+    const promptText = `lists: {{allergen_slugs}} and {{invented_later}}\n${RECIPE_JSON_VARIABLE}`;
+    const messages = buildMessages({ promptText, recipeJson: "{}", variables: { allergen_slugs: "milk" } });
+    expect(systemText(messages)).toContain("lists: milk and {{invented_later}}");
+  });
+
+  it("still compiles a prompt that carries its slug lists inline and takes no variables", () => {
+    const promptText = `allergens: milk, egg\n${RECIPE_JSON_VARIABLE}`;
+    const messages = buildMessages({ promptText, recipeJson: "{}", variables: { allergen_slugs: "milk, egg" } });
+    expect(systemText(messages)).toBe("allergens: milk, egg\n{}");
+  });
+
+  it("does not re-substitute variable tokens that came in with the recipe JSON", () => {
+    // A recipe named `{{diet_slugs}}` must reach the model as those literal
+    // characters — the recipe payload is substituted last, precisely so a
+    // user-supplied name cannot expand into one of our lists.
+    const recipeJson = buildRecipeJson({ recipeName: "{{diet_slugs}}", lines: [], rulesLabels: [] });
+    const promptText = `diets: {{diet_slugs}}\n${RECIPE_JSON_VARIABLE}`;
+    const messages = buildMessages({ promptText, recipeJson, variables: { diet_slugs: "vegan, keto" } });
+
+    const system = systemText(messages);
+    expect(system).toContain("diets: vegan, keto");
+    expect(system).toContain('"name":"{{diet_slugs}}"');
+  });
+});

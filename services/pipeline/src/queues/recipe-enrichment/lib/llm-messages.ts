@@ -54,15 +54,20 @@ export function buildRecipeJson(input: BuildRecipeJsonInput): string {
   return JSON.stringify(payload);
 }
 
-/** The template variable `lib/prompt.ts`/`lib/prompt-fetch.ts` use. */
+/** The one template variable a prompt MUST carry — see {@link buildMessages}. */
 export const RECIPE_JSON_VARIABLE = "{{recipe_json}}";
+
+/** `foo` → `{{foo}}`, PostHog Prompt Management's interpolation syntax. */
+function variableToken(name: string): string {
+  return `{{${name}}}`;
+}
 
 /** The fixed trailing turn every call sends — never templated, never user-configurable. */
 const CLASSIFY_TRIGGER_MESSAGE = "Classify the recipe described above and return only the JSON object the system instructions specify.";
 
 /**
- * Compile `{{recipe_json}}` into `promptText` and shape the result into the
- * message array `generateText` takes.
+ * Compile a prompt's `{{...}}` variables into `promptText` and shape the
+ * result into the message array `generateText` takes.
  *
  * Two messages, not one: the AI SDK refuses a `system`-role message inside
  * `messages` unless the caller passes `allowSystemInMessages: true`, and
@@ -71,14 +76,31 @@ const CLASSIFY_TRIGGER_MESSAGE = "Classify the recipe described above and return
  * fixed, minimal user turn that exists only to satisfy that requirement;
  * `CLASSIFY_TRIGGER_MESSAGE` carries no recipe content of its own.
  *
+ * ── `recipeJson` is required; `variables` are not ─────────────────────────
  * Throws if `promptText` has no `{{recipe_json}}` occurrence — a prompt
- * missing the variable would silently ship with no ingredient list in it.
+ * missing THAT variable would silently ship with no ingredient list in it,
+ * which is a broken job, not a degraded one. Every other variable is
+ * best-effort by design: `promptText` usually comes from PostHog, where a
+ * published version predating a new variable is a normal state (it simply
+ * carries the list inline instead), and a version that never learned the
+ * variable must keep classifying rather than fail the queue. An unrecognized
+ * `{{...}}` left in the text is likewise passed through untouched.
+ *
+ * ── Substitution order is load-bearing ────────────────────────────────────
+ * `variables` are substituted first and `recipeJson` LAST, so nothing inside
+ * the recipe payload can be re-read as a variable token. Recipe names and
+ * ingredient lines are user-supplied; a recipe called `{{diet_slugs}}` must
+ * end up as those literal characters in the prompt, not as the diet list.
  */
-export function buildMessages(args: { promptText: string; recipeJson: string }): ModelMessage[] {
+export function buildMessages(args: { promptText: string; recipeJson: string; variables?: Readonly<Record<string, string>> }): ModelMessage[] {
   if (!args.promptText.includes(RECIPE_JSON_VARIABLE)) {
     throw new Error(`prompt text has no ${RECIPE_JSON_VARIABLE} occurrence — the model would receive no recipe data`);
   }
-  const compiled = args.promptText.replaceAll(RECIPE_JSON_VARIABLE, args.recipeJson);
+  let compiled = args.promptText;
+  for (const [name, value] of Object.entries(args.variables ?? {})) {
+    compiled = compiled.replaceAll(variableToken(name), value);
+  }
+  compiled = compiled.replaceAll(RECIPE_JSON_VARIABLE, args.recipeJson);
   return [
     { role: "system", content: compiled },
     { role: "user", content: CLASSIFY_TRIGGER_MESSAGE },

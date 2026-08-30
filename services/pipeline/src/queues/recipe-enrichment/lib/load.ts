@@ -162,6 +162,10 @@ export interface LlmEnrichmentState {
   llmStatus: string | null;
   llmVersion: number;
   llmInputHash: string | null;
+  /** `provider:model` of the run that wrote the current labels, e.g. `moonshot:kimi-k2-0905-preview`. `null` on a row no LLM run has completed. */
+  llmModel: string | null;
+  /** The PostHog prompt version that ran, or `null` when the code fallback text did. Both are inputs to {@link isLlmFresh}; see it for the asymmetry. */
+  llmPromptVersion: number | null;
 }
 
 /** The current `recipe_enrichment` row's rules AND LLM state, or `null` when this recipe has never been classified at all. */
@@ -173,7 +177,11 @@ export async function getLlmEnrichmentState(pool: Pool, recipeId: string): Promi
     llm_status: string | null;
     llm_version: number;
     llm_input_hash: string | null;
-  }>(`select status, input_hash, classifier_version, llm_status, llm_version, llm_input_hash from recipe_enrichment where recipe_id = $1`, [recipeId]);
+    llm_model: string | null;
+    llm_prompt_version: number | null;
+  }>(`select status, input_hash, classifier_version, llm_status, llm_version, llm_input_hash, llm_model, llm_prompt_version from recipe_enrichment where recipe_id = $1`, [
+    recipeId,
+  ]);
   const row = res.rows[0];
   return row
     ? {
@@ -183,6 +191,8 @@ export async function getLlmEnrichmentState(pool: Pool, recipeId: string): Promi
         llmStatus: row.llm_status,
         llmVersion: row.llm_version,
         llmInputHash: row.llm_input_hash,
+        llmModel: row.llm_model,
+        llmPromptVersion: row.llm_prompt_version,
       }
     : null;
 }
@@ -209,9 +219,46 @@ export function rulesPassCurrent(state: LlmEnrichmentState | null, inputHash: st
   return state !== null && state.status === "ok" && state.inputHash === inputHash && state.classifierVersion === classifierVersion;
 }
 
-/** The LLM pass already covers this content at this LLM version — `llm-enrich` may short-circuit. Prompt version is deliberately not part of this. */
-export function isLlmFresh(state: LlmEnrichmentState, inputHash: string, llmVersion: number, force: boolean): boolean {
-  return !force && state.llmStatus === "ok" && state.llmVersion === llmVersion && state.llmInputHash === inputHash;
+/** What is about to run, as far as the short-circuit is concerned: which model, and which prompt text. */
+export interface LlmRunIdentity {
+  /** `provider:model`, spelled exactly as `writeLlmEnrichment` stores it. */
+  model: string;
+  /** The PostHog prompt version that WOULD run, or `null` when the fetch degraded to the code fallback. */
+  promptVersion: number | null;
+}
+
+/**
+ * The LLM pass already covers this content, at this LLM version, from this
+ * model and this prompt — `llm-enrich` may short-circuit.
+ *
+ * `llmVersion`/`inputHash` are the "is the question still the same?" half.
+ * `run` is the "is the ANSWERER still the same?" half: a released prompt
+ * version or a swapped model is a different second opinion, and a recipe
+ * carrying the old one is stale even though nothing about the recipe changed.
+ *
+ * ── The two identity comparisons are deliberately NOT symmetric ────────────
+ * The model is compared plainly: `llm_model` is always known for a row whose
+ * `llm_status` is `'ok'` (`writeLlmEnrichment` writes both in one statement),
+ * so a difference — including a `null` on some row that predates that
+ * guarantee — is a real difference and re-running is the honest answer.
+ *
+ * The prompt version is compared ONLY when the current one is known. A `null`
+ * current version means the PostHog fetch degraded to the code fallback (no
+ * key, a timeout, PostHog down) — `prompt-fetch.ts` never throws, it
+ * substitutes text. Treating that unknown as "differs from stored" would turn
+ * every PostHog outage into a corpus-wide re-enrichment against the fallback
+ * text, and then a SECOND one when PostHog came back and the versions were
+ * knowable again. So an unknown current version cannot make a row stale; a
+ * known one that differs from the stored version (`null` stored included —
+ * that row was written by the fallback, and a real version supersedes it)
+ * can.
+ */
+export function isLlmFresh(state: LlmEnrichmentState, inputHash: string, llmVersion: number, run: LlmRunIdentity, force: boolean): boolean {
+  if (force) return false;
+  if (state.llmStatus !== "ok" || state.llmVersion !== llmVersion || state.llmInputHash !== inputHash) return false;
+  if (state.llmModel !== run.model) return false;
+  if (run.promptVersion !== null && state.llmPromptVersion !== run.promptVersion) return false;
+  return true;
 }
 
 // --- the write transaction -------------------------------------------------

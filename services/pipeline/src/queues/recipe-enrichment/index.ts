@@ -23,7 +23,7 @@ import {
 } from "#/queues/recipe-enrichment/lib/load.ts";
 import { LLM_ENRICHMENT_VERSION, llmOutputSchema } from "#/queues/recipe-enrichment/lib/schema.ts";
 import { isLlmEnrichmentEnabled } from "#/queues/recipe-enrichment/lib/posthog.ts";
-import { FALLBACK_PROMPT, PROMPT_NAME } from "#/queues/recipe-enrichment/lib/prompt.ts";
+import { FALLBACK_PROMPT, PROMPT_NAME, PROMPT_SLUG_LISTS } from "#/queues/recipe-enrichment/lib/prompt.ts";
 import { mergeLlmLabels } from "#/queues/recipe-enrichment/lib/merge.ts";
 import { AI_FEATURE, captureEnrichmentCompleted, captureEnrichmentFailed, PIPELINE_DISTINCT_ID } from "#/queues/recipe-enrichment/lib/capture.ts";
 import { generationTelemetry } from "#/lib/ai/telemetry.ts";
@@ -130,10 +130,25 @@ export async function runEnrich(fastify: FastifyInstance, queue: Queue, job: Job
       // the old engine's `ctx.enqueue(queueName, ...)` just had no way to say
       // "this queue" without a name lookup, so every handoff paid for one,
       // including this same-queue one. There is no indirection left to pay for.
+      // llmEnrichJobId makes duplicate triggers for one recipe collapse to one job.
+      const llmJobId = llmEnrichJobId(recipeId);
+
+      // ...which is exactly what `force` is asking us NOT to do. BullMQ's
+      // dedupe is not scoped to jobs still waiting: `add` silently returns the
+      // EXISTING job whenever that id is present anywhere, and
+      // `removeOnComplete: { count: 200 }` keeps the last llm-enrich for this
+      // recipe sitting in the completed set. Without this removal a forced
+      // re-run enqueues nothing, the worker never wakes, and the recipe looks
+      // "skipped" with no job and no log line to explain it. `remove` is a
+      // no-op on a missing id and refuses to remove a job that is currently
+      // active, both of which are the behavior we want here.
+      if (force) {
+        await queue.remove(llmJobId);
+      }
+
       await queue.add(LLM_ENRICH_JOB, { recipeId, force } satisfies LlmEnrichPayload, {
         ...LLM_ENRICH_JOB_OPTIONS,
-        // llmEnrichJobId makes duplicate triggers for one recipe collapse to one job.
-        jobId: llmEnrichJobId(recipeId),
+        jobId: llmJobId,
       });
     } catch (err) {
       fastify.log.warn({ recipeId, err: err instanceof Error ? err.message : String(err) }, "failed to enqueue llm-enrich");
@@ -184,7 +199,17 @@ export async function runLlmEnrich(fastify: FastifyInstance, job: Job): Promise<
     await job.log(`rules pass for ${recipeId} is missing or stale — skipped; the next enrich re-enqueues this`);
     return { status: "skipped" };
   }
-  if (isLlmFresh(state, inputHash, LLM_ENRICHMENT_VERSION, force)) {
+  // Resolved BEFORE the short-circuit, because they are now part of it: the
+  // stored labels are only fresh if the model and prompt that produced them
+  // are the ones that would run again (see `isLlmFresh`). Neither resolution
+  // is expensive enough to regret on a job that then skips — `fetchPrompt`
+  // serves from the SDK's TTL cache and never throws, and `resolveProvider`
+  // reads env and an already-imported module.
+  const prompt = await fastify.posthog.fetchPrompt(PROMPT_NAME, FALLBACK_PROMPT);
+  const provider = await fastify.ai.resolveProvider();
+  const llmModel = `${provider.providerName}:${provider.modelId}`;
+
+  if (isLlmFresh(state, inputHash, LLM_ENRICHMENT_VERSION, { model: llmModel, promptVersion: prompt.version }, force)) {
     return { status: "unchanged" };
   }
 
@@ -192,13 +217,15 @@ export async function runLlmEnrich(fastify: FastifyInstance, job: Job): Promise<
   const rulesLabels = classify({ recipeName: recipe.name, lines });
 
   const traceId = crypto.randomUUID();
-  const prompt = await fastify.posthog.fetchPrompt(PROMPT_NAME, FALLBACK_PROMPT);
-  const provider = await fastify.ai.resolveProvider();
   const recipeOrigin = recipe.origin === "local" ? "local" : "sync";
 
   try {
     const recipeJson = buildRecipeJson({ recipeName: recipe.name, lines, rulesLabels });
-    const messages = buildMessages({ promptText: prompt.text, recipeJson });
+    // The closed slug lists ride in as variables rather than being typed into
+    // the prompt text, so a `schema.ts` edit reaches the model on the next job
+    // whether the prompt came from PostHog or the code fallback — see
+    // `lib/prompt.ts`'s PROMPT_SLUG_LISTS.
+    const messages = buildMessages({ promptText: prompt.text, recipeJson, variables: PROMPT_SLUG_LISTS });
 
     const result = await generateText({
       model: provider.model,
@@ -258,12 +285,7 @@ export async function runLlmEnrich(fastify: FastifyInstance, job: Job): Promise<
       model: provider.modelId,
     });
 
-    await writeLlmEnrichment(
-      pool,
-      recipeId,
-      { llmVersion: LLM_ENRICHMENT_VERSION, llmInputHash: inputHash, llmModel: `${provider.providerName}:${provider.modelId}`, llmPromptVersion: prompt.version },
-      writes,
-    );
+    await writeLlmEnrichment(pool, recipeId, { llmVersion: LLM_ENRICHMENT_VERSION, llmInputHash: inputHash, llmModel, llmPromptVersion: prompt.version }, writes);
 
     // What the generation span could not carry, because it did not exist yet
     // when the span was created: the merge outcome. Same `$ai_trace_id`, so

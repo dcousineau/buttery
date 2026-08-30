@@ -454,6 +454,11 @@ describe.skipIf(!pool)("getLlmEnrichmentState", () => {
       llmStatus: "ok",
       llmVersion: 7,
       llmInputHash: "sha256:scope-v1",
+      // Who answered last time, which `isLlmFresh` compares against who would
+      // answer now — a released prompt version or a swapped model makes the
+      // stored labels stale on unchanged content.
+      llmModel: "mock:test-model",
+      llmPromptVersion: 3,
     });
   });
 });
