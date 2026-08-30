@@ -105,7 +105,7 @@ describe("allergen — §8 table row 2: no rules row, LLM says not_detected or o
 });
 
 describe("allergen — §8 table rows 3–4: rules `unknown` resolves in either direction", () => {
-  it("escalates: rules unknown, LLM says contains -> write replaces the unknown row, noting the replacement", () => {
+  it("escalates: rules unknown, LLM says contains -> write replaces the unknown row, carrying only the model's note", () => {
     const result = mergeLlmLabels({
       rulesLabels: [rulesLabel("allergen", "milk", "unknown", 0.4)],
       llm: llmOutput({ allergens: [{ slug: "milk", verdict: "contains", confidence: 0.85, ordinals: [], note: "labeled as containing dairy" }] }),
@@ -116,8 +116,7 @@ describe("allergen — §8 table rows 3–4: rules `unknown` resolves in either 
     const write = findWrite(result.writes, "allergen", "milk");
     expect(write.verdict).toBe("contains");
     expect(write.method).toBe(METHOD);
-    expect(write.evidence.note).toContain("labeled as containing dairy");
-    expect(write.evidence.note).toContain('replaces rules verdict "unknown"');
+    expect(write.evidence.note).toBe("labeled as containing dairy");
     expect(result.disagreements).toEqual([]);
   });
 
@@ -131,10 +130,10 @@ describe("allergen — §8 table rows 3–4: rules `unknown` resolves in either 
     });
     const write = findWrite(result.writes, "allergen", "sesame");
     expect(write.verdict).toBe("may_contain");
-    expect(write.evidence.note).toBe('replaces rules verdict "unknown"');
+    expect(write.evidence.note).toBeUndefined();
   });
 
-  it("resolves the other direction: rules unknown, LLM says not_detected -> a stored not_detected row, method llm, noting the replacement", () => {
+  it("resolves the other direction: rules unknown, LLM says not_detected -> a stored not_detected row, method llm", () => {
     const result = mergeLlmLabels({
       rulesLabels: [rulesLabel("allergen", "tree_nuts", "unknown", 0.4)],
       llm: llmOutput({ allergens: [{ slug: "tree_nuts", verdict: "not_detected", confidence: 0.75, ordinals: [], note: "no nut ingredients found" }] }),
@@ -145,8 +144,7 @@ describe("allergen — §8 table rows 3–4: rules `unknown` resolves in either 
     const write = findWrite(result.writes, "allergen", "tree_nuts");
     expect(write.verdict).toBe("not_detected");
     expect(write.method).toBe(METHOD);
-    expect(write.evidence.note).toContain("no nut ingredients found");
-    expect(write.evidence.note).toContain('replaces rules verdict "unknown"');
+    expect(write.evidence.note).toBe("no nut ingredients found");
     expect(result.disagreements).toEqual([]);
   });
 });
@@ -258,14 +256,13 @@ describe("diet — §8 table row 8: excluded is always the safe write", () => {
     const write = findWrite(result.writes, "diet", "gluten_free");
     expect(write.verdict).toBe("excluded");
     expect(write.method).toBe(METHOD);
-    expect(write.evidence.note).toContain("barley malt found");
-    expect(write.evidence.note).toContain(`replaces rules verdict "${rulesVerdict}"`);
+    expect(write.evidence.note).toBe("barley malt found");
     expect(result.disagreements).toEqual([]);
   });
 });
 
 describe("diet — §8 table row 9: likely is written only where rules had unknown or nothing", () => {
-  it("writes when the rules row was unknown, noting the replacement", () => {
+  it("writes when the rules row was unknown, with no note when the model gave none", () => {
     const result = mergeLlmLabels({
       rulesLabels: [rulesLabel("diet", "dairy_free", "unknown")],
       llm: llmOutput({ diets: [{ slug: "dairy_free", verdict: "likely", confidence: 0.6, ordinals: [], note: undefined }] }),
@@ -275,7 +272,7 @@ describe("diet — §8 table row 9: likely is written only where rules had unkno
     });
     const write = findWrite(result.writes, "diet", "dairy_free");
     expect(write.verdict).toBe("likely");
-    expect(write.evidence.note).toBe('replaces rules verdict "unknown"');
+    expect(write.evidence.note).toBeUndefined();
   });
 
   it("writes when there was no rules row at all", () => {

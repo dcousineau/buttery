@@ -70,9 +70,18 @@ import type { LlmAllergenJudgment, LlmDietJudgment, LlmOutput } from "@buttery/f
  * recipe does not actually have is dropped silently, never rejected — the
  * model hallucinating "line 12" on a nine-line recipe costs that one
  * evidence entry, not the verdict it was attached to (schema.ts makes the
- * same call for the same reason). On a row that REPLACES a rules verdict
- * (the PK-collision cases above), the note names the verdict it replaced —
- * composed with the model's own note rather than dropping either.
+ * same call for the same reason).
+ *
+ * `note` is the model's own note verbatim and nothing else. A row that
+ * REPLACES a rules verdict (the PK-collision cases above) does NOT say so in
+ * its note: the note is rendered to people reading a recipe, who have never
+ * heard of the rules classifier and cannot act on "replaces rules verdict
+ * \"unknown\"" except to be confused by it. The fact is not lost — `method`
+ * carries `llm:<provider>:<model>@vN`, which is what a developer or the dev
+ * panel reads to know the LLM owns the row. `prompt.ts` holds the model to
+ * the same line for the half of the note IT writes ("do not reference the
+ * rule you override"); this module must not then append what the prompt just
+ * forbade.
  *
  * ── CONFIDENCE CLAMPING ──────────────────────────────────────────────────
  *
@@ -157,14 +166,6 @@ function resolveOrdinals(ordinals: readonly number[], lines: readonly Classifier
   return resolved;
 }
 
-/** Compose the model's own note with a "replaces rules verdict X" note, without losing either. */
-function composeNote(modelNote: string | undefined, replacesVerdict: string | undefined): string | undefined {
-  const parts: string[] = [];
-  if (modelNote) parts.push(modelNote);
-  if (replacesVerdict !== undefined) parts.push(`replaces rules verdict "${replacesVerdict}"`);
-  return parts.length > 0 ? parts.join(" — ") : undefined;
-}
-
 /**
  * Assemble one LLM-authored `Label`. Every write in this module goes
  * through here, mirroring `lib/classifiers/shared.ts`'s `makeLabel` — the two
@@ -180,11 +181,10 @@ function makeLlmLabel(
   lines: readonly ClassifierLine[],
   method: string,
   modelNote: string | undefined,
-  replacesVerdict: string | undefined,
 ): Label {
   const evidence: Evidence = { rule: "llm", lines: resolveOrdinals(ordinals, lines) };
-  const note = composeNote(modelNote, replacesVerdict);
-  if (note !== undefined) evidence.note = note;
+  // The model's note, unembellished — see the module doc's EVIDENCE section.
+  if (modelNote) evidence.note = modelNote;
   return { dimension, slug, verdict, confidence: clampConfidence(confidence), method, evidence };
 }
 
@@ -216,7 +216,7 @@ function mergeAllergens(rulesLabels: readonly Label[], judgments: readonly LlmAl
       // sparse-labels note). The LLM may only escalate off that default, never
       // write a row that just restates it.
       if (judgment.verdict === "contains" || judgment.verdict === "may_contain") {
-        writes.push(makeLlmLabel("allergen", judgment.slug, judgment.verdict, judgment.confidence, judgment.ordinals, lines, method, judgment.note, undefined));
+        writes.push(makeLlmLabel("allergen", judgment.slug, judgment.verdict, judgment.confidence, judgment.ordinals, lines, method, judgment.note));
       }
       continue;
     }
@@ -226,7 +226,7 @@ function mergeAllergens(rulesLabels: readonly Label[], judgments: readonly LlmAl
       // whichever it is — is strictly more information than "unknown", so it
       // always replaces the rules row (this is one of the PK-collision cases
       // the module doc calls out).
-      writes.push(makeLlmLabel("allergen", judgment.slug, judgment.verdict, judgment.confidence, judgment.ordinals, lines, method, judgment.note, rulesVerdict));
+      writes.push(makeLlmLabel("allergen", judgment.slug, judgment.verdict, judgment.confidence, judgment.ordinals, lines, method, judgment.note));
       continue;
     }
 
@@ -235,7 +235,7 @@ function mergeAllergens(rulesLabels: readonly Label[], judgments: readonly LlmAl
     const rulesSeverity = ALLERGEN_SEVERITY[rulesVerdict];
     const llmSeverity = ALLERGEN_SEVERITY[judgment.verdict];
     if (llmSeverity > rulesSeverity) {
-      writes.push(makeLlmLabel("allergen", judgment.slug, judgment.verdict, judgment.confidence, judgment.ordinals, lines, method, judgment.note, undefined));
+      writes.push(makeLlmLabel("allergen", judgment.slug, judgment.verdict, judgment.confidence, judgment.ordinals, lines, method, judgment.note));
     } else if (llmSeverity < rulesSeverity) {
       disagreements.push({ dimension: "allergen", slug: judgment.slug, rulesVerdict, llmVerdict: judgment.verdict, llmConfidence: judgment.confidence });
     }
@@ -270,10 +270,8 @@ function mergeDiet(rulesLabels: readonly Label[], judgments: readonly LlmDietJud
     if (judgment.verdict === "excluded") {
       // Exclusion is the safe direction regardless of what the rules row said
       // (`likely`, `unknown`, or nothing — the macro/paleo-diet case, which
-      // never has a rules row at all). `rulesVerdict` here is undefined for a
-      // slug rules never touched, so `makeLlmLabel` composes no "replaces"
-      // note for it — correct, since there is nothing to replace.
-      writes.push(makeLlmLabel("diet", judgment.slug, "excluded", judgment.confidence, judgment.ordinals, lines, method, judgment.note, rulesVerdict));
+      // never has a rules row at all).
+      writes.push(makeLlmLabel("diet", judgment.slug, "excluded", judgment.confidence, judgment.ordinals, lines, method, judgment.note));
       continue;
     }
 
@@ -282,7 +280,7 @@ function mergeDiet(rulesLabels: readonly Label[], judgments: readonly LlmDietJud
     // writing over a rules `likely` with an LLM `likely` would be a byte-for-
     // byte-different row that claims the same thing, for no reader's benefit.
     if (rulesVerdict === undefined || rulesVerdict === "unknown") {
-      writes.push(makeLlmLabel("diet", judgment.slug, "likely", judgment.confidence, judgment.ordinals, lines, method, judgment.note, rulesVerdict));
+      writes.push(makeLlmLabel("diet", judgment.slug, "likely", judgment.confidence, judgment.ordinals, lines, method, judgment.note));
     }
   }
 
@@ -304,14 +302,14 @@ function capByConfidence<T extends { confidence: number }>(items: readonly T[], 
 }
 
 function mergeTagDimension(dimension: Dimension, items: readonly { slug: string; confidence: number }[], lines: readonly ClassifierLine[], method: string): Label[] {
-  return capByConfidence(items, TAG_CAP).map((item) => makeLlmLabel(dimension, item.slug, "likely", item.confidence, [], lines, method, undefined, undefined));
+  return capByConfidence(items, TAG_CAP).map((item) => makeLlmLabel(dimension, item.slug, "likely", item.confidence, [], lines, method, undefined));
 }
 
 // --- spice_level (LLM-owned, at most one row) ----------------------------
 
 function mergeSpiceLevel(spiceLevel: LlmOutput["spiceLevel"], lines: readonly ClassifierLine[], method: string): Label[] {
   if (!spiceLevel) return [];
-  return [makeLlmLabel("spice_level", spiceLevel.slug, "likely", spiceLevel.confidence, [], lines, method, undefined, undefined)];
+  return [makeLlmLabel("spice_level", spiceLevel.slug, "likely", spiceLevel.confidence, [], lines, method, undefined)];
 }
 
 // --- ordering (module doc's "DETERMINISTIC ORDERING") -------------------
