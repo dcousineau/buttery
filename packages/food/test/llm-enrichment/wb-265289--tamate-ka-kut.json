@@ -1,0 +1,220 @@
+{
+  "recipeId": "wb-265289",
+  "recipeName": "Tamate Ka Kut (Hyderabadi Tomato Curry)",
+  "origin": "sync",
+  "prompt": {
+    "name": "recipe-llm-enrichment",
+    "source": "code_fallback",
+    "version": null
+  },
+  "versions": {
+    "classifier": 2,
+    "llm": 1
+  },
+  "recipeJsonSha256": "5e48c83622c1ac13f478f9ff0e5d51b51ddd94d680ceb00a41f900226a7f494d",
+  "input": {
+    "name": "Tamate Ka Kut (Hyderabadi Tomato Curry)",
+    "ingredients": [
+      {
+        "ordinal": 0,
+        "text": "10 large, ripe tomatoes, washed and quartered"
+      },
+      {
+        "ordinal": 1,
+        "text": "⅓ cup besan/gram flour"
+      },
+      {
+        "ordinal": 2,
+        "text": "1½ tsp salt"
+      },
+      {
+        "ordinal": 3,
+        "text": "1½ tsp red chilli powder"
+      },
+      {
+        "ordinal": 4,
+        "text": "1 tsp roasted cumin seed powder"
+      },
+      {
+        "ordinal": 5,
+        "text": "1 tsp roasted coriander seed powder"
+      },
+      {
+        "ordinal": 6,
+        "text": "2 tbsp oil"
+      },
+      {
+        "ordinal": 7,
+        "text": "1 tsp cumin seeds (zeera)"
+      },
+      {
+        "ordinal": 8,
+        "text": "8 curry leaves (karyapaak)"
+      },
+      {
+        "ordinal": 9,
+        "text": "2 whole garlic clove (lahsun), crushed"
+      },
+      {
+        "ordinal": 10,
+        "text": "2 dried red chillies, each split into two"
+      },
+      {
+        "ordinal": 11,
+        "text": "1 cup fresh cilantro (kothmir), finely chopped"
+      },
+      {
+        "ordinal": 12,
+        "text": "Fresh mint (pudina)"
+      },
+      {
+        "ordinal": 13,
+        "text": "1 dollop heavy cream (optional) (optional)"
+      },
+      {
+        "ordinal": 14,
+        "text": "4 hard boiled eggs"
+      }
+    ],
+    "rulesLabels": [
+      {
+        "dimension": "allergen",
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "allergen",
+        "slug": "egg",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegetarian",
+        "verdict": "unknown",
+        "confidence": 0.3
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "pescatarian",
+        "verdict": "likely",
+        "confidence": 0.7
+      },
+      {
+        "dimension": "diet",
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "gluten_free",
+        "verdict": "likely",
+        "confidence": 0.7
+      }
+    ]
+  },
+  "expected": {
+    "allergens": [
+      {
+        "slug": "egg",
+        "verdict": "contains",
+        "confidence": 0.95,
+        "ordinals": [14],
+        "note": "hard boiled eggs are a listed component"
+      },
+      {
+        "slug": "milk",
+        "verdict": "may_contain",
+        "confidence": 0.6,
+        "ordinals": [13],
+        "note": "heavy cream is marked optional, so the dish may be made with or without dairy"
+      },
+      {
+        "slug": "wheat",
+        "verdict": "may_contain",
+        "confidence": 0.3,
+        "ordinals": [1],
+        "note": "besan is chickpea flour, but it is often milled where wheat flour is handled"
+      },
+      {
+        "slug": "gluten",
+        "verdict": "may_contain",
+        "confidence": 0.3,
+        "ordinals": [1],
+        "note": "no gluten grain is listed; besan carries cross-contact risk"
+      }
+    ],
+    "diets": [
+      {
+        "slug": "vegetarian",
+        "verdict": "likely",
+        "confidence": 0.85,
+        "ordinals": [13, 14],
+        "note": "egg and cream are the only animal products; both fit lacto-ovo vegetarian"
+      },
+      {
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [13, 14],
+        "note": "eggs, plus cream when used"
+      },
+      {
+        "slug": "pescatarian",
+        "verdict": "likely",
+        "confidence": 0.8,
+        "ordinals": [13, 14],
+        "note": "no meat; egg and dairy are permitted"
+      },
+      {
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [13],
+        "note": "cream is optional, so omitting it removes the only dairy line"
+      },
+      {
+        "slug": "gluten_free",
+        "verdict": "likely",
+        "confidence": 0.6,
+        "ordinals": [1],
+        "note": "besan is chickpea flour; no wheat-based ingredient is listed"
+      },
+      {
+        "slug": "paleo",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [1, 13],
+        "note": "legume flour and cream fall outside paleo"
+      }
+    ],
+    "cuisine": [
+      {
+        "slug": "indian",
+        "confidence": 0.95
+      }
+    ],
+    "mealType": [
+      {
+        "slug": "dinner",
+        "confidence": 0.8
+      },
+      {
+        "slug": "lunch",
+        "confidence": 0.6
+      }
+    ],
+    "spiceLevel": {
+      "slug": "medium",
+      "confidence": 0.7
+    }
+  }
+}

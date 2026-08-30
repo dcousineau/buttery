@@ -86,7 +86,7 @@ Re-run `records`, assert name appears and `COUNT` incremented. Seeder writes sam
 DID=$(pnpm -s --filter @buttery/atproto-dev-env records | sed -n 's/^DID //p')
 railway run --service buttery -- env \
   ATPROTO_PLC_URL=http://localhost:2582 SYNC_ONLY_DID="$DID" \
-  pnpm --filter=@buttery/pipeline sync:once
+  pnpm --filter=@buttery/pipeline sync:trigger
 ```
 
 Check row via `postgres` MCP (`mcp__postgres__execute_sql`).

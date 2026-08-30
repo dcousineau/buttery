@@ -15,6 +15,10 @@ import type { RecipeDetailData } from "#/server/recipes";
 function recipe(overrides: Partial<RecipeDetailData> = {}): RecipeDetailData {
   return {
     id: "3lb2xyz",
+    // The OG card is built from author fields only; enrichment is on the type
+    // because the route loader always supplies it, not because this renderer
+    // reads it.
+    enrichment: null,
     name: "Brown butter chocolate chip cookies",
     description: "Nutty, chewy, and worth the extra pan you have to wash.",
     publishedAt: "2026-01-02T03:04:05.000Z",

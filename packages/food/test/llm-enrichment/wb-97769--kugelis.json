@@ -1,0 +1,236 @@
+{
+  "recipeId": "wb-97769",
+  "recipeName": "Kugelis (Lithuanian Baked Potato Pudding)",
+  "origin": "sync",
+  "prompt": {
+    "name": "recipe-llm-enrichment",
+    "source": "code_fallback",
+    "version": null
+  },
+  "versions": {
+    "classifier": 2,
+    "llm": 1
+  },
+  "recipeJsonSha256": "9bf992105d52f2381c6d7ee18852b9705160eab645a3efb760d9ebe736db8061",
+  "input": {
+    "name": "Kugelis (Lithuanian Baked Potato Pudding)",
+    "ingredients": [
+      {
+        "ordinal": 0,
+        "text": "5 lb potatoes, peeled and grated (or ground with a food processor)"
+      },
+      {
+        "ordinal": 1,
+        "text": "2 medium onions, grated"
+      },
+      {
+        "ordinal": 2,
+        "text": "1 lb bacon, fried and crumbled (reserve about ¼ cup drippings)"
+      },
+      {
+        "ordinal": 3,
+        "text": "1 stick (8 tbsp) butter, melted"
+      },
+      {
+        "ordinal": 4,
+        "text": "6 eggs"
+      },
+      {
+        "ordinal": 5,
+        "text": "1 large can evaporated milk"
+      },
+      {
+        "ordinal": 6,
+        "text": "4 tsp salt"
+      },
+      {
+        "ordinal": 7,
+        "text": "Pepper to taste (about 1 tsp)"
+      }
+    ],
+    "rulesLabels": [
+      {
+        "dimension": "allergen",
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "allergen",
+        "slug": "egg",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegetarian",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "pescatarian",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "gluten_free",
+        "verdict": "likely",
+        "confidence": 0.7
+      },
+      {
+        "dimension": "diet",
+        "slug": "halal",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "kosher",
+        "verdict": "excluded",
+        "confidence": 0.9
+      }
+    ]
+  },
+  "expected": {
+    "allergens": [
+      {
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.98,
+        "ordinals": [3, 5],
+        "note": "melted butter and evaporated milk."
+      },
+      {
+        "slug": "egg",
+        "verdict": "contains",
+        "confidence": 0.98,
+        "ordinals": [4],
+        "note": "6 whole eggs."
+      }
+    ],
+    "diets": [
+      {
+        "slug": "vegetarian",
+        "verdict": "excluded",
+        "confidence": 0.97,
+        "ordinals": [2],
+        "note": "bacon is pork."
+      },
+      {
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.98,
+        "ordinals": [2, 3, 4, 5],
+        "note": "pork, butter, eggs, evaporated milk."
+      },
+      {
+        "slug": "pescatarian",
+        "verdict": "excluded",
+        "confidence": 0.97,
+        "ordinals": [2],
+        "note": "pork bacon and its drippings."
+      },
+      {
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.97,
+        "ordinals": [3, 5],
+        "note": "butter and evaporated milk."
+      },
+      {
+        "slug": "halal",
+        "verdict": "excluded",
+        "confidence": 0.96,
+        "ordinals": [2],
+        "note": "pork."
+      },
+      {
+        "slug": "kosher",
+        "verdict": "excluded",
+        "confidence": 0.96,
+        "ordinals": [2, 3, 5],
+        "note": "pork, and meat baked together with dairy."
+      },
+      {
+        "slug": "gluten_free",
+        "verdict": "likely",
+        "confidence": 0.7,
+        "ordinals": [0, 2, 5],
+        "note": "no wheat-based ingredient in the list; cured bacon and canned milk vary by brand."
+      },
+      {
+        "slug": "keto",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0],
+        "note": "5 lb of potatoes is the body of the dish."
+      },
+      {
+        "slug": "low_carb",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0],
+        "note": "potato-based."
+      },
+      {
+        "slug": "low_fat",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [2, 3, 5],
+        "note": "a pound of bacon plus drippings, a stick of butter, evaporated milk."
+      },
+      {
+        "slug": "low_calorie",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0, 2, 3],
+        "note": "starch baked with bacon fat and butter."
+      },
+      {
+        "slug": "diabetic",
+        "verdict": "excluded",
+        "confidence": 0.55,
+        "ordinals": [0],
+        "note": "large share of the dish is starchy potato."
+      },
+      {
+        "slug": "paleo",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0, 3, 5],
+        "note": "potatoes and dairy."
+      }
+    ],
+    "cuisine": [
+      {
+        "slug": "eastern_european",
+        "confidence": 0.93
+      }
+    ],
+    "mealType": [
+      {
+        "slug": "side",
+        "confidence": 0.7
+      },
+      {
+        "slug": "dinner",
+        "confidence": 0.65
+      }
+    ],
+    "spiceLevel": null
+  }
+}

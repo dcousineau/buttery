@@ -1,11 +1,16 @@
 // `services/pipeline/.env`, loaded exactly once for the whole process.
 //
-// This lives in its own module — rather than at the top of `config.ts` — because
-// more than one module needs the file to have been read before it runs, and ESM
+// This lives in its own module — rather than at the top of whichever module
+// happens to read the environment first — because more than one needs the file
+// to have been read before it runs, and ESM
 // evaluation order is decided by the import graph, not by the order a file lists
 // its imports. Any module that reads `process.env` imports this one; whichever
 // of them is evaluated first pulls the file in, and the rest get the cached
 // module.
+//
+// Only the two `atproto-sync/lib/` helpers that read `process.env` without a
+// Fastify instance still import this. Everything else gets its environment
+// from `plugins/env.ts`, which loads the same file the same way.
 //
 // Resolved relative to this file, not the cwd, so a run from the repo root
 // behaves the same — `process.loadEnvFile()` does NOT walk up looking for one.

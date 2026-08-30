@@ -290,24 +290,19 @@ export interface RecipeCollectionEntry {
 export interface RecipeEnrichment {
   calories_per_serving: number | null;
   carbohydrate_g: Numeric | null;
-  /**
-   * The classifier run that produced (or, for slugs it found nothing to say about,
-   * deliberately omitted) this recipe's recipe_enrichment_label rows.
-   *
-   * A missing label row is readable as its dimension's default ONLY for slugs this
-   * version of the classifier actually evaluates -- never for every slug that has
-   * ever existed, or will ever exist, in recipe_vocab. Add a slug to what the
-   * classifier evaluates without bumping this column's value, and every
-   * already-classified recipe silently reports the default for a slug nothing ever
-   * looked at: "never evaluated" becomes indistinguishable from "we checked and
-   * found nothing".
-   */
   classifier_version: Generated<number>;
   enriched_at: Timestamp | null;
   error: string | null;
   fat_g: Numeric | null;
   fiber_g: Numeric | null;
   input_hash: string | null;
+  llm_enriched_at: Timestamp | null;
+  llm_error: string | null;
+  llm_input_hash: string | null;
+  llm_model: string | null;
+  llm_prompt_version: number | null;
+  llm_status: string | null;
+  llm_version: Generated<number>;
   nutrition_confidence: Numeric | null;
   nutrition_method: string | null;
   protein_g: Numeric | null;
@@ -326,17 +321,6 @@ export interface RecipeEnrichmentLabel {
   recipe_id: string;
   slug: string;
   updated_at: Generated<Timestamp>;
-  /**
-   * allergen: contains | may_contain | not_detected | unknown -- not_detected is also
-   * the default implied when a (recipe, allergen, slug) row is absent.
-   * diet: excluded | likely | unknown -- "not excluded" is the default implied when a
-   * (recipe, diet, slug) row is absent.
-   *
-   * not_detected -- stored or implied by absence -- is NOT a safety claim. It means
-   * the rules found nothing over text they may not have fully parsed. Consumers
-   * exclude on contains and may_contain; never render not_detected, or the absence
-   * of a row, as "free of".
-   */
   verdict: string;
 }
 

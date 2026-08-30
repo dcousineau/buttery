@@ -282,8 +282,13 @@ processes:
   # `services/pipeline/.env`'s call and nothing else's, so this process, a shell
   # run and the scheduled workflow all do the same thing.
   atproto-sync:
-    description: "One atproto → Postgres sync sweep — manual one-shot, starts Disabled"
-    command: "pnpm --filter=@buttery/pipeline sync:once"
+    description: "Enqueue one atproto → Postgres sync sweep — manual one-shot, starts Disabled"
+    # This ENQUEUES the sweep; `pipeline-worker` is what runs it. It used to run
+    # the whole thing in this process, which meant the one-shot and the fleet
+    # were two different execution paths. Now there is one, and the sweep shows
+    # up in the board like every other job — so this process exits in about a
+    # second and the work carries on next to it.
+    command: "pnpm --filter=@buttery/pipeline sync:trigger"
     # It writes tables `migrate` creates. `atproto-dev-env` is in here because a
     # `.env` pointed at the local dev-env needs it up, and against the real
     # atmosphere it costs only a wait that has already happened.

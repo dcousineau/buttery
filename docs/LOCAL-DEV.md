@@ -89,7 +89,7 @@ Each run is one idempotent sweep that ends `Completed`; start it again after eve
 The process declares no environment of its own. **Which network gets swept is `services/pipeline/.env`'s call** — the same file a shell run reads, so both do the same thing:
 
 ```bash
-pnpm --filter=@buttery/pipeline sync:once [--dry-run]
+pnpm --filter=@buttery/pipeline sync:trigger [--dry-run]
 ```
 
 Its defaults are the real atmosphere (`plc.directory` + the public relay), which is what fills a dev database with real recipes. To sweep the local dev-env instead, set `ATPROTO_PLC_URL=http://localhost:2582` and `SYNC_PDS_URL=http://localhost:2583` in that file. `SYNC_PDS_URL` swaps the relay's `listReposByCollection` for that one PDS's `listRepos`, because dev-env ships no relay and its PDS refuses the former unauthenticated (`AuthMissing`).

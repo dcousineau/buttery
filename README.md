@@ -91,10 +91,10 @@ The atproto sweep pulls recipe records into Postgres. In production it runs hour
 
 ```bash
 # One sweep of the real atmosphere into the local DB (writes)
-pnpm --filter=@buttery/pipeline sync:once
+pnpm --filter=@buttery/pipeline sync:trigger
 
 # Fetch + log without writing
-pnpm --filter=@buttery/pipeline sync:once --dry-run
+pnpm --filter=@buttery/pipeline sync:trigger --dry-run
 
 # One sweep of the LOCAL atproto dev-env instead — a disabled process-compose
 # one-shot; run it after publishing a recipe locally

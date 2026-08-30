@@ -1,0 +1,596 @@
+import type { Pool, PoolClient } from "pg";
+import { compact, snakeCase, startCase, uniq } from "es-toolkit";
+// dayjs + its duration plugin (parses ISO-8601 duration strings). Node's native
+// ESM resolver needs the explicit `.js` on the plugin subpath.
+import dayjs from "dayjs";
+import duration from "dayjs/plugin/duration.js";
+// Dedupe key computation, shared verbatim with the web write path and the
+// backfill migration (paprika-import plan §6.1/§6.2). `./normalize` is a
+// concrete entry in the package's `exports` map pointing at a single
+// `index.ts`, so Node's ESM resolver takes it as-is — there is no directory to
+// need an explicit `.js`, and no deeper subpath (`…/normalize/fingerprint.js`)
+// is exported. `contentFingerprint` digests via `globalThis.crypto.subtle`, NOT
+// `node:crypto`: one implementation for browser, web server and cron means the
+// digests cannot drift (§6.6 requires them byte-identical).
+import { contentFingerprint, normalizeSourceUrl } from "@buttery/recipe-schemas/normalize";
+import type { RecipeRow } from "#/queues/atproto-sync/lib/recipe.ts";
+import { log } from "#/lib/log.ts";
+
+dayjs.extend(duration);
+
+// The "rendered" recipe layer: project a validated raw record into the
+// normalized `recipe` + child tables that power browse/search. The cron owns
+// ONLY `origin = 'sync'` rows (see the recipe_rendered migration); it never
+// overwrites a locally-authored row's content, and reconciles just cid/rev
+// once a local recipe has been published to the network.
+//
+// All input is untrusted (plan §1). We hand-parse the raw jsonb defensively —
+// no `@buttery/lexicons` import (plan §3) — and only ever render records that
+// already passed `validate()` (validation_status = 'valid').
+
+// --- defensive extraction helpers ---------------------------------------
+
+type Json = Record<string, unknown>;
+
+function str(v: unknown): string | null {
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+function strArray(v: unknown, maxLen: number): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((x): x is string => typeof x === "string" && x.length > 0).map((x) => (x.length > maxLen ? x.slice(0, maxLen) : x));
+}
+
+function obj(v: unknown): Json | null {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : null;
+}
+
+function intOrNull(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? Math.trunc(v) : null;
+}
+
+// Decimals are stored as strings in the vendored lexicon; keep them as strings
+// (Postgres numeric accepts a numeric string), null on anything unparseable.
+function numericStr(v: unknown): string | null {
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "string" && v.length > 0 && !Number.isNaN(Number(v))) return v;
+  return null;
+}
+
+function datetime(v: unknown): string | null {
+  const s = str(v);
+  if (!s) return null;
+  return Number.isNaN(Date.parse(s)) ? null : s;
+}
+
+// ISO-8601 duration → seconds via dayjs' duration plugin (Y/M normalized by
+// dayjs). Requires a leading "P"; returns null on absent/unparseable/zero input.
+function durationSeconds(v: unknown): number | null {
+  const s = str(v);
+  if (!s || s[0] !== "P") return null;
+  const secs = dayjs.duration(s).asSeconds();
+  return Number.isFinite(secs) && secs > 0 ? Math.round(secs) : null;
+}
+
+// --- attribution (union → flat columns) ---------------------------------
+
+interface Attribution {
+  kind: string;
+  displayName: string | null;
+  author: string | null;
+  publisher: string | null;
+  url: string | null;
+  license: string | null;
+  raw: Json;
+}
+
+// $type e.g. "exchange.recipe.defs#attributionPerson" → kind "person".
+function attributionKind(type: string | null): string {
+  const frag = type?.split("#attribution")[1];
+  return frag ? frag[0].toLowerCase() + frag.slice(1) : "unknown";
+}
+
+function parseAttribution(v: unknown): Attribution | null {
+  const a = obj(v);
+  if (!a) return null;
+  return {
+    kind: attributionKind(str(a.$type)),
+    // Generic pluck works across all 6 members: person/website/product carry
+    // `name`, publication/show carry `title`.
+    displayName: str(a.name) ?? str(a.title),
+    author: str(a.author),
+    publisher: str(a.publisher),
+    url: str(a.url),
+    license: str(a.license),
+    raw: a,
+  };
+}
+
+// --- images -------------------------------------------------------------
+
+interface ImageRow {
+  alt: string | null;
+  blobCid: string | null;
+  blobMime: string | null;
+  blobSize: number | null;
+  aspectW: number | null;
+  aspectH: number | null;
+}
+
+// Blob shape in a record: { $type:'blob', ref:{ $link:'<cid>' }, mimeType, size }.
+function parseImages(embed: unknown): ImageRow[] {
+  const e = obj(embed);
+  const images = e && Array.isArray(e.images) ? e.images : [];
+  const out: ImageRow[] = [];
+  for (const raw of images.slice(0, 4)) {
+    const img = obj(raw);
+    if (!img) continue;
+    const blob = obj(img.image);
+    const ref = blob ? obj(blob.ref) : null;
+    const ar = obj(img.aspectRatio);
+    out.push({
+      alt: str(img.alt),
+      blobCid: str(ref?.$link) ?? str(blob?.ref),
+      blobMime: str(blob?.mimeType),
+      blobSize: intOrNull(blob?.size),
+      aspectW: intOrNull(ar?.width),
+      aspectH: intOrNull(ar?.height),
+    });
+  }
+  return out;
+}
+
+// --- token vocabulary ---------------------------------------------------
+
+// Upstream token NSID (e.g. "exchange.recipe.defs#cuisineItalian") → our
+// internal vocab entry. Loaded once per process from recipe_vocab_alias.
+interface VocabEntry {
+  dimension: string;
+  slug: string;
+  label: string;
+}
+type VocabMap = Map<string, VocabEntry>;
+
+let vocabPromise: Promise<VocabMap> | null = null;
+
+const LOAD_VOCAB_SQL = `
+select a.external_ref, a.dimension, a.slug, v.label
+  from recipe_vocab_alias a
+  join recipe_vocab v on v.dimension = a.dimension and v.slug = a.slug
+`;
+
+/** Load + memoize the alias map (first render call populates it for the run). */
+function getVocab(client: PoolClient): Promise<VocabMap> {
+  if (!vocabPromise) {
+    vocabPromise = client.query<{ external_ref: string; dimension: string; slug: string; label: string }>(LOAD_VOCAB_SQL).then((res) => {
+      const map: VocabMap = new Map();
+      for (const r of res.rows) map.set(r.external_ref, { dimension: r.dimension, slug: r.slug, label: r.label });
+      return map;
+    });
+  }
+  return vocabPromise;
+}
+
+// Upstream token prefix per internal dimension (mirrors the migration seed).
+const DIM_PREFIX: Record<string, string> = {
+  cooking_method: "cookingMethod",
+  cuisine: "cuisine",
+  category: "category",
+  diet: "diet",
+};
+
+// Auto-register an unknown token IF it is a well-formed recipe-defs token for
+// the expected dimension — e.g. the upstream lexicon added a new cuisine. This
+// is deliberately narrow: input is untrusted, so we only accept the exact
+// `exchange.recipe.defs#<prefix><CamelSuffix>` shape (≤64 alnum suffix) so a
+// junk string can never pollute the vocab. Everything else is dropped.
+async function registerToken(client: PoolClient, vocab: VocabMap, ref: string, dimension: string): Promise<VocabEntry | null> {
+  const prefix = DIM_PREFIX[dimension];
+  const m = new RegExp(`^exchange\\.recipe\\.defs#${prefix}([A-Z][A-Za-z0-9]{0,63})$`).exec(ref);
+  if (!m) return null;
+  const suffix = m[1];
+  const entry: VocabEntry = { dimension, slug: snakeCase(suffix), label: startCase(suffix) };
+  // Idempotent: concurrent DIDs may discover the same token this sweep.
+  await client.query(`insert into recipe_vocab (dimension, slug, label, source) values ($1,$2,$3,'discovered') on conflict do nothing`, [entry.dimension, entry.slug, entry.label]);
+  await client.query(`insert into recipe_vocab_alias (external_ref, dimension, slug) values ($1,$2,$3) on conflict do nothing`, [ref, entry.dimension, entry.slug]);
+  vocab.set(ref, entry);
+  log.info("discovered vocab token", { dimension, ref, slug: entry.slug });
+  return entry;
+}
+
+// Resolve an upstream token to our vocab entry. A known ref must land in the
+// expected dimension (a record could put a diet token in the cuisine field);
+// an unknown-but-well-formed ref is auto-registered.
+async function resolveToken(client: PoolClient, vocab: VocabMap, ref: unknown, dimension: string): Promise<VocabEntry | null> {
+  const s = str(ref);
+  if (!s) return null;
+  const hit = vocab.get(s);
+  if (hit) return hit.dimension === dimension ? hit : null;
+  return registerToken(client, vocab, s, dimension);
+}
+
+// --- projected recipe shape ---------------------------------------------
+
+interface RenderedRecipe {
+  id: string;
+  did: string;
+  rkey: string;
+  uri: string;
+  cid: string;
+  rev: string;
+  name: string;
+  description: string | null;
+  recipeYield: string | null;
+  prepTime: string | null;
+  cookTime: string | null;
+  totalTime: string | null;
+  prepTimeSeconds: number | null;
+  cookTimeSeconds: number | null;
+  totalTimeSeconds: number | null;
+  cookingMethod: string | null;
+  recipeCuisine: string | null;
+  recipeCategory: string | null;
+  suitableForDiet: string[] | null;
+  calories: number | null;
+  fatContent: string | null;
+  proteinContent: string | null;
+  carbohydrateContent: string | null;
+  publishedAt: string | null;
+  recordCreatedAt: string | null;
+  recordUpdatedAt: string | null;
+  ingredients: string[];
+  instructions: string[];
+  keywords: string[];
+  images: ImageRow[];
+  attribution: Attribution | null;
+  // Display labels of the mapped tokens, for the search document (weight B).
+  vocabLabels: string[];
+}
+
+async function project(client: PoolClient, row: RecipeRow, vocab: VocabMap): Promise<RenderedRecipe> {
+  const r = row.record;
+  // Map upstream token NSIDs → internal slugs. Unknown-but-well-formed tokens
+  // are auto-registered; other unmapped values are dropped (still preserved
+  // verbatim in the raw atproto_collection_recipe row).
+  const method = await resolveToken(client, vocab, r.cookingMethod, "cooking_method");
+  const cuisine = await resolveToken(client, vocab, r.recipeCuisine, "cuisine");
+  const category = await resolveToken(client, vocab, r.recipeCategory, "category");
+  const dietEntries: VocabEntry[] = [];
+  for (const t of strArray(r.suitableForDiet, 128)) {
+    const e = await resolveToken(client, vocab, t, "diet");
+    if (e) dietEntries.push(e);
+  }
+  const dietSlugs = uniq(dietEntries.map((e) => e.slug));
+  const vocabLabels = compact([method, cuisine, category, ...dietEntries]).map((e) => e.label);
+  return {
+    id: row.rkey, // the recipe's ULID (rkey for synced records)
+    did: row.did,
+    rkey: row.rkey,
+    uri: row.uri,
+    cid: row.cid,
+    rev: row.rev,
+    name: str(r.name) ?? "",
+    description: str(r.text),
+    recipeYield: str(r.recipeYield),
+    prepTime: str(r.prepTime),
+    cookTime: str(r.cookTime),
+    totalTime: str(r.totalTime),
+    prepTimeSeconds: durationSeconds(r.prepTime),
+    cookTimeSeconds: durationSeconds(r.cookTime),
+    totalTimeSeconds: durationSeconds(r.totalTime),
+    cookingMethod: method?.slug ?? null,
+    recipeCuisine: cuisine?.slug ?? null,
+    recipeCategory: category?.slug ?? null,
+    suitableForDiet: dietSlugs.length ? dietSlugs : null,
+    calories: intOrNull(obj(r.nutrition)?.calories),
+    fatContent: numericStr(obj(r.nutrition)?.fatContent),
+    proteinContent: numericStr(obj(r.nutrition)?.proteinContent),
+    carbohydrateContent: numericStr(obj(r.nutrition)?.carbohydrateContent),
+    // Synced records have been public since they were authored.
+    publishedAt: datetime(r.createdAt),
+    recordCreatedAt: row.recordCreatedAt,
+    recordUpdatedAt: row.recordUpdatedAt,
+    ingredients: strArray(r.ingredients, 500),
+    instructions: strArray(r.instructions, 1000),
+    keywords: strArray(r.keywords, 64),
+    images: parseImages(r.embed),
+    attribution: parseAttribution(r.attribution),
+    vocabLabels,
+  };
+}
+
+// --- SQL ----------------------------------------------------------------
+
+// Content upsert, scoped to sync-owned rows and guarded on rev advance. A
+// conflicting local row fails the `origin = 'sync'` guard and is left intact.
+const UPSERT_RECIPE_SQL = `
+insert into recipe
+  (id, origin, visibility, did, rkey, uri, cid, rev, name, description, recipe_yield,
+   prep_time, cook_time, total_time, prep_time_seconds, cook_time_seconds, total_time_seconds,
+   cooking_method, recipe_cuisine, recipe_category, suitable_for_diet,
+   calories, fat_content, protein_content, carbohydrate_content,
+   published_at, record_created_at, record_updated_at, indexed_at)
+values
+  ($1,'sync','public',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26, now())
+on conflict (id) do update set
+  did = excluded.did, rkey = excluded.rkey, uri = excluded.uri, cid = excluded.cid, rev = excluded.rev,
+  name = excluded.name, description = excluded.description, recipe_yield = excluded.recipe_yield,
+  prep_time = excluded.prep_time, cook_time = excluded.cook_time, total_time = excluded.total_time,
+  prep_time_seconds = excluded.prep_time_seconds, cook_time_seconds = excluded.cook_time_seconds,
+  total_time_seconds = excluded.total_time_seconds, cooking_method = excluded.cooking_method,
+  recipe_cuisine = excluded.recipe_cuisine, recipe_category = excluded.recipe_category,
+  suitable_for_diet = excluded.suitable_for_diet, calories = excluded.calories,
+  fat_content = excluded.fat_content, protein_content = excluded.protein_content,
+  carbohydrate_content = excluded.carbohydrate_content, published_at = excluded.published_at,
+  record_created_at = excluded.record_created_at, record_updated_at = excluded.record_updated_at,
+  indexed_at = now()
+where recipe.origin = 'sync' and (recipe.rev is null or recipe.rev < excluded.rev)
+`;
+
+// A local recipe that has since been published shows up in the network sweep.
+// Reconcile only cid/rev/indexed_at — never its web-owned content/visibility.
+const RECONCILE_LOCAL_SQL = `
+update recipe set cid = $2, rev = $3, indexed_at = now()
+where id = $1 and origin = 'local' and (rev is null or rev < $3)
+`;
+
+// Save-guard (recipes plan §9.1): never delete a rendered row that a household
+// has boxed — it is that household's durable cache. The `household_recipe`
+// RESTRICT FK would otherwise throw 23001 and break the sweep; the guard leaves
+// the saved row in place (availability is recomputed at read time from the raw
+// layer) while deleting unsaved invalid/unseen rows exactly as before. The
+// `household_recipe (recipe_id)` index keeps the NOT EXISTS cheap.
+//
+// Second save-guard (meal planner plan §7.3): `meal_plan_entry.recipe_id` is a
+// second ON DELETE RESTRICT reference to the same rendered row. A recipe can be
+// planned but no longer boxed, so the `household_recipe` guard alone does not
+// cover it. Deliberately NOT filtered on `mpe.deleted_at` — a soft-deleted entry
+// still holds the FK, so the sweep would still get a 23001.
+//
+// (Both codes verified in `services/web/src/server/meal-plan.db.test.ts`: an
+// `ON DELETE RESTRICT` violation is 23001 `restrict_violation`, not the 23503
+// `foreign_key_violation` that `NO ACTION` raises.)
+const PLANNED_GUARD = `not exists (select 1 from meal_plan_entry mpe where mpe.recipe_id = recipe.id)`;
+
+const DELETE_RENDERED_SQL = `delete from recipe where id = $1 and origin = 'sync' and not exists (select 1 from household_recipe hr where hr.recipe_id = recipe.id) and ${PLANNED_GUARD}`;
+
+const DEL_INGREDIENTS = `delete from recipe_ingredient where recipe_id = $1`;
+const DEL_INSTRUCTIONS = `delete from recipe_instruction where recipe_id = $1`;
+const DEL_IMAGES = `delete from recipe_image where recipe_id = $1`;
+const DEL_KEYWORDS = `delete from recipe_keyword where recipe_id = $1`;
+const DEL_ATTRIBUTION = `delete from recipe_attribution where recipe_id = $1`;
+
+// --- dedupe keys (Buttery-only sidecar) ---------------------------------
+//
+// `recipe_meta` is a BUTTERY-ONLY sidecar and must never reach an atproto
+// record (plan §2.3). This service WRITES it, which is fine — the keys are
+// derived from the record we just projected, not the other way round. It must
+// never READ it: nothing in this file, and nothing downstream of it, may pull a
+// sidecar value into a record that gets published. There is no read path here
+// and there must never be one.
+//
+// Why this writer exists at all (§6.6, "writer 3"): the backfill migration
+// covers the public records that exist the day it runs. Every record synced or
+// re-rendered after that would arrive with no keys, and the import pipeline's
+// `public_exists` check would simply stop matching anything published after
+// ship — a silent absence of matches, not an error. Re-render also invalidates
+// what was there: the upsert above replaces `name` and every `recipe_ingredient`
+// row, so keys written earlier describe content that no longer exists. And
+// `DELETE_RENDERED_SQL` removes rows whose record turned invalid, cascading the
+// `recipe_meta` rows away — correct, and it means re-render is the only thing
+// that puts them back.
+//
+// Delete-then-insert rather than a bare upsert, so a key that goes AWAY (a
+// source URL removed from the record, or one that stops normalizing) leaves no
+// stale row behind. Scoped to `ns = 'dedupe'` so no other namespace is touched.
+// Runs on the same per-DID client as every other write here (the sweep gives
+// each DID a dedicated client precisely so its writes never interleave).
+const DEL_DEDUPE_META = `delete from recipe_meta where recipe_id = $1 and ns = 'dedupe'`;
+
+// `value` is jsonb, so each key is stored as a JSON string; the partial index
+// `recipe_meta_dedupe` indexes `(value #>> '{}')`, which is what the probe
+// searches on.
+const INSERT_DEDUPE_META = `
+insert into recipe_meta (recipe_id, ns, key, value, updated_at)
+values ($1, 'dedupe', $2, to_jsonb($3::text), now())
+on conflict (recipe_id, ns, key) do update set value = excluded.value, updated_at = now()
+`;
+
+/**
+ * Both dedupe keys for a projected recipe (§6.1, §6.2), from the same values
+ * that were just written to `recipe` / `recipe_ingredient` /
+ * `recipe_attribution`. Pure and exported so a test can run it against the web
+ * path's inputs and assert the digests are byte-identical.
+ *
+ * `source_url_key` comes from the `website` attribution only, matching the
+ * backfill migration's `kind = 'website'` filter — the other union members
+ * carry a URL that identifies a person or a show, not the recipe's source page.
+ */
+export async function dedupeKeys(p: Pick<RenderedRecipe, "name" | "ingredients" | "attribution">): Promise<Array<[key: string, value: string]>> {
+  const out: Array<[string, string]> = [];
+  const sourceUrlKey = p.attribution?.kind === "website" ? normalizeSourceUrl(p.attribution.url) : null;
+  // Null / unnormalizable source URL → no row at all (§6.1).
+  if (sourceUrlKey) out.push(["source_url_key", sourceUrlKey]);
+  out.push(["content_fp", await contentFingerprint(p.name, p.ingredients)]);
+  return out;
+}
+
+// Mark this recipe's enrichment stale (plan §9, D3): the durable signal that its
+// content advanced, written on the same per-DID client as the rest of this
+// render so it can never observe a half-written row. Deliberately touches only
+// `status` — `input_hash` and `classifier_version` are left exactly as the
+// `enrich` step last wrote them, which is what lets it compare against them and
+// short-circuit a recipe whose content didn't actually change (recipe-enrichment
+// plan §7.1 step 2). `on conflict ... do update` rather than a plain insert
+// because most recipes already have a row from an earlier render.
+const MARK_ENRICHMENT_STALE_SQL = `
+insert into recipe_enrichment (recipe_id, status) values ($1, 'stale')
+on conflict (recipe_id) do update set status = 'stale'
+`;
+
+const UPSERT_SEARCH_SQL = `
+insert into recipe_search (recipe_id, search_tsv) values
+  ($1,
+     setweight(to_tsvector('english', $2), 'A')
+  || setweight(to_tsvector('english', $3), 'B')
+  || setweight(to_tsvector('english', $4), 'C')
+  || setweight(to_tsvector('english', $5), 'D'))
+on conflict (recipe_id) do update set search_tsv = excluded.search_tsv
+`;
+
+// The only two tables `insertLines` writes. `table` is interpolated into the
+// SQL (a bare identifier can't be a bind param), so it MUST come from this
+// closed set — never from a record or any other untrusted source. All row
+// VALUES are still parameterized; this guard just fences the identifier.
+const LINE_TABLES = new Set(["recipe_ingredient", "recipe_instruction"]);
+
+// Bulk-insert ordered lines into an (recipe_id, ordinal, text) child table.
+// Params: $1 = recipe_id, then ordinals $2..$(n+1), then texts.
+async function insertLines(client: PoolClient, table: string, id: string, lines: string[]): Promise<void> {
+  if (!LINE_TABLES.has(table)) throw new Error(`insertLines: refusing unknown table ${table}`);
+  if (!lines.length) return;
+  const rows = lines.map((_, i) => `($1, $${2 + i}, $${2 + lines.length + i})`);
+  await client.query(`insert into ${table} (recipe_id, ordinal, text) values ${rows.join(", ")}`, [id, ...lines.map((_, i) => i), ...lines]);
+}
+
+// --- public API ---------------------------------------------------------
+
+/**
+ * Render one validated record into the recipe layer. Invalid records remove any
+ * previously-rendered sync row. Must run on the same per-DID client as the raw
+ * upsert so writes for one DID never interleave (plan §1).
+ *
+ * Returns the recipe id when this render advanced the row's content (the caller
+ * needs that id to fan out recipe-enrichment triggers — recipe-enrichment plan
+ * §9), or `null` when nothing about the content changed: an invalid record, a
+ * stale rev, or a local row being cid/rev-reconciled.
+ */
+export async function renderRecipe(client: PoolClient, row: RecipeRow): Promise<string | null> {
+  if (row.validationStatus !== "valid") {
+    // A record that turned invalid should not linger in the rendered layer.
+    await client.query(DELETE_RENDERED_SQL, [row.rkey]);
+    return null;
+  }
+
+  const vocab = await getVocab(client);
+  const p = await project(client, row, vocab);
+
+  const res = await client.query(UPSERT_RECIPE_SQL, [
+    p.id,
+    p.did,
+    p.rkey,
+    p.uri,
+    p.cid,
+    p.rev,
+    p.name,
+    p.description,
+    p.recipeYield,
+    p.prepTime,
+    p.cookTime,
+    p.totalTime,
+    p.prepTimeSeconds,
+    p.cookTimeSeconds,
+    p.totalTimeSeconds,
+    p.cookingMethod,
+    p.recipeCuisine,
+    p.recipeCategory,
+    p.suitableForDiet,
+    p.calories,
+    p.fatContent,
+    p.proteinContent,
+    p.carbohydrateContent,
+    p.publishedAt,
+    p.recordCreatedAt,
+    p.recordUpdatedAt,
+  ]);
+
+  // The content upsert did nothing: either a stale rev (children already
+  // current) or the id belongs to a local row. Reconcile the local case's
+  // cid/rev and stop — never touch a local row's children/search.
+  if ((res.rowCount ?? 0) === 0) {
+    await client.query(RECONCILE_LOCAL_SQL, [p.id, p.cid, p.rev]);
+    return null;
+  }
+
+  // We own this sync row and it advanced: re-derive all children + search, and
+  // mark its enrichment stale (recipe-enrichment plan §9) — nothing about the
+  // content changed in the `rowCount === 0` branch above, so nothing is marked
+  // stale there.
+  await client.query(MARK_ENRICHMENT_STALE_SQL, [p.id]);
+  await client.query(DEL_INGREDIENTS, [p.id]);
+  await client.query(DEL_INSTRUCTIONS, [p.id]);
+  await client.query(DEL_IMAGES, [p.id]);
+  await client.query(DEL_KEYWORDS, [p.id]);
+  await client.query(DEL_ATTRIBUTION, [p.id]);
+
+  await insertLines(client, "recipe_ingredient", p.id, p.ingredients);
+  await insertLines(client, "recipe_instruction", p.id, p.instructions);
+
+  if (p.images.length) {
+    const rows = p.images.map((_, i) => {
+      const b = i * 7;
+      return `($1, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7}, $${b + 8})`;
+    });
+    const params: unknown[] = [p.id];
+    p.images.forEach((img, i) => params.push(i, img.alt, img.blobCid, img.blobMime, img.blobSize, img.aspectW, img.aspectH));
+    await client.query(`insert into recipe_image (recipe_id, ordinal, alt, blob_cid, blob_mime, blob_size, aspect_w, aspect_h) values ${rows.join(", ")}`, params);
+  }
+
+  // Dedupe keywords (PK is (recipe_id, keyword)).
+  const keywords = uniq(p.keywords);
+  if (keywords.length) {
+    const rows = keywords.map((_, i) => `($1, $${i + 2})`);
+    await client.query(`insert into recipe_keyword (recipe_id, keyword) values ${rows.join(", ")}`, [p.id, ...keywords]);
+  }
+
+  if (p.attribution) {
+    const a = p.attribution;
+    await client.query(`insert into recipe_attribution (recipe_id, kind, display_name, author, publisher, url, license, raw) values ($1,$2,$3,$4,$5,$6,$7,$8)`, [
+      p.id,
+      a.kind,
+      a.displayName,
+      a.author,
+      a.publisher,
+      a.url,
+      a.license,
+      a.raw,
+    ]);
+  }
+
+  // Dedupe sidecar (§6.6 writer 3). Replaced wholesale, for the same reason the
+  // children above are: this render just rewrote the name and every ingredient
+  // row the keys are derived from. See DEL_DEDUPE_META for why this writer is
+  // load-bearing and why nothing here may ever READ the sidecar.
+  await client.query(DEL_DEDUPE_META, [p.id]);
+  for (const [key, value] of await dedupeKeys(p)) {
+    await client.query(INSERT_DEDUPE_META, [p.id, key, value]);
+  }
+
+  // Weighted search document: A=name, B=facets+attribution, C=ingredients,
+  // D=description+instructions.
+  const attrText = p.attribution ? compact([p.attribution.displayName, p.attribution.author, p.attribution.publisher]).join(" ") : "";
+  // Facets use human labels ("Gluten Free"), not slugs, so fulltext matches on
+  // natural words rather than "gluten_free".
+  const facets = compact([...p.keywords, ...p.vocabLabels, attrText]).join(" ");
+  await client.query(UPSERT_SEARCH_SQL, [p.id, p.name, facets, p.ingredients.join(" "), [p.description ?? "", ...p.instructions].join(" ")]);
+
+  return p.id;
+}
+
+/**
+ * Remove rendered sync rows for `did` whose rkey was NOT seen this sweep,
+ * mirroring the raw-layer soft-delete. Rendered rows are hard-deleted (children
+ * + search cascade) so dead recipes never surface in search. Only local rows
+ * are exempt (they are never keyed by a network sweep's did). Returns rows deleted.
+ */
+export async function deleteRenderedForDid(pool: Pool, did: string, seenRkeys: string[]): Promise<number> {
+  // Save-guards (recipes plan §9.1, meal planner plan §7.3): a boxed *or planned*
+  // recipe's rendered row is retained even when its rkey vanishes from the network
+  // sweep. See DELETE_RENDERED_SQL above for the rationale; same NOT EXISTS
+  // predicates.
+  const res = await pool.query(
+    `delete from recipe where did = $1 and origin = 'sync' and id <> all($2::text[]) and not exists (select 1 from household_recipe hr where hr.recipe_id = recipe.id) and ${PLANNED_GUARD}`,
+    [did, seenRkeys],
+  );
+  return res.rowCount ?? 0;
+}

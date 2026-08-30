@@ -1,34 +1,28 @@
 /**
- * The contract between whoever enqueues recipe enrichment and the workflow that
- * drains it — the queue name, the step names, and the payload shape — so a rename
- * on one side cannot leave the other silently talking to nobody. `queue.add`
- * succeeds even when nothing ever reads the queue it names; importing this from
- * both `@buttery/web` and `@buttery/pipeline` instead of restating the string in
- * each is what turns that failure mode into a type error at the call site.
+ * Contract between whoever enqueues recipe enrichment and the workflow that
+ * drains it — queue name, step names, payload shapes — so a rename on one
+ * side is a type error on the other, not a silently-ignored job.
  *
- * Zero runtime dependencies on purpose: this is the one module the web app is
- * allowed to import from the pipeline's world, so it must never drag in `bullmq`,
- * a database client, or anything else that belongs to the worker.
+ * Zero runtime deps on purpose: this is the one module `@buttery/web` is
+ * allowed to import from the pipeline's world.
  */
 
 /** BullMQ queue name for the workflow. Also the `/jobs/:queue` URL segment. */
 export const RECIPE_ENRICHMENT_QUEUE = "recipe-enrichment";
 
-/** Classify one recipe. The workflow's entry step. */
-export const ENRICH_STEP = "enrich";
-/** Claim a batch of stale/outdated recipes and fan them out as `enrich` children. */
-export const BACKFILL_STEP = "backfill";
-/** Fold a `backfill` run's children and log how many candidates remain. */
-export const BACKFILL_REPORT_STEP = "backfill-report";
+/** Classify one recipe with the rules classifier. The workflow's entry step. */
+export const ENRICH_JOB = "enrich";
+
+/** Second opinion: ask an LLM to judge what the rules classifier missed. Flag-gated, fail-closed. */
+export const LLM_ENRICH_JOB = "llm-enrich";
 
 /** Every step name, in one frozen object, so neither side can drift from the other's spelling. */
-export const RECIPE_ENRICHMENT_STEPS = Object.freeze({
-  enrich: ENRICH_STEP,
-  backfill: BACKFILL_STEP,
-  backfillReport: BACKFILL_REPORT_STEP,
+export const RECIPE_ENRICHMENT_JOBS = Object.freeze({
+  enrich: ENRICH_JOB,
+  llmEnrich: LLM_ENRICH_JOB,
 });
 
-export type RecipeEnrichmentStep = (typeof RECIPE_ENRICHMENT_STEPS)[keyof typeof RECIPE_ENRICHMENT_STEPS];
+export type RecipeEnrichmentJob = (typeof RECIPE_ENRICHMENT_JOBS)[keyof typeof RECIPE_ENRICHMENT_JOBS];
 
 /** Payload for the `enrich` step. */
 export interface EnrichPayload {
@@ -38,23 +32,26 @@ export interface EnrichPayload {
 }
 
 /**
- * A deterministic BullMQ job id for `enrich`, so two triggers for the same
- * recipe (a save and a concurrent sync sweep, say) collapse into one job instead
- * of racing (plan D14).
+ * Deterministic BullMQ job id for `enrich`, so two triggers for the same
+ * recipe collapse into one job instead of racing.
  *
- * Recipe ids are atproto rkeys and may contain `-`, `.`, `_`, `:` and `~` (up to
- * 512 chars — AGENTS.md), so this may not shape-validate or regex them. But
- * BullMQ's `Job.validateOptions` (`node_modules/bullmq/dist/esm/classes/job.js`)
- * throws `Custom Id cannot contain :` whenever a custom `jobId` contains `:` and
- * does not split into exactly 3 `:`-separated parts — a compatibility carve-out
- * for its own repeatable-job ids, not something a recipe id would reliably land
- * on. A prefix of `enrich:` alone already adds one colon, so `` `enrich:${recipeId}` ``
- * throws for almost every id (confirmed against that exact check) and prefixing
- * the *encoded* id changes nothing, since `encodeURIComponent` never removes the
- * prefix's own colon. So the prefix separator here is `_`, not `:`, and the
- * recipe id is `encodeURIComponent`-escaped besides — belt and suspenders against
- * any `:` the id itself carries.
+ * Recipe ids are atproto rkeys and may contain `:` — and BullMQ's custom-id
+ * validation throws on a `:`-containing id that isn't exactly 3 `:`-separated
+ * parts. Hence `_` as separator, plus `encodeURIComponent` for belt and
+ * suspenders.
  */
 export function enrichJobId(recipeId: string): string {
   return `enrich_${encodeURIComponent(recipeId)}`;
+}
+
+/** Payload for the `llm-enrich` step. Mirrors {@link EnrichPayload}. */
+export interface LlmEnrichPayload {
+  recipeId: string;
+  /** Re-run even when the content hash and `llm_version` already match. */
+  force?: boolean;
+}
+
+/** Deterministic BullMQ job id for `llm-enrich` — see {@link enrichJobId} for the `_`/encoding rationale. */
+export function llmEnrichJobId(recipeId: string): string {
+  return `llm-enrich_${encodeURIComponent(recipeId)}`;
 }

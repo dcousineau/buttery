@@ -1,0 +1,287 @@
+{
+  "recipeId": "wb-6351",
+  "recipeName": "Frog's Legs à la Parisienne",
+  "origin": "sync",
+  "prompt": {
+    "name": "recipe-llm-enrichment",
+    "source": "code_fallback",
+    "version": null
+  },
+  "versions": {
+    "classifier": 2,
+    "llm": 1
+  },
+  "recipeJsonSha256": "d8360998aaf605cf02f096395f5ecae4c7adc52063e1de29ffe8616ee2461ac9",
+  "input": {
+    "name": "Frog's Legs à la Parisienne",
+    "ingredients": [
+      {
+        "ordinal": 0,
+        "text": "2 tbsp butter"
+      },
+      {
+        "ordinal": 1,
+        "text": "2 tbsp all-purpose flour"
+      },
+      {
+        "ordinal": 2,
+        "text": "1 ½ cup light cream"
+      },
+      {
+        "ordinal": 3,
+        "text": "½ tsp salt"
+      },
+      {
+        "ordinal": 4,
+        "text": "2 tbsp minced onion"
+      },
+      {
+        "ordinal": 5,
+        "text": "1 tbsp minced parsley"
+      },
+      {
+        "ordinal": 6,
+        "text": "1 egg, well-beaten"
+      },
+      {
+        "ordinal": 7,
+        "text": "16 large frog legs"
+      },
+      {
+        "ordinal": 8,
+        "text": "Boiling water"
+      },
+      {
+        "ordinal": 9,
+        "text": "Juice of ½ lemon"
+      },
+      {
+        "ordinal": 10,
+        "text": "1 pinch each of salt and pepper"
+      },
+      {
+        "ordinal": 11,
+        "text": "2 eggs, well-beaten"
+      },
+      {
+        "ordinal": 12,
+        "text": "Fine dry bread crumbs"
+      },
+      {
+        "ordinal": 13,
+        "text": "Fat, for deep frying"
+      }
+    ],
+    "rulesLabels": [
+      {
+        "dimension": "allergen",
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "allergen",
+        "slug": "egg",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "allergen",
+        "slug": "wheat",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "allergen",
+        "slug": "gluten",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegetarian",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "pescatarian",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "gluten_free",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "kosher",
+        "verdict": "excluded",
+        "confidence": 0.9
+      }
+    ]
+  },
+  "expected": {
+    "allergens": [
+      {
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.97,
+        "ordinals": [0, 2],
+        "note": "Butter and light cream are dairy."
+      },
+      {
+        "slug": "egg",
+        "verdict": "contains",
+        "confidence": 0.97,
+        "ordinals": [6, 11],
+        "note": "Beaten egg in the sauce and in the breading dip."
+      },
+      {
+        "slug": "wheat",
+        "verdict": "contains",
+        "confidence": 0.95,
+        "ordinals": [1, 12],
+        "note": "All-purpose flour and dry bread crumbs are wheat-based unless stated otherwise."
+      },
+      {
+        "slug": "gluten",
+        "verdict": "contains",
+        "confidence": 0.95,
+        "ordinals": [1, 12],
+        "note": "Flour and bread crumbs carry gluten."
+      },
+      {
+        "slug": "soy",
+        "verdict": "may_contain",
+        "confidence": 0.35,
+        "ordinals": [12, 13],
+        "note": "Packaged bread crumbs often include soy, and unspecified frying fat is commonly a soybean-oil shortening."
+      },
+      {
+        "slug": "sesame",
+        "verdict": "may_contain",
+        "confidence": 0.2,
+        "ordinals": [12],
+        "note": "Commercial bread crumbs may be made from breads containing sesame."
+      }
+    ],
+    "diets": [
+      {
+        "slug": "vegetarian",
+        "verdict": "excluded",
+        "confidence": 0.97,
+        "ordinals": [7],
+        "note": "Frog legs are animal flesh."
+      },
+      {
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.98,
+        "ordinals": [0, 2, 6, 7, 11],
+        "note": "Frog legs plus butter, cream, and eggs."
+      },
+      {
+        "slug": "pescatarian",
+        "verdict": "excluded",
+        "confidence": 0.8,
+        "ordinals": [7],
+        "note": "Frog is an amphibian, not fish or shellfish."
+      },
+      {
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.97,
+        "ordinals": [0, 2],
+        "note": "Butter and light cream."
+      },
+      {
+        "slug": "gluten_free",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [1, 12],
+        "note": "Wheat flour and bread crumbs."
+      },
+      {
+        "slug": "kosher",
+        "verdict": "excluded",
+        "confidence": 0.9,
+        "ordinals": [2, 7],
+        "note": "Frog is not a kosher animal, and it is cooked with cream."
+      },
+      {
+        "slug": "halal",
+        "verdict": "excluded",
+        "confidence": 0.55,
+        "ordinals": [7],
+        "note": "Frog is treated as impermissible by most schools; the frying fat is also unspecified."
+      },
+      {
+        "slug": "keto",
+        "verdict": "excluded",
+        "confidence": 0.55,
+        "ordinals": [1, 12],
+        "note": "Flour-thickened sauce and a bread-crumb coating."
+      },
+      {
+        "slug": "low_carb",
+        "verdict": "excluded",
+        "confidence": 0.5,
+        "ordinals": [1, 12],
+        "note": "Breaded and flour-thickened."
+      },
+      {
+        "slug": "low_fat",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0, 2, 13],
+        "note": "Butter, cream, and deep frying."
+      },
+      {
+        "slug": "low_calorie",
+        "verdict": "excluded",
+        "confidence": 0.55,
+        "ordinals": [2, 13],
+        "note": "Cream sauce over deep-fried breaded legs."
+      },
+      {
+        "slug": "paleo",
+        "verdict": "excluded",
+        "confidence": 0.55,
+        "ordinals": [0, 1, 2, 12],
+        "note": "Dairy plus wheat flour and bread crumbs."
+      }
+    ],
+    "cuisine": [
+      {
+        "slug": "french",
+        "confidence": 0.95
+      }
+    ],
+    "mealType": [
+      {
+        "slug": "dinner",
+        "confidence": 0.85
+      },
+      {
+        "slug": "lunch",
+        "confidence": 0.3
+      }
+    ],
+    "spiceLevel": null
+  }
+}

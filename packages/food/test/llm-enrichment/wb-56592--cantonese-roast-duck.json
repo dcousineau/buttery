@@ -1,0 +1,234 @@
+{
+  "recipeId": "wb-56592",
+  "recipeName": "Cantonese Roast Duck",
+  "origin": "sync",
+  "prompt": {
+    "name": "recipe-llm-enrichment",
+    "source": "code_fallback",
+    "version": null
+  },
+  "versions": {
+    "classifier": 2,
+    "llm": 1
+  },
+  "recipeJsonSha256": "0c1be468d0cb457b9c273276c2f00ac69e0f1b0c931e65cb6b3df80c4c9fbb65",
+  "input": {
+    "name": "Cantonese Roast Duck",
+    "ingredients": [
+      {
+        "ordinal": 0,
+        "text": "2 Tbsp light soy sauce"
+      },
+      {
+        "ordinal": 1,
+        "text": "2 Tbsp dark soy sauce (optional, can use light soy sauce instead)"
+      },
+      {
+        "ordinal": 2,
+        "text": "2 cups (450 ml) of white wine, sherry, or Chinese cooking wine"
+      },
+      {
+        "ordinal": 3,
+        "text": "1 tsp Chinese five spice powder"
+      },
+      {
+        "ordinal": 4,
+        "text": "2 Tbsp Hoisin sauce"
+      },
+      {
+        "ordinal": 5,
+        "text": "2 Tbsp dark soy sauce"
+      },
+      {
+        "ordinal": 6,
+        "text": "3–6 lb (1.3–2.6 kg) whole duck or goose"
+      },
+      {
+        "ordinal": 7,
+        "text": "3 green onions or 1 onion"
+      }
+    ],
+    "rulesLabels": [
+      {
+        "dimension": "allergen",
+        "slug": "wheat",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "allergen",
+        "slug": "soy",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "allergen",
+        "slug": "gluten",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegetarian",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "pescatarian",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "dairy_free",
+        "verdict": "likely",
+        "confidence": 0.7
+      },
+      {
+        "dimension": "diet",
+        "slug": "gluten_free",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "halal",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "kosher",
+        "verdict": "excluded",
+        "confidence": 0.9
+      }
+    ]
+  },
+  "expected": {
+    "allergens": [
+      {
+        "slug": "soy",
+        "verdict": "contains",
+        "confidence": 0.97,
+        "ordinals": [0, 1, 4, 5],
+        "note": "Soy sauce and hoisin are soybean-based."
+      },
+      {
+        "slug": "wheat",
+        "verdict": "contains",
+        "confidence": 0.9,
+        "ordinals": [0, 1, 4, 5],
+        "note": "Soy sauce and hoisin are normally wheat-brewed; Chinese cooking wine may add wheat."
+      },
+      {
+        "slug": "gluten",
+        "verdict": "contains",
+        "confidence": 0.9,
+        "ordinals": [0, 1, 4, 5],
+        "note": "From the wheat in the soy sauces and hoisin."
+      },
+      {
+        "slug": "sesame",
+        "verdict": "may_contain",
+        "confidence": 0.5,
+        "ordinals": [4],
+        "note": "Many hoisin brands list sesame."
+      },
+      {
+        "slug": "fish",
+        "verdict": "may_contain",
+        "confidence": 0.25,
+        "ordinals": [4],
+        "note": "Some bottled hoisin blends include fish or shellfish extracts; label varies by brand."
+      }
+    ],
+    "diets": [
+      {
+        "slug": "vegetarian",
+        "verdict": "excluded",
+        "confidence": 0.98,
+        "ordinals": [6],
+        "note": "Whole duck or goose."
+      },
+      {
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.98,
+        "ordinals": [6]
+      },
+      {
+        "slug": "pescatarian",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [6],
+        "note": "Poultry, not fish."
+      },
+      {
+        "slug": "gluten_free",
+        "verdict": "excluded",
+        "confidence": 0.9,
+        "ordinals": [0, 1, 4, 5],
+        "note": "Standard soy sauce and hoisin carry wheat."
+      },
+      {
+        "slug": "halal",
+        "verdict": "excluded",
+        "confidence": 0.9,
+        "ordinals": [2],
+        "note": "Wine or Chinese cooking wine in the marinade."
+      },
+      {
+        "slug": "kosher",
+        "verdict": "excluded",
+        "confidence": 0.5,
+        "ordinals": [2, 4, 6],
+        "note": "Duck is permitted, but the wine and bottled sauces would each need certification."
+      },
+      {
+        "slug": "dairy_free",
+        "verdict": "likely",
+        "confidence": 0.7,
+        "ordinals": [4, 6],
+        "note": "No dairy ingredient listed; the bottled sauce is the only line that cannot be read from text alone."
+      },
+      {
+        "slug": "paleo",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0, 4, 5],
+        "note": "Soy sauce and hoisin are legume- and grain-based."
+      },
+      {
+        "slug": "low_fat",
+        "verdict": "excluded",
+        "confidence": 0.5,
+        "ordinals": [6],
+        "note": "Roast duck or goose with skin is a fatty cut."
+      }
+    ],
+    "cuisine": [
+      {
+        "slug": "chinese",
+        "confidence": 0.97
+      }
+    ],
+    "mealType": [
+      {
+        "slug": "dinner",
+        "confidence": 0.9
+      },
+      {
+        "slug": "lunch",
+        "confidence": 0.45
+      }
+    ],
+    "spiceLevel": null
+  }
+}

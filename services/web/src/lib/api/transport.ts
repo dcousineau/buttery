@@ -106,7 +106,11 @@ import {
 import { dismissInviteNudge as dismissInviteNudgeFn, getHouseholdNudges as getHouseholdNudgesFn } from "#/server/household/settings";
 import { clearPendingInvite as clearPendingInviteFn, errorMessage as errorMessage_, stashPendingInvite as stashPendingInviteFn } from "#/server/household/pending-invite";
 import { getRecipe as getRecipeFn, listRecentRecipes as listRecentRecipesFn } from "#/server/recipes";
-import { getRecipeDebugPayload as getRecipeDebugPayloadFn } from "#/server/recipe-debug";
+import {
+  getRecipeDebugPayload as getRecipeDebugPayloadFn,
+  triggerEnrichPayload as triggerEnrichPayloadFn,
+  triggerLlmEnrichPayload as triggerLlmEnrichPayloadFn,
+} from "#/server/recipe-debug";
 import { publishRecipe as publishRecipeFn, saveRecipe as saveRecipeFn } from "#/server/recipes-write";
 import { getImportPrefill as getImportPrefillFn, scrapeRecipe as scrapeRecipeFn, submitImport as submitImportFn } from "#/server/recipe-scrape";
 import type { CommitChunkInput, ComparisonInput, FailImportSessionInput, FinalizeInput, OpenImportSessionInput, ProbeInput } from "#/server/recipe-import";
@@ -505,6 +509,28 @@ export type { RecipeEnrichmentView, RecipeEnrichmentLabelView } from "#/server/r
 
 export function getRecipeDebug(recipeId: string) {
   return getRecipeDebugPayloadFn({ data: { recipeId } });
+}
+
+/**
+ * The panel's "run LLM enrichment now" button (`devtools/EnrichRunButtons.tsx`).
+ * Same re-export reasoning as `getRecipeDebug` above — `triggerLlmEnrichPayload`
+ * re-checks `NODE_ENV` on the server regardless of what shipped client-side.
+ * See `server/recipe-debug.ts`'s doc for the authorization/box-check gate and
+ * `server/enrichment-queue.ts`'s `enqueueLlmEnrich` for what the returned
+ * `EnrichTriggerResult` (`devtools/types.ts`) actually means.
+ */
+export function triggerLlmEnrich(recipeId: string) {
+  return triggerLlmEnrichPayloadFn({ data: { recipeId } });
+}
+
+/**
+ * The panel's other button, beside the one above: run the RULES pass now,
+ * which on success hands off to the LLM pass too. Same gate, same return
+ * type; `server/enrichment-queue.ts`'s `enqueueEnrichNow` has the reasoning
+ * for why a panel that could already trigger the LLM still needed this.
+ */
+export function triggerEnrich(recipeId: string) {
+  return triggerEnrichPayloadFn({ data: { recipeId } });
 }
 
 // --- authoring, scraping, import (online-only, §1.1) ---------------------

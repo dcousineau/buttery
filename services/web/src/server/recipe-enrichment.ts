@@ -1,5 +1,6 @@
 import type { Kysely } from "kysely";
 import type { DB, JsonValue } from "#/db/types";
+import type { RecipeTagLabel } from "#/lib/recipe-tags";
 
 /**
  * Read surface for the recipe-enrichment pipeline (recipe-enrichment plan §10).
@@ -185,4 +186,74 @@ export async function getRecipeEnrichment(db: Kysely<DB>, recipeId: string): Pro
     error: row.error,
     labels,
   };
+}
+
+// --- the display seam ------------------------------------------------------
+
+/**
+ * `method`'s `llm:` prefix is the schema's actual ownership rule
+ * (`db/types.ts`'s `recipe_enrichment_label.method` comment, and the
+ * pipeline's `writeEnrichment`/`writeLlmEnrichment`, which delete-and-replace
+ * by exactly this prefix). Restated here rather than imported from
+ * `services/pipeline`, for the same reason this module's doc gives and
+ * `recipe-debug.ts` repeats: web does not depend on the pipeline's internals.
+ */
+const LLM_METHOD_PREFIX = "llm:";
+
+/** The dimensions the tag strip knows how to render. Anything else is dropped rather than passed through untyped. */
+const TAG_DIMENSIONS = new Set<RecipeTagLabel["dimension"]>(["allergen", "diet", "cuisine", "meal_type", "spice_level"]);
+
+/**
+ * Pull `evidence.note` out of a label's untyped `evidence` jsonb.
+ *
+ * `evidence` is `JsonValue` at this boundary — its shape is per-classifier and
+ * nothing enforces it in the database — so this destructures defensively and
+ * returns `null` for every shape that is not "an object with a string `note`".
+ * Done ONCE, here, so neither the wire type nor the client has to carry an
+ * unknown-shaped field or repeat this guard.
+ */
+function evidenceNote(evidence: JsonValue | null): string | null {
+  if (evidence === null || typeof evidence !== "object" || Array.isArray(evidence)) return null;
+  const note = (evidence as Record<string, JsonValue | undefined>).note;
+  return typeof note === "string" && note.trim().length > 0 ? note : null;
+}
+
+/**
+ * Flatten a {@link RecipeEnrichmentView} into what the recipe surfaces render
+ * — the first production consumer of this module.
+ *
+ * Three things happen here and nowhere else:
+ *
+ *  1. **Source is derived from `method`**, not stored separately.
+ *  2. **`evidence` collapses to `note`**, so the untyped jsonb stops at the
+ *     server boundary instead of riding to the browser.
+ *  3. **`confidence` is dropped.** It is not on {@link RecipeTagLabel} at all,
+ *     which is what makes leaking it a type error rather than an oversight —
+ *     see `lib/recipe-tags.ts`'s module doc for why a hardcoded tier constant
+ *     should not be shown as a probability.
+ *
+ * `null` in, `null` out: a recipe nothing has ever enriched is a distinct state
+ * from one enriched to no labels, and the caller keeps that distinction.
+ *
+ * NOTE this does NOT apply the verdict policy — `not_detected` and friends come
+ * through here and are dropped by `mergeRecipeTags`. One place owns that
+ * policy, and it is the one with the tests.
+ */
+export function enrichmentTagLabels(view: RecipeEnrichmentView | null): RecipeTagLabel[] | null {
+  if (!view) return null;
+  const out: RecipeTagLabel[] = [];
+  for (const [dimension, rows] of Object.entries(view.labels)) {
+    if (!TAG_DIMENSIONS.has(dimension as RecipeTagLabel["dimension"])) continue;
+    for (const row of rows) {
+      out.push({
+        dimension: dimension as RecipeTagLabel["dimension"],
+        slug: row.slug,
+        verdict: row.verdict,
+        source: row.method.startsWith(LLM_METHOD_PREFIX) ? "llm" : "rules",
+        note: evidenceNote(row.evidence),
+        method: row.method,
+      });
+    }
+  }
+  return out;
 }
