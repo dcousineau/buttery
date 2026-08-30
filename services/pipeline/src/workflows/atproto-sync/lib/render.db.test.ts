@@ -1,8 +1,8 @@
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { contentFingerprint, normalizeSourceUrl } from "@buttery/recipe-schemas/normalize";
-import type { RecipeRow } from "#/recipe.ts";
-import { renderRecipe } from "#/render.ts";
+import type { RecipeRow } from "#/workflows/atproto-sync/lib/recipe.ts";
+import { renderRecipe } from "#/workflows/atproto-sync/lib/render.ts";
 
 /**
  * The same golden vector as `render.test.ts` and
@@ -20,7 +20,7 @@ const GOLDEN = {
 } as const;
 
 /**
- * The cron-sync render path writes the dedupe sidecar (paprika-import plan
+ * The sweep's render path writes the dedupe sidecar (paprika-import plan
  * §6.6 "writer 3", acceptance §16.21).
  *
  * This needs a real migrated Postgres — the whole point is what a unit test
@@ -28,7 +28,7 @@ const GOLDEN = {
  * that a re-render REPLACES them rather than leaving keys describing content
  * that no longer exists, and that a key which goes away leaves no row behind.
  *
- *   pnpm --filter @buttery/atproto-cron-sync test:db
+ *   pnpm --filter @buttery/pipeline test:db
  *
  * With no reachable database the suite SKIPS with a message rather than
  * failing, so `pnpm test` stays green on a machine that has never booted the
@@ -46,9 +46,7 @@ let skipReason = "";
 /** Module-load `console` belongs to no task and vitest drops it; stderr reaches the terminal. */
 function announceSkip(reason: string): void {
   skipReason = reason;
-  process.stderr.write(
-    `\nSKIPPING atproto-cron-sync render DB tests — ${reason}.\nRun them with \`pnpm --filter @buttery/atproto-cron-sync test:db\` (railway run injects DATABASE_URL).\n\n`,
-  );
+  process.stderr.write(`\nSKIPPING atproto-sync render DB tests — ${reason}.\nRun them with \`pnpm --filter @buttery/pipeline test:db\` against the dev stack.\n\n`);
 }
 
 async function connectOrSkip(): Promise<Pool | null> {

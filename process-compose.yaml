@@ -1,15 +1,16 @@
 # Local dev supervisor. One command (`pnpm dev`) boots the whole app: the
-# docker-compose dev containers, migrations, the atproto dev-env, and the web
-# server — each as its own restartable, individually-logged process.
+# docker-compose dev containers, migrations, the atproto dev-env, the web
+# server, and the BullMQ pipeline pair (producer + worker) — each as its own
+# restartable, individually-logged process.
 #
 # process-compose owns the containers outright: `postgres` and `redis` run
 # `docker compose up` attached, so the whole stack starts and stops together
 # (`pnpm dev:down`). Data lives in named volumes and survives; wiping it is
 # `docker compose down -v`.
 #
-# The cron sync is here but does not boot — it's a manual one-shot. Which
-# network it sweeps into Postgres is `services/atproto-cron-sync/.env`'s call,
-# not this file's.
+# The atproto sweep is here but does not boot — it's a manual one-shot, the same
+# code the `atproto-sync` workflow runs on a schedule. Which network it sweeps
+# into Postgres is `services/pipeline/.env`'s call, not this file's.
 #
 # Humans: `pnpm dev` for the TUI (arrow keys to switch process, F5 restart,
 # F10 quit). Agents: drive the running instance through the `pc_*` MCP tools
@@ -219,6 +220,58 @@ processes:
     log_location: ./.dev-logs/web.log
     log_configuration: *log_config
 
+  # ---------------------------------------------------------------------------
+  # Data pipelines (BullMQ). Two processes from one package, exactly as they are
+  # deployed: `pipeline` is the producer + Bull Board UI, `pipeline-worker` is
+  # the consumer fleet. Splitting them locally is not ceremony — it is the only
+  # way a "the board is up but nothing drains the queue" bug shows up here
+  # instead of in production.
+  #
+  # Both boot with the stack. The queues are empty until something enqueues, so
+  # an idle pair costs two Node processes and no Redis traffic beyond BullMQ's
+  # blocking read, and having them up means the board is always there to look at.
+  # ---------------------------------------------------------------------------
+
+  pipeline:
+    description: "BullMQ producer + Bull Board UI (http://127.0.0.1:3002/ui)"
+    command: "pnpm --filter=@buttery/pipeline dev"
+    # Redis is the queue itself; nothing works without it. Postgres is not a
+    # dependency of the server — only of the jobs a worker runs — so it is
+    # declared on `pipeline-worker` instead.
+    depends_on:
+      redis:
+        condition: process_healthy
+    availability: *app_availability
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 3002
+        path: /health
+        scheme: http
+      initial_delay_seconds: 2
+      period_seconds: 2
+      failure_threshold: 60
+    log_location: ./.dev-logs/pipeline.log
+    log_configuration: *log_config
+
+  # Scale the local fleet with `process-compose process scale pipeline-worker 3`
+  # (or the `pc_process_scale` MCP tool) to watch several workers compete for one
+  # queue — the same thing the Railway autoscaler does with replicas, minus the
+  # API call. One is the right default: more just multiplies idle log lines.
+  pipeline-worker:
+    description: "BullMQ worker — drains every queue the pipeline declares"
+    command: "pnpm --filter=@buttery/pipeline dev:worker"
+    # Jobs write the same tables `migrate` creates, so the schema has to be
+    # current before a worker can pick one up.
+    depends_on:
+      redis:
+        condition: process_healthy
+      migrate:
+        condition: process_completed_successfully
+    availability: *app_availability
+    log_location: ./.dev-logs/pipeline-worker.log
+    log_configuration: *log_config
+
   # A sweep is a batch job, not a service: it runs to completion (`restart: "no"`
   # — `on_failure` would re-run a failed network sweep in a loop) and boots
   # `Disabled`, because sweeping is something you ask for, not part of having the
@@ -226,11 +279,11 @@ processes:
   # there is no "boot the whole stack and also run one sweep" case worth a flag.
   #
   # No `environment:` block, deliberately — which network a sweep reads is
-  # `services/atproto-cron-sync/.env`'s call and nothing else's, so this process
-  # and a shell run do the same thing.
-  atproto-cron-sync:
+  # `services/pipeline/.env`'s call and nothing else's, so this process, a shell
+  # run and the scheduled workflow all do the same thing.
+  atproto-sync:
     description: "One atproto → Postgres sync sweep — manual one-shot, starts Disabled"
-    command: "pnpm --filter=@buttery/atproto-cron-sync sync:once"
+    command: "pnpm --filter=@buttery/pipeline sync:once"
     # It writes tables `migrate` creates. `atproto-dev-env` is in here because a
     # `.env` pointed at the local dev-env needs it up, and against the real
     # atmosphere it costs only a wait that has already happened.
@@ -242,7 +295,7 @@ processes:
     disabled: true
     availability:
       restart: "no"
-    log_location: ./.dev-logs/atproto-cron-sync.log
+    log_location: ./.dev-logs/atproto-sync.log
     log_configuration: *log_config
 
   # Opt-in. Docusaurus is a slow, memory-hungry second bundler and nothing else

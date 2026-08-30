@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { contentFingerprint, normalizeSourceUrl } from "@buttery/recipe-schemas/normalize";
-import { dedupeKeys } from "#/render.ts";
+import { dedupeKeys } from "#/workflows/atproto-sync/lib/render.ts";
 
 /**
  * Dedupe keys written by the cron-sync render path (paprika-import plan §6.6,

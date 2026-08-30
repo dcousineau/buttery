@@ -1,5 +1,5 @@
 {
-  "name": "@buttery/atproto-cron-sync",
+  "name": "@buttery/pipeline",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,16 +7,26 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "start": "node src/main.ts",
-    "sync:once": "node src/main.ts --once",
+    "start": "node src/server.ts",
+    "start:worker": "node src/worker.ts",
+    "dev": "node --watch src/server.ts",
+    "dev:worker": "node --watch src/worker.ts",
+    "run:once": "node src/run-once.ts",
+    "sync:once": "node src/run-once.ts atproto-sync",
     "test": "vitest run",
     "test:db": "vitest run --project db",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@bull-board/api": "^8.6.1",
+    "@bull-board/fastify": "^8.6.1",
     "@buttery/recipe-schemas": "workspace:*",
+    "@fastify/basic-auth": "^6.3.0",
+    "bullmq": "^6.1.2",
     "dayjs": "^1.11.23",
     "es-toolkit": "^1.51.0",
+    "fastify": "^5.12.1",
+    "ioredis": "^6.0.0",
     "pg": "^8.23.0"
   },
   "devDependencies": {
