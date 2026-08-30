@@ -31,7 +31,7 @@ function generateResultFor(rawText: string) {
       inputTokens: { total: 120, noCache: 120, cacheRead: undefined, cacheWrite: undefined },
       outputTokens: { total: 40, text: 40, reasoning: undefined },
     },
-    response: { id: "resp_fixture_1", modelId: "kimi-test" },
+    response: { id: "resp_fixture_1", modelId: "mistral-test" },
     // The SDK unconditionally reads `result.warnings` — an empty array here is
     // what a well-behaved provider with nothing to warn about returns.
     warnings: [],

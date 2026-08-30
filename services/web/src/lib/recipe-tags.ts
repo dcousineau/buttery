@@ -50,7 +50,7 @@ export interface RecipeTagLabel {
   source: "rules" | "llm";
   /** `evidence.note` — the model's own sentence about why. `null` for rules rows, which have no note. */
   note: string | null;
-  /** Full provenance (`rules@2`, `llm:moonshot:kimi-k2-0905-preview@v1`) for the `title` attribute. */
+  /** Full provenance (`rules@2`, `llm:openrouter:mistralai/mistral-small-24b-instruct-2501@v1`) for the `title` attribute. */
   method: string;
 }
 

@@ -162,7 +162,7 @@ export interface LlmEnrichmentState {
   llmStatus: string | null;
   llmVersion: number;
   llmInputHash: string | null;
-  /** `provider:model` of the run that wrote the current labels, e.g. `moonshot:kimi-k2-0905-preview`. `null` on a row no LLM run has completed. */
+  /** `provider:model` of the run that wrote the current labels, e.g. `openrouter:mistralai/mistral-small-24b-instruct-2501`. `null` on a row no LLM run has completed. */
   llmModel: string | null;
   /** The PostHog prompt version that ran, or `null` when the code fallback text did. Both are inputs to {@link isLlmFresh}; see it for the asymmetry. */
   llmPromptVersion: number | null;
@@ -445,7 +445,7 @@ export interface LlmEnrichmentMeta {
   llmVersion: number;
   /** Same content fingerprint as `input_hash` (D10) — the LLM classifies the same content the rules did. */
   llmInputHash: string;
-  /** `'<provider>:<model>'` — which registry entry actually ran (plan §6.1), e.g. `'moonshot:kimi-k2-0905-preview'`. */
+  /** `'<provider>:<model>'` — which registry entry actually ran (plan §6.1), e.g. `'openrouter:mistralai/mistral-small-24b-instruct-2501'`. */
   llmModel: string;
   /** The PostHog prompt version actually used, or `null` when the code fallback ran (plan §6.2). */
   llmPromptVersion: number | null;

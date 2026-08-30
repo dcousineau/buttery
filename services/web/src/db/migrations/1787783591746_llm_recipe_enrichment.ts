@@ -48,7 +48,7 @@ export async function up(db: Kysely<any>): Promise<void> {
     .addColumn("llm_status", "text") // null | 'ok' | 'error' | 'skipped' (plan §3.1)
     .addColumn("llm_version", "integer", (col) => col.notNull().defaultTo(0))
     .addColumn("llm_input_hash", "text") // same fingerprint as input_hash (D10) -- the LLM classifies the same content
-    .addColumn("llm_model", "text") // e.g. 'moonshot:kimi-k2-0905-preview' -- which registry entry actually ran
+    .addColumn("llm_model", "text") // e.g. 'openrouter:mistralai/mistral-small-24b-instruct-2501' -- which registry entry actually ran
     .addColumn("llm_prompt_version", "integer") // the PostHog prompt version used; null means the code fallback ran (plan §6.2)
     .addColumn("llm_enriched_at", "timestamptz")
     .addColumn("llm_error", "text") // the message, not a stack

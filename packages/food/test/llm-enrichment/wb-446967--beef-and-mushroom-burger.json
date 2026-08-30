@@ -1,0 +1,307 @@
+{
+  "recipeId": "wb-446967",
+  "recipeName": "Beef and Mushroom Burger",
+  "origin": "sync",
+  "prompt": {
+    "name": "recipe-llm-enrichment",
+    "source": "code_fallback",
+    "version": null
+  },
+  "versions": {
+    "classifier": 2,
+    "llm": 1
+  },
+  "recipeJsonSha256": "65ff0a0b94ec19e55751f025e4642731ab73eb2935d74ae84897eb7470c7d5da",
+  "input": {
+    "name": "Beef and Mushroom Burger",
+    "ingredients": [
+      {
+        "ordinal": 0,
+        "text": "Vegetable oil"
+      },
+      {
+        "ordinal": 1,
+        "text": "Mushrooms, chopped"
+      },
+      {
+        "ordinal": 2,
+        "text": "Garlic"
+      },
+      {
+        "ordinal": 3,
+        "text": "Parsley"
+      },
+      {
+        "ordinal": 4,
+        "text": "Ground/minced beef"
+      },
+      {
+        "ordinal": 5,
+        "text": "Salt"
+      },
+      {
+        "ordinal": 6,
+        "text": "Cream"
+      },
+      {
+        "ordinal": 7,
+        "text": "Chilli sauce"
+      },
+      {
+        "ordinal": 8,
+        "text": "Hamburger buns, sliced in half"
+      },
+      {
+        "ordinal": 9,
+        "text": "Lettuce"
+      },
+      {
+        "ordinal": 10,
+        "text": "Tomato, sliced"
+      }
+    ],
+    "rulesLabels": [
+      {
+        "dimension": "allergen",
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "allergen",
+        "slug": "egg",
+        "verdict": "unknown",
+        "confidence": 0.4
+      },
+      {
+        "dimension": "allergen",
+        "slug": "fish",
+        "verdict": "unknown",
+        "confidence": 0.4
+      },
+      {
+        "dimension": "allergen",
+        "slug": "crustacean_shellfish",
+        "verdict": "unknown",
+        "confidence": 0.4
+      },
+      {
+        "dimension": "allergen",
+        "slug": "tree_nuts",
+        "verdict": "unknown",
+        "confidence": 0.4
+      },
+      {
+        "dimension": "allergen",
+        "slug": "peanut",
+        "verdict": "unknown",
+        "confidence": 0.4
+      },
+      {
+        "dimension": "allergen",
+        "slug": "wheat",
+        "verdict": "unknown",
+        "confidence": 0.4
+      },
+      {
+        "dimension": "allergen",
+        "slug": "soy",
+        "verdict": "unknown",
+        "confidence": 0.4
+      },
+      {
+        "dimension": "allergen",
+        "slug": "sesame",
+        "verdict": "unknown",
+        "confidence": 0.4
+      },
+      {
+        "dimension": "allergen",
+        "slug": "gluten",
+        "verdict": "unknown",
+        "confidence": 0.4
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegetarian",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "pescatarian",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "gluten_free",
+        "verdict": "likely",
+        "confidence": 0.7
+      },
+      {
+        "dimension": "diet",
+        "slug": "kosher",
+        "verdict": "excluded",
+        "confidence": 0.9
+      }
+    ]
+  },
+  "expected": {
+    "allergens": [
+      {
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.95,
+        "ordinals": [6],
+        "note": "Cream is a dairy ingredient."
+      },
+      {
+        "slug": "wheat",
+        "verdict": "contains",
+        "confidence": 0.93,
+        "ordinals": [8],
+        "note": "Hamburger buns are wheat bread unless a specific alternative is used."
+      },
+      {
+        "slug": "gluten",
+        "verdict": "contains",
+        "confidence": 0.93,
+        "ordinals": [8],
+        "note": "Wheat buns carry gluten."
+      },
+      {
+        "slug": "sesame",
+        "verdict": "may_contain",
+        "confidence": 0.5,
+        "ordinals": [8],
+        "note": "Hamburger buns are commonly sesame-topped or baked on shared lines."
+      },
+      {
+        "slug": "egg",
+        "verdict": "may_contain",
+        "confidence": 0.4,
+        "ordinals": [8],
+        "note": "Some bun doughs are enriched or egg-washed."
+      },
+      {
+        "slug": "soy",
+        "verdict": "may_contain",
+        "confidence": 0.45,
+        "ordinals": [0, 7, 8],
+        "note": "Unspecified vegetable oil is often soybean; buns and bottled chilli sauce commonly include soy ingredients."
+      },
+      {
+        "slug": "fish",
+        "verdict": "may_contain",
+        "confidence": 0.3,
+        "ordinals": [7],
+        "note": "Some chilli sauces are built on fish sauce or anchovy."
+      }
+    ],
+    "diets": [
+      {
+        "slug": "vegetarian",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [4],
+        "note": "Ground beef."
+      },
+      {
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [4, 6],
+        "note": "Beef and cream."
+      },
+      {
+        "slug": "pescatarian",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [4],
+        "note": "Beef is not pescatarian."
+      },
+      {
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [6],
+        "note": "Cream."
+      },
+      {
+        "slug": "gluten_free",
+        "verdict": "excluded",
+        "confidence": 0.9,
+        "ordinals": [8],
+        "note": "Standard hamburger buns are wheat-based."
+      },
+      {
+        "slug": "kosher",
+        "verdict": "excluded",
+        "confidence": 0.85,
+        "ordinals": [4, 6],
+        "note": "Meat and dairy cooked together."
+      },
+      {
+        "slug": "keto",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [8],
+        "note": "Bread bun dominates the carb shape."
+      },
+      {
+        "slug": "low_carb",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [8],
+        "note": "Bun is a starch base."
+      },
+      {
+        "slug": "low_fat",
+        "verdict": "excluded",
+        "confidence": 0.55,
+        "ordinals": [0, 4, 6],
+        "note": "Oil, ground beef and cream read as a fat-heavy shape."
+      },
+      {
+        "slug": "paleo",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [6, 8],
+        "note": "Grain bun and dairy cream."
+      }
+    ],
+    "cuisine": [
+      {
+        "slug": "american",
+        "confidence": 0.88
+      }
+    ],
+    "mealType": [
+      {
+        "slug": "lunch",
+        "confidence": 0.75
+      },
+      {
+        "slug": "dinner",
+        "confidence": 0.7
+      }
+    ],
+    "spiceLevel": {
+      "slug": "mild",
+      "confidence": 0.5
+    }
+  }
+}

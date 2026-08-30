@@ -44,7 +44,7 @@ describe("enrichmentTagLabels — source derived from method", () => {
   });
 
   it("reads an llm:provider:model@version method as source 'llm', via the llm: prefix alone", () => {
-    const out = enrichmentTagLabels(view({ allergen: [labelRow({ method: "llm:moonshot:kimi-k2-0905-preview@v1" })] }));
+    const out = enrichmentTagLabels(view({ allergen: [labelRow({ method: "llm:openrouter:mistralai/mistral-small-24b-instruct-2501@v1" })] }));
     expect(out?.[0]?.source).toBe("llm");
   });
 });

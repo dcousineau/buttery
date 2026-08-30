@@ -1,0 +1,261 @@
+{
+  "recipeId": "3mqakeushud26",
+  "recipeName": "Chocolate Chip Cookies (Oven)",
+  "origin": "sync",
+  "prompt": {
+    "name": "recipe-llm-enrichment",
+    "source": "code_fallback",
+    "version": null
+  },
+  "versions": {
+    "classifier": 2,
+    "llm": 1
+  },
+  "recipeJsonSha256": "cb1127e8557fd91573a7cab1a881293be7c25cf98fb3dfb06acade9db482d646",
+  "input": {
+    "name": "Chocolate Chip Cookies (Oven)",
+    "ingredients": [
+      {
+        "ordinal": 0,
+        "text": "1/2 cup unsalted butter, melted"
+      },
+      {
+        "ordinal": 1,
+        "text": "1/3 cup granulated sugar"
+      },
+      {
+        "ordinal": 2,
+        "text": "1/2 cup light brown sugar, packed"
+      },
+      {
+        "ordinal": 3,
+        "text": "1 tsp pure vanilla extract"
+      },
+      {
+        "ordinal": 4,
+        "text": "1 large egg, room temperature"
+      },
+      {
+        "ordinal": 5,
+        "text": "1/2 tsp baking soda"
+      },
+      {
+        "ordinal": 6,
+        "text": "1/4 tsp fine sea salt"
+      },
+      {
+        "ordinal": 7,
+        "text": "1.5 cups all-purpose flour"
+      },
+      {
+        "ordinal": 8,
+        "text": "1 cup semi-sweet chocolate chips"
+      }
+    ],
+    "rulesLabels": [
+      {
+        "dimension": "allergen",
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "allergen",
+        "slug": "egg",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "allergen",
+        "slug": "wheat",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "allergen",
+        "slug": "gluten",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegetarian",
+        "verdict": "likely",
+        "confidence": 0.7
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "pescatarian",
+        "verdict": "likely",
+        "confidence": 0.7
+      },
+      {
+        "dimension": "diet",
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "gluten_free",
+        "verdict": "excluded",
+        "confidence": 0.9
+      }
+    ]
+  },
+  "expected": {
+    "allergens": [
+      {
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.97,
+        "ordinals": [0, 8],
+        "note": "butter is dairy; semi-sweet chips commonly include milk fat or milk solids"
+      },
+      {
+        "slug": "egg",
+        "verdict": "contains",
+        "confidence": 0.97,
+        "ordinals": [4],
+        "note": "whole egg"
+      },
+      {
+        "slug": "wheat",
+        "verdict": "contains",
+        "confidence": 0.97,
+        "ordinals": [7],
+        "note": "all-purpose flour is wheat"
+      },
+      {
+        "slug": "gluten",
+        "verdict": "contains",
+        "confidence": 0.97,
+        "ordinals": [7],
+        "note": "wheat flour carries gluten"
+      },
+      {
+        "slug": "soy",
+        "verdict": "may_contain",
+        "confidence": 0.6,
+        "ordinals": [8],
+        "note": "chocolate chips usually list soy lecithin as an emulsifier"
+      },
+      {
+        "slug": "tree_nuts",
+        "verdict": "may_contain",
+        "confidence": 0.35,
+        "ordinals": [8],
+        "note": "chocolate is often made on lines shared with nuts"
+      },
+      {
+        "slug": "peanut",
+        "verdict": "may_contain",
+        "confidence": 0.3,
+        "ordinals": [8],
+        "note": "chocolate is often made on lines shared with peanuts"
+      }
+    ],
+    "diets": [
+      {
+        "slug": "vegetarian",
+        "verdict": "likely",
+        "confidence": 0.9,
+        "ordinals": [0, 4, 8],
+        "note": "dairy and egg only, no meat or fish"
+      },
+      {
+        "slug": "pescatarian",
+        "verdict": "likely",
+        "confidence": 0.85,
+        "ordinals": [0, 4, 8],
+        "note": "no meat; dairy and egg are permitted"
+      },
+      {
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [0, 4],
+        "note": "butter and egg are animal products"
+      },
+      {
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [0, 8],
+        "note": "butter, plus likely milk solids in the chips"
+      },
+      {
+        "slug": "gluten_free",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [7],
+        "note": "wheat flour"
+      },
+      {
+        "slug": "keto",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [1, 2, 7, 8],
+        "note": "two sugars plus wheat flour"
+      },
+      {
+        "slug": "low_carb",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [1, 2, 7, 8],
+        "note": "flour and sugar dominate the list"
+      },
+      {
+        "slug": "low_fat",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0, 8],
+        "note": "half a cup of butter plus chocolate"
+      },
+      {
+        "slug": "low_calorie",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0, 1, 2, 8],
+        "note": "butter, sugar, and chocolate together"
+      },
+      {
+        "slug": "diabetic",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [1, 2, 8],
+        "note": "refined sugars and sweetened chocolate"
+      },
+      {
+        "slug": "paleo",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0, 1, 2, 7],
+        "note": "grain flour, refined sugar, and dairy"
+      }
+    ],
+    "cuisine": [
+      {
+        "slug": "american",
+        "confidence": 0.85
+      }
+    ],
+    "mealType": [
+      {
+        "slug": "dessert",
+        "confidence": 0.95
+      },
+      {
+        "slug": "snack",
+        "confidence": 0.6
+      }
+    ],
+    "spiceLevel": null
+  }
+}

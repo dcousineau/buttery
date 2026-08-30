@@ -18,8 +18,8 @@ import type { ClassifierLine, Evidence, Label } from "#/queues/recipe-enrichment
  * tests assert that directly rather than trusting the shape.
  */
 
-const PROVIDER = "moonshot";
-const MODEL = "kimi-k2-0905-preview";
+const PROVIDER = "openrouter";
+const MODEL = "mistralai/mistral-small-24b-instruct-2501";
 const METHOD = llmMethod(PROVIDER, MODEL);
 
 function line(ordinal: number, text: string): ClassifierLine {

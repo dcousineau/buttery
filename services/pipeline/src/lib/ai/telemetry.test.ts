@@ -67,7 +67,7 @@ function mockModel(): MockLanguageModelV4 {
         content: [{ type: "text", text: JSON.stringify({ a: "y" }) }],
         finishReason: { unified: "stop", raw: "stop" },
         usage,
-        response: { id: "resp_probe", modelId: "kimi-test" },
+        response: { id: "resp_probe", modelId: "mistral-test" },
         warnings: [],
       }),
   });
@@ -89,7 +89,7 @@ describe("generationTelemetry — prompt and output text are always recorded", (
           content: [{ type: "text", text: JSON.stringify({ a: sentinelOutput }) }],
           finishReason: { unified: "stop", raw: "stop" },
           usage,
-          response: { id: "resp_probe", modelId: "kimi-test" },
+          response: { id: "resp_probe", modelId: "mistral-test" },
           warnings: [],
         }),
     });

@@ -1,0 +1,197 @@
+{
+  "recipeId": "wb-451211",
+  "recipeName": "Crème Brûlée III",
+  "origin": "sync",
+  "prompt": {
+    "name": "recipe-llm-enrichment",
+    "source": "code_fallback",
+    "version": null
+  },
+  "versions": {
+    "classifier": 2,
+    "llm": 1
+  },
+  "recipeJsonSha256": "a15154bc2146f064dc8fcf483d6b0eebbddf4f85d1e681d97d0f84d91b24c11a",
+  "input": {
+    "name": "Crème Brûlée III",
+    "ingredients": [
+      {
+        "ordinal": 0,
+        "text": "1 cup heavy cream"
+      },
+      {
+        "ordinal": 1,
+        "text": "2 egg yolks"
+      },
+      {
+        "ordinal": 2,
+        "text": "½ cup granulated white sugar, divided"
+      },
+      {
+        "ordinal": 3,
+        "text": "Flavorings, such as vanilla, cardamom, citrus zest"
+      }
+    ],
+    "rulesLabels": [
+      {
+        "dimension": "allergen",
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "allergen",
+        "slug": "egg",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegetarian",
+        "verdict": "unknown",
+        "confidence": 0.3
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "pescatarian",
+        "verdict": "likely",
+        "confidence": 0.7
+      },
+      {
+        "dimension": "diet",
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "gluten_free",
+        "verdict": "likely",
+        "confidence": 0.7
+      }
+    ]
+  },
+  "expected": {
+    "allergens": [
+      {
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.97,
+        "ordinals": [0],
+        "note": "Heavy cream is a dairy product."
+      },
+      {
+        "slug": "egg",
+        "verdict": "contains",
+        "confidence": 0.97,
+        "ordinals": [1],
+        "note": "Egg yolks are a listed ingredient."
+      },
+      {
+        "slug": "tree_nuts",
+        "verdict": "may_contain",
+        "confidence": 0.3,
+        "ordinals": [3],
+        "note": "Flavorings are open-ended; almond or other nut extracts are a common choice."
+      }
+    ],
+    "diets": [
+      {
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.97,
+        "ordinals": [0, 1],
+        "note": "Cream and egg yolks are animal products."
+      },
+      {
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.97,
+        "ordinals": [0],
+        "note": "Heavy cream is dairy."
+      },
+      {
+        "slug": "vegetarian",
+        "verdict": "likely",
+        "confidence": 0.88,
+        "ordinals": [0, 1, 2, 3],
+        "note": "Dairy and egg only; no meat or fish listed."
+      },
+      {
+        "slug": "pescatarian",
+        "verdict": "likely",
+        "confidence": 0.85,
+        "ordinals": [0, 1, 2, 3],
+        "note": "No meat listed; dairy and egg are permitted."
+      },
+      {
+        "slug": "gluten_free",
+        "verdict": "likely",
+        "confidence": 0.75,
+        "ordinals": [0, 1, 2, 3],
+        "note": "No wheat or grain ingredients listed, though the flavorings are unspecified."
+      },
+      {
+        "slug": "keto",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [2],
+        "note": "Half a cup of sugar."
+      },
+      {
+        "slug": "low_carb",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [2],
+        "note": "Sugar is a primary ingredient."
+      },
+      {
+        "slug": "diabetic",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [2],
+        "note": "Largely sugar and cream."
+      },
+      {
+        "slug": "low_fat",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0, 1],
+        "note": "Heavy cream and egg yolks dominate."
+      },
+      {
+        "slug": "low_calorie",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0, 2],
+        "note": "Cream plus sugar is calorie dense."
+      },
+      {
+        "slug": "paleo",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0, 2],
+        "note": "Dairy and refined sugar."
+      }
+    ],
+    "cuisine": [
+      {
+        "slug": "french",
+        "confidence": 0.93
+      }
+    ],
+    "mealType": [
+      {
+        "slug": "dessert",
+        "confidence": 0.97
+      }
+    ],
+    "spiceLevel": null
+  }
+}

@@ -15,7 +15,7 @@ import { PostHogSpanProcessor } from "@posthog/ai/otel";
  * `@posthog/ai/vercel`'s `withTracing` imports only `uuid` and `@posthog/core`.
  * The real blocker is narrower and harder: `withTracing` throws outright unless
  * the model reports `specificationVersion` `v2` or `v3`, and
- * `@ai-sdk/openai-compatible@3` under `ai@7` reports **`v4`**. Its own error
+ * `@openrouter/ai-sdk-provider@3` under `ai@7` reports **`v4`**. Its own error
  * message names the replacement — "Use @ai-sdk/otel with @posthog/ai/otel for
  * AI SDK v7 models" — and PostHog's docs say the same. So the model-wrapper
  * path is not a choice we declined; it is one this stack cannot take.

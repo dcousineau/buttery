@@ -248,7 +248,7 @@ async function reset(): Promise<void> {
       llm_status: "ok",
       llm_version: 1,
       llm_input_hash: "sha256:llm-fixture-hash", // matches input_hash — freshAgainstRules should read true
-      llm_model: "moonshot:kimi-test",
+      llm_model: "openrouter:mistral-test",
       llm_prompt_version: null, // the fallback-prompt case (llm/prompt.ts ran, not "unknown")
       llm_enriched_at: sql`now()`,
     })
@@ -259,7 +259,7 @@ async function reset(): Promise<void> {
       // Rules-owned: method has no `llm:` prefix.
       { recipe_id: R_LLM, dimension: "allergen", slug: "tree_nuts", verdict: "not_detected", confidence: 0.4, method: `rules@${CLASSIFIER_VERSION}`, evidence: null },
       // LLM-owned: an LLM-only dimension (cuisine) the rules classifier never emits at all.
-      { recipe_id: R_LLM, dimension: "cuisine", slug: "italian", verdict: "likely", confidence: 0.82, method: "llm:moonshot:kimi-test@v1", evidence: null },
+      { recipe_id: R_LLM, dimension: "cuisine", slug: "italian", verdict: "likely", confidence: 0.82, method: "llm:openrouter:mistral-test@v1", evidence: null },
     ])
     .execute();
 }
@@ -411,7 +411,7 @@ describeDb("getRecipeDebug", () => {
       expect(llm).toMatchObject({
         status: "ok",
         error: null,
-        model: "moonshot:kimi-test",
+        model: "openrouter:mistral-test",
         promptVersion: null,
         llmVersion: 1,
         classifierVersion: CLASSIFIER_VERSION,
@@ -428,7 +428,7 @@ describeDb("getRecipeDebug", () => {
       ]);
       // LLM-owned row (llm: prefix) lands under ITS dimension, tagged "llm",
       // with the full provenance string kept verbatim in `method`.
-      expect(llm!.labelsByDimension.cuisine).toEqual([expect.objectContaining({ slug: "italian", verdict: "likely", source: "llm", method: "llm:moonshot:kimi-test@v1" })]);
+      expect(llm!.labelsByDimension.cuisine).toEqual([expect.objectContaining({ slug: "italian", verdict: "likely", source: "llm", method: "llm:openrouter:mistral-test@v1" })]);
 
       // The SAME rows are still visible raw, unedited, in the generic
       // privateLayers section — the highlight is a second view, not a

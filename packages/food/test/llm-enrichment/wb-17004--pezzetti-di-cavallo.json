@@ -1,0 +1,184 @@
+{
+  "recipeId": "wb-17004",
+  "recipeName": "Pezzetti di Cavallo (Italian Horse and Tomato)",
+  "origin": "sync",
+  "prompt": {
+    "name": "recipe-llm-enrichment",
+    "source": "code_fallback",
+    "version": null
+  },
+  "versions": {
+    "classifier": 2,
+    "llm": 1
+  },
+  "recipeJsonSha256": "0593475eb02fdea51cd3a452123e807f5cd495bffb4d6c6b4d95552348217467",
+  "input": {
+    "name": "Pezzetti di Cavallo (Italian Horse and Tomato)",
+    "ingredients": [
+      {
+        "ordinal": 0,
+        "text": "1 kg horse meat"
+      },
+      {
+        "ordinal": 1,
+        "text": "1 L tomato sauce"
+      },
+      {
+        "ordinal": 2,
+        "text": "Onions, chopped"
+      },
+      {
+        "ordinal": 3,
+        "text": "Olive oil (extra virgin)"
+      },
+      {
+        "ordinal": 4,
+        "text": "Parsley"
+      },
+      {
+        "ordinal": 5,
+        "text": "Carrots"
+      },
+      {
+        "ordinal": 6,
+        "text": "Celery"
+      },
+      {
+        "ordinal": 7,
+        "text": "Chilli peppers"
+      },
+      {
+        "ordinal": 8,
+        "text": "2 leaves laurel"
+      }
+    ],
+    "rulesLabels": [
+      {
+        "dimension": "diet",
+        "slug": "vegetarian",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "pescatarian",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "dairy_free",
+        "verdict": "likely",
+        "confidence": 0.7
+      },
+      {
+        "dimension": "diet",
+        "slug": "gluten_free",
+        "verdict": "likely",
+        "confidence": 0.7
+      }
+    ]
+  },
+  "expected": {
+    "allergens": [
+      {
+        "slug": "milk",
+        "verdict": "may_contain",
+        "confidence": 0.25,
+        "ordinals": [1],
+        "note": "prepared tomato sauce is often finished with butter or cheese."
+      }
+    ],
+    "diets": [
+      {
+        "slug": "vegetarian",
+        "verdict": "excluded",
+        "confidence": 0.98,
+        "ordinals": [0],
+        "note": "horse meat is the main ingredient."
+      },
+      {
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.98,
+        "ordinals": [0],
+        "note": "horse meat is the main ingredient."
+      },
+      {
+        "slug": "pescatarian",
+        "verdict": "excluded",
+        "confidence": 0.98,
+        "ordinals": [0],
+        "note": "red meat, not fish or shellfish."
+      },
+      {
+        "slug": "kosher",
+        "verdict": "excluded",
+        "confidence": 0.97,
+        "ordinals": [0],
+        "note": "horse is not a permitted animal."
+      },
+      {
+        "slug": "halal",
+        "verdict": "excluded",
+        "confidence": 0.45,
+        "ordinals": [0],
+        "note": "horse meat is disputed between schools, and the slaughter method is unstated."
+      },
+      {
+        "slug": "dairy_free",
+        "verdict": "likely",
+        "confidence": 0.55,
+        "ordinals": [1, 3],
+        "note": "no dairy listed; a jarred tomato sauce is the one line that could hide some."
+      },
+      {
+        "slug": "gluten_free",
+        "verdict": "likely",
+        "confidence": 0.65,
+        "ordinals": [0, 1],
+        "note": "no wheat or grain lines; the tomato sauce is the only packaged item."
+      },
+      {
+        "slug": "low_carb",
+        "verdict": "likely",
+        "confidence": 0.5,
+        "ordinals": [0, 1, 3],
+        "note": "meat, olive oil and vegetables with no grain, starch or sugar line."
+      },
+      {
+        "slug": "paleo",
+        "verdict": "likely",
+        "confidence": 0.45,
+        "ordinals": [0, 3, 5, 6],
+        "note": "meat, olive oil and vegetables only; a jarred sauce may carry added sugar."
+      }
+    ],
+    "cuisine": [
+      {
+        "slug": "italian",
+        "confidence": 0.95
+      }
+    ],
+    "mealType": [
+      {
+        "slug": "dinner",
+        "confidence": 0.9
+      },
+      {
+        "slug": "lunch",
+        "confidence": 0.4
+      }
+    ],
+    "spiceLevel": {
+      "slug": "medium",
+      "confidence": 0.55
+    }
+  }
+}

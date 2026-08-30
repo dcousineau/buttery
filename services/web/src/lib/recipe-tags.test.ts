@@ -90,10 +90,18 @@ describe("mergeRecipeTags — allergen copy and tone", () => {
   it("renders 'may_contain' as a hedged warning, same tone as 'contains'", () => {
     const out = mergeRecipeTags({
       author: author(),
-      labels: [label({ dimension: "allergen", slug: "egg", verdict: "may_contain", source: "llm", method: "llm:moonshot:kimi-k2-0905-preview@v1" })],
+      labels: [label({ dimension: "allergen", slug: "egg", verdict: "may_contain", source: "llm", method: "llm:openrouter:mistralai/mistral-small-24b-instruct-2501@v1" })],
     });
     expect(out).toEqual([
-      { key: "allergen:egg", group: "allergen", label: "May contain eggs", source: "llm", tone: "warning", note: null, method: "llm:moonshot:kimi-k2-0905-preview@v1" },
+      {
+        key: "allergen:egg",
+        group: "allergen",
+        label: "May contain eggs",
+        source: "llm",
+        tone: "warning",
+        note: null,
+        method: "llm:openrouter:mistralai/mistral-small-24b-instruct-2501@v1",
+      },
     ]);
   });
 
@@ -234,7 +242,7 @@ describe("mergeRecipeTags — note and method passthrough", () => {
           slug: "milk",
           verdict: "contains",
           note: "Butter and parmesan both carry milk.",
-          method: "llm:moonshot:kimi-k2-0905-preview@v1",
+          method: "llm:openrouter:mistralai/mistral-small-24b-instruct-2501@v1",
           source: "llm",
         }),
       ],
@@ -242,7 +250,7 @@ describe("mergeRecipeTags — note and method passthrough", () => {
     const allergenTag = out.find((tag) => tag.group === "allergen");
     const authorTag = out.find((tag) => tag.group === "facet");
     expect(allergenTag?.note).toBe("Butter and parmesan both carry milk.");
-    expect(allergenTag?.method).toBe("llm:moonshot:kimi-k2-0905-preview@v1");
+    expect(allergenTag?.method).toBe("llm:openrouter:mistralai/mistral-small-24b-instruct-2501@v1");
     expect(authorTag?.note).toBeNull();
     expect(authorTag?.method).toBeNull();
   });

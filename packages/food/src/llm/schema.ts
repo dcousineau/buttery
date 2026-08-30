@@ -181,6 +181,37 @@ export const llmOutputSchema = z.object({
 /** The validated model output. Every downstream module speaks this, not raw JSON. */
 export type LlmOutput = z.infer<typeof llmOutputSchema>;
 
+/**
+ * Did the model say NOTHING AT ALL — every array empty and `spiceLevel` null?
+ *
+ * Every field above carries a default, which is what makes the sparse encoding
+ * work: a model that omits `allergens` means "found none", and `merge.ts` turns
+ * that into no rows. The cost of those defaults is that `{}` also validates,
+ * and validates into a shape that is indistinguishable from a confident "this
+ * recipe contains no allergens and is excluded from no diet".
+ *
+ * That is not a hypothetical. In the `test/llm-enrichment` sweeps, one
+ * candidate model returned exactly this twice in 30 runs — once for a cookie
+ * recipe with eggs, butter and wheat flour — while its other runs on the same
+ * recipes were normal. See `test/llm-enrichment/MODEL-RUNS.md`.
+ *
+ * Sparseness is only readable as a verdict when the model actually answered.
+ * A wholly empty answer is the one case where absence means the call failed,
+ * not that the defaults hold, so the pipeline treats it as an error rather
+ * than writing it — `recipe-enrichment/index.ts` is where that happens, and
+ * why it retries rather than failing outright: the runs on either side of an
+ * empty one came back correct.
+ *
+ * Deliberately NOT a zod refinement on `llmOutputSchema`: a refinement would
+ * make this a parse failure, and a parse failure is the wrong diagnosis. The
+ * model returned well-formed JSON matching the schema; what it did not do is
+ * answer. Keeping the check separate keeps those two failures distinguishable
+ * in the error a human reads.
+ */
+export function isEmptyLlmOutput(output: LlmOutput): boolean {
+  return output.allergens.length === 0 && output.diets.length === 0 && output.cuisine.length === 0 && output.mealType.length === 0 && output.spiceLevel === null;
+}
+
 export type LlmAllergenJudgment = LlmOutput["allergens"][number];
 export type LlmDietJudgment = LlmOutput["diets"][number];
 

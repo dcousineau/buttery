@@ -1,0 +1,258 @@
+{
+  "recipeId": "wb-20354",
+  "recipeName": "Po' Boy",
+  "origin": "sync",
+  "prompt": {
+    "name": "recipe-llm-enrichment",
+    "source": "code_fallback",
+    "version": null
+  },
+  "versions": {
+    "classifier": 2,
+    "llm": 1
+  },
+  "recipeJsonSha256": "2724690e4b0517ad27d0b432b5b225ff98eb22c577b7cbc2c6c14c02e0ec067c",
+  "input": {
+    "name": "Po' Boy",
+    "ingredients": [
+      {
+        "ordinal": 0,
+        "text": "French bread"
+      },
+      {
+        "ordinal": 1,
+        "text": "Thinly sliced meat (ham, turkey, roast beef, etc.), fried seafood (shrimp, oysters, fish, etc.), etc."
+      },
+      {
+        "ordinal": 2,
+        "text": "Lettuce, tomatoes, pickles, etc."
+      },
+      {
+        "ordinal": 3,
+        "text": "Sliced cheese"
+      },
+      {
+        "ordinal": 4,
+        "text": "Mayonnaise, mustard, gravy, etc."
+      }
+    ],
+    "rulesLabels": [
+      {
+        "dimension": "allergen",
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.95
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegetarian",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "pescatarian",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.9
+      },
+      {
+        "dimension": "diet",
+        "slug": "gluten_free",
+        "verdict": "likely",
+        "confidence": 0.7
+      },
+      {
+        "dimension": "diet",
+        "slug": "kosher",
+        "verdict": "excluded",
+        "confidence": 0.9
+      }
+    ]
+  },
+  "expected": {
+    "allergens": [
+      {
+        "slug": "milk",
+        "verdict": "contains",
+        "confidence": 0.95,
+        "ordinals": [3, 4],
+        "note": "Sliced cheese is dairy; gravy is often milk- or butter-based."
+      },
+      {
+        "slug": "wheat",
+        "verdict": "contains",
+        "confidence": 0.95,
+        "ordinals": [0, 1, 4],
+        "note": "French bread is wheat; fried coatings and gravy are typically flour-based."
+      },
+      {
+        "slug": "gluten",
+        "verdict": "contains",
+        "confidence": 0.95,
+        "ordinals": [0, 1, 4],
+        "note": "Wheat bread, breading, and flour-thickened gravy all carry gluten."
+      },
+      {
+        "slug": "egg",
+        "verdict": "may_contain",
+        "confidence": 0.75,
+        "ordinals": [4],
+        "note": "Mayonnaise is egg-based, but it is one of several listed condiments."
+      },
+      {
+        "slug": "crustacean_shellfish",
+        "verdict": "may_contain",
+        "confidence": 0.7,
+        "ordinals": [1],
+        "note": "Shrimp is named as one filling option; shared fryer oil is also common."
+      },
+      {
+        "slug": "fish",
+        "verdict": "may_contain",
+        "confidence": 0.7,
+        "ordinals": [1],
+        "note": "Fried fish is named as one filling option."
+      },
+      {
+        "slug": "soy",
+        "verdict": "may_contain",
+        "confidence": 0.5,
+        "ordinals": [1, 4],
+        "note": "Frying oil and mayonnaise are commonly soybean-based; oil is unspecified."
+      },
+      {
+        "slug": "peanut",
+        "verdict": "may_contain",
+        "confidence": 0.3,
+        "ordinals": [1],
+        "note": "Frying oil is unspecified and peanut oil is common for fried seafood."
+      }
+    ],
+    "diets": [
+      {
+        "slug": "vegetarian",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [1],
+        "note": "Filling is meat or seafood."
+      },
+      {
+        "slug": "vegan",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [1, 3, 4],
+        "note": "Meat or seafood plus cheese and mayonnaise."
+      },
+      {
+        "slug": "pescatarian",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [1],
+        "note": "Ham, turkey, and roast beef are listed first, though a fried seafood version would fit."
+      },
+      {
+        "slug": "dairy_free",
+        "verdict": "excluded",
+        "confidence": 0.9,
+        "ordinals": [3, 4],
+        "note": "Sliced cheese, and gravy is often dairy-based."
+      },
+      {
+        "slug": "gluten_free",
+        "verdict": "excluded",
+        "confidence": 0.95,
+        "ordinals": [0, 1, 4],
+        "note": "Built on French bread; breading and gravy add more wheat."
+      },
+      {
+        "slug": "halal",
+        "verdict": "excluded",
+        "confidence": 0.7,
+        "ordinals": [1],
+        "note": "Ham is listed among the fillings."
+      },
+      {
+        "slug": "kosher",
+        "verdict": "excluded",
+        "confidence": 0.9,
+        "ordinals": [1, 3],
+        "note": "Ham and shellfish options, plus meat served with cheese."
+      },
+      {
+        "slug": "keto",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0],
+        "note": "A bread-based sandwich."
+      },
+      {
+        "slug": "low_carb",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0, 1],
+        "note": "French bread plus breaded fried filling."
+      },
+      {
+        "slug": "low_fat",
+        "verdict": "excluded",
+        "confidence": 0.5,
+        "ordinals": [1, 3, 4],
+        "note": "Fried filling with cheese and mayonnaise."
+      },
+      {
+        "slug": "low_calorie",
+        "verdict": "excluded",
+        "confidence": 0.5,
+        "ordinals": [0, 1, 3, 4],
+        "note": "A large bread sandwich with fried filling, cheese, and mayonnaise."
+      },
+      {
+        "slug": "diabetic",
+        "verdict": "excluded",
+        "confidence": 0.5,
+        "ordinals": [0],
+        "note": "Large portion of refined white bread."
+      },
+      {
+        "slug": "paleo",
+        "verdict": "excluded",
+        "confidence": 0.6,
+        "ordinals": [0, 3],
+        "note": "Grain bread and dairy cheese."
+      }
+    ],
+    "cuisine": [
+      {
+        "slug": "cajun_creole",
+        "confidence": 0.9
+      },
+      {
+        "slug": "southern_us",
+        "confidence": 0.6
+      }
+    ],
+    "mealType": [
+      {
+        "slug": "lunch",
+        "confidence": 0.9
+      },
+      {
+        "slug": "dinner",
+        "confidence": 0.5
+      }
+    ],
+    "spiceLevel": null
+  }
+}

@@ -21,7 +21,7 @@ import {
   writeEnrichment,
   writeLlmEnrichment,
 } from "#/queues/recipe-enrichment/lib/load.ts";
-import { FALLBACK_PROMPT, LLM_ENRICHMENT_VERSION, llmOutputSchema, PROMPT_NAME, PROMPT_SLUG_LISTS } from "@buttery/food/llm";
+import { FALLBACK_PROMPT, isEmptyLlmOutput, LLM_ENRICHMENT_VERSION, llmOutputSchema, PROMPT_NAME, PROMPT_SLUG_LISTS } from "@buttery/food/llm";
 import { isLlmEnrichmentEnabled } from "#/queues/recipe-enrichment/lib/posthog.ts";
 import { mergeLlmLabels } from "#/queues/recipe-enrichment/lib/merge.ts";
 import { AI_FEATURE, captureEnrichmentCompleted, captureEnrichmentFailed, PIPELINE_DISTINCT_ID } from "#/queues/recipe-enrichment/lib/capture.ts";
@@ -281,6 +281,22 @@ export async function runLlmEnrich(fastify: FastifyInstance, job: Job): Promise<
         },
       }),
     });
+
+    // A wholly empty answer is a failed call, not a sparse one. Every field in
+    // `llmOutputSchema` has a default, so `{}` parses cleanly into "no
+    // allergens, no diet exclusions, no cuisine" — which `mergeLlmLabels` would
+    // then write as a successful enrichment for a recipe nothing was actually
+    // said about. Observed in the model sweeps (see `isEmptyLlmOutput`), and
+    // this throw is deliberately inside the try: it takes the same path as a
+    // transport failure, so the recipe is marked `status='error'` with a
+    // legible message, the failure is captured, and BullMQ retries it. Retry is
+    // the right response — the runs on either side of an observed empty one
+    // came back correct, so this reads as a transient model failure, not a
+    // reason to give up on the recipe (hence a plain Error, not
+    // `UnrecoverableError`).
+    if (isEmptyLlmOutput(result.output)) {
+      throw new Error(`model returned an empty classification for ${recipeId} — every dimension blank, which is a failed call, not a sparse answer`);
+    }
 
     const { writes, disagreements } = mergeLlmLabels({
       rulesLabels,

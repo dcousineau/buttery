@@ -12,12 +12,21 @@ import type { ProviderOptions } from "@ai-sdk/provider-utils";
  * ingredients or labels.
  *
  * `LLM_ENRICHMENT_PROVIDER` picks an entry, the entry turns env into a
- * {@link LanguageModel}. Only `moonshot` ships — Qwen and Gemini are the seam
- * this registry exists for, not code that lives here today.
+ * {@link LanguageModel}. Only `openrouter` ships — a direct-to-vendor entry is
+ * the seam this registry exists for, not code that lives here today.
  *
- * **Lazy by construction, not by discipline.** `@ai-sdk/openai-compatible` is
- * `await import`ed inside the `moonshot` entry, never at module top level, so
- * that a process that merely imports this module never pulls the SDK in.
+ * **Why a gateway and not a vendor.** OpenRouter fronts every model behind one
+ * key and one base URL, so changing WHICH model runs is an
+ * `LLM_ENRICHMENT_MODEL` edit rather than a new registry entry, a new
+ * dependency and a new secret. The registry keeps earning its keep for the
+ * case a vendor has to be reached directly (rate limits, a model OpenRouter
+ * does not carry, data residency), which is exactly when a second entry is
+ * cheap to add.
+ *
+ * **Lazy by construction, not by discipline.** `@openrouter/ai-sdk-provider`
+ * is `await import`ed inside the `openrouter` entry, never at module top
+ * level, so that a process that merely imports this module never pulls the SDK
+ * in.
  *
  * **No baked-in model id.** `LLM_ENRICHMENT_MODEL` is read verbatim from env
  * with no fallback constant anywhere in this file — an unset or wrong model
@@ -26,8 +35,7 @@ import type { ProviderOptions } from "@ai-sdk/provider-utils";
  *
  * **An entry may also carry per-request options**, because "how you call this
  * provider" is the same kind of fact as "where you call it" — see
- * {@link ResolvedProvider.providerOptions} and the `moonshot` entry's
- * `reasoningEffort`.
+ * {@link ResolvedProvider.providerOptions}.
  */
 
 /**
@@ -37,7 +45,7 @@ import type { ProviderOptions } from "@ai-sdk/provider-utils";
  * exactly one place that decides what those strings are.
  */
 export interface ResolvedProvider {
-  /** The `LLM_ENRICHMENT_PROVIDER` value that resolved — e.g. `"moonshot"`. */
+  /** The `LLM_ENRICHMENT_PROVIDER` value that resolved — e.g. `"openrouter"`. */
   providerName: string;
   /** `LLM_ENRICHMENT_MODEL`, verbatim, no transformation. */
   modelId: string;
@@ -46,12 +54,15 @@ export interface ResolvedProvider {
   /** The model instance a caller hands to `generateText`/`generateObject`. */
   model: LanguageModel;
   /**
-   * Passed straight to `generateText`'s `providerOptions`. Keyed by provider
-   * name, because that is how `@ai-sdk/openai-compatible` finds them.
+   * Passed straight to `generateText`'s `providerOptions`, keyed by provider
+   * name — the AI SDK routes each key to the provider that answers to it.
    *
    * This exists so a registry entry can state how its model must be CALLED,
    * not just where it lives — the caller should not have to know that one
-   * provider needs a knob turned and another does not.
+   * provider needs a knob turned and another does not. Empty for `openrouter`:
+   * every knob it offers (`reasoning`, `models` fallback routing, `user`) is
+   * either irrelevant to a non-reasoning instruct model or a routing policy
+   * this workload has not needed to state.
    */
   providerOptions: ProviderOptions;
 }
@@ -68,30 +79,23 @@ export type ProviderEnv = Readonly<Record<string, string | undefined>>;
 type ProviderFactory = (env: ProviderEnv, modelId: string) => Promise<{ model: LanguageModel; baseURL: string; providerOptions: ProviderOptions }>;
 
 const PROVIDERS: Readonly<Record<string, ProviderFactory>> = {
-  // Moonshot's Kimi API is OpenAI-compatible, so `@ai-sdk/openai-compatible`
-  // is the entire dependency — no `@ai-sdk/moonshot` exists or needs to.
-  moonshot: async (env, modelId) => {
-    const apiKey = env.MOONSHOT_API_KEY;
+  openrouter: async (env, modelId) => {
+    const apiKey = env.OPENROUTER_API_KEY;
     if (!apiKey) {
-      throw new Error("LLM_ENRICHMENT_PROVIDER=moonshot but MOONSHOT_API_KEY is not set — set it in the pipeline env (services/pipeline/.env.example) before llm-enrich can run");
+      throw new Error(
+        "LLM_ENRICHMENT_PROVIDER=openrouter but OPENROUTER_API_KEY is not set — set it in the pipeline env (services/pipeline/.env.example) before llm-enrich can run",
+      );
     }
-    // `||`, not `??`: `.env.example` ships `MOONSHOT_BASE_URL=` blank on purpose, and
+    // `||`, not `??`: `.env.example` ships `OPENROUTER_BASE_URL=` blank on purpose, and
     // `process.loadEnvFile` reads that as `""` — which is a URL nothing can parse, not an absence.
-    const baseURL = env.MOONSHOT_BASE_URL || "https://api.moonshot.ai/v1";
-    const { createOpenAICompatible } = await import("@ai-sdk/openai-compatible");
-    const provider = createOpenAICompatible({ name: "moonshot", baseURL, apiKey });
-    // Kimi models report `supports_reasoning: true` and think by DEFAULT, which is
-    // wrong for this workload twice over. Classifying ingredient lines against a
-    // fixed vocabulary is recall, not deduction, so the chain of thought buys no
-    // accuracy — and it is spent from the same `maxOutputTokens` budget as the
-    // answer, so a recipe long enough to be worth classifying returns EMPTY
-    // content, or nothing at all before the timeout. Measured against
-    // api.moonshot.ai on kimi-k2.6: ~8.2s and an empty `content` with reasoning
-    // on, ~0.9s and a correct answer with it off. `reasoningEffort` is the
-    // openai-compatible provider's own option and reaches the wire as
-    // `reasoning_effort`; "none" is the value Moonshot honors ("minimal" still
-    // thinks).
-    return { model: provider.chatModel(modelId), baseURL, providerOptions: { moonshot: { reasoningEffort: "none" } } };
+    const baseURL = env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
+    const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
+    // `strict` because this really is the OpenRouter API and not a third party
+    // wearing its shape; `compatible` (the factory default) holds newer request
+    // fields back for that latter case. `appName` is app attribution on the
+    // openrouter.ai dashboard — it rides as a header and reaches no model.
+    const provider = createOpenRouter({ apiKey, baseURL, compatibility: "strict", appName: "buttery-pipeline" });
+    return { model: provider.chat(modelId), baseURL, providerOptions: {} };
   },
 };
 
@@ -109,7 +113,7 @@ const PROVIDERS: Readonly<Record<string, ProviderFactory>> = {
 export async function resolveProvider(env: ProviderEnv = process.env): Promise<ResolvedProvider> {
   const providerName = env.LLM_ENRICHMENT_PROVIDER;
   if (!providerName) {
-    throw new Error('LLM_ENRICHMENT_PROVIDER is not set — set it (e.g. "moonshot") in the pipeline env before llm-enrich can run');
+    throw new Error('LLM_ENRICHMENT_PROVIDER is not set — set it (e.g. "openrouter") in the pipeline env before llm-enrich can run');
   }
   const factory = PROVIDERS[providerName];
   if (!factory) {
@@ -119,8 +123,8 @@ export async function resolveProvider(env: ProviderEnv = process.env): Promise<R
   const modelId = env.LLM_ENRICHMENT_MODEL;
   if (!modelId) {
     throw new Error(
-      "LLM_ENRICHMENT_MODEL is not set — Moonshot renames model ids, so this file deliberately has no default; " +
-        'set it to the current id from platform.moonshot.ai (e.g. "kimi-k2-0905-preview", verified against the platform, not hardcoded here)',
+      "LLM_ENRICHMENT_MODEL is not set — this file deliberately keeps no default, so a missing or wrong id is a loud deploy-time error rather than a stale constant; " +
+        'set it to a routing slug from openrouter.ai/models (e.g. "mistralai/mistral-small-24b-instruct-2501")',
     );
   }
   const { model, baseURL, providerOptions } = await factory(env, modelId);

@@ -184,7 +184,7 @@ function LlmStatusBadge({ status }: { status: string | null }) {
 /**
  * `source` is the visual distinction the LLM highlight exists to draw — a
  * filled badge for the model's own rows, an outline one for the rules', with
- * the full `method` string (e.g. `llm:moonshot:kimi-k2-0905-preview@v1`) in
+ * the full `method` string (e.g. `llm:openrouter:mistralai/mistral-small-24b-instruct-2501@v1`) in
  * the title attribute for whoever wants the exact provenance without leaving
  * this row.
  */

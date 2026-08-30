@@ -10,7 +10,7 @@ import { contentChanged, isLlmFresh, isRulesFresh, rulesPassCurrent, type LlmEnr
 const HASH = "content-fingerprint";
 const CLASSIFIER_VERSION = 2;
 const LLM_VERSION = 1;
-const RUN: LlmRunIdentity = { model: "moonshot:kimi-k2-0905-preview", promptVersion: 3 };
+const RUN: LlmRunIdentity = { model: "openrouter:mistralai/mistral-small-24b-instruct-2501", promptVersion: 3 };
 
 /** A recipe whose rules pass and LLM pass are both current, under {@link RUN}. */
 function freshState(overrides: Partial<LlmEnrichmentState> = {}): LlmEnrichmentState {
@@ -77,7 +77,7 @@ describe("isLlmFresh — the question", () => {
 
 describe("isLlmFresh — the answerer", () => {
   it("re-runs when a different model would answer", () => {
-    expect(isLlmFresh(freshState({ llmModel: "moonshot:kimi-k2-0711-preview" }), HASH, LLM_VERSION, RUN, false)).toBe(false);
+    expect(isLlmFresh(freshState({ llmModel: "openrouter:mistralai/mistral-small-3.2-24b-instruct" }), HASH, LLM_VERSION, RUN, false)).toBe(false);
     expect(isLlmFresh(freshState({ llmModel: "qwen:qwen3-max" }), HASH, LLM_VERSION, RUN, false)).toBe(false);
   });
 

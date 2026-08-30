@@ -6,6 +6,7 @@ import {
   LLM_ENRICHMENT_VERSION,
   LLM_METHOD_PREFIX,
   LLM_ONLY_DIET_SLUGS,
+  isEmptyLlmOutput,
   llmMethod,
   llmOutputSchema,
   MEAL_TYPE_SLUGS,
@@ -105,8 +106,8 @@ describe("llm_version — emitted slug sets are pinned to it", () => {
 
 describe("llmMethod — the ownership prefix writeLlmEnrichment deletes by (L9)", () => {
   it("carries provider, model and version, and starts with the prefix the delete matches", () => {
-    const method = llmMethod("moonshot", "kimi-k2-0905-preview");
-    expect(method).toBe(`llm:moonshot:kimi-k2-0905-preview@v${LLM_ENRICHMENT_VERSION}`);
+    const method = llmMethod("openrouter", "mistralai/mistral-small-24b-instruct-2501");
+    expect(method).toBe(`llm:openrouter:mistralai/mistral-small-24b-instruct-2501@v${LLM_ENRICHMENT_VERSION}`);
     // The prefix is load-bearing SQL, not decoration: `delete ... where method
     // like 'llm:%'` is the whole of how two providers own disjoint label sets
     // in one table. A method that stopped starting with it would make the LLM's
@@ -115,7 +116,7 @@ describe("llmMethod — the ownership prefix writeLlmEnrichment deletes by (L9)"
   });
 
   it("never collides with the rules method", () => {
-    expect(llmMethod("moonshot", "kimi-k2-0905-preview").startsWith("rules@")).toBe(false);
+    expect(llmMethod("openrouter", "mistralai/mistral-small-24b-instruct-2501").startsWith("rules@")).toBe(false);
     expect("rules@1".startsWith(LLM_METHOD_PREFIX)).toBe(false);
   });
 });
@@ -194,7 +195,7 @@ describe("llmOutputSchema — the closed enums are the enforcement, not the prom
   });
 
   it("rejects prose-wrapped JSON — the parse boundary is a shape, not a best-effort extraction", () => {
-    // What Kimi drooling looks like from here: a string, not an object. The
+    // What a chatty model looks like from here: a string, not an object. The
     // failure is honest and becomes `llm_status='error'` plus an `$ai_is_error`
     // capture carrying the raw text (§7.1), not a silent half-label.
     expect(llmOutputSchema.safeParse('Here is the JSON you asked for:\n```json\n{"allergens":[]}\n```').success).toBe(false);
@@ -203,5 +204,33 @@ describe("llmOutputSchema — the closed enums are the enforcement, not the prom
   it("defaults ordinals to an empty array, so a judgment with no citation is storable but visibly uncited", () => {
     const parsed = llmOutputSchema.parse({ allergens: [{ slug: "milk", verdict: "may_contain", confidence: 0.3 }] });
     expect(parsed.allergens[0].ordinals).toEqual([]);
+  });
+
+  it("ACCEPTS `{}` — which is exactly why isEmptyLlmOutput has to exist", () => {
+    // Not a bug to fix here: the defaults are what make the sparse encoding
+    // work. The consequence is that a model saying nothing is indistinguishable
+    // AT THIS LAYER from a model saying "found nothing", so the pipeline checks
+    // for it separately rather than this parse refusing it.
+    const parsed = llmOutputSchema.parse({});
+    expect(parsed).toEqual({ allergens: [], diets: [], cuisine: [], mealType: [], spiceLevel: null });
+    expect(isEmptyLlmOutput(parsed)).toBe(true);
+  });
+});
+
+describe("isEmptyLlmOutput", () => {
+  const EMPTY = llmOutputSchema.parse({});
+
+  it("is true only when every dimension is blank", () => {
+    expect(isEmptyLlmOutput(EMPTY)).toBe(true);
+  });
+
+  it("is false when ANY single dimension carries something", () => {
+    // One per dimension: a real but minimal answer is a sparse answer, not an
+    // empty one, and must survive the guard.
+    expect(isEmptyLlmOutput({ ...EMPTY, allergens: [{ slug: "milk", verdict: "contains", confidence: 0.9, ordinals: [0] }] })).toBe(false);
+    expect(isEmptyLlmOutput({ ...EMPTY, diets: [{ slug: "vegan", verdict: "excluded", confidence: 0.9, ordinals: [0] }] })).toBe(false);
+    expect(isEmptyLlmOutput({ ...EMPTY, cuisine: [{ slug: "thai", confidence: 0.8 }] })).toBe(false);
+    expect(isEmptyLlmOutput({ ...EMPTY, mealType: [{ slug: "dinner", confidence: 0.8 }] })).toBe(false);
+    expect(isEmptyLlmOutput({ ...EMPTY, spiceLevel: { slug: "mild", confidence: 0.5 } })).toBe(false);
   });
 });

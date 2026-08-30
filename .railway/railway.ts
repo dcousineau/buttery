@@ -248,13 +248,14 @@ export default defineRailway((ctx) => {
       // spends nothing. Setting it to "true" here would bypass the flag for the
       // whole corpus in one apply — the override exists for dev and emergencies,
       // not for rollout. Ratchet the flag in PostHog instead.
-      LLM_ENRICHMENT_PROVIDER: "moonshot",
-      // No default in code (llm plan §6.1): Moonshot renames models, and a wrong
-      // id should be a runtime error someone reads at deploy rather than a
-      // constant that quietly rots in the source tree. Verify against
-      // platform.moonshot.ai before changing it.
-      LLM_ENRICHMENT_MODEL: "kimi-k2-0905-preview",
-      MOONSHOT_BASE_URL: "https://api.moonshot.ai/v1",
+      LLM_ENRICHMENT_PROVIDER: "openrouter",
+      // OpenRouter is a gateway, so switching MODELS is this one line rather
+      // than a new registry entry, dependency and secret. No default in code
+      // (llm plan §6.1): a missing or wrong id should be a runtime error
+      // someone reads at deploy rather than a constant that quietly rots in
+      // the source tree. Slugs are at openrouter.ai/models.
+      LLM_ENRICHMENT_MODEL: "google/gemini-2.5-flash-lite",
+      OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
 
       // PostHog, for the flag, the prompt and `$ai_generation` capture. Same
       // project as web's — the gate and the ingestion host are the same
@@ -274,16 +275,16 @@ export default defineRailway((ctx) => {
       // "Buttery" project) is still what a human needs for the §5 PostHog-side
       // setup — it just is not a variable this service consumes.
 
-      // MOONSHOT_API_KEY and POSTHOG_PERSONAL_API_KEY are deliberately NOT
+      // OPENROUTER_API_KEY and POSTHOG_PERSONAL_API_KEY are deliberately NOT
       // declared here, for the same reason RAILWAY_API_TOKEN is not (see the
       // autoscaler block): IaC cannot mint either, and a declared-but-empty
       // variable would clobber a hand-set one on the next apply. Set them on
       // both services in the dashboard — the personal key needs exactly the
-      // `llm_prompt:read` scope. Until MOONSHOT_API_KEY exists the provider
+      // `llm_prompt:read` scope. Until OPENROUTER_API_KEY exists the provider
       // refuses to build and the step records an error rather than guessing.
       //
       // LLM_INPUT_TOKEN_PRICE_USD / LLM_OUTPUT_TOKEN_PRICE_USD are also unset:
-      // they are only needed if PostHog cannot price the Kimi model itself
+      // they are only needed if PostHog cannot price the model itself
       // (llm plan §5.3) — check the first real generations before setting them.
 
       // --- autoscaler --------------------------------------------------------
@@ -348,13 +349,14 @@ export default defineRailway((ctx) => {
       // spends nothing. Setting it to "true" here would bypass the flag for the
       // whole corpus in one apply — the override exists for dev and emergencies,
       // not for rollout. Ratchet the flag in PostHog instead.
-      LLM_ENRICHMENT_PROVIDER: "moonshot",
-      // No default in code (llm plan §6.1): Moonshot renames models, and a wrong
-      // id should be a runtime error someone reads at deploy rather than a
-      // constant that quietly rots in the source tree. Verify against
-      // platform.moonshot.ai before changing it.
-      LLM_ENRICHMENT_MODEL: "kimi-k2-0905-preview",
-      MOONSHOT_BASE_URL: "https://api.moonshot.ai/v1",
+      LLM_ENRICHMENT_PROVIDER: "openrouter",
+      // OpenRouter is a gateway, so switching MODELS is this one line rather
+      // than a new registry entry, dependency and secret. No default in code
+      // (llm plan §6.1): a missing or wrong id should be a runtime error
+      // someone reads at deploy rather than a constant that quietly rots in
+      // the source tree. Slugs are at openrouter.ai/models.
+      LLM_ENRICHMENT_MODEL: "google/gemini-2.5-flash-lite",
+      OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1",
 
       // PostHog, for the flag, the prompt and `$ai_generation` capture. Same
       // project as web's — the gate and the ingestion host are the same
@@ -374,16 +376,16 @@ export default defineRailway((ctx) => {
       // "Buttery" project) is still what a human needs for the §5 PostHog-side
       // setup — it just is not a variable this service consumes.
 
-      // MOONSHOT_API_KEY and POSTHOG_PERSONAL_API_KEY are deliberately NOT
+      // OPENROUTER_API_KEY and POSTHOG_PERSONAL_API_KEY are deliberately NOT
       // declared here, for the same reason RAILWAY_API_TOKEN is not (see the
       // autoscaler block): IaC cannot mint either, and a declared-but-empty
       // variable would clobber a hand-set one on the next apply. Set them on
       // both services in the dashboard — the personal key needs exactly the
-      // `llm_prompt:read` scope. Until MOONSHOT_API_KEY exists the provider
+      // `llm_prompt:read` scope. Until OPENROUTER_API_KEY exists the provider
       // refuses to build and the step records an error rather than guessing.
       //
       // LLM_INPUT_TOKEN_PRICE_USD / LLM_OUTPUT_TOKEN_PRICE_USD are also unset:
-      // they are only needed if PostHog cannot price the Kimi model itself
+      // they are only needed if PostHog cannot price the model itself
       // (llm plan §5.3) — check the first real generations before setting them.
     },
   });

@@ -66,7 +66,7 @@ function eventNameAt(capture: ReturnType<typeof vi.fn>, index: number): string {
 }
 
 function fakeProvider(overrides: Partial<GenerationProvider> = {}): GenerationProvider {
-  return { providerName: "moonshot", modelId: "kimi-k2-0905-preview", baseURL: "https://api.moonshot.ai/v1", ...overrides };
+  return { providerName: "openrouter", modelId: "mistralai/mistral-small-24b-instruct-2501", baseURL: "https://openrouter.ai/api/v1", ...overrides };
 }
 
 function fakePrompt(overrides: Partial<GenerationPrompt> = {}): GenerationPrompt {
@@ -83,7 +83,7 @@ function fakeLabel(overrides: Partial<Label> = {}): Label {
     slug: "gluten",
     verdict: "contains",
     confidence: 0.9,
-    method: "llm:moonshot:kimi-k2-0905-preview@1",
+    method: "llm:openrouter:mistralai/mistral-small-24b-instruct-2501@1",
     evidence: { rule: "llm", lines: [] },
     ...overrides,
   };
@@ -194,7 +194,7 @@ describe("buildEnrichmentCompletedEvent — shape and the join key", () => {
       prompt_name: "recipe-llm-enrichment",
       prompt_version: 3,
       llm_version: 1,
-      model: "moonshot:kimi-k2-0905-preview",
+      model: "openrouter:mistralai/mistral-small-24b-instruct-2501",
     });
   });
 

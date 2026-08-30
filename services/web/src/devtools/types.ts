@@ -93,7 +93,7 @@ export interface RecipeDebugInput {
  * and the pipeline's `writeEnrichment`/`writeLlmEnrichment`, which
  * delete-and-replace by exactly this prefix), not a guess from `dimension`
  * or anything else. `method` is kept in full alongside `source`
- * (`rules@2` or `llm:moonshot:kimi-k2-0905-preview@v1`) because the tail
+ * (`rules@2` or `llm:openrouter:mistralai/mistral-small-24b-instruct-2501@v1`) because the tail
  * after the prefix is itself information: which classifier version, or
  * which model, actually produced this row.
  */
@@ -135,7 +135,7 @@ export interface LlmEnrichmentSummary {
    * (§3.1: an error nobody can see is a failure nobody can see).
    */
   error: string | null;
-  /** `'<provider>:<model>'` that wrote the current `llm:` labels, e.g. `'moonshot:kimi-k2-0905-preview'`. `null` until a run has completed at least once. */
+  /** `'<provider>:<model>'` that wrote the current `llm:` labels, e.g. `'openrouter:mistralai/mistral-small-24b-instruct-2501'`. `null` until a run has completed at least once. */
   model: string | null;
   /**
    * The PostHog prompt version actually used. **`null` does NOT mean

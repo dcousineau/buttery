@@ -122,7 +122,7 @@ const savedEnv: Record<string, string | undefined> = {};
 
 beforeAll(async () => {
   if (!pool) return;
-  for (const key of ["LLM_ENRICHMENT_ENABLED", "LLM_ENRICHMENT_PROVIDER", "LLM_ENRICHMENT_MODEL", "MOONSHOT_API_KEY", "POSTHOG_ENABLED"]) {
+  for (const key of ["LLM_ENRICHMENT_ENABLED", "LLM_ENRICHMENT_PROVIDER", "LLM_ENRICHMENT_MODEL", "OPENROUTER_API_KEY", "POSTHOG_ENABLED"]) {
     savedEnv[key] = process.env[key];
     delete process.env[key];
   }
