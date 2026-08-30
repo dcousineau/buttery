@@ -1,4 +1,4 @@
-import { bucket, defineRailway, github, postgres, project, redis, ref, service, type VariableValue } from "railway/iac";
+import { bucket, defineRailway, github, postgres, preserve, project, redis, ref, service, type VariableValue } from "railway/iac";
 
 export default defineRailway((ctx) => {
   const db = postgres("postgres");
@@ -282,13 +282,25 @@ export default defineRailway((ctx) => {
       // "Buttery" project) is still what a human needs for the §5 PostHog-side
       // setup — it just is not a variable this service consumes.
 
-      // OPENROUTER_API_KEY and POSTHOG_PERSONAL_API_KEY are deliberately NOT
-      // declared here, for the same reason RAILWAY_API_TOKEN is not (see the
-      // autoscaler block): IaC cannot mint either, and a declared-but-empty
-      // variable would clobber a hand-set one on the next apply. Set them on
-      // both services in the dashboard — the personal key needs exactly the
-      // `llm_prompt:read` scope. Until OPENROUTER_API_KEY exists the provider
-      // refuses to build and the step records an error rather than guessing.
+      // Secrets IaC cannot mint, set by hand in the dashboard on both pipeline
+      // services (the personal key needs exactly the `llm_prompt:read` scope).
+      //
+      // They are DECLARED here — as preserve() — precisely because this file
+      // does not own their values. A variable that exists in Railway but not in
+      // the authoring file is drift, and drift is what `railway config apply`
+      // deletes; leaving them undeclared put a "- Delete variable" line for
+      // each of them in every plan, one apply away from wiping the OpenRouter
+      // key and the PostHog personal key out from under a running fleet.
+      //
+      // preserve() is not the same as declaring an empty string. preserve
+      // entries are filtered out of the patch entirely (SDK
+      // `variablesToEnvironmentConfig`), so an apply never writes a value — it
+      // only stops the delete, and cannot clobber a hand-set or sealed one. In
+      // an environment where these were never set there is simply no value and
+      // the code fails closed: the provider refuses to build and the step
+      // records an error rather than guessing.
+      OPENROUTER_API_KEY: preserve(),
+      POSTHOG_PERSONAL_API_KEY: preserve(),
       //
       // LLM_INPUT_TOKEN_PRICE_USD / LLM_OUTPUT_TOKEN_PRICE_USD are also unset:
       // they are only needed if PostHog cannot price the model itself
@@ -297,12 +309,12 @@ export default defineRailway((ctx) => {
       // --- autoscaler --------------------------------------------------------
       // The loop is opt-in and OFF until a Railway API token exists.
       //
-      // `RAILWAY_API_TOKEN` is deliberately NOT declared here. IaC cannot mint a
-      // token, and a declared-but-empty variable would either clobber a
-      // hand-set one on the next apply or need a preserve() for a value that
-      // may not exist yet. Create a *project* token scoped to this environment
+      // `RAILWAY_API_TOKEN` is preserve()d for the same reason as the two keys
+      // above: IaC cannot mint a token, but it will happily delete one it does
+      // not know about. Create a *project* token scoped to this environment
       // (project settings → Tokens) and set RAILWAY_API_TOKEN on this service in
       // the dashboard. Until then the fleet simply stays where it is set.
+      RAILWAY_API_TOKEN: preserve(),
       AUTOSCALE_TARGET_SERVICE: "pipeline-worker",
       AUTOSCALE_MIN_REPLICAS: "1",
       AUTOSCALE_MAX_REPLICAS: "5",
@@ -383,17 +395,36 @@ export default defineRailway((ctx) => {
       // "Buttery" project) is still what a human needs for the §5 PostHog-side
       // setup — it just is not a variable this service consumes.
 
-      // OPENROUTER_API_KEY and POSTHOG_PERSONAL_API_KEY are deliberately NOT
-      // declared here, for the same reason RAILWAY_API_TOKEN is not (see the
-      // autoscaler block): IaC cannot mint either, and a declared-but-empty
-      // variable would clobber a hand-set one on the next apply. Set them on
-      // both services in the dashboard — the personal key needs exactly the
-      // `llm_prompt:read` scope. Until OPENROUTER_API_KEY exists the provider
-      // refuses to build and the step records an error rather than guessing.
+      // Secrets IaC cannot mint, set by hand in the dashboard on both pipeline
+      // services (the personal key needs exactly the `llm_prompt:read` scope).
+      //
+      // They are DECLARED here — as preserve() — precisely because this file
+      // does not own their values. A variable that exists in Railway but not in
+      // the authoring file is drift, and drift is what `railway config apply`
+      // deletes; leaving them undeclared put a "- Delete variable" line for
+      // each of them in every plan, one apply away from wiping the OpenRouter
+      // key and the PostHog personal key out from under a running fleet.
+      //
+      // preserve() is not the same as declaring an empty string. preserve
+      // entries are filtered out of the patch entirely (SDK
+      // `variablesToEnvironmentConfig`), so an apply never writes a value — it
+      // only stops the delete, and cannot clobber a hand-set or sealed one. In
+      // an environment where these were never set there is simply no value and
+      // the code fails closed: the provider refuses to build and the step
+      // records an error rather than guessing.
+      OPENROUTER_API_KEY: preserve(),
+      POSTHOG_PERSONAL_API_KEY: preserve(),
       //
       // LLM_INPUT_TOKEN_PRICE_USD / LLM_OUTPUT_TOKEN_PRICE_USD are also unset:
       // they are only needed if PostHog cannot price the model itself
       // (llm plan §5.3) — check the first real generations before setting them.
+
+      // This service runs no autoscaler and reads no Railway API — the token is
+      // preserve()d only because one is already set here, and an undeclared
+      // variable is a variable `railway config apply` deletes. If you decide the
+      // fleet should not hold an API token at all, remove it in the dashboard
+      // first and drop this line after; do not let the plan do it for you.
+      RAILWAY_API_TOKEN: preserve(),
     },
   });
 
