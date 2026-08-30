@@ -152,6 +152,15 @@ export interface LlmEnrichmentSummary {
   /** `recipe_enrichment.status` — the rules pass's own status. `llm-enrich` requires exactly `'ok'` here before it will run at all. */
   rulesStatus: string;
   /**
+   * `recipe_enrichment.enriched_at` — when the RULES pass last finished, the
+   * sibling of `enrichedAt` (which is the LLM pass's). `null` means the row
+   * exists but the rules classifier has never completed on it, which is a
+   * different state from "completed at a version that is now stale"
+   * (`rulesVersionCurrent === false`) and the panel's rules-pass indicator
+   * needs both to say which one a reader is looking at.
+   */
+  rulesEnrichedAt: string | null;
+  /**
    * Whether `classifierVersion` matches the rules classifier this build of
    * web was compiled against (`CLASSIFIER_VERSION`, `@buttery/food/classify`
    * — the one package both this app and the pipeline import, so a mismatch
@@ -192,14 +201,20 @@ export interface LlmEnrichmentSummary {
 }
 
 /**
- * What `triggerLlmEnrich` (the panel's "run it now" button,
- * `LlmEnrichButton.tsx`) hands back. Deliberately its own type, structurally
- * mirroring `server/enrichment-queue.ts`'s `LlmEnrichEnqueueOutcome` rather
- * than importing it — same independence this file's doc states for the read
- * side: the panel and the queue module should be free to change their own
- * internals without a cross-import forcing them to agree mid-refactor.
+ * What `triggerEnrich` and `triggerLlmEnrich` (the panel's two "run it now"
+ * buttons, `EnrichRunButtons.tsx`) hand back. Deliberately its own type,
+ * structurally mirroring `server/enrichment-queue.ts`'s
+ * `EnrichEnqueueOutcome` rather than importing it — same independence this
+ * file's doc states for the read side: the panel and the queue module should
+ * be free to change their own internals without a cross-import forcing them
+ * to agree mid-refactor.
+ *
+ * One type for both buttons, because the four outcomes are properties of
+ * enqueueing under a deterministic job id and not of which job it was; the
+ * panel distinguishes the two runs by which button was clicked, not by the
+ * shape of what came back.
  */
-export type LlmEnrichTriggerResult =
+export type EnrichTriggerResult =
   | { status: "disabled" }
   | { status: "already-running"; jobId: string; state: string }
   | { status: "enqueued"; jobId: string }

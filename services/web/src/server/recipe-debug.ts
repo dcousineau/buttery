@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import type { Kysely } from "kysely";
 import * as z from "zod";
 import type { DB, Json } from "#/db/types";
-import type { CounterpartView, LlmEnrichTriggerResult, RecipeDebugPayload } from "#/devtools/types";
+import type { CounterpartView, EnrichTriggerResult, RecipeDebugPayload } from "#/devtools/types";
 
 /**
  * Server read surface for the recipe devtools panel (`devtools/RecipeInspector`).
@@ -554,6 +554,7 @@ async function computeRecipeDebug(db: Kysely<DB>, householdId: string, recipeId:
       llmVersion: enrichment.llm_version,
       classifierVersion: enrichment.classifier_version,
       rulesStatus: enrichment.status,
+      rulesEnrichedAt: iso(enrichment.enriched_at),
       rulesVersionCurrent: enrichment.classifier_version === CLASSIFIER_VERSION,
       inputHash: enrichment.input_hash,
       llmInputHash: enrichment.llm_input_hash,
@@ -616,51 +617,98 @@ export const getRecipeDebugPayload = createServerFn({ method: "GET" })
     return computeRecipeDebug(getDb(), householdId, data.recipeId);
   });
 
-// --- the LLM enrichment trigger -----------------------------------------
+// --- the enrichment triggers --------------------------------------------
 
 /**
- * The devtools panel's "run LLM enrichment now" server fn (`LlmEnrichButton.tsx`,
- * via `lib/api/transport.ts`'s `triggerLlmEnrich`). Same double gate as
- * `getRecipeDebugPayload` above (`import.meta.env.DEV` client-side, this
- * `NODE_ENV` check as the real server-side one), same authorization
- * (`activeContext()` + `assertMember`), and the same box check
- * (`isRecipeBoxed`) `computeRecipeDebug` uses — a caller must not be able to
- * enqueue a job for a recipe id they cannot even read through this panel.
+ * The devtools panel's "run LLM enrichment now" server fn
+ * (`EnrichRunButtons.tsx`, via `lib/api/transport.ts`'s `triggerLlmEnrich`).
+ * Runs ONLY the model pass, which is the useful button when the rules pass is
+ * already current and it is the LLM's answer being iterated on.
+ *
+ * The gates are `authorizeTrigger` below; see its doc.
  *
  * `POST`, unlike the `GET` read above: this call has a side effect (it
  * enqueues a BullMQ job), which is the whole reason it exists.
  *
- * Returns `LlmEnrichTriggerResult` (`devtools/types.ts`) — `enqueueLlmEnrich`'s
- * `LlmEnrichEnqueueOutcome` widened to that structurally-identical, panel-
- * owned type, mirroring how `getRecipeDebugPayload` widens its own return
- * value to `RecipeDebugPayload`. No `unknown` is involved here (every field
- * is a plain string), so unlike `computeRecipeDebug` this handler can be
- * annotated directly without tripping createServerFn's serializability check.
+ * Returns `EnrichTriggerResult` (`devtools/types.ts`) — `enqueueLlmEnrich`'s
+ * `EnrichEnqueueOutcome` widened to that structurally-identical, panel-owned
+ * type, mirroring how `getRecipeDebugPayload` widens its own return value to
+ * `RecipeDebugPayload`. No `unknown` is involved here (every field is a plain
+ * string), so unlike `computeRecipeDebug` this handler can be annotated
+ * directly without tripping createServerFn's serializability check.
  */
 export const triggerLlmEnrichPayload = createServerFn({ method: "POST" })
   .validator((data: unknown) => recipeIdInput.parse(data))
-  .handler(async ({ data }): Promise<LlmEnrichTriggerResult> => {
-    // THE REAL GATE — see getRecipeDebugPayload's identical comment above.
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("The recipe debug panel is not available in production.");
-    }
+  .handler(async ({ data }): Promise<EnrichTriggerResult> => {
+    const denied = await authorizeTrigger(data.recipeId);
+    if (denied) return denied;
 
-    const { getDb } = await import("#/lib/db");
-    const { assertMember } = await import("./authz");
-    const { activeContext } = await import("./recipe-context");
     const { enqueueLlmEnrich } = await import("./enrichment-queue");
-
-    const { did, householdId } = await activeContext();
-    await assertMember(did, householdId);
-
-    const db = getDb();
-    if (!(await isRecipeBoxed(db, householdId, data.recipeId))) {
-      // Same "found: false" collapse as the read side (computeRecipeDebug's
-      // doc): a caller must not be able to tell "no such recipe" apart from
-      // "a real recipe in a household you can't see" by whether this action
-      // behaves differently from the read above.
-      return { status: "error", message: "no such recipe in your active household" };
-    }
-
     return enqueueLlmEnrich(data.recipeId);
   });
+
+/**
+ * The devtools panel's "run rules + LLM enrichment now" server fn — the
+ * sibling of `triggerLlmEnrichPayload` above, via `lib/api/transport.ts`'s
+ * `triggerEnrich`. Same gates (`authorizeTrigger`), same return type, same
+ * reason for being a `POST`.
+ *
+ * Separate server fn rather than a `job` parameter on the one above: the
+ * validator is the trust boundary for these handlers, and "which job runs" is
+ * exactly the kind of thing that should be decided by which endpoint was
+ * called rather than by a string a client sent. Two three-line handlers cost
+ * less than one that has to be read for what a caller could talk it into.
+ *
+ * What it actually runs is BOTH passes — `enqueueEnrichNow` forces the rules
+ * pass, and `services/pipeline`'s `runEnrich` forwards that same `force` into
+ * the `llm-enrich` it hands off to on success. See `enqueueEnrichNow`'s doc
+ * for why the panel needs this at all (short version: `llm-enrich` refuses to
+ * run against a stale rules pass, and nothing else in the app re-runs one).
+ */
+export const triggerEnrichPayload = createServerFn({ method: "POST" })
+  .validator((data: unknown) => recipeIdInput.parse(data))
+  .handler(async ({ data }): Promise<EnrichTriggerResult> => {
+    const denied = await authorizeTrigger(data.recipeId);
+    if (denied) return denied;
+
+    const { enqueueEnrichNow } = await import("./enrichment-queue");
+    return enqueueEnrichNow(data.recipeId);
+  });
+
+/**
+ * The gate both triggers above run before they enqueue anything: the same
+ * double gate as `getRecipeDebugPayload` (`import.meta.env.DEV` client-side,
+ * this `NODE_ENV` check as the real server-side one), the same authorization
+ * (`activeContext()` + `assertMember`), and the same box check
+ * (`isRecipeBoxed`) `computeRecipeDebug` uses — a caller must not be able to
+ * enqueue a job for a recipe id they cannot even read through this panel.
+ *
+ * Returns `null` when the caller may proceed, or the `EnrichTriggerResult` to
+ * return to them when they may not. Deliberately a returned value rather than
+ * a thrown error for the box case, so the refusal reaches the panel's own
+ * result line the same way a queueing failure does; the production check
+ * still throws, because that one is not a result worth rendering.
+ */
+async function authorizeTrigger(recipeId: string): Promise<EnrichTriggerResult | null> {
+  // THE REAL GATE — see getRecipeDebugPayload's identical comment above.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("The recipe debug panel is not available in production.");
+  }
+
+  const { getDb } = await import("#/lib/db");
+  const { assertMember } = await import("./authz");
+  const { activeContext } = await import("./recipe-context");
+
+  const { did, householdId } = await activeContext();
+  await assertMember(did, householdId);
+
+  if (!(await isRecipeBoxed(getDb(), householdId, recipeId))) {
+    // Same "found: false" collapse as the read side (computeRecipeDebug's
+    // doc): a caller must not be able to tell "no such recipe" apart from
+    // "a real recipe in a household you can't see" by whether this action
+    // behaves differently from the read above.
+    return { status: "error", message: "no such recipe in your active household" };
+  }
+
+  return null;
+}

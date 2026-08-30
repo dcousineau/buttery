@@ -4,7 +4,7 @@ import { Badge } from "#/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { CopyButton } from "./CopyButton";
 import { JsonBlock } from "./JsonBlock";
-import { LlmEnrichButton } from "./LlmEnrichButton";
+import { EnrichRunButtons } from "./EnrichRunButtons";
 import type { AtprotoRecordView, CounterpartView, DebugSection, LlmEnrichmentSummary, LlmHighlightLabel, RecipeDebugPayload } from "./types";
 
 /**
@@ -215,8 +215,8 @@ export function LlmEnrichmentSection({ recipeId, summary }: { recipeId: string; 
       <div className="flex flex-col gap-2 rounded-md border-2 border-border bg-card px-3 py-2.5">
         {summary === null ? (
           <p className="m-0 text-xs text-muted-foreground">
-            No <code className="font-mono">recipe_enrichment</code> row at all yet — nothing, rules or LLM, has classified this recipe. Triggering LLM enrichment will still queue
-            the job below, but it needs a rules pass first and will come back <code className="font-mono">skipped</code> until one exists.
+            No <code className="font-mono">recipe_enrichment</code> row at all yet — nothing, rules or LLM, has classified this recipe. Use the rules + LLM button below: the LLM
+            job needs a rules pass first and comes back <code className="font-mono">skipped</code> until one exists.
           </p>
         ) : (
           <>
@@ -299,7 +299,7 @@ export function LlmEnrichmentSection({ recipeId, summary }: { recipeId: string; 
             </p>
           </>
         )}
-        <LlmEnrichButton recipeId={recipeId} />
+        <EnrichRunButtons recipeId={recipeId} summary={summary} />
       </div>
     </SectionHeading>
   );
