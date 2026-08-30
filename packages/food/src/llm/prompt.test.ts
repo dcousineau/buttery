@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { FALLBACK_PROMPT, PROMPT_SLUG_LISTS, PROMPT_VARIABLES } from "#/queues/recipe-enrichment/lib/prompt.ts";
-import { buildMessages, buildRecipeJson } from "#/queues/recipe-enrichment/lib/llm-messages.ts";
-import { CUISINE_SLUGS, LLM_ALLERGEN_SLUGS, LLM_DIET_SLUGS, MEAL_TYPE_SLUGS, SPICE_LEVEL_SLUGS } from "#/queues/recipe-enrichment/lib/schema.ts";
+import { FALLBACK_PROMPT, PROMPT_SLUG_LISTS, PROMPT_VARIABLES } from "./prompt.ts";
+import { buildRecipeJson, compilePrompt } from "./messages.ts";
+import { CUISINE_SLUGS, LLM_ALLERGEN_SLUGS, LLM_DIET_SLUGS, MEAL_TYPE_SLUGS, SPICE_LEVEL_SLUGS } from "./schema.ts";
 
 /**
  * The prompt's half of the schema contract. `schema.test.ts` pins the slug
@@ -14,15 +14,7 @@ const EMPTY_RECIPE_JSON = buildRecipeJson({ recipeName: "Plain water", lines: []
 
 /** What the model really receives: the fallback text with every variable filled. */
 function compiledFallback(): string {
-  const messages = buildMessages({ promptText: FALLBACK_PROMPT, recipeJson: EMPTY_RECIPE_JSON, variables: PROMPT_SLUG_LISTS });
-  return systemText(messages);
-}
-
-/** The system turn's text. `ModelMessage["content"]` is a union; `buildMessages` always puts a plain string in this one. */
-function systemText(messages: ReturnType<typeof buildMessages>): string {
-  const content = messages[0]?.content;
-  if (typeof content !== "string") throw new Error(`expected a string system message, got ${typeof content}`);
-  return content;
+  return compilePrompt({ promptText: FALLBACK_PROMPT, recipeJson: EMPTY_RECIPE_JSON, variables: PROMPT_SLUG_LISTS });
 }
 
 describe("PROMPT_SLUG_LISTS", () => {

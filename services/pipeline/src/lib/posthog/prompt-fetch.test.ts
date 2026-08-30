@@ -8,7 +8,7 @@ import { fetchPrompt, PROMPT_CACHE_TTL_SECONDS, type PromptsClient } from "#/lib
  * This suite moved here with the module it covers, from
  * `workflows/recipe-enrichment/lib/prompt-fetch.test.ts`. Two things changed
  * in the move and nothing else did: the prompt name and fallback text are now
- * arguments rather than `recipe-enrichment/lib/prompt.ts` imports — so the
+ * arguments rather than `@buttery/food/llm` imports — so the
  * fixtures below are local and deliberately generic, since this module has no
  * business knowing about recipes — and the client is passed in positionally
  * rather than inside a `deps` object. The old suite's `resetPromptCache()`

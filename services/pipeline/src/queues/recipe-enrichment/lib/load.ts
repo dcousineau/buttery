@@ -7,7 +7,7 @@ import type { ClassifierLine, Label } from "@buttery/food/classify";
 
 /**
  * Everything `enrich`/`llm-enrich` need from Postgres and `@buttery/food` —
- * deliberately not `classify.ts` or `lib/schema.ts`. `CLASSIFIER_VERSION` and
+ * deliberately not `@buttery/food/classify` or `@buttery/food/llm`. `CLASSIFIER_VERSION` and
  * `LLM_ENRICHMENT_VERSION` come in as parameters rather than imports, so this
  * module stays free of `zod` and its own `*.db.test.ts` has no dependency on
  * either. `index.ts` is the one place that imports both and threads them
@@ -16,7 +16,7 @@ import type { ClassifierLine, Label } from "@buttery/food/classify";
 
 /**
  * The `method` prefix every LLM-written label carries — `llm:<provider>:<model>@vN`
- * (`lib/schema.ts`'s `llmMethod()`). Restated here rather than imported, for
+ * (`@buttery/food/llm`'s `llmMethod()`). Restated here rather than imported, for
  * the same classify/schema-free reason as above — keep the two in sync by
  * hand if the prefix ever changes.
  */
@@ -200,7 +200,7 @@ export async function getLlmEnrichmentState(pool: Pool, recipeId: string): Promi
 // --- freshness predicates ---------------------------------------------
 //
 // `classifierVersion`/`llmVersion` come in as parameters rather than imports
-// of `classify.ts`'s `CLASSIFIER_VERSION` / `lib/schema.ts`'s
+// of `@buttery/food/classify`'s `CLASSIFIER_VERSION` / `@buttery/food/llm`'s
 // `LLM_ENRICHMENT_VERSION`, for the same reason the rest of this module does:
 // see the module doc at the top of this file.
 
@@ -441,7 +441,7 @@ export async function writeEnrichment(
  * with the same `on conflict` treatment; see that function's doc comment.)
  */
 export interface LlmEnrichmentMeta {
-  /** `lib/schema.ts`'s `LLM_ENRICHMENT_VERSION` at the time this run happened. */
+  /** `@buttery/food/llm`'s `LLM_ENRICHMENT_VERSION` at the time this run happened. */
   llmVersion: number;
   /** Same content fingerprint as `input_hash` (D10) — the LLM classifies the same content the rules did. */
   llmInputHash: string;
@@ -742,7 +742,7 @@ limit $4
 `;
 
 export interface ClaimLlmOptions {
-  /** `lib/schema.ts`'s `LLM_ENRICHMENT_VERSION`, threaded in by `index.ts` — see the module doc. */
+  /** `@buttery/food/llm`'s `LLM_ENRICHMENT_VERSION`, threaded in by `index.ts` — see the module doc. */
   llmVersion: number;
   limit?: number;
   /** Claim anything `status = 'ok'`, regardless of `llm_status`/`llm_version` — including `skipped` and already-current `ok` rows. */

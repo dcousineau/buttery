@@ -1,11 +1,17 @@
-import { CUISINE_SLUGS, LLM_ALLERGEN_SLUGS, LLM_DIET_SLUGS, MEAL_TYPE_SLUGS, SPICE_LEVEL_SLUGS } from "#/queues/recipe-enrichment/lib/schema.ts";
+import { CUISINE_SLUGS, LLM_ALLERGEN_SLUGS, LLM_DIET_SLUGS, MEAL_TYPE_SLUGS, SPICE_LEVEL_SLUGS } from "./schema.ts";
 
 /**
- * THE PROMPT (plan §4, §6.3) — the one file a human opens to change what the
- * LLM is asked to do. Fallback text, the PostHog prompt's name, and the
+ * @buttery/food/llm/prompt — THE PROMPT (plan §4, §6.3), the one file a human
+ * opens to change what the LLM is asked to do.
+ *
+ * Moved here from `services/pipeline/src/queues/recipe-enrichment/lib/` so it
+ * sits beside the closed slug sets it asks about and beside the rules
+ * classifier it asks the model to second-guess — one package holds all of food
+ * classification. The pipeline still owns everything with I/O in it: fetching
+ * this prompt's PostHog replacement, calling the model, merging the answer. Fallback text, the PostHog prompt's name, and the
  * template variables it takes. Nothing else lives here on purpose: no fetch
- * logic, no zod, no I/O. `prompt-fetch.ts` is what tries to replace this text
- * with PostHog's at runtime; `schema.ts` is the enums this prompt asks for by
+ * logic, no zod, no I/O. The pipeline's `lib/posthog/prompt-fetch.ts` is what tries to replace this
+ * text with PostHog's at runtime; `schema.ts` beside it is the enums this prompt asks for by
  * variable and the zod layer restates as an enforcement boundary.
  *
  * ── This file MIRRORS the PostHog prompt; it does not race to BE it ────────
@@ -41,11 +47,11 @@ export const PROMPT_NAME = "recipe-llm-enrichment";
 
 /**
  * Every `{{...}}` variable this prompt takes, substituted at execution time by
- * `buildMessages` — `recipe_json` from the job's recipe, the five slug lists
+ * `compilePrompt` (`messages.ts`) — `recipe_json` from the job's recipe, the five slug lists
  * from `schema.ts` (see {@link PROMPT_SLUG_LISTS}).
  *
  * Model params (temperature, max tokens, retries, timeouts) deliberately stay
- * in code (`provider.ts` / `index.ts`), not in the prompt's PostHog `config` —
+ * in the pipeline's code (`lib/ai/provider.ts` / `recipe-enrichment/index.ts`), not in the prompt's PostHog `config` —
  * a behavior change rides a deploy, not a label move in the PostHog UI
  * (plan §5.2).
  */

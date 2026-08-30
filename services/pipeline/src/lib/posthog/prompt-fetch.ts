@@ -7,7 +7,7 @@ import type { PromptResult } from "@posthog/ai";
  * place and keeps serving `recipe-enrichment/index.ts` unchanged.
  *
  * The one real change from the source module, beyond the copy: the original
- * hardcodes `recipe-enrichment/lib/prompt.ts`'s `PROMPT_NAME`/`FALLBACK_PROMPT`
+ * hardcodes `@buttery/food/llm`'s `PROMPT_NAME`/`FALLBACK_PROMPT`
  * and memoizes its `Prompts` client in module-scope state (`memoizedClient`).
  * Neither is allowed here — `PROMPT_NAME` is recipe-specific and stays
  * workflow-owned (D0 says `lib/` holds no process-global mutable state

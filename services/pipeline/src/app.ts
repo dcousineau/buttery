@@ -38,7 +38,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * (say, splitting `db`/`redis`/`workflow` differently) from silently
  * breaking this again.
  */
-export async function buildApp(role: PipelineRole): Promise<FastifyInstance> {
+export interface BuildAppOptions {
+  /**
+   * Where Fastify's pino writes. Defaults to pino's own (STDOUT).
+   *
+   * `src/cli/enrichment-prompt.ts` passes `process.stderr`, because its STDOUT
+   * is a data channel — the compiled prompt, meant to be redirected into an
+   * eval-set file — and a boot log line landing in that file corrupts it. Any
+   * future CLI whose output is data rather than prose wants the same.
+   */
+  logStream?: NodeJS.WritableStream;
+}
+
+export async function buildApp(role: PipelineRole, options: BuildAppOptions = {}): Promise<FastifyInstance> {
   // Before anything else logs: `lib/log.ts`'s `role` field (read by its two
   // remaining call sites) is set here, once, the same way `setLogRole` used to
   // be called at the top of each entrypoint.
@@ -69,6 +81,9 @@ export async function buildApp(role: PipelineRole): Promise<FastifyInstance> {
         // pino's default `level` is a number; `lib/log.ts`'s is the string name.
         level: (label) => ({ level: label }),
       },
+      // Undefined for the server and the worker, which is pino's default
+      // (STDOUT) — see `BuildAppOptions.logStream`.
+      stream: options.logStream,
     },
   });
 

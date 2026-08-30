@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mergeLlmLabels } from "#/queues/recipe-enrichment/lib/merge.ts";
-import { llmMethod } from "#/queues/recipe-enrichment/lib/schema.ts";
-import type { LlmOutput } from "#/queues/recipe-enrichment/lib/schema.ts";
+import { llmMethod } from "@buttery/food/llm";
+import type { LlmOutput } from "@buttery/food/llm";
 import { RULES_METHOD } from "@buttery/food/classify";
 import type { ClassifierLine, Evidence, Label } from "#/queues/recipe-enrichment/types.ts";
 

@@ -2,8 +2,8 @@ import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { buildMessages, buildRecipeJson, modelRawText, RECIPE_JSON_VARIABLE } from "#/queues/recipe-enrichment/lib/llm-messages.ts";
-import { llmOutputSchema } from "#/queues/recipe-enrichment/lib/schema.ts";
-import type { LlmOutput } from "#/queues/recipe-enrichment/lib/schema.ts";
+import { llmOutputSchema } from "@buttery/food/llm";
+import type { LlmOutput } from "@buttery/food/llm";
 import type { ClassifierLine, Label } from "#/queues/recipe-enrichment/types.ts";
 
 /**
@@ -12,6 +12,13 @@ import type { ClassifierLine, Label } from "#/queues/recipe-enrichment/types.ts"
  * this file. The `generateText`/`Output.object` calls below exercise exactly
  * the shape `index.ts`'s `llm-enrich` step makes, so a schema or SDK
  * behavior change shows up here without a database.
+ *
+ * The substitution rules themselves are NOT retested here. `compilePrompt`
+ * and `buildRecipeJson` moved to `@buttery/food/llm` with the prompt and the
+ * schema, and `packages/food/src/llm/messages.test.ts` owns their cases; what
+ * is left below is the AI-SDK boundary — that a compiled prompt survives a
+ * real `generateText` round trip, and that `modelRawText` recovers what the
+ * model actually said when the schema refuses it.
  */
 
 // --- a minimal, valid MockLanguageModelV4 doGenerate result -----------------
@@ -168,35 +175,10 @@ describe("generateText — schema-rejected output: modelRawText(err) recovers th
   });
 });
 
-// --- the pure builders --------------------------------------------------------
+// --- the AI-SDK shape buildMessages adds on top of compilePrompt --------------
 
-describe("buildRecipeJson — the {{recipe_json}} payload", () => {
-  it("includes every line's ordinal and text, and the rules labels as context", () => {
-    const json = buildRecipeJson({ recipeName: '"Vegetarian" pad thai', lines: RECIPE_LINES, rulesLabels: RULES_LABELS });
-    const parsed = JSON.parse(json) as { name: string; ingredients: Array<{ ordinal: number; text: string }>; rulesLabels: unknown[] };
-
-    expect(parsed.name).toBe('"Vegetarian" pad thai');
-    expect(parsed.ingredients).toEqual([
-      { ordinal: 1, text: "1 lb rice noodles" },
-      { ordinal: 2, text: "2 tbsp fish sauce" },
-      { ordinal: 3, text: "1 lime, juiced" },
-    ]);
-    expect(parsed.rulesLabels).toEqual([
-      { dimension: "allergen", slug: "fish", verdict: "may_contain", confidence: 0.6 },
-      { dimension: "diet", slug: "vegetarian", verdict: "excluded", confidence: 0.85 },
-    ]);
-  });
-
-  it("produces an empty ingredients/rulesLabels array for a recipe with neither, not an omitted field", () => {
-    const json = buildRecipeJson({ recipeName: "Plain water", lines: [], rulesLabels: [] });
-    const parsed = JSON.parse(json) as { ingredients: unknown[]; rulesLabels: unknown[] };
-    expect(parsed.ingredients).toEqual([]);
-    expect(parsed.rulesLabels).toEqual([]);
-  });
-});
-
-describe("buildMessages — {{recipe_json}} substitution", () => {
-  it("substitutes the variable into the system message and leaves no unsubstituted variable behind", () => {
+describe("buildMessages — the two-message shape the SDK requires", () => {
+  it("puts the compiled prompt in a system turn and appends the fixed, content-free user turn", () => {
     const recipeJson = JSON.stringify({ name: "Test" });
     const messages = buildMessages({ promptText: FIXTURE_PROMPT, recipeJson });
 
@@ -212,62 +194,7 @@ describe("buildMessages — {{recipe_json}} substitution", () => {
     expect(user?.content).not.toContain(recipeJson);
   });
 
-  it("throws when the prompt text has no {{recipe_json}} occurrence at all", () => {
+  it("propagates compilePrompt's refusal of a prompt with no {{recipe_json}}", () => {
     expect(() => buildMessages({ promptText: "a prompt that forgot its variable", recipeJson: "{}" })).toThrow(RECIPE_JSON_VARIABLE);
-  });
-
-  it("substitutes every occurrence, not just the first, if a prompt template repeats the variable", () => {
-    const promptText = `${RECIPE_JSON_VARIABLE} ... reminder: ${RECIPE_JSON_VARIABLE}`;
-    const messages = buildMessages({ promptText, recipeJson: "{}" });
-    expect(messages[0]?.content).not.toContain(RECIPE_JSON_VARIABLE);
-  });
-});
-
-/** The system turn's text. `ModelMessage["content"]` is a union; `buildMessages` always puts a plain string in this one. */
-function systemText(messages: ReturnType<typeof buildMessages>): string {
-  const content = messages[0]?.content;
-  if (typeof content !== "string") throw new Error(`expected a string system message, got ${typeof content}`);
-  return content;
-}
-
-describe("buildMessages — the other prompt variables", () => {
-  it("substitutes every supplied variable, each occurrence", () => {
-    const promptText = `allergens: {{allergen_slugs}}\ndiets: {{diet_slugs}}\nreminder, allergens again: {{allergen_slugs}}\n${RECIPE_JSON_VARIABLE}`;
-    const messages = buildMessages({
-      promptText,
-      recipeJson: "{}",
-      variables: { allergen_slugs: "milk, egg", diet_slugs: "vegan, keto" },
-    });
-
-    const system = systemText(messages);
-    expect(system).toContain("allergens: milk, egg");
-    expect(system).toContain("diets: vegan, keto");
-    expect(system).toContain("reminder, allergens again: milk, egg");
-    expect(system).not.toContain("{{allergen_slugs}}");
-  });
-
-  it("leaves an unknown variable untouched rather than throwing — a PostHog version may predate one we send", () => {
-    const promptText = `lists: {{allergen_slugs}} and {{invented_later}}\n${RECIPE_JSON_VARIABLE}`;
-    const messages = buildMessages({ promptText, recipeJson: "{}", variables: { allergen_slugs: "milk" } });
-    expect(systemText(messages)).toContain("lists: milk and {{invented_later}}");
-  });
-
-  it("still compiles a prompt that carries its slug lists inline and takes no variables", () => {
-    const promptText = `allergens: milk, egg\n${RECIPE_JSON_VARIABLE}`;
-    const messages = buildMessages({ promptText, recipeJson: "{}", variables: { allergen_slugs: "milk, egg" } });
-    expect(systemText(messages)).toBe("allergens: milk, egg\n{}");
-  });
-
-  it("does not re-substitute variable tokens that came in with the recipe JSON", () => {
-    // A recipe named `{{diet_slugs}}` must reach the model as those literal
-    // characters — the recipe payload is substituted last, precisely so a
-    // user-supplied name cannot expand into one of our lists.
-    const recipeJson = buildRecipeJson({ recipeName: "{{diet_slugs}}", lines: [], rulesLabels: [] });
-    const promptText = `diets: {{diet_slugs}}\n${RECIPE_JSON_VARIABLE}`;
-    const messages = buildMessages({ promptText, recipeJson, variables: { diet_slugs: "vegan, keto" } });
-
-    const system = systemText(messages);
-    expect(system).toContain("diets: vegan, keto");
-    expect(system).toContain('"name":"{{diet_slugs}}"');
   });
 });

@@ -1,9 +1,19 @@
 import { z } from "zod";
-import { ALLERGEN_SLUGS, EMITTED_DIET_SLUGS, type AllergenSlug } from "#/queues/recipe-enrichment/types.ts";
+import { ALLERGEN_SLUGS, type AllergenSlug } from "../traits.ts";
+import { EMITTED_DIET_SLUGS } from "../classifiers/types.ts";
 
 /**
- * What the model is allowed to say, and the version that says which slugs it
- * was asked about (llm plan §7).
+ * @buttery/food/llm/schema — what the model is allowed to say, and the version
+ * that says which slugs it was asked about (llm plan §7).
+ *
+ * Moved here from `services/pipeline/src/queues/recipe-enrichment/lib/` so
+ * that ALL food classification lives in one package: the rules half
+ * (`../classify.ts`) and the LLM half read the same `ALLERGEN_SLUGS` and
+ * `EMITTED_DIET_SLUGS` and now sit on the same side of the package boundary
+ * as them. This module is reachable only as `@buttery/food/llm` — it is
+ * deliberately NOT re-exported from the package barrel, because it is the one
+ * thing in `@buttery/food` that needs `zod`, and the barrel is imported by
+ * client bundles.
  *
  * Two jobs in one file, deliberately:
  *
@@ -15,11 +25,11 @@ import { ALLERGEN_SLUGS, EMITTED_DIET_SLUGS, type AllergenSlug } from "#/queues/
  *      at the end of a job that already spent a model call, instead of the
  *      schema rejecting it before anything was written.
  *   2. **`LLM_ENRICHMENT_VERSION`** — the LLM's analogue of `CLASSIFIER_VERSION`,
- *      pinned to those sets by `schema.test.ts`. Read `types.ts`'s "TWO VERSION
- *      COLUMNS, NOT ONE" note before changing anything here.
+ *      pinned to those sets by `schema.test.ts`. Read the pipeline `recipe-enrichment/types.ts`'s "TWO
+ *      VERSION COLUMNS, NOT ONE" note before changing anything here.
  *
- * Nothing in this file does I/O; `index.ts` is what hands the schema to
- * `generateObject`.
+ * Nothing in this file does I/O; the pipeline's `recipe-enrichment/index.ts` is
+ * what hands the schema to `generateText`.
  */
 
 // --- the closed slug sets (L12) -------------------------------------------
@@ -69,7 +79,7 @@ export type SpiceLevelSlug = (typeof SPICE_LEVEL_SLUGS)[number];
 
 /**
  * The six macro/paleo diet slugs the rules classifier has no rule for and
- * deliberately never emits (see `classifiers/README.md`). They already exist in
+ * deliberately never emits (see `../classifiers/README.md`). They already exist in
  * `recipe_vocab` as upstream-aliased, author-declarable tokens — this is the
  * first thing in the codebase to DERIVE them, and it derives them as
  * ingredient-shape guesses, not nutrition math (plan §1.2).
@@ -187,8 +197,8 @@ export type LlmDietJudgment = LlmOutput["diets"][number];
  * chosen by a person.
  *
  * Stored on `recipe_enrichment.llm_version`, and it is what makes absence
- * readable for the LLM-only dimensions — see `types.ts`'s "TWO VERSION COLUMNS"
- * note. `schema.test.ts` pins the slug sets to this number.
+ * readable for the LLM-only dimensions — see the pipeline `recipe-enrichment/types.ts`'s "TWO
+ * VERSION COLUMNS" note. `schema.test.ts` pins the slug sets to this number.
  */
 export const LLM_ENRICHMENT_VERSION = 1;
 
@@ -199,7 +209,7 @@ export const LLM_ENRICHMENT_VERSION = 1;
  * provider/model/version tail is what makes "which model said this?" a question
  * the dev panel can answer from the row alone.
  *
- * The rules' equivalent is `RULES_METHOD` in `lib/classifiers/shared.ts`; the two
+ * The rules' equivalent is `RULES_METHOD` in `../classifiers/shared.ts`; the two
  * never collide because nothing rules-derived starts with `llm:`.
  */
 export function llmMethod(provider: string, model: string): string {

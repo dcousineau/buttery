@@ -21,9 +21,8 @@ import {
   writeEnrichment,
   writeLlmEnrichment,
 } from "#/queues/recipe-enrichment/lib/load.ts";
-import { LLM_ENRICHMENT_VERSION, llmOutputSchema } from "#/queues/recipe-enrichment/lib/schema.ts";
+import { FALLBACK_PROMPT, LLM_ENRICHMENT_VERSION, llmOutputSchema, PROMPT_NAME, PROMPT_SLUG_LISTS } from "@buttery/food/llm";
 import { isLlmEnrichmentEnabled } from "#/queues/recipe-enrichment/lib/posthog.ts";
-import { FALLBACK_PROMPT, PROMPT_NAME, PROMPT_SLUG_LISTS } from "#/queues/recipe-enrichment/lib/prompt.ts";
 import { mergeLlmLabels } from "#/queues/recipe-enrichment/lib/merge.ts";
 import { AI_FEATURE, captureEnrichmentCompleted, captureEnrichmentFailed, PIPELINE_DISTINCT_ID } from "#/queues/recipe-enrichment/lib/capture.ts";
 import { generationTelemetry } from "#/lib/ai/telemetry.ts";
@@ -38,13 +37,19 @@ import { buildMessages, buildRecipeJson } from "#/queues/recipe-enrichment/lib/l
  *
  * Everything else this queue needs is in this folder:
  *
- *   lib/schema.ts         the LLM output zod schema and its version
- *   lib/llm-messages.ts   pure: the `{{recipe_json}}` payload and the message array
+ *   lib/llm-messages.ts   the `ModelMessage[]` wrapper and the raw-text reader
  *   lib/merge.ts          pure: reconciling rules labels against the LLM's opinion
  *   lib/load.ts           the reads and writes against `recipe_enrichment*`
  *   lib/capture.ts        the `$ai_generation`/disagreement event shapes
- *   lib/posthog.ts         the fail-closed `LLM_ENRICHMENT_FLAG` gate
- *   lib/prompt.ts          the prompt PostHog serves, and the fallback text
+ *   lib/posthog.ts        the fail-closed `LLM_ENRICHMENT_FLAG` gate
+ *
+ * The prompt itself is NOT in this folder any more. `PROMPT_NAME`,
+ * `FALLBACK_PROMPT`, `PROMPT_SLUG_LISTS`, the closed slug sets,
+ * `llmOutputSchema`, `LLM_ENRICHMENT_VERSION` and `llmMethod` all live in
+ * `@buttery/food/llm`, beside the rules classifier this step asks the model to
+ * second-guess — one package owns all of food classification, and the enums
+ * the prompt asks for sit next to the zod layer that enforces them. What is
+ * left here is what has I/O or an AI SDK in it.
  *
  * `fastify.db`, `fastify.ai` and `fastify.posthog` replace this queue's own
  * former copies of a pool, a provider resolver and a PostHog client — see
@@ -224,7 +229,7 @@ export async function runLlmEnrich(fastify: FastifyInstance, job: Job): Promise<
     // The closed slug lists ride in as variables rather than being typed into
     // the prompt text, so a `schema.ts` edit reaches the model on the next job
     // whether the prompt came from PostHog or the code fallback — see
-    // `lib/prompt.ts`'s PROMPT_SLUG_LISTS.
+    // `@buttery/food/llm`'s PROMPT_SLUG_LISTS.
     const messages = buildMessages({ promptText: prompt.text, recipeJson, variables: PROMPT_SLUG_LISTS });
 
     const result = await generateText({

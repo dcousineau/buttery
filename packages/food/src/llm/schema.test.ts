@@ -10,7 +10,7 @@ import {
   llmOutputSchema,
   MEAL_TYPE_SLUGS,
   SPICE_LEVEL_SLUGS,
-} from "#/queues/recipe-enrichment/lib/schema.ts";
+} from "./schema.ts";
 
 /**
  * Two things, in the order they matter (llm plan §12.1):
@@ -30,7 +30,7 @@ import {
  * emitted slug sets or the schema's shape without bumping
  * `LLM_ENRICHMENT_VERSION` in `schema.ts`.
  *
- * Why that matters is `types.ts`'s "TWO VERSION COLUMNS, NOT ONE" note: for the
+ * Why that matters is the pipeline `recipe-enrichment/types.ts`'s "TWO VERSION COLUMNS, NOT ONE" note: for the
  * LLM-only dimensions (`cuisine`, `meal_type`, `spice_level`, and the six
  * macro/paleo diets), an absent row means NOTHING unless `llm_version` covered
  * that slug. Add a cuisine without bumping the version and every recipe already

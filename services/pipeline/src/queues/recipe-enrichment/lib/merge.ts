@@ -1,6 +1,6 @@
 import type { ClassifierLine, Dimension, Disagreement, Evidence, EvidenceLine, Label } from "#/queues/recipe-enrichment/types.ts";
-import { llmMethod } from "#/queues/recipe-enrichment/lib/schema.ts";
-import type { LlmAllergenJudgment, LlmDietJudgment, LlmOutput } from "#/queues/recipe-enrichment/lib/schema.ts";
+import { llmMethod } from "@buttery/food/llm";
+import type { LlmAllergenJudgment, LlmDietJudgment, LlmOutput } from "@buttery/food/llm";
 
 /**
  * Safety-asymmetric merge of the LLM's second opinion into the rules'
