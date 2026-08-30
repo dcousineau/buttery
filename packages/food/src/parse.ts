@@ -19,7 +19,7 @@
  */
 
 import { parseIngredient } from "parse-ingredient";
-import { type ResolvedUnit, type UnitDim, resolveUnit, toBaseQuantity } from "./units";
+import { type ResolvedUnit, type UnitDim, resolveUnit, toBaseQuantity } from "./units.ts";
 
 export interface ParsedIngredient {
   /** Lower bound of the quantity, already scaled. `null` when unparseable. */

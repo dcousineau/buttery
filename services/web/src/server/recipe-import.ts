@@ -1018,7 +1018,27 @@ export async function runCommitImportChunk(db: Kysely<DB>, did: string, househol
   // never the recipe — the row is already saved and the failure is swallowed.
   await fetchChunkImages(db, images);
 
+  // §9: recipe-enrichment enqueue, same "AFTER every row is committed" shape as
+  // the image pass above — and the right neighbour for it, not a piggyback on
+  // its list: `images` only holds items that carry a hero, but every imported
+  // recipe owes an enqueue. `persistRecipeDraft` cannot do this itself here
+  // (see its comment) because it was handed this chunk's own open transaction,
+  // which had not committed yet at the point it ran; by the time we are back in
+  // this function every item's transaction — including the replayed-`prior`
+  // case, which still reports `imported` — has already committed or rolled
+  // back, so it's safe to fire the enqueue for every `imported` outcome here.
+  // Best-effort and idempotent per recipe (D14), so re-enqueuing a replay's
+  // prior id is harmless.
+  await enqueueChunkEnrichment(results.filter((r): r is Extract<CommitItemResult, { status: "imported" }> => r.status === "imported").map((r) => r.recipeId));
+
   return results;
+}
+
+/** Best-effort post-commit enrichment enqueue for a whole chunk (§9). */
+async function enqueueChunkEnrichment(recipeIds: readonly string[]): Promise<void> {
+  if (!recipeIds.length) return;
+  const { enqueueEnrich } = await import("./enrichment-queue");
+  await Promise.all(recipeIds.map((recipeId) => enqueueEnrich(recipeId)));
 }
 
 /**

@@ -7,7 +7,7 @@
   // the same problem `.oxlintrc.json`'s `**/*.mjs` override works around for
   // the buildless dev scripts, solved here by actually typing the files.
   "extends": "../tsconfig.base.json",
-  "include": ["**/*.ts", "../services/web/src/lib/grocery/**/*.ts"],
+  "include": ["**/*.ts", "../packages/food/src/**/*.ts"],
   "compilerOptions": {
     "lib": ["ES2023"],
     "types": ["node"],

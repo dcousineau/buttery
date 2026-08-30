@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatUS, mergeKey, renderQuantity, resolveUnit, toBaseQuantity, unitLabel } from "./units";
+import { formatUS, mergeKey, renderQuantity, resolveUnit, toBaseQuantity, unitLabel } from "./units.ts";
 
 describe("resolveUnit", () => {
   it("resolves convertible mass units to a shared dimension with no merge pin", () => {

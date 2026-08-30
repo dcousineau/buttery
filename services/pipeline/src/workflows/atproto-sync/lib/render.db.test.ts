@@ -114,6 +114,15 @@ async function dedupeRows(client: PoolClient): Promise<Record<string, string>> {
   return Object.fromEntries(res.rows.map((r) => [r.key, r.value]));
 }
 
+/** The fixture recipe's `recipe_enrichment` row, or `null` if none exists yet. */
+async function enrichmentRow(client: PoolClient): Promise<{ status: string; classifier_version: number; input_hash: string | null } | null> {
+  const res = await client.query<{ status: string; classifier_version: number; input_hash: string | null }>(
+    `select status, classifier_version, input_hash from recipe_enrichment where recipe_id = $1`,
+    [RKEY],
+  );
+  return res.rows[0] ?? null;
+}
+
 let client: PoolClient;
 
 beforeAll(async () => {
@@ -177,6 +186,41 @@ describe.skipIf(!pool)("renderRecipe dedupe keys", () => {
     expect(await dedupeRows(client)).toEqual({});
     const still = await client.query(`select 1 from recipe where id = $1`, [RKEY]);
     expect(still.rowCount).toBe(0);
+  });
+});
+
+// --- recipe_enrichment staleness (recipe-enrichment plan §9) -------------
+
+describe.skipIf(!pool)("renderRecipe marks recipe_enrichment stale", () => {
+  it("upserts status='stale' and returns the recipe id when content advances", async () => {
+    const id = await renderRecipe(client, recipeRow({ rev: "3aaaaaaaaaaa6" }));
+
+    expect(id).toBe(RKEY);
+    expect(await enrichmentRow(client)).toEqual({ status: "stale", classifier_version: 0, input_hash: null });
+  });
+
+  it("leaves recipe_enrichment untouched and returns null when the upsert does not advance (stale rev)", async () => {
+    // Simulate the enrich step having already classified this content.
+    await client.query(`update recipe_enrichment set status = 'ok', classifier_version = 1, input_hash = 'existing-hash' where recipe_id = $1`, [RKEY]);
+
+    // Same rev as the row already stored: the upsert's rev guard skips it, so
+    // this lands in the `rowCount === 0` branch, not the advancing one.
+    const id = await renderRecipe(client, recipeRow({ rev: "3aaaaaaaaaaa6" }));
+
+    expect(id).toBeNull();
+    expect(await enrichmentRow(client)).toEqual({ status: "ok", classifier_version: 1, input_hash: "existing-hash" });
+  });
+
+  it("marks stale again without clearing classifier_version or input_hash", async () => {
+    await client.query(`update recipe_enrichment set status = 'ok', classifier_version = 2, input_hash = 'keep-me' where recipe_id = $1`, [RKEY]);
+
+    // A newer rev: content advances, so this recipe goes back to stale — but
+    // the enrich step's own bookkeeping must survive so it can still compare
+    // against it and short-circuit an unchanged recipe.
+    const id = await renderRecipe(client, recipeRow({ rev: "3aaaaaaaaaaa7" }));
+
+    expect(id).toBe(RKEY);
+    expect(await enrichmentRow(client)).toEqual({ status: "stale", classifier_version: 2, input_hash: "keep-me" });
   });
 });
 

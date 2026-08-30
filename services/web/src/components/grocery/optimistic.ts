@@ -1,6 +1,6 @@
 import type { GroceryItemRow, GroceryListPayload } from "#/lib/api";
-import { AISLE_LABELS, type Aisle, aisleOrder } from "#/lib/grocery/aisles";
-import { type UnitDim, renderQuantity, resolveUnit } from "#/lib/grocery/units";
+import { AISLE_LABELS, type Aisle, aisleOrder } from "@buttery/food/aisles";
+import { type UnitDim, renderQuantity, resolveUnit } from "@buttery/food/units";
 
 /**
  * Pure patches and read helpers over a `GroceryListPayload` — the optimistic

@@ -1,6 +1,7 @@
-import type { FlowProducer, Job } from "bullmq";
+import type { FlowProducer, Job, Queue } from "bullmq";
 import { log } from "#/log.ts";
-import { flowJobFor, type ChildResults, type FlowNode, type Workflow, type WorkflowHost } from "#/workflows/define.ts";
+import { flowJobFor, type ChildResults, type EnqueueNode, type FlowNode, type Workflow, type WorkflowHost } from "#/workflows/define.ts";
+import { findWorkflow } from "#/workflows/index.ts";
 
 /**
  * The two things a step can report to and submit flows through: a BullMQ job,
@@ -9,12 +10,19 @@ import { flowJobFor, type ChildResults, type FlowNode, type Workflow, type Workf
  * Both go through `Workflow.run`, so a sweep started by the scheduler and one
  * started by `sync:once` execute the same steps in the same order. What differs
  * is where the log lines land, and what submitting a flow means — which is the
- * one place the two genuinely diverge (see `consoleHost`).
+ * one place the two genuinely diverge (see `consoleHost`) — and now what
+ * `enqueue` does: `jobHost` actually hands the job to the target workflow's
+ * queue, `consoleHost` only says so (see below).
+ *
+ * `jobHost` importing `findWorkflow` from `workflows/index.ts` is not a cycle:
+ * nothing that module reaches — the workflow definitions themselves — imports
+ * this one back. Only `worker.ts`, `run-once.ts` and `define.test.ts` import
+ * `hosts.ts`, and none of those sit between `workflows/index.ts` and here.
  */
 
 const NO_CHILDREN: ChildResults = { values: [], failures: [] };
 
-export function jobHost(job: Job, workflow: Workflow, flows: FlowProducer): WorkflowHost {
+export function jobHost(job: Job, workflow: Workflow, flows: FlowProducer, queues: Map<string, Queue>): WorkflowHost {
   return {
     runId: `job:${job.id ?? "?"}`,
     // `job.log` resolves to the log's new length; the kernel wants nothing back.
@@ -30,6 +38,34 @@ export function jobHost(job: Job, workflow: Workflow, flows: FlowProducer): Work
 
     flow: async (node: FlowNode) => {
       await flows.add(flowJobFor(workflow, workflow.name, node, false));
+    },
+
+    enqueue: async (targetName: string, node: EnqueueNode) => {
+      const target = findWorkflow(targetName);
+      if (!target) {
+        // Same reasoning as defineWorkflow's entry-step check: a typo in the
+        // target name must fail loudly at the call that made it, not vanish
+        // into a queue that was never drained because it never existed.
+        throw new Error(`ctx.enqueue: no workflow named "${targetName}"`);
+      }
+      const stepName = node.step ?? target.entry;
+      if (!target.steps.some((s) => s.name === stepName)) {
+        throw new Error(`ctx.enqueue: workflow "${targetName}" has no step "${stepName}"`);
+      }
+      const queue = queues.get(targetName);
+      if (!queue) {
+        // Reachable only if a workflow is registered but `getQueues()` was
+        // built before it was added — a `queues.ts` bug, not a caller mistake.
+        throw new Error(`ctx.enqueue: no queue for workflow "${targetName}"`);
+      }
+      await queue.add(stepName, node.data ?? {}, {
+        // The *target* workflow's own job options for that step, not the
+        // calling workflow's — this job runs as one of the target's, on the
+        // target's queue, and should retry and expire the way the target's
+        // other jobs of that step do.
+        ...target.jobOptionsFor(stepName),
+        ...node.opts,
+      });
     },
   };
 }
@@ -90,6 +126,18 @@ export function consoleHost(options: ConsoleHostOptions, children: ChildResults 
       await Promise.all(runners);
 
       await options.runStep(node.step, node.data ?? {}, { values, failures });
+    },
+
+    enqueue: async (targetName: string, node: EnqueueNode) => {
+      // Log the intent and stop — do not run the target workflow. Cross-workflow
+      // work is another workflow's run, not this one's: `run-once.ts` promises
+      // that the steps *this* workflow owns run identically to the queued path,
+      // not that everything reachable from them does. Actually executing the
+      // target here would make `sync:once` silently perform a corpus-wide
+      // recipe-enrichment backfill on whoever's laptop happened to run a sync —
+      // exactly the kind of surprise a one-shot CLI must not spring. A person
+      // who wants the target workflow's work done runs it themselves.
+      await line(`enqueue: ${targetName}${node.step ? `/${node.step}` : ""} — skipped (run "${targetName}" directly to execute it)`);
     },
   };
 

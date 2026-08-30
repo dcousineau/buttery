@@ -1,0 +1,27 @@
+{
+  "name": "@buttery/food",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./aisles": "./src/aisles.ts",
+    "./normalize": "./src/normalize.ts",
+    "./parse": "./src/parse.ts",
+    "./units": "./src/units.ts",
+    "./categorize": "./src/categorize.ts",
+    "./traits": "./src/traits.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "parse-ingredient": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

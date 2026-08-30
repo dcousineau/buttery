@@ -106,6 +106,7 @@ import {
 import { dismissInviteNudge as dismissInviteNudgeFn, getHouseholdNudges as getHouseholdNudgesFn } from "#/server/household/settings";
 import { clearPendingInvite as clearPendingInviteFn, errorMessage as errorMessage_, stashPendingInvite as stashPendingInviteFn } from "#/server/household/pending-invite";
 import { getRecipe as getRecipeFn, listRecentRecipes as listRecentRecipesFn } from "#/server/recipes";
+import { getRecipeDebugPayload as getRecipeDebugPayloadFn } from "#/server/recipe-debug";
 import { publishRecipe as publishRecipeFn, saveRecipe as saveRecipeFn } from "#/server/recipes-write";
 import { getImportPrefill as getImportPrefillFn, scrapeRecipe as scrapeRecipeFn, submitImport as submitImportFn } from "#/server/recipe-scrape";
 import type { CommitChunkInput, ComparisonInput, FailImportSessionInput, FinalizeInput, OpenImportSessionInput, ProbeInput } from "#/server/recipe-import";
@@ -478,6 +479,32 @@ export function listRecentRecipes(): Promise<RecipeCardData[]> {
 /** Takes the id bare, not enveloped — `getRecipe`'s validator is `(id: string)`. */
 export function getRecipe(recipeId: string): Promise<RecipeDetailData | null> {
   return getRecipeFn({ data: recipeId });
+}
+
+// --- recipe-enrichment dev panel (recipe-enrichment plan §10, D16) -------
+//
+// The enrichment VIEW TYPES only. The server fn that used to sit here went with
+// the pinned overlay panel it fed — the devtools Recipe inspector reads the
+// enrichment tables raw through `getRecipeDebug` below, which is the one debug
+// entry point now.
+
+export type { RecipeEnrichmentView, RecipeEnrichmentLabelView } from "#/server/recipe-enrichment";
+
+// --- recipe debug panel (RecipeDebugPayload, devtools/types.ts) ----------
+//
+// Same deal as the enrichment panel above: dev-only, no `queryOptions`
+// factory, read imperatively by the devtools panel. `getRecipeDebugPayloadFn`
+// re-checks `NODE_ENV` on the server and refuses outright in production
+// regardless of what a caller sends. Re-exported here as `getRecipeDebug` —
+// the server module names its createServerFn export `getRecipeDebugPayload`
+// only to avoid colliding with the plain, db-first function of the same
+// name; this is the name callers actually want. The wire types
+// (`RecipeDebugPayload` and friends) already live in `#/devtools/types.ts`,
+// a client-safe module outside `#/server/**`, so the panel imports them
+// straight from there — no re-export needed here.
+
+export function getRecipeDebug(recipeId: string) {
+  return getRecipeDebugPayloadFn({ data: { recipeId } });
 }
 
 // --- authoring, scraping, import (online-only, §1.1) ---------------------

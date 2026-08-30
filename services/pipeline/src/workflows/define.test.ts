@@ -1,7 +1,9 @@
+import type { FlowProducer, Job, Queue } from "bullmq";
 import type { Redis } from "ioredis";
 import { describe, expect, it } from "vitest";
-import { consoleHost } from "#/workflows/hosts.ts";
-import { defineWorkflow, flowJobFor, type ChildResults, type StepSpec, type Workflow } from "#/workflows/define.ts";
+import { consoleHost, jobHost } from "#/workflows/hosts.ts";
+import { demo } from "#/workflows/demo/index.ts";
+import { defineWorkflow, flowJobFor, type ChildResults, type EnqueueNode, type StepSpec, type Workflow, type WorkflowHost } from "#/workflows/define.ts";
 
 /**
  * The kernel, on its own. Everything here is in-memory: the console host runs a
@@ -147,6 +149,106 @@ describe("defineWorkflow", () => {
 
       expect(tree.children?.[0].opts?.failParentOnFailure).toBe(true);
       expect(tree.children?.[0].opts?.ignoreDependencyOnFailure).toBe(false);
+    });
+  });
+
+  describe("ctx.enqueue", () => {
+    it("wires the host's enqueue through to the step context", async () => {
+      const calls: { workflow: string; node: EnqueueNode }[] = [];
+      const workflow = defineWorkflow({
+        name: "caller",
+        description: "",
+        entry: "hand-off",
+        steps: [
+          step("hand-off", async ({ enqueue }) => {
+            await enqueue("recipe-enrichment", { step: "enrich", data: { recipeId: "abc123" } });
+            return "handed off";
+          }),
+        ],
+      });
+
+      const host: WorkflowHost = {
+        runId: "test",
+        log: () => Promise.resolve(),
+        progress: () => Promise.resolve(),
+        children: () => Promise.resolve(EMPTY),
+        flow: () => Promise.resolve(),
+        enqueue: (targetWorkflow, node) => {
+          calls.push({ workflow: targetWorkflow, node });
+          return Promise.resolve();
+        },
+      };
+
+      await expect(workflow.run({ payload: {}, host, redis: NO_REDIS })).resolves.toBe("handed off");
+      expect(calls).toEqual([{ workflow: "recipe-enrichment", node: { step: "enrich", data: { recipeId: "abc123" } } }]);
+    });
+
+    describe("consoleHost", () => {
+      it("logs the intent and does not run the target workflow", async () => {
+        let ran = false;
+        const workflow = defineWorkflow({ name: "caller", description: "", entry: "one", steps: [step("one", () => Promise.resolve())] });
+        const host = consoleHost({
+          workflow,
+          runStep: () => {
+            ran = true;
+            return Promise.resolve();
+          },
+          concurrency: 1,
+        });
+
+        await expect(host.enqueue("recipe-enrichment", { step: "enrich" })).resolves.toBeUndefined();
+        expect(ran).toBe(false);
+      });
+    });
+
+    describe("jobHost", () => {
+      // No real Redis, no real BullMQ `Job` — only what `enqueue` itself
+      // touches is exercised, the same "pure wiring" boundary the rest of this
+      // file keeps.
+      const NO_JOB = {} as Job;
+      const NO_FLOWS = {} as FlowProducer;
+
+      it("throws on an unknown target workflow, the same way a bad entry step does", async () => {
+        const workflow = defineWorkflow({ name: "caller", description: "", entry: "one", steps: [step("one", () => Promise.resolve())] });
+        const host = jobHost(NO_JOB, workflow, NO_FLOWS, new Map());
+
+        await expect(host.enqueue("does-not-exist", {})).rejects.toThrow(/no workflow named "does-not-exist"/);
+      });
+
+      it("throws when the named step is not one of the target workflow's", async () => {
+        const workflow = defineWorkflow({ name: "caller", description: "", entry: "one", steps: [step("one", () => Promise.resolve())] });
+        const host = jobHost(NO_JOB, workflow, NO_FLOWS, new Map());
+
+        await expect(host.enqueue("demo", { step: "not-a-real-step" })).rejects.toThrow(/workflow "demo" has no step "not-a-real-step"/);
+      });
+
+      it("defaults to the target's entry step and adds the job to the target's own queue with the target's own job options", async () => {
+        const workflow = defineWorkflow({
+          name: "caller",
+          description: "",
+          entry: "one",
+          // A distinct `attempts` from demo's "start" step, so a leak of the
+          // *caller's* job options instead of the target's would fail loudly.
+          steps: [step("one", () => Promise.resolve(), { attempts: 99 })],
+        });
+
+        const added: { name: string; data: unknown; opts: unknown }[] = [];
+        const demoQueue = {
+          add: (name: string, data: unknown, opts: unknown) => {
+            added.push({ name, data, opts });
+            return Promise.resolve({});
+          },
+        } as unknown as Queue;
+
+        const host = jobHost(NO_JOB, workflow, NO_FLOWS, new Map([["demo", demoQueue]]));
+        await host.enqueue("demo", { data: { tasks: 2 } });
+
+        expect(added).toHaveLength(1);
+        expect(added[0].name).toBe(demo.entry);
+        expect(added[0].data).toEqual({ tasks: 2 });
+        expect(added[0].opts).toMatchObject(demo.jobOptionsFor(demo.entry) ?? {});
+        expect((added[0].opts as { attempts?: number }).attempts).not.toBe(99);
+      });
     });
   });
 });

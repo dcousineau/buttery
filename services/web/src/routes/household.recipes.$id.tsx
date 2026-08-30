@@ -66,6 +66,12 @@ function RecipeDetailRoute() {
   if (!recipe) return <NotInBox />;
   // Key by recipeId so switching recipes remounts the pane (resets favorite,
   // scroll, and the note editor without any setState-in-effect).
+  //
+  // The dev-only enrichment diagnostics that used to float here as a fixed
+  // overlay (recipe-enrichment plan §10, D16) moved to the "Recipe inspector"
+  // TanStack Devtools plugin (`src/devtools/`) — same data plus the rest of
+  // the recipe's internals, reached from the devtools tray instead of a panel
+  // pinned over the recipe itself.
   return (
     <DetailPane
       key={recipe.recipeId}

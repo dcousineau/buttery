@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { type Lexicon, categorizeWith, diceCoefficient, loadLexicon } from "./categorize";
+import { type Lexicon, categorizeWith, diceCoefficient, loadLexicon } from "./categorize.ts";
 
 /**
  * The cascade steps are pinned against a hand-built fixture rather than the real
