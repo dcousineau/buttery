@@ -64,10 +64,12 @@ export function PlanWeekGrid({ week }: { week: PlanWeek }) {
             className={cn(
               "border-b-2 border-b-border px-[7px] py-[5px]",
               index === week.days.length - 1 ? "rounded-tr-(--cell-radius)" : "border-r border-r-border/45",
-              day.isToday ? "bg-secondary" : day.isPast ? "bg-muted/60" : "bg-card",
+              day.isToday ? "bg-secondary text-secondary-foreground" : day.isPast ? "bg-muted/60" : "bg-card",
             )}
           >
-            <div className="text-[0.625rem] font-bold tracking-wide text-muted-foreground uppercase">{shortDow(day.date)}</div>
+            <div className={cn("text-[0.625rem] font-bold tracking-wide uppercase", day.isToday ? "text-secondary-foreground/70" : "text-muted-foreground")}>
+              {shortDow(day.date)}
+            </div>
             <div className="flex min-w-0 items-center gap-[5px]">
               <span className="text-sm font-bold whitespace-nowrap">{formatPlanDate(day.date)}</span>
               {day.isToday && (
