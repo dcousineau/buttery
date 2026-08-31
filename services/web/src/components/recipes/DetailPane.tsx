@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useRouteContext, useRouter } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CalendarRange, Clock, EyeOff, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
@@ -38,33 +38,49 @@ import { RecipeTimerStrip } from "#/components/timers/RecipeTimerStrip";
  */
 export function DetailPane({
   recipe,
+  householdId,
   autoOpenCook = false,
   onCookModeClosed,
+  showBackLink = true,
 }: {
   recipe: HouseholdRecipeDetail;
+  /**
+   * The cache partition every key below is built from — the value the
+   * surrounding route's `beforeLoad` already resolved, passed explicitly rather
+   * than read back out of the route context.
+   *
+   * It used to be `useRouteContext({ from: "/household/recipes" })`, which
+   * pinned this pane to one route id. The randomizer renders the same pane from
+   * `/household/randomizer` (randomizer plan §6.1), and a second route id is not
+   * something a `from` literal can express. The reasoning that put it in route
+   * context in the first place is unchanged and still binding on callers:
+   *
+   * Route context and `useActiveHouseholdId()` name the same household when
+   * everything is working, but they fail differently, and the difference is a
+   * silent one here. The hook reads the better-auth session (with the
+   * localStorage snapshot behind it) and answers `null` until `/get-session`
+   * lands — and permanently if that request fails. A `null` id makes every key
+   * below unbuildable, so `invalidateBox()` returned early and the ledger simply
+   * never updated after a favourite, with no error anywhere. So callers MUST
+   * pass the id their route resolved and keyed their queries with — never the
+   * hook.
+   */
+  householdId: string;
   /** `?cook` — the external deep link straight into cook mode (meal planner §7.5). */
   autoOpenCook?: boolean;
   onCookModeClosed?: () => void;
+  /**
+   * The mobile-only "Back to the shelf" link. On by default, because every
+   * surface that had this pane before was reached *from* the shelf. The
+   * randomizer sets it `false`: its controls sit directly above the result in
+   * one scrolling column, so there is no other pane to go back to and the link
+   * would navigate away from the surface instead of up it (randomizer §7.2 —
+   * an optional prop defaulted to today's behaviour, not a fork).
+   */
+  showBackLink?: boolean;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  /**
-   * The cache partition, from the **route context** rather than from
-   * `useActiveHouseholdId()`.
-   *
-   * Both name the same household when everything is working, but they fail
-   * differently, and the difference is a silent one here. The hook reads the
-   * better-auth session (with the localStorage snapshot behind it) and answers
-   * `null` until `/get-session` lands — and permanently if that request fails.
-   * A `null` id makes every key below unbuildable, so `invalidateBox()` returned
-   * early and the ledger simply never updated after a favourite, with no error
-   * anywhere. The route context is the value the parent layout's `beforeLoad`
-   * already resolved and the value the queries on screen were *keyed* with
-   * (`household.recipes.tsx`, `household.recipes.$id.tsx`), so reading it here
-   * cannot disagree with them and cannot be absent — the pane does not render
-   * until it exists.
-   */
-  const { householdId } = useRouteContext({ from: "/household/recipes" });
   // M1 writes are online-only (§4.1): the affordance disables rather than
   // queuing, because the favourite toggle is server-side (so replaying it flips
   // twice) and the note is the field two humans erase each other on. Both get
@@ -219,14 +235,16 @@ export function DetailPane({
         {/* Mobile back affordance. `search: (prev) => prev` keeps the collection
           or smart scope you came from (collections plan §7) — going back to "the
           shelf" should land on the shelf you were on, not the whole box. */}
-        <Link
-          to="/household/recipes"
-          search={(prev) => prev}
-          className="flex w-fit items-center gap-1 text-xs font-semibold text-muted-foreground no-underline hover:text-foreground lg:hidden"
-        >
-          <ArrowLeft className="size-3.5" aria-hidden="true" />
-          Back to the shelf
-        </Link>
+        {showBackLink && (
+          <Link
+            to="/household/recipes"
+            search={(prev) => prev}
+            className="flex w-fit items-center gap-1 text-xs font-semibold text-muted-foreground no-underline hover:text-foreground lg:hidden"
+          >
+            <ArrowLeft className="size-3.5" aria-hidden="true" />
+            Back to the shelf
+          </Link>
+        )}
 
         {recipe.unavailable && <UnavailableBanner since={recipe.unavailableSince} />}
 

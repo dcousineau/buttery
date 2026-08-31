@@ -76,6 +76,10 @@ function RecipeDetailRoute() {
     <DetailPane
       key={recipe.recipeId}
       recipe={recipe}
+      // The same value this route keyed `householdRecipeQuery` with, passed
+      // explicitly since the pane stopped reading it back out of route context
+      // (randomizer plan §6.1).
+      householdId={householdId}
       autoOpenCook={search.cook === true}
       // Drop the param once cook mode has been closed, so the deep link is
       // consumed exactly once and a reload does not re-enter the apron.
