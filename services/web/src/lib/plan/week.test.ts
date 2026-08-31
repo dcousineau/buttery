@@ -1,5 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MEAL_SLOTS, daysBetween, isMealSlot, isPlanDate, normalizeWeekStartDay, parseWeekParam, shiftDays, shiftWeeks, todayIn, weekDates, weekStartFor } from "./week";
+import {
+  MEAL_SLOTS,
+  daysBetween,
+  isMealSlot,
+  isPlanDate,
+  normalizeWeekStartDay,
+  parseWeekParam,
+  shiftDays,
+  shiftWeeks,
+  slotForHour,
+  todayIn,
+  weekDates,
+  weekStartFor,
+} from "./week";
 
 // 2026-08-06 is a Thursday — the reference date the meal-planner plan and the
 // design comps are both written against.
@@ -150,6 +163,49 @@ describe("todayIn", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-06T02:00:00Z"));
     expect(todayIn("Mars/Olympus_Mons")).toBe("2026-08-06");
+  });
+});
+
+describe("slotForHour", () => {
+  it("covers the interior of each slot", () => {
+    expect(slotForHour(0)).toBe("breakfast");
+    expect(slotForHour(5)).toBe("breakfast");
+    expect(slotForHour(12)).toBe("lunch");
+    expect(slotForHour(18)).toBe("dinner");
+    expect(slotForHour(23)).toBe("snack");
+  });
+
+  it("draws the breakfast/lunch boundary at 9/10 — a test per side", () => {
+    expect(slotForHour(9)).toBe("breakfast");
+    expect(slotForHour(10)).toBe("lunch");
+  });
+
+  it("draws the lunch/dinner boundary at 14/15 — a test per side", () => {
+    expect(slotForHour(14)).toBe("lunch");
+    expect(slotForHour(15)).toBe("dinner");
+  });
+
+  it("draws the dinner/snack boundary at 20/21 — a test per side", () => {
+    expect(slotForHour(20)).toBe("dinner");
+    expect(slotForHour(21)).toBe("snack");
+  });
+
+  it("is total: out-of-range hours wrap via floor+modulo instead of throwing", () => {
+    expect(slotForHour(24)).toBe("breakfast"); // wraps to 0
+    expect(slotForHour(34)).toBe("lunch"); // wraps to 10
+    expect(slotForHour(-1)).toBe("snack"); // wraps to 23
+    expect(slotForHour(-14)).toBe("lunch"); // wraps to 10
+  });
+
+  it("is total: a non-integer hour floors before mapping", () => {
+    expect(slotForHour(9.9)).toBe("breakfast"); // floors to 9
+    expect(slotForHour(14.5)).toBe("lunch"); // floors to 14
+  });
+
+  it("is total: NaN and non-finite input map to the neutral snack slot rather than throwing", () => {
+    expect(slotForHour(Number.NaN)).toBe("snack");
+    expect(slotForHour(Number.POSITIVE_INFINITY)).toBe("snack");
+    expect(slotForHour(Number.NEGATIVE_INFINITY)).toBe("snack");
   });
 });
 

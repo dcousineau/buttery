@@ -33,6 +33,42 @@ export function isMealSlot(value: unknown): value is MealSlot {
   return typeof value === "string" && (MEAL_SLOTS as readonly string[]).includes(value);
 }
 
+/**
+ * Map a household-local hour (0…23) to the slot "right now" most likely
+ * means. See `docs/plans/2026-08-30-meal-randomizer.md` §8.
+ *
+ * Cut points, adopted verbatim from the design comp's `slotNow()` (the comp is
+ * the design of record here — the spec does not override it):
+ * `h < 10 → breakfast, h < 15 → lunch, h < 21 → dinner, else → snack`. So the
+ * boundaries are breakfast 0–9, lunch 10–14, dinner 15–20, snack 21–23.
+ *
+ * A TOTAL function on purpose — an off-by-one here plans lunch at 4pm, and the
+ * caller (a one-click "add to today's <slot>" button) has no good fallback if
+ * this throws. Out-of-range policy: floor, then wrap into 0…23 with `%`, so
+ * every finite number maps to a slot instead of being rejected. `NaN` and
+ * non-finite input (which `% ` propagates as `NaN`, breaking every
+ * comparison below and falling through to the default) are explicitly caught
+ * first and treated as `snack` — a deliberately neutral, non-mealtime slot
+ * for "we don't actually know the hour," rather than silently defaulting to
+ * breakfast or dinner as if it were confidently timed.
+ *
+ * Deliberately dependency-free — no dayjs. The CALLER computes the local hour
+ * from the household's timezone (`getPlanToday()`'s `timezone`, e.g. via
+ * `dayjs().tz(timezone).hour()`) and passes a plain number in. That split is
+ * the bug this function exists to prevent: the design comp's `slotNow()`
+ * reads `new Date().getHours()` directly, which is the visitor's LOCAL clock,
+ * not the household's — wrong for anyone whose laptop isn't in the
+ * household's zone.
+ */
+export function slotForHour(hour: number): MealSlot {
+  if (!Number.isFinite(hour)) return "snack";
+  const h = ((Math.floor(hour) % 24) + 24) % 24;
+  if (h < 10) return "breakfast";
+  if (h < 15) return "lunch";
+  if (h < 21) return "dinner";
+  return "snack";
+}
+
 /** ISO calendar date, "YYYY-MM-DD". Never a Date object across a boundary. */
 export type PlanDate = string;
 
