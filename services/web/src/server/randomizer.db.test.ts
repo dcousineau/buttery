@@ -84,19 +84,23 @@ const R_UNTIMED_IT = `r-untimed-it-${RUN}`; // recipe_cuisine='italian', total_t
 const R_SLOW = `r-slow-${RUN}`; // 120m, no cuisine
 const R_VEG = `r-veg-${RUN}`; // diet vegetarian likely
 const R_VEGAN_KETO = `r-vegan-keto-${RUN}`; // diet vegan + keto likely (AND test)
+const R_VEGAN_EXCLUDED = `r-vegan-excluded-${RUN}`; // diet vegan EXCLUDED — the verdict the diet filter must not accept
 const R_GLUTEN_DIET = `r-gluten-diet-${RUN}`; // diet gluten_free likely (facet-exclusion test)
+const R_DAIRY_DIET = `r-dairy-diet-${RUN}`; // diet dairy_free likely — the OTHER half of the same facet exclusion
 const R_PEANUT_CONTAINS = `r-peanut-contains-${RUN}`;
 const R_MILK_MAYCONTAIN = `r-milk-maycontain-${RUN}`;
 const R_PEANUT_NOTDETECTED = `r-peanut-notdetected-${RUN}`;
 const R_PEANUT_UNKNOWN = `r-peanut-unknown-${RUN}`;
 const R_NO_ALLERGEN_ROW = `r-no-allergen-row-${RUN}`;
 const R_BREAKFAST = `r-breakfast-${RUN}`;
+const R_LUNCH = `r-lunch-${RUN}`; // meal_type lunch — canonical order puts it BETWEEN breakfast and dinner, alphabetical puts it after both
 const R_DINNER = `r-dinner-${RUN}`;
 const R_MILD = `r-mild-${RUN}`;
 const R_HOT = `r-hot-${RUN}`;
 const R_PERCENT = `r-percent-${RUN}`; // ingredient text literally contains "%"
 const R_UNDERSCORE = `r-underscore-${RUN}`; // ingredient text literally contains "_"
 const R_MIXED_CASE = `r-mixed-case-${RUN}`; // ingredient text "Chicken Thigh"
+const R_BACKSLASH = `r-backslash-${RUN}`; // ingredient text literally contains a backslash — the third character `escapeLikePattern` handles
 const R_NO_ENRICHMENT = `r-no-enrichment-${RUN}`; // no recipe_enrichment row at all
 const R_ENRICHMENT_ERROR = `r-enrichment-error-${RUN}`; // recipe_enrichment.status = 'error'
 const R_ENRICHMENT_OK = `r-enrichment-ok-${RUN}`; // recipe_enrichment.status = 'ok', no labels
@@ -115,19 +119,23 @@ const HH_A_RECIPES = [
   R_SLOW,
   R_VEG,
   R_VEGAN_KETO,
+  R_VEGAN_EXCLUDED,
   R_GLUTEN_DIET,
+  R_DAIRY_DIET,
   R_PEANUT_CONTAINS,
   R_MILK_MAYCONTAIN,
   R_PEANUT_NOTDETECTED,
   R_PEANUT_UNKNOWN,
   R_NO_ALLERGEN_ROW,
   R_BREAKFAST,
+  R_LUNCH,
   R_DINNER,
   R_MILD,
   R_HOT,
   R_PERCENT,
   R_UNDERSCORE,
   R_MIXED_CASE,
+  R_BACKSLASH,
   R_NO_ENRICHMENT,
   R_ENRICHMENT_ERROR,
   R_ENRICHMENT_OK,
@@ -143,7 +151,8 @@ const HH_A_RECIPES = [
 const R_CORPUS_PUBLIC = `r-corpus-public-${RUN}`; // public, never boxed — appears in a corpus draw
 const R_CORPUS_BOXED = `r-corpus-boxed-${RUN}`; // public, but boxed by HH_A — excluded (anti-join)
 const R_CORPUS_DRAFT = `r-corpus-draft-${RUN}`; // draft, never boxed — excluded (visibility)
-const CORPUS_RECIPES = [R_CORPUS_PUBLIC, R_CORPUS_BOXED, R_CORPUS_DRAFT];
+const R_CORPUS_OTHERBOX = `r-corpus-otherbox-${RUN}`; // public, boxed by HH_B ONLY — still new to HH_A, so it must survive the anti-join
+const CORPUS_RECIPES = [R_CORPUS_PUBLIC, R_CORPUS_BOXED, R_CORPUS_DRAFT, R_CORPUS_OTHERBOX];
 
 const RECIPES = [...HH_A_RECIPES, ...CORPUS_RECIPES];
 
@@ -196,19 +205,23 @@ async function reset(): Promise<void> {
       { id: R_SLOW, origin: "local", visibility: "public", name: "Slow Cooker", total_time_seconds: 7200 },
       { id: R_VEG, origin: "local", visibility: "public", name: "Vegetarian Bowl", total_time_seconds: 1500 },
       { id: R_VEGAN_KETO, origin: "local", visibility: "public", name: "Vegan Keto Plate", total_time_seconds: 1500 },
+      { id: R_VEGAN_EXCLUDED, origin: "local", visibility: "public", name: "Definitely Not Vegan", total_time_seconds: 1500 },
       { id: R_GLUTEN_DIET, origin: "local", visibility: "public", name: "Gluten Free Diet Label", total_time_seconds: 1500 },
+      { id: R_DAIRY_DIET, origin: "local", visibility: "public", name: "Dairy Free Diet Label", total_time_seconds: 1500 },
       { id: R_PEANUT_CONTAINS, origin: "local", visibility: "public", name: "Peanut Contains", total_time_seconds: 1500 },
       { id: R_MILK_MAYCONTAIN, origin: "local", visibility: "public", name: "Milk May Contain", total_time_seconds: 1500 },
       { id: R_PEANUT_NOTDETECTED, origin: "local", visibility: "public", name: "Peanut Not Detected", total_time_seconds: 1500 },
       { id: R_PEANUT_UNKNOWN, origin: "local", visibility: "public", name: "Peanut Unknown", total_time_seconds: 1500 },
       { id: R_NO_ALLERGEN_ROW, origin: "local", visibility: "public", name: "No Allergen Row", total_time_seconds: 1500 },
       { id: R_BREAKFAST, origin: "local", visibility: "public", name: "Breakfast Meal Type", total_time_seconds: 600 },
+      { id: R_LUNCH, origin: "local", visibility: "public", name: "Lunch Meal Type", total_time_seconds: 900 },
       { id: R_DINNER, origin: "local", visibility: "public", name: "Dinner Meal Type", total_time_seconds: 3000 },
       { id: R_MILD, origin: "local", visibility: "public", name: "Mild Spice", total_time_seconds: 1500 },
       { id: R_HOT, origin: "local", visibility: "public", name: "Hot Spice", total_time_seconds: 1500 },
       { id: R_PERCENT, origin: "local", visibility: "public", name: "Percent Ingredient", total_time_seconds: 1500 },
       { id: R_UNDERSCORE, origin: "local", visibility: "public", name: "Underscore Ingredient", total_time_seconds: 1500 },
       { id: R_MIXED_CASE, origin: "local", visibility: "public", name: "Mixed Case Ingredient", total_time_seconds: 1500 },
+      { id: R_BACKSLASH, origin: "local", visibility: "public", name: "Backslash Ingredient", total_time_seconds: 1500 },
       { id: R_NO_ENRICHMENT, origin: "local", visibility: "public", name: "No Enrichment Row", total_time_seconds: 1500 },
       { id: R_ENRICHMENT_ERROR, origin: "local", visibility: "public", name: "Enrichment Errored", total_time_seconds: 1500 },
       { id: R_ENRICHMENT_OK, origin: "local", visibility: "public", name: "Enrichment OK No Labels", total_time_seconds: 1500 },
@@ -221,12 +234,18 @@ async function reset(): Promise<void> {
       { id: R_CORPUS_PUBLIC, origin: "local", visibility: "public", name: "Corpus Public" },
       { id: R_CORPUS_BOXED, origin: "local", visibility: "public", name: "Corpus Boxed" },
       { id: R_CORPUS_DRAFT, origin: "local", visibility: "draft", name: "Corpus Draft" },
+      { id: R_CORPUS_OTHERBOX, origin: "local", visibility: "public", name: "Corpus Boxed By Someone Else" },
     ])
     .execute();
 
   await db
     .insertInto("household_recipe")
-    .values([...HH_A_RECIPES.map((recipe_id) => ({ household_id: HH_A, recipe_id, added_by_did: DID_A })), { household_id: HH_A, recipe_id: R_CORPUS_BOXED, added_by_did: DID_A }])
+    .values([
+      ...HH_A_RECIPES.map((recipe_id) => ({ household_id: HH_A, recipe_id, added_by_did: DID_A })),
+      { household_id: HH_A, recipe_id: R_CORPUS_BOXED, added_by_did: DID_A },
+      // HH_B's box, not HH_A's — the anti-join must be scoped per household.
+      { household_id: HH_B, recipe_id: R_CORPUS_OTHERBOX, added_by_did: DID_B },
+    ])
     .execute();
 
   await db.updateTable("household_recipe").set({ favorite: true }).where("household_id", "=", HH_A).where("recipe_id", "=", R_FAVORITE).execute();
@@ -251,12 +270,25 @@ async function reset(): Promise<void> {
       label(R_VEG, "diet", "vegetarian", "likely"),
       label(R_VEGAN_KETO, "diet", "vegan", "likely"),
       label(R_VEGAN_KETO, "diet", "keto", "likely"),
+      // `excluded` is a real diet verdict (migration 1787679680100's check
+      // constraint: excluded | likely | unknown) and it means the OPPOSITE of a
+      // match. §4.2 requires `verdict = 'likely'`, so this row must never
+      // satisfy `diets: ["vegan"]`.
+      label(R_VEGAN_EXCLUDED, "diet", "vegan", "excluded"),
       label(R_GLUTEN_DIET, "diet", "gluten_free", "likely"),
+      label(R_DAIRY_DIET, "diet", "dairy_free", "likely"),
       label(R_PEANUT_CONTAINS, "allergen", "peanut", "contains"),
       label(R_MILK_MAYCONTAIN, "allergen", "milk", "may_contain"),
       label(R_PEANUT_NOTDETECTED, "allergen", "peanut", "not_detected"),
       label(R_PEANUT_UNKNOWN, "allergen", "peanut", "unknown"),
+      // `soy` and `egg` appear in the box ONLY with a non-positive verdict, so
+      // they must never reach the Avoid… facet — an option that can exclude
+      // nothing. `peanut` cannot prove that on its own: it is present via
+      // R_PEANUT_CONTAINS either way.
+      label(R_PEANUT_NOTDETECTED, "allergen", "soy", "not_detected"),
+      label(R_PEANUT_UNKNOWN, "allergen", "egg", "unknown"),
       label(R_BREAKFAST, "meal_type", "breakfast", "likely"),
+      label(R_LUNCH, "meal_type", "lunch", "likely"),
       label(R_DINNER, "meal_type", "dinner", "likely"),
       label(R_MILD, "spice_level", "mild", "likely"),
       label(R_HOT, "spice_level", "hot", "likely"),
@@ -270,6 +302,8 @@ async function reset(): Promise<void> {
       { recipe_id: R_PERCENT, ordinal: 0, text: "5% milk" },
       { recipe_id: R_UNDERSCORE, ordinal: 0, text: "all_purpose flour" },
       { recipe_id: R_MIXED_CASE, ordinal: 0, text: "Chicken Thigh" },
+      // One real backslash, then "b sauce" — `"a\\b sauce"` in TS source.
+      { recipe_id: R_BACKSLASH, ordinal: 0, text: "a\\b sauce" },
     ])
     .execute();
 
@@ -391,7 +425,10 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
       expect(slugs).toContain("vegetarian");
       expect(slugs).toContain("vegan");
       expect(slugs).toContain("keto");
+      // Both halves of the exclusion, each backed by a recipe that really
+      // carries the label — R_GLUTEN_DIET and R_DAIRY_DIET.
       expect(slugs).not.toContain("gluten_free");
+      expect(slugs).not.toContain("dairy_free");
     });
 
     it("allergens: only contains/may_contain verdicts contribute — not_detected and unknown do not", async () => {
@@ -399,16 +436,25 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
       const slugs = facets.allergens.map((f) => f.slug);
       expect(slugs).toContain("peanut"); // via R_PEANUT_CONTAINS
       expect(slugs).toContain("milk"); // via R_MILK_MAYCONTAIN
-      // R_PEANUT_NOTDETECTED / R_PEANUT_UNKNOWN contribute nothing extra —
-      // "peanut" is present either way, so this is really asserting no crash
-      // and no THIRD slug sneaking in from those verdicts.
-      expect(slugs.filter((s) => s === "peanut").length).toBe(1);
+      // The load-bearing half. `peanut` cannot prove the verdict predicate is
+      // doing anything — R_PEANUT_CONTAINS puts it in the list either way.
+      // `soy` (not_detected) and `egg` (unknown) exist in the box with NO
+      // positive verdict anywhere, so they are the two slugs that appear if
+      // and only if the `verdict in ('contains','may_contain')` filter is
+      // dropped. Offering either would be an Avoid… option that excludes
+      // nothing.
+      expect(slugs).not.toContain("soy");
+      expect(slugs).not.toContain("egg");
+      expect(slugs.filter((s) => s === "peanut").length).toBe(1); // deduped across three verdicts
     });
 
     it("mealTypes: canonical order, not alphabetical, and only slugs present", async () => {
       const { facets } = await randomizer.readRandomizerPool(db!, DID_A, HH_A, {});
-      // breakfast sorts after dinner alphabetically; canonical order puts it first.
-      expect(facets.mealTypes.map((f) => f.slug)).toEqual(["breakfast", "dinner"]);
+      // The fixture carries breakfast, lunch and dinner. Canonical order is
+      // breakfast → lunch → dinner; ALPHABETICAL order would be breakfast,
+      // dinner, lunch. The two disagree, which is the only reason this
+      // assertion can tell `MEAL_TYPE_ORDER` from `[...slugs].sort()`.
+      expect(facets.mealTypes.map((f) => f.slug)).toEqual(["breakfast", "lunch", "dinner"]);
     });
 
     it("spiceLevels: canonical order (mild, medium, hot), medium absent when nothing carries it", async () => {
@@ -491,6 +537,22 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
       expect(ids(pool.pool)).toEqual([R_UNDERSCORE]);
     });
 
+    it("a literal backslash is escaped and the ESCAPE clause really is '\\': matches the one recipe whose text contains one", async () => {
+      // `escapeLikePattern` doubles the backslash and the fragment pins
+      // `escape '\\'` — the third character of the §4.4 contract, and the one
+      // that proves the ESCAPE clause parses as a single backslash rather
+      // than something Postgres reads as an empty or two-character escape.
+      const hit = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { ingredient: "a\\b" });
+      expect(ids(hit.pool)).toEqual([R_BACKSLASH]);
+
+      // Two literal backslashes are NOT in the stored text ("a\\b sauce" holds
+      // exactly one), so this must miss. It matches only if the doubling in
+      // `escapeLikePattern` is being un-done somewhere between here and the
+      // driver.
+      const miss = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { ingredient: "a\\\\b" });
+      expect(ids(miss.pool)).toEqual([]);
+    });
+
     it("an ordinary substring still matches normally", async () => {
       const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { ingredient: "flour" });
       expect(ids(pool.pool)).toEqual([R_UNDERSCORE]);
@@ -533,6 +595,16 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
       expect(found).toContain(R_NO_ALLERGEN_ROW); // kept: absence is not "free of"
     });
 
+    it("diets require verdict 'likely' — an `excluded` verdict is a miss, not a match", async () => {
+      // The diet dimension's verdicts are excluded | likely | unknown. Only
+      // `likely` may satisfy the filter (§4.2); `excluded` asserts the
+      // opposite and must never be read as a match by dropping the verdict
+      // predicate and matching on dimension+slug alone.
+      const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { diets: ["vegan"] });
+      expect(ids(pool.pool)).toContain(R_VEGAN_KETO);
+      expect(ids(pool.pool)).not.toContain(R_VEGAN_EXCLUDED);
+    });
+
     it("avoidAllergens excludes on ANY listed slug matching contains/may_contain", async () => {
       const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { avoidAllergens: ["peanut", "milk"] });
       const found = ids(pool.pool);
@@ -562,6 +634,46 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
       const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { skipRecentDays: 45 });
       expect(ids(pool.pool)).not.toContain(R_OLD_PLAN);
       expect(ids(pool.pool)).not.toContain(R_RECENT_PLAN);
+    });
+
+    it("the window boundary is INCLUSIVE: a meal planned exactly N days ago is still 'recent'", async () => {
+      // §4.6's predicate is `plan_date >= today::date - N`, so day N itself is
+      // inside the window and day N+1 is outside. The rest of this group works
+      // at -3 and -30, which never touches the boundary either way.
+      const entryId = `${RUN}-mpe-boundary`;
+      await db!
+        .insertInto("meal_plan_entry")
+        .values({ id: entryId, household_id: HH_A, plan_date: shiftDays(today, -14), slot: "dinner", kind: "recipe", position: 0, recipe_id: R_MX, created_by_did: DID_A })
+        .execute();
+      try {
+        const atBoundary = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { skipRecentDays: 14 });
+        expect(ids(atBoundary.pool)).not.toContain(R_MX);
+        expect(atBoundary.skippedRecent).toBe(2); // R_RECENT_PLAN (-3) and R_MX (-14)
+
+        const justInside = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { skipRecentDays: 13 });
+        expect(ids(justInside.pool)).toContain(R_MX); // 14 days ago is outside a 13-day window
+        expect(justInside.skippedRecent).toBe(1);
+      } finally {
+        await db!.deleteFrom("meal_plan_entry").where("id", "=", entryId).execute();
+      }
+    });
+
+    it("hides a recipe planned for a FUTURE date too — the window has no upper bound", async () => {
+      // §4.6's predicate is one-sided (`plan_date >= today - N`), so anything
+      // already on the plan for a coming day is out of the draw as well. That
+      // is the behaviour the spec's SQL specifies; pinned here so a later
+      // `between` never quietly starts suggesting tomorrow's dinner tonight.
+      const entryId = `${RUN}-mpe-future`;
+      await db!
+        .insertInto("meal_plan_entry")
+        .values({ id: entryId, household_id: HH_A, plan_date: shiftDays(today, 3), slot: "dinner", kind: "recipe", position: 0, recipe_id: R_MX, created_by_did: DID_A })
+        .execute();
+      try {
+        const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, {});
+        expect(ids(pool.pool)).not.toContain(R_MX);
+      } finally {
+        await db!.deleteFrom("meal_plan_entry").where("id", "=", entryId).execute();
+      }
     });
 
     it("ignores a soft-deleted plan entry even though it is inside the window", async () => {
@@ -614,6 +726,30 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
       expect(ids(pool.pool)).toEqual([R_IN_COLLECTION]);
     });
 
+    it("a collection id belonging to ANOTHER household selects nothing, even for a recipe both boxes hold", async () => {
+      // The `EXISTS` carries `rce.household_id = $householdId` as well as the
+      // collection id. Drop that column and this leaks: R_MX is in HH_A's box
+      // AND in a collection HH_B owns, so HH_A asking for HH_B's collection id
+      // would get it back.
+      const foreignCollection = `col-b-${RUN}`;
+      await db!.insertInto("household_recipe").values({ household_id: HH_B, recipe_id: R_MX, added_by_did: DID_B }).execute();
+      await db!.insertInto("recipe_collection").values({ id: foreignCollection, household_id: HH_B, name: "B's Collection", position: 0, created_by_did: DID_B }).execute();
+      await db!.insertInto("recipe_collection_entry").values({ collection_id: foreignCollection, household_id: HH_B, recipe_id: R_MX, position: 0, added_by_did: DID_B }).execute();
+      try {
+        const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { collectionId: foreignCollection });
+        expect(pool.totalInScope).toBe(0);
+        expect(ids(pool.pool)).toEqual([]);
+
+        // Positive control: HH_B's own member DOES see it through that id.
+        const asOwner = await randomizer.readRandomizerPool(db!, DID_B, HH_B, { collectionId: foreignCollection });
+        expect(ids(asOwner.pool)).toEqual([R_MX]);
+      } finally {
+        await db!.deleteFrom("recipe_collection_entry").where("collection_id", "=", foreignCollection).execute();
+        await db!.deleteFrom("recipe_collection").where("id", "=", foreignCollection).execute();
+        await db!.deleteFrom("household_recipe").where("household_id", "=", HH_B).where("recipe_id", "=", R_MX).execute();
+      }
+    });
+
     it("favoritesOnly narrows to hr.favorite = true", async () => {
       const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { favoritesOnly: true });
       expect(ids(pool.pool)).toEqual([R_FAVORITE]);
@@ -644,6 +780,22 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
       expect(found).toContain(R_CORPUS_PUBLIC);
       expect(found).not.toContain(R_CORPUS_BOXED);
       expect(found).not.toContain(R_CORPUS_DRAFT);
+    });
+
+    it("the anti-join is scoped to THIS household — a recipe another household boxed is still new here", async () => {
+      // §4.5's anti-join is `not exists (… hr2.household_id = $householdId)`.
+      // Drop the household column and it becomes "in ANY box", which would
+      // hide from every household every recipe any other household has ever
+      // kept — the corpus would empty out as the app grew.
+      const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { source: "corpus" });
+      expect(ids(pool.pool)).toContain(R_CORPUS_OTHERBOX); // boxed by HH_B, never by HH_A
+      expect(ids(pool.pool)).not.toContain(R_CORPUS_BOXED); // boxed by HH_A itself
+
+      // And symmetrically from HH_B's side, so this cannot pass by the
+      // anti-join being broken in the other direction.
+      const asB = await randomizer.readRandomizerPool(db!, DID_B, HH_B, { source: "corpus" });
+      expect(ids(asB.pool)).not.toContain(R_CORPUS_OTHERBOX);
+      expect(ids(asB.pool)).toContain(R_CORPUS_BOXED);
     });
 
     it("every corpus card reports favorite: false, with no household_recipe row to read it from", async () => {
@@ -682,6 +834,45 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
       expect(pool.totalInScope).toBe(0);
       expect(pool.pool).toEqual([]);
       expect(pool.facets.cuisines).toEqual([]);
+
+      // Positive control on the same call, so an assertion that would hold for
+      // an always-empty implementation cannot pass for the wrong reason.
+      const asMember = await randomizer.readRandomizerPool(db!, DID_A, HH_A, {});
+      expect(asMember.totalInScope).toBeGreaterThan(0);
+    });
+
+    it("EVERY aggregate is scoped by the membership join, not just the pool", async () => {
+      // An unscoped `totalInScope` / `unenrichedInScope` / `skippedRecent` /
+      // facet query would leak counts across households even with a clean
+      // pool, so each one is asserted at zero for a non-member and non-zero
+      // for a member of the same household.
+      const outsider = await randomizer.readRandomizerPool(db!, DID_B, HH_A, {});
+      expect(outsider).toMatchObject({ totalInScope: 0, unenrichedInScope: 0, skippedRecent: 0 });
+      expect(outsider.facets).toEqual({ cuisines: [], diets: [], allergens: [], mealTypes: [], spiceLevels: [] });
+
+      const member = await randomizer.readRandomizerPool(db!, DID_A, HH_A, {});
+      expect(member.unenrichedInScope).toBe(2);
+      expect(member.skippedRecent).toBe(1);
+      expect(member.facets.cuisines.length).toBeGreaterThan(0);
+    });
+
+    it("the CORPUS path fails closed for a non-member too — it has no membership join to hide behind", async () => {
+      // `source: "corpus"` scans `recipe` directly; `householdId` only feeds
+      // the box anti-join and the `skippedRecent` count off `meal_plan_entry`.
+      // Without an explicit membership check a stranger holding this household
+      // id would get a full pool AND learn, by omission from the anti-join,
+      // which public recipes this household has boxed.
+      const outsider = await randomizer.readRandomizerPool(db!, DID_B, HH_A, { source: "corpus" });
+      expect(outsider.source).toBe("corpus");
+      expect(outsider.pool).toEqual([]);
+      expect(outsider).toMatchObject({ totalInScope: 0, unenrichedInScope: 0, skippedRecent: 0, capped: false });
+      expect(outsider.facets).toEqual({ cuisines: [], diets: [], allergens: [], mealTypes: [], spiceLevels: [] });
+
+      // Positive control: the same household id in a real member's hands does
+      // return the corpus, so the assertion above is about membership and not
+      // about the corpus branch being broken outright.
+      const member = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { source: "corpus" });
+      expect(ids(member.pool)).toContain(R_CORPUS_PUBLIC);
     });
   });
 });

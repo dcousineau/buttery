@@ -384,6 +384,25 @@ function poolConditions(sqlTag: Sql, f: NormalizedFilters): RawBuilder<boolean>[
   return conditions;
 }
 
+/**
+ * The fail-closed answer: an empty pool with every aggregate at zero and every
+ * facet empty. Exactly what the box branch's membership join produces for a
+ * non-member on its own; returned explicitly for the corpus branch, which has
+ * no join to produce it.
+ */
+function emptyPool(source: "box" | "corpus"): RandomizerPool {
+  return {
+    source,
+    pool: [],
+    totalInScope: 0,
+    unenrichedInScope: 0,
+    skippedRecent: 0,
+    capped: false,
+    cap: CORPUS_POOL_CAP,
+    facets: { cuisines: [], diets: [], allergens: [], mealTypes: [], spiceLevels: [] },
+  };
+}
+
 // --- §4 getRandomizerPool / readRandomizerPool ------------------------------
 
 const filtersValidator = z
@@ -441,6 +460,26 @@ export async function readRandomizerPool(db: Kysely<DB>, did: string, householdI
   const { readHouseholdPreferences } = await import("./household/preferences");
 
   const f = normalizeFilters(input);
+
+  // --- §3 authorization, on BOTH scope branches -----------------------------
+  //
+  // The box branch below starts from `householdScopedQuery`, so the membership
+  // join IS the authorization there — a non-member's join yields no row and
+  // every aggregate collapses to zero. The corpus branch has no such join: it
+  // scans `recipe` directly and only uses `householdId` to anti-join the box
+  // and to count `skippedRecent` off `meal_plan_entry`. Without this probe a
+  // caller holding any household's id would get a full corpus pool plus two
+  // channels onto that household's private data — which of its recipes are
+  // boxed (they go missing from the anti-join) and how many are on its plan.
+  // `getRandomizerPool` already gates with `assertMember`, but §3 makes the
+  // membership check a property of the READ, not of one caller, so it is
+  // asserted here too and the same fail-closed empty shape the box branch
+  // returns is returned for the corpus.
+  if (f.source === "corpus") {
+    const membership = await householdScopedQuery(db, did, householdId).select("hm.household_id").executeTakeFirst();
+    if (!membership) return emptyPool("corpus");
+  }
+
   const { timezone } = await readHouseholdPreferences(householdId);
   const today = todayIn(timezone);
 
