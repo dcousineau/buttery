@@ -640,13 +640,14 @@ export async function readRandomizerPool(db: Kysely<DB>, did: string, householdI
       "attr.publisher as attr_publisher",
       "attr.url as attr_url",
       "repo.handle as repo_handle",
-    ])
-    .orderBy("r.name");
+    ]);
 
   if (f.source === "box") {
     // Small N; no pagination (§4.4) — the box is a household's own curated
-    // shelf, never large enough to need a cap.
-    const rows = await poolQuery.select("hr.favorite as favorite").execute();
+    // shelf, never large enough to need a cap. Ordered by name only so the
+    // rows arrive in a stable, readable order for anything that inspects the
+    // pool; the draw itself is uniform over the whole array either way.
+    const rows = await poolQuery.orderBy("r.name").select("hr.favorite as favorite").execute();
     return {
       source: "box",
       pool: (rows as Array<CardRow & { favorite: boolean }>).map((row) => toCard(row, row.favorite)),
@@ -662,7 +663,28 @@ export async function readRandomizerPool(db: Kysely<DB>, did: string, householdI
   // Corpus: cap at CORPUS_POOL_CAP and SURFACE the cap rather than truncating
   // silently (§4.5). `favorite` is always false — no `household_recipe` row
   // exists to read it from until the recipe is kept.
-  const rows = await poolQuery.limit(CORPUS_POOL_CAP + 1).execute();
+  //
+  // `order by random()`, NOT by name, and that is the whole point of this
+  // branch existing separately. The corpus is the one scope large enough to
+  // hit the cap, and an alphabetical cap is a truncation that never admits to
+  // being one: a public corpus of 5000 would make every recipe sorting past
+  // the 200th permanently undrawable, so a randomizer would quietly refuse to
+  // suggest anything after roughly the letter B. §4.5 asks only that the cap
+  // be surfaced, and it is — but a surfaced cap over an alphabetical prefix
+  // still answers "what should I make?" with a biased sample. Randomizing
+  // here makes the capped pool a uniform sample of what matched, which is the
+  // only shape the client's uniform draw over it can turn back into a uniform
+  // draw over the matches.
+  //
+  // The cost is that two fetches of the same filters can return different
+  // 200s. That is correct rather than merely tolerable: re-rolling never
+  // refetches (§5.2), so within one session the pool is stable, and a
+  // deliberate refetch genuinely SHOULD offer a different slice of a corpus
+  // too big to show at once.
+  const rows = await poolQuery
+    .orderBy(sql`random()`)
+    .limit(CORPUS_POOL_CAP + 1)
+    .execute();
   const capped = rows.length > CORPUS_POOL_CAP;
   const page = capped ? rows.slice(0, CORPUS_POOL_CAP) : rows;
   return {

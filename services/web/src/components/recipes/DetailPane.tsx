@@ -42,6 +42,7 @@ export function DetailPane({
   autoOpenCook = false,
   onCookModeClosed,
   showBackLink = true,
+  onResultAction,
 }: {
   recipe: HouseholdRecipeDetail;
   /**
@@ -78,6 +79,27 @@ export function DetailPane({
    * an optional prop defaulted to today's behaviour, not a fork).
    */
   showBackLink?: boolean;
+  /**
+   * Fired when the reader acts on this recipe, so a surface that renders this
+   * pane can record the action under its own event name — the randomizer's
+   * `randomizer_result_action` (randomizer plan §9), which no event this pane
+   * already sends can stand in for.
+   *
+   * Optional and unset on `/household/recipes/$id`, so that surface is
+   * unchanged: the pane keeps sending its own `meal_plan_entry_added` /
+   * `grocery_items_added` / `cook_mode_opened` events either way, and this is
+   * additional rather than a replacement. It reports the GESTURE (a dialog was
+   * opened, cook mode was launched), not the outcome — the outcome already has
+   * an event, and a surface asking "did anyone act on what we suggested?" wants
+   * to count the reach for the list, not only the confirmed adds.
+   *
+   * Deliberately NOT an `analyticsSource` string threaded into the `source:`
+   * fields the pane's own captures already carry. That would be the cheaper
+   * change and would also fix those events' hardcoded `source: "recipe_detail"`
+   * — but it would not produce the event §9 names, and the two are separate
+   * problems with separate fixes.
+   */
+  onResultAction?: (action: "plan_dialog" | "grocery" | "cook") => void;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -302,7 +324,7 @@ export function DetailPane({
 
         {/* Action row */}
         <div className="flex flex-wrap items-center gap-2">
-          <CookModeLauncher recipe={recipe} autoOpen={autoOpenCook} onAutoOpenConsumed={onCookModeClosed} />
+          <CookModeLauncher recipe={recipe} autoOpen={autoOpenCook} onAutoOpenConsumed={onCookModeClosed} onOpened={onResultAction ? () => onResultAction("cook") : undefined} />
           {/* Offline, every control on this row disables rather than queuing.
             M1 ships offline READS; the writes here are the ones §5.2 shows are
             not replay-safe by shape — a server-side favourite toggle flips twice
@@ -330,7 +352,10 @@ export function DetailPane({
             variant="outline"
             disabled={!online}
             title={online ? undefined : OFFLINE_WRITE_HINT}
-            onClick={() => setListRequest({ recipes: [{ recipeId: recipe.recipeId, scale: factor }], label: recipe.title })}
+            onClick={() => {
+              onResultAction?.("grocery");
+              setListRequest({ recipes: [{ recipeId: recipe.recipeId, scale: factor }], label: recipe.title });
+            }}
           >
             <ShoppingBasket data-icon="inline-start" aria-hidden="true" />
             Add to shopping list
@@ -339,7 +364,10 @@ export function DetailPane({
             variant="outline"
             disabled={!online}
             title={online ? undefined : OFFLINE_WRITE_HINT}
-            onClick={() => setPlanRequest({ recipeId: recipe.recipeId, title: recipe.title })}
+            onClick={() => {
+              onResultAction?.("plan_dialog");
+              setPlanRequest({ recipeId: recipe.recipeId, title: recipe.title });
+            }}
           >
             <CalendarRange data-icon="inline-start" aria-hidden="true" />
             Add to meal planner

@@ -251,6 +251,24 @@ function RandomizerPage() {
     }
   }
 
+  /**
+   * §9's `randomizer_result_action`. Three of its five values happen inside
+   * `DetailPane`'s own handlers, which reach back out through the optional
+   * `onResultAction` prop §7.2 sanctions — the pane keeps sending its own
+   * `meal_plan_entry_added` / `grocery_items_added` / `cook_mode_opened`
+   * events unchanged; this is the surface-level "did anyone act on what we
+   * suggested?" counter beside them.
+   *
+   * `plan_today` is captured by `RandomizerPlanShortcut`, the one action this
+   * surface owns. `open_recipe` is NOT captured, because there is nothing to
+   * capture: on this surface the drawn recipe IS the full recipe view, and
+   * §7.2 forbids adding an action the design does not have just to make an
+   * event fire. Recorded in the results doc rather than faked here.
+   */
+  function captureResultAction(action: "plan_dialog" | "grocery" | "cook") {
+    posthog.capture("randomizer_result_action", { action, source: drawn?.source ?? "box", recipe_id: drawn?.card.recipeId ?? null });
+  }
+
   function onDismissWiden() {
     setFilters((f) => ({ ...f, source: "box" }));
   }
@@ -362,7 +380,7 @@ function RandomizerPage() {
             </div>
           ) : drawn ? (
             drawn.source === "box" ? (
-              <RandomizerBoxResult householdId={householdId} card={drawn.card} />
+              <RandomizerBoxResult householdId={householdId} card={drawn.card} onResultAction={captureResultAction} />
             ) : (
               <RandomizerCorpusResult householdId={householdId} card={drawn.card} onKept={onKeptFromCorpus} />
             )

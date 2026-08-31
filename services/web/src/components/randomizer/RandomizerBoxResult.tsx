@@ -34,7 +34,16 @@ import { Spinner } from "#/components/ui/spinner";
  * If that cost is judged too high, the fix is §7.2's extraction, not a second
  * copy of the header.
  */
-export function RandomizerBoxResult({ householdId, card }: { householdId: string; card: RandomizerCard }) {
+export function RandomizerBoxResult({
+  householdId,
+  card,
+  onResultAction,
+}: {
+  householdId: string;
+  card: RandomizerCard;
+  /** §9's `randomizer_result_action`, forwarded to the pane's optional hook. */
+  onResultAction: (action: "plan_dialog" | "grocery" | "cook") => void;
+}) {
   const { data: recipe, isLoading } = useQuery(householdRecipeQuery(householdId, card.recipeId));
 
   if (isLoading || recipe === undefined) {
@@ -59,5 +68,5 @@ export function RandomizerBoxResult({ householdId, card }: { householdId: string
     );
   }
 
-  return <DetailPane key={recipe.recipeId} recipe={recipe} householdId={householdId} showBackLink={false} />;
+  return <DetailPane key={recipe.recipeId} recipe={recipe} householdId={householdId} showBackLink={false} onResultAction={onResultAction} />;
 }

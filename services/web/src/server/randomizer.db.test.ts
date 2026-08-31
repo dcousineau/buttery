@@ -819,6 +819,41 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
       }
     });
 
+    it("samples the capped pool at random rather than taking an alphabetical prefix", async () => {
+      // The cap is the one place the corpus branch can silently bias a
+      // RANDOMIZER. Ordered by name, a corpus larger than the cap makes every
+      // recipe sorting past the 200th permanently undrawable — the surface
+      // would quietly refuse to suggest anything after roughly the letter B,
+      // and `capped: true` would be the only hint. Two reads of the same
+      // filters must therefore be able to disagree about WHICH matches they
+      // return.
+      //
+      // Names are deliberately zero-padded and ascending, so an alphabetical
+      // cap is a stable prefix: under `order by r.name` both reads return
+      // exactly ids 000…199 and this test fails. Flakiness is bounded — two
+      // uniform 200-of-260 samples collide entirely with probability far
+      // below 1e-30 — but the assertion is on the UNION rather than on
+      // inequality of the two sets, so it says the thing it means: across two
+      // reads, more than a cap's worth of distinct recipes are reachable.
+      const total = randomizer.CORPUS_POOL_CAP + 60;
+      const capIds = Array.from({ length: total }, (_, i) => `r-sample-${String(i).padStart(4, "0")}-${RUN}`);
+      await db!
+        .insertInto("recipe")
+        .values(capIds.map((id, i) => ({ id, origin: "local", visibility: "public", name: `Sample ${String(i).padStart(4, "0")}` })))
+        .execute();
+      try {
+        const [first, second] = await Promise.all([
+          randomizer.readRandomizerPool(db!, DID_A, HH_A, { source: "corpus" }),
+          randomizer.readRandomizerPool(db!, DID_A, HH_A, { source: "corpus" }),
+        ]);
+        expect(first.capped).toBe(true);
+        const union = new Set([...first.pool.map((c) => c.recipeId), ...second.pool.map((c) => c.recipeId)]);
+        expect(union.size).toBeGreaterThan(randomizer.CORPUS_POOL_CAP);
+      } finally {
+        await db!.deleteFrom("recipe").where("id", "in", capIds).execute();
+      }
+    });
+
     it("reports capped: false and never caps a box draw", async () => {
       const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, {});
       expect(pool.capped).toBe(false);

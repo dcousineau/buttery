@@ -18,7 +18,27 @@ import type { CookRecipe } from "./cook/CookMode";
  * over the week, so closing returns to the plan rather than stranding someone on
  * a recipe page they never asked to visit.
  */
-export function CookModeLauncher({ recipe, autoOpen = false, onAutoOpenConsumed }: { recipe: CookRecipe; autoOpen?: boolean; onAutoOpenConsumed?: () => void }) {
+export function CookModeLauncher({
+  recipe,
+  autoOpen = false,
+  onAutoOpenConsumed,
+  onOpened,
+}: {
+  recipe: CookRecipe;
+  autoOpen?: boolean;
+  onAutoOpenConsumed?: () => void;
+  /**
+   * Fired alongside this component's own `cook_mode_opened` capture, for a
+   * surface that also has to record the launch under its own event name — the
+   * randomizer's `randomizer_result_action` (randomizer plan §9). Optional and
+   * unset everywhere else, so the recipe page's behaviour is unchanged.
+   *
+   * NOT a replacement for `cook_mode_opened`: that event is about cook mode and
+   * belongs here; this one is about which surface the reader acted from, and
+   * belongs to the caller.
+   */
+  onOpened?: () => void;
+}) {
   const { posthog } = useAnalytics();
   const [open, setOpen] = useState(autoOpen);
 
@@ -30,6 +50,7 @@ export function CookModeLauncher({ recipe, autoOpen = false, onAutoOpenConsumed 
 
   function openCookMode() {
     posthog.capture("cook_mode_opened", { recipe_id: recipe.recipeId, source: "button" });
+    onOpened?.();
     setOpen(true);
   }
 
