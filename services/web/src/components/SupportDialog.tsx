@@ -8,7 +8,7 @@ import { isSupportReady, loadSupportThread, markSupportRead, sendSupportMessage,
 import { cn } from "#/lib/utils";
 
 /**
- * "Help & support" — the conversation with the team, in Buttery's own chrome.
+ * "Submit a bug" — the conversation with the team, in Buttery's own chrome.
  *
  * PostHog Support is the channel underneath (see `lib/support`); everything
  * visible here is the app's own primitives, because the alternative was
@@ -97,7 +97,7 @@ function SupportConversation({ onClose }: { onClose: () => void }) {
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
-        <DialogTitle>Help &amp; support</DialogTitle>
+        <DialogTitle>Submit a bug</DialogTitle>
 
         {!ready ? (
           <>
