@@ -1,0 +1,16 @@
+# The decision journal is append-only: one JSON object per line, never edited
+# in place, written concurrently by however many agent sessions are running.
+# Two branches that both wrote to the same session's file therefore conflict as
+# add/add or on the same trailing hunk — even though the correct answer is
+# always "keep both lines", because neither side is a revision of the other.
+#
+# `merge=union` is git's built-in driver for exactly that shape: it takes both
+# sides of a conflicting hunk instead of stopping. It does not re-sort by
+# timestamp, so a merged file can be slightly out of order — that is a cosmetic
+# cost against never silently dropping an entry, which is the property the
+# journal exists to have.
+#
+# This is safe ONLY because these files are append-only. Do not extend the
+# pattern to anything a writer edits in place; union-merging that would
+# duplicate lines rather than reconcile them.
+.coherence/**/*.jsonl merge=union

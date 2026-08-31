@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowLeftRight, Home, LifeBuoy, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
+import { ArrowLeftRight, Bug, Home, Lightbulb, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { signOutAndGoHome, useHydratedSession } from "../lib/auth-client";
 import { useSessionSnapshot } from "#/lib/offline/use-household";
 import UserAvatar from "./UserAvatar";
@@ -12,6 +12,11 @@ import { useOnboardingVerdict } from "#/lib/hooks/use-onboarding-verdict";
 import { useTheme, type ThemeMode } from "#/lib/hooks/use-theme";
 import { useSupport } from "#/lib/support";
 import type { OnboardingVerdict } from "#/lib/api";
+
+// The public feature-request tracker (userinput.app). Opens in a new tab: it is
+// someone else's app, and losing the planner's state to a wishlist click is not
+// a trade anyone would make.
+const FEATURE_REQUEST_URL = "https://userinput.app/s/did:plc:yof4c2gtj3uir543k3ryekes/3mudbwqxdnr22";
 
 // Single-item theme control: clicking cycles light → dark → auto. The icon and
 // label reflect the CURRENT mode; `next` is what the click will switch to.
@@ -171,8 +176,8 @@ export default function UserMenu() {
             sits unread. */}
         {support.available ? (
           <DropdownMenuItem onClick={support.open}>
-            <LifeBuoy aria-hidden="true" />
-            Help &amp; support
+            <Bug aria-hidden="true" />
+            Submit a bug
             {support.unread > 0 ? (
               <Badge size="xs" className="ml-auto" aria-label={`${support.unread} unread ${support.unread === 1 ? "reply" : "replies"}`}>
                 {support.unread}
@@ -180,6 +185,15 @@ export default function UserMenu() {
             ) : null}
           </DropdownMenuItem>
         ) : null}
+
+        {/* Feature requests live on a public tracker, not in the support thread:
+            they want votes and a backlog, which a one-to-one conversation can't
+            give them. Unconditional — unlike the bug item it needs nothing
+            loaded, so it is here offline and outside production too. */}
+        <DropdownMenuItem render={<a href={FEATURE_REQUEST_URL} target="_blank" rel="noreferrer noopener" />}>
+          <Lightbulb aria-hidden="true" />
+          Feature request
+        </DropdownMenuItem>
 
         <DropdownMenuSeparator />
 

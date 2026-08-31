@@ -14,7 +14,7 @@ import {
 } from "./support";
 
 /**
- * The store behind "Help & support": it decides whether the account menu offers
+ * The store behind "Submit a bug": it decides whether the account menu offers
  * support at all, holds whether the dialog is open, counts unseen replies, and
  * is the only thing in the app that talks to PostHog's conversations API.
  *

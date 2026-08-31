@@ -3,7 +3,7 @@ import type { Message, PostHog, SendMessageResponse, UserProvidedTraits } from "
 import { useAnalytics } from "./analytics";
 
 /**
- * "Help & support" — Buttery's one support channel, opened from the account
+ * "Submit a bug" — Buttery's one support channel, opened from the account
  * menu.
  *
  * The channel is PostHog Support (its SDK namespace is `conversations`). PostHog
