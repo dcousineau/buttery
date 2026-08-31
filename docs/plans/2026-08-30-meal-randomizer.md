@@ -53,9 +53,11 @@ directly below the randomizer controls, with its real actions live (§7).
 
 ### 1.1 In scope
 
-- A randomizer surface under the recipes route (§6.1): filter controls, a
+- A randomizer surface at its own top-level route (§6.1): filter controls, a
   "What should I make?" trigger, "Roll again", and the drawn recipe rendered as
   the full recipe detail below the controls.
+- A small prerequisite refactor that makes `DetailPane` renderable outside the
+  recipes layout (§6.1). Plumbing only — its markup does not change.
 - One new server function, `getRandomizerPool`, applying every filter
   server-side over the household box and returning the eligible lightweight pool
   (§4).
@@ -96,17 +98,17 @@ The PRD is stack-agnostic and its field list is illustrative. Buttery's recipe
 model is far richer than it assumed, and three of the four gaps the 2026-08-03
 draft recorded have since closed.
 
-| PRD field / behaviour             | Buttery reality (2026-08-30)                                                                                                                                                                     | Decision                                                                                   |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| Name                              | `recipe.name`                                                                                                                                                                                    | direct                                                                                     |
-| Cuisine                           | author `recipe.recipe_cuisine` **and** `recipe_enrichment_label` dimension `cuisine` — same `recipe_vocab` dimension, so the slugs are comparable                                                | **§2.1** one filter, matching either source                                                |
-| Meal type (soup/salad/bowl/plate) | `recipe_enrichment_label` dimension `meal_type`: `breakfast lunch dinner dessert snack side drink`. Author `recipe_category` is a separate, sparser free-ish vocab                               | **§2.2** filter on the enrichment dimension only                                           |
-| Cook time (min)                   | `recipe.cook_time_seconds` **and** `recipe.total_time_seconds`                                                                                                                                   | **§2.3** filter `total_time_seconds`; nulls excluded when the filter is on, with an opt-in |
-| Ingredients list                  | `recipe_ingredient(recipe_id, ordinal, text)`                                                                                                                                                    | direct — substring `ILIKE` (§4.4)                                                          |
-| **Protein-forward flag**          | Still no such column, and `recipe_enrichment`'s nutrition columns **all land null** (enrichment results §1.2 — no nutrition estimation shipped). But the LLM emits `low_carb` / `keto` / `paleo` | **§2.4** ship it as an honestly-labelled low-carb proxy, default **OFF**                   |
-| Shopping list view (PRD §4)       | The grocery list exists, with aisle grouping, quantity merging and a confirm preview                                                                                                             | **§2.5** dropped; the result pane's "Add to shopping list" replaces it                     |
-| Copy & share (PRD §5)             | Nothing equivalent, and the use case (tell your partner) is now served by a shared household list and a shared plan                                                                              | **§2.5** dropped outright                                                                  |
-| Draw from "full recipe library"   | Two surfaces: household box (small, curated) vs global public corpus (huge)                                                                                                                      | **§2.6** box, with an opt-in widen-to-corpus when the box pool is empty                    |
+| PRD field / behaviour             | Buttery reality (2026-08-30)                                                                                                                                       | Decision                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Name                              | `recipe.name`                                                                                                                                                      | direct                                                                                     |
+| Cuisine                           | author `recipe.recipe_cuisine` **and** `recipe_enrichment_label` dimension `cuisine` — same `recipe_vocab` dimension, so the slugs are comparable                  | **§2.1** one filter, matching either source                                                |
+| Meal type (soup/salad/bowl/plate) | `recipe_enrichment_label` dimension `meal_type`: `breakfast lunch dinner dessert snack side drink`. Author `recipe_category` is a separate, sparser free-ish vocab | **§2.2** filter on the enrichment dimension only                                           |
+| Cook time (min)                   | `recipe.cook_time_seconds` **and** `recipe.total_time_seconds`                                                                                                     | **§2.3** filter `total_time_seconds`; nulls excluded when the filter is on, with an opt-in |
+| Ingredients list                  | `recipe_ingredient(recipe_id, ordinal, text)`                                                                                                                      | direct — substring `ILIKE` (§4.4)                                                          |
+| **Protein-forward flag**          | Still no such column, and `recipe_enrichment`'s nutrition columns **all land null** (enrichment results §1.2 — no nutrition estimation shipped)                    | **§2.4** dropped for v1 — no classifier                                                    |
+| Shopping list view (PRD §4)       | The grocery list exists, with aisle grouping, quantity merging and a confirm preview                                                                               | **§2.5** dropped; the result pane's "Add to shopping list" replaces it                     |
+| Copy & share (PRD §5)             | Nothing equivalent, and the use case (tell your partner) is now served by a shared household list and a shared plan                                                | **§2.5** dropped outright                                                                  |
+| Draw from "full recipe library"   | Two surfaces: household box (small, curated) vs global public corpus (huge)                                                                                        | **§2.6** box, with an opt-in widen-to-corpus when the box pool is empty                    |
 
 ### 2.1 Cuisine — author value OR derived label
 
@@ -146,36 +148,30 @@ number the card shows. When the filter is active, recipes with
 `total_time_seconds IS NULL` are **excluded**, with an **"include untimed
 recipes"** checkbox that keeps them eligible.
 
-### 2.4 Protein-forward — shipped as a low-carb proxy, default OFF
+The design comp has no such control — its time chip is Under 15/30/45/60 and
+nothing else. Keep the opt-in, but put it in the **"More filters" sheet**
+(§6.3), default off, rather than in the top bar: it is a correction, not a
+question the surface should ask up front. Without it, a box's untimed recipes
+disappear the moment anyone touches the time chip, and nothing on screen says
+so.
+
+### 2.4 Protein-forward — dropped for v1
 
 The PRD wants a boolean, defaulted **ON**, meaning "protein is the centrepiece,
-vegetables are prominent, not primarily a pasta or rice dish."
+vegetables are prominent, not primarily a pasta or rice dish." The design comp
+carries it too, as a "Protein-forward (low-carb)" row in the filter sheet.
 
-Buttery still cannot compute that literally. `recipe_enrichment.protein_g` and
-`carbohydrate_g` exist as columns but **every row is null** — the enrichment
-plan explicitly shipped no nutrition estimation. What _is_ derivable is the
-LLM's `low_carb` / `keto` / `paleo` diet judgments, which are ingredient-shape
-guesses (llm schema.ts, `LLM_ONLY_DIET_SLUGS`) — and "not primarily pasta or
-rice" is very nearly the definition of the low-carb guess.
+**Cut it. There is no classifier for it.** `recipe_enrichment.protein_g` and
+`carbohydrate_g` exist as columns but every row is null — the enrichment plan
+shipped no nutrition estimation. An earlier draft of this spec proposed a proxy
+over the LLM's `low_carb` / `keto` / `paleo` diet judgments; that is a different
+question wearing this one's label, and shipping it would put a filter on screen
+whose name does not describe what it does.
 
-**Decision:** ship a toggle implemented as
-
-```
-EXISTS (label WHERE dimension='diet' AND verdict='likely'
-        AND slug IN ('low_carb','keto','paleo'))
-```
-
-labelled for what it actually is — **"Protein-forward (low-carb)"** with helper
-text "Uses our low-carb / keto / paleo read of the ingredients" — and defaulted
-**OFF**, not ON as the PRD asks.
-
-Two divergences, both deliberate. The label is honest because a toggle that
-claims to know "vegetables are prominent" would be lying about a signal nobody
-computed. The default is OFF because it is a proxy layered on enrichment
-coverage that is not yet measured in production; defaulting ON would silently
-empty most pools on day one, which is precisely the failure the 2026-08-03 draft
-dropped the flag to avoid. **Revisit the default once coverage is measured** —
-record the number in the results doc (§11).
+So: no `proteinForward` input, no toggle in the sheet, no row in the comp.
+Anyone who wants the low-carb read already has it — `low_carb`, `keto` and
+`paleo` are selectable in the **Diets** section, under their own names. Revisit
+when a protein signal actually exists.
 
 ### 2.5 Shopping list and copy & share — replaced and dropped
 
@@ -253,7 +249,6 @@ server.
   diets?: string[];            // must be `likely` for ALL listed slugs
   avoidAllergens?: string[];   // must not be `contains`/`may_contain` for ANY
   spiceLevel?: string;         // mild|medium|hot
-  proteinForward?: boolean;    // §2.4 proxy
 
   // the planner (§4.6)
   skipRecentDays?: number | null;  // default 14; null = don't filter
@@ -320,8 +315,10 @@ present a coverage hole as an empty box.
 }
 ```
 
-and the empty/short-pool states quote it: "3 of your 40 recipes are still being
-tagged." One extra aggregate query, same round trip.
+and the **empty state** quotes it: "3 of your 40 recipes are still being
+tagged." One extra aggregate query, same round trip. Per the comp, this line
+appears in the empty state only — the always-visible pool line stays a count of
+what is eligible, not a coverage report.
 
 ### 4.4 Base query and ingredient search
 
@@ -375,6 +372,14 @@ a `HouseholdRecipeDetail`. Render the public recipe view instead
 (`routes/recipes.$id.tsx`'s shape) with one primary action — **"Add to your
 box"** — and let the box actions appear after that. Say so in the copy: a recipe
 you have not kept cannot go on the plan yet.
+
+Two details from the comp:
+
+- Widening **rolls immediately** — the user asked a question by widening, so
+  answer it rather than making them press the button again.
+- The comp keeps a **Favourite** button on a corpus result. Drop it. `favorite`
+  lives on `household_recipe`; there is no row to set it on until the recipe is
+  kept. "Add to your box" is the only action a corpus result gets.
 
 ### 4.6 "Skip what we've had recently" — the planner as a filter
 
@@ -435,8 +440,28 @@ In-session only; not persisted.
 ### 5.5 Clear all filters (PRD §2 closing note)
 
 Resets every filter to its default — which is not "all empty": `skipRecentDays`
-returns to 14 (§4.6) and `proteinForward` returns to OFF (§2.4). One button,
-one refetch.
+returns to 14 (§4.6) and `includeUntimed` returns to off (§2.3). One button, one
+refetch. Per §5.6, clearing filters does **not** clear a drawn recipe.
+
+### 5.6 Roll feel, and what a filter change does to a result
+
+Two behaviours the comp makes explicit and this spec adopts, one of them
+adjusted:
+
+- **The rolling state.** The comp gates the result behind a ~700ms dice tumble.
+  Keep it — the pause is what makes a draw feel drawn — but drive it from a
+  `prefers-reduced-motion` media query rather than a hardcoded flag: reduced
+  motion gets the result immediately. The delay is presentation only. The pool
+  is already client-side; nothing is being fetched behind that spinner, and no
+  code path may start depending on the wait.
+- **Changing a filter keeps the result on screen.** The comp clears back to the
+  intro state on any filter change; do not. Refetch the pool, leave the drawn
+  recipe rendered, and when the new pool no longer contains it, mark it stale
+  directly above the result — "Doesn't match your current filters" next to
+  "Roll again". Nothing vanishes out from under someone mid-read, and nothing
+  claims to match when it does not. If the new pool is empty, the empty state
+  and its coverage line (§4.3) render in the controls region while the stale
+  result stays put below.
 
 ---
 
@@ -447,62 +472,104 @@ semantic tokens, `lucide-react` — same rules as `03` §2. Do **not** restyle r
 markup. Follow the `buttery-design-system` and `accessibility-compliance`
 skills.
 
-### 6.1 Where it lives — and why that is a constraint, not a preference
+### 6.1 Where it lives — its own route, and the refactor that buys it
 
-Make it a **child of the recipes layout route**:
-`services/web/src/routes/household.recipes.randomizer.tsx`, at
-`/household/recipes/randomizer`.
+Top level: `services/web/src/routes/household.randomizer.tsx`, at
+**`/household/randomizer`**. Full-width main pane — no recipe ledger, no
+collections column. The randomizer is its own place in the sidebar, a peer of
+Recipes and the planner, not a mode of the recipe box. That is what the design
+comp draws and it is the right read: a surface whose whole point is "don't make
+me browse" should not ship with the browser mounted beside it.
 
-This is load-bearing. `DetailPane` — the component §7 reuses — reads
-`useRouteContext({ from: "/household/recipes" })` for its cache partition
-(deliberately, over `useActiveHouseholdId()`; see its comment) and
-`useRecipesView()` for the toast queue and the picker. Both exist **only** under
-that layout. Nesting gets them for free; the ledger and collections column stay
-mounted to the left exactly as they do for `$id`, and the randomizer reads as a
-mode of the right pane rather than a separate app.
+It costs one prerequisite refactor, because `DetailPane` — which §7 renders
+**unchanged** — reads two things that exist only under the recipes layout:
 
-The alternative — a top-level `/household/randomizer` — requires making
-`DetailPane`'s two context reads injectable before anything can render. If the
-implementer takes that path, do it as a **separate, first** refactor with the
-existing box tests green, and record it in results.
+- `useRouteContext({ from: "/household/recipes" })`, for `householdId` (its
+  cache partition — deliberately, over `useActiveHouseholdId()`; see its
+  comment).
+- `useRecipesView()`, for `pushToast`, `openPicker` and `openAddChooser`.
+
+**Do this first, as its own commit, with the box's tests green:**
+
+1. `householdId` becomes a **prop** on `DetailPane`. `household.recipes.$id.tsx`
+   passes `Route.useRouteContext().householdId`; the randomizer passes the id
+   from its own `beforeLoad: ensureActiveHousehold()`. Same value, same cache
+   key, explicit source.
+2. Lift the recipes layout's provider block — `RecipeScaleContext.Provider`,
+   `RecipesViewContext.Provider`, `GlobalRecipePicker`, `AddRecipeChooser`, the
+   `useToasts` queue and its `ToastViewport` — into one
+   **`RecipesViewProvider`** component. The recipes layout wraps its columns in
+   it; the randomizer route wraps its own pane in it. `ScalePanel` needs the
+   scale context and `DetailPane` needs the toast queue, so both come along.
+   One implementation, not two — a second copy of the toast queue is how two
+   surfaces start disagreeing about what a toast looks like.
+3. Nothing about `/household/recipes` changes behaviourally. Its tests are the
+   proof.
+
+The rule that keeps this step honest: **`DetailPane`'s own JSX must not
+change.** If it has to, that is §7's refactor trigger firing, not this step
+growing.
+
+The route itself takes the standard shape: `beforeLoad: ensureActiveHousehold()`
+(the stale-active guard, and the household id, in one step), `errorComponent:
+OfflineRouteError` (§1.2 — online-only, but it fails like the rest of the app),
+and a `head`/`seo` entry.
 
 ### 6.2 Layout
 
-Two stacked regions in the right pane:
+Two stacked regions, full width of the main pane:
 
-1. **Controls** (sticky at the top of the pane): the filter bar, the primary
-   "What should I make?" button, "Roll again", "Clear filters", the pool-size
+1. **Controls** (sticky at the top): the filter bar, the primary "What should I
+   make?" button, "Roll again", "Clear filters", the §8 shortcut, and the pool
    line ("Rolling from 14 recipes · skipping 6 from the last 2 weeks").
 2. **Result**: the drawn recipe, rendered as §7's real recipe view, directly
-   below.
+   below and scrolling under the sticky controls. Constrain it to a readable
+   measure (~54rem, as the comp does) rather than letting a recipe body run the
+   full width of a desktop window.
 
 Before the first roll, region 2 holds an empty state, not a blank. After a roll,
-scroll is preserved at the controls and **focus moves to the result's heading** —
+scroll stays at the controls and **focus moves to the result's heading** —
 `DetailPane` already focuses its title on mount, and it is keyed by
-`recipe.recipeId` at the render site, so each draw remounts it and the focus move
-is free. Keep that keying.
+`recipe.recipeId` at the render site, so each draw remounts it and the focus
+move is free. Keep that keying.
 
 ### 6.3 Filter bar
 
-Cuisine · meal type · diets (multi) · avoid allergens (multi) · spice · max cook
-time + "include untimed" · ingredient text · collection · favourites only ·
-protein-forward (§2.4) · skip-recent (§4.6) · Clear filters.
+The comp's split, adopted as-is. Inline, as chips across the top:
 
-That is a lot of controls for a surface whose whole point is _fewer_ decisions.
-Show the six that answer "what should I make?" inline — meal type, max time,
-ingredient, cuisine, favourites, skip-recent — and put diets, allergens, spice,
-collection and protein-forward behind a "More filters" disclosure that shows a
-count when any are set. Selects populate from the slugs **present in the current
-scope**, never the full vocabulary.
+**Meal type · Max time · Cuisine · Favourites · Skip recent** — plus the
+ingredient text input, a **"More filters · N"** trigger carrying a count of what
+is set inside, and **Clear filters**.
+
+Behind the "More filters" **sheet** (a right-side sheet, per the comp — not an
+inline disclosure; there are too many controls for the surface to wear them):
+
+**Diets · Avoid… (allergens) · Spice level · Collection · Include untimed
+recipes.**
+
+Three notes on that split:
+
+- `gluten_free` and `dairy_free` are LLM diet slugs, but they belong in
+  **Avoid…**, not Diets — the comp already draws it that way. Two controls that
+  spell the same intent differently is how a household ends up filtering twice
+  and wondering why the pool emptied. Diets are lifestyle (`vegetarian`,
+  `vegan`, `pescatarian`, `low_carb`, `keto`, `paleo`, `low_fat`,
+  `low_calorie`, `diabetic`, `halal`, `kosher`); Avoid… is allergens.
+- **Skip recent** is an on/off chip at a fixed 14 days, as the comp draws it —
+  no window picker in v1. `skipRecentDays` stays a number in the API (§4.1) so
+  the window is one constant to change, not a schema migration.
+- Selects populate from the slugs **present in the current scope**, never the
+  full vocabulary.
 
 ### 6.4 Nav
 
 Flip **Randomizer** in `AppSidebar.tsx` from `soon: true` to
-`to: "/household/recipes/randomizer"`, keeping the `Dices` icon.
+`to: "/household/randomizer"`, keeping the `Dices` icon and its position as a
+peer of Recipes, Shopping list and Meal planner.
 
 ---
 
-## 7. The result is the real recipe view
+## 7. The result is the real recipe view — reused, never rebuilt
 
 This replaces PRD §4 and §6's "on accepting, user sees the shopping list".
 
@@ -527,15 +594,56 @@ What that gets, all of it already built and tested:
 While the detail query is in flight, render the lightweight card from the pool
 (§4.4) so the title and image are on screen immediately.
 
-Two rules for the implementer:
+### 7.1 What the design comp draws here, and why to ignore it
+
+The comp builds its own result header (title · source · time · meal · cuisine),
+its own tag chips and its own action row, then puts a two-column
+ingredients/method **skeleton** underneath, annotated _"Placeholder for the real
+recipe detail — the drawn recipe renders in the box's own detail pane, with its
+actions live."_
+
+Build **none** of that bespoke chrome. `DetailPane` already renders every one of
+those elements, in its own order, with the real data and live handlers behind
+them. The comp is indicative of _what appears_ below the controls; the
+arrangement that ships is `DetailPane`'s. Reproducing the comp's ordering by
+hand would mean re-implementing a heading, a meta row, a tag strip and five
+buttons that exist and work — to move them above an image.
+
+### 7.2 The reuse rule, and the trigger that overrides it
+
+The randomizer owns **layout and nothing else**: the stacking of controls above
+result, the readable measure, the scroll container, the sticky header. Every
+pixel of recipe content comes from existing components.
 
 - **Do not fork `DetailPane`.** If it needs a variant (say, a back-to-controls
-  affordance), add an optional prop and default it to today's behaviour, so the
-  box surface is unchanged. Any prop added must be justified in results.
+  affordance), add an optional prop defaulted to today's behaviour so the box
+  surface is unchanged. Any prop added must be justified in results.
+- **Do not copy markup out of `DetailPane`** into a randomizer component. That
+  is the one outcome this spec forbids outright — it is the failure mode that
+  looks like progress and ships a second recipe view that silently stops
+  matching the first.
 - **Do not duplicate its actions in the controls region.** One "Add to shopping
   list" per screen. The only randomizer-owned action is §8's shortcut.
 
----
+**The trigger.** If meeting the design requires re-implementing anything that is
+not layout — a heading, a meta row, a tag chip, an action button, an ingredient
+list, a step list, a nutrition strip — **stop and refactor the recipe display
+into reusable components instead.** That refactor, when it fires:
+
+1. Extract from `DetailPane` the pieces the randomizer needs — plausibly
+   `RecipeDetailHeader` (title, source, times), `RecipeActionBar` (cook,
+   favourite, grocery, plan), `RecipeDetailBody` (ingredients, method) — into
+   `components/recipes/`, alongside the already-extracted `RecipeTagStrip`,
+   `NutritionStrip`, `ScalePanel` and `CollectionChips`.
+2. **Rewrite `DetailPane` to compose those same pieces.** One implementation per
+   piece, two arrangements. If the box keeps a private copy of anything the
+   randomizer also renders, the refactor did not happen.
+3. Get `/household/recipes/$id`'s tests green **before** the randomizer consumes
+   any of it, as its own commit.
+4. Record in results which pieces were extracted and what forced it.
+
+Refactoring is the expected outcome if the design is followed closely; it is not
+a failure path. What is a failure path is a second recipe renderer.
 
 ## 8. One-click "add to today's <slot>"
 
@@ -555,7 +663,12 @@ always dinner, and the date is today in the **household's** timezone.
   household-local hour to `breakfast | lunch | dinner | snack`. There is no such
   helper today (grepped). Keep it a total function with explicit boundaries and
   a test per boundary — an off-by-one here plans lunch at 4pm.
-- Compute the local hour from `timezone`, not `new Date().getHours()`.
+- Compute the local hour from `timezone`, not `new Date().getHours()` — the
+  design comp's `slotNow()` does exactly that, and it is wrong for anyone whose
+  laptop is not in the household's zone. `getPlanToday()` resolves before the
+  button can be pressed (the pool query and it land together); until it does,
+  render the shortcut disabled with a neutral label rather than guessing a slot
+  and relabelling under the user's cursor.
 - Write through `addMealPlanRecipes` — the same server fn the dialog uses. On
   success, toast via `pushToast` with the slot and day spelled out
   ("Added to Sunday dinner"), with an action linking to `/household/plan`.
@@ -573,9 +686,10 @@ Follow `lib/analytics`'s existing idiom (`useAnalytics().posthog`). Capture:
 `open_recipe`), `randomizer_widened_to_corpus`, `randomizer_empty_pool` (which
 filters were active).
 
-The point of `randomizer_empty_pool` and `unenrichedInScope` together is to
-answer §2.4's open question — whether protein-forward can default ON — with a
-number instead of an argument.
+The point of `randomizer_empty_pool` and `unenrichedInScope` together is to tell
+a **coverage hole** from a genuinely narrow filter set — an empty pool because
+nothing is tagged and an empty pool because the filters are strict need
+different fixes, and only the events can separate them (§4.3).
 
 ---
 
@@ -595,6 +709,10 @@ number instead of an argument.
   at pool sizes 1 / 2 / N, empty and single-match states, clear-all restoring
   the non-empty defaults (§5.5).
 - **`slotForHour` (unit)**: every boundary hour, both sides.
+- **The §6.1 refactor**: the recipes box's existing tests pass unchanged, both
+  after `householdId` becomes a prop and after the provider block is lifted.
+  That suite is the whole safety net for the prerequisite step — if it needed
+  editing to stay green, the refactor changed behaviour and went too far.
 - Follow the repo's vitest project split — `*.db.test.ts` in the `db` project,
   which skips without a reachable migrated database (`pnpm test:db`).
 
@@ -604,17 +722,47 @@ number instead of an argument.
 
 Per repo convention, the implementer MUST record the build in
 `docs/plans/results/2026-08-30-meal-randomizer-results.md`: decisions taken,
-deviations from this spec (especially the route-nesting call in §6.1 and any
-`DetailPane` prop added under §7), what was and was not verified in a browser,
-and the final file map.
+deviations from this spec, what was and was not verified in a browser, and the
+final file map.
 
-Two numbers this spec explicitly wants back:
+Four things this spec explicitly wants back:
 
 1. **Enrichment coverage in a real box** — what share of a household's recipes
-   carry `meal_type`, `diet` and `cuisine` labels. It decides whether §2.4's
-   protein-forward toggle can default ON, and whether §4.3's coverage line is a
-   rare edge case or the common one.
+   carry `meal_type`, `diet` and `cuisine` labels. It decides whether §4.3's
+   coverage line is a rare edge case or the common one, and whether the
+   enrichment-backed filters deserve to be inline rather than in the sheet.
 2. **Whether "skip recent" at 14 days empties real pools.** If a small box plus
    an active plan routinely leaves nothing, the default window is wrong.
+3. **Did the §6.1 refactor stay plumbing-only?** Whether `DetailPane`'s JSX
+   survived untouched, and whether the recipes box's tests needed any edit.
+4. **Did §7.2's trigger fire?** If the recipe display was decomposed, list the
+   components extracted and the specific design detail that forced it. If it did
+   not fire, say what `DetailPane` rendering whole cost the design.
 
 Keep this spec frozen; capture reality in the results doc.
+
+---
+
+## 12. Design comp reconciliation
+
+Source: the `Randomizer.dc.html` comp (Claude Design project
+`f82a0989-29f1-477f-acc8-6de83ba80655`). Its copy tracks this spec almost
+verbatim — the coverage line, the "Avoid…" helper text, "That's the only match",
+the skip-recent chip and the corpus banner need no reconciliation. What follows
+is every place the two differed, and which one won.
+
+| Comp                                                      | Spec                              | Resolution                                                         |
+| --------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------ |
+| Randomizer as a top-level nav peer, full-width, no ledger | nested under `/household/recipes` | **Comp wins** — `/household/randomizer` + the §6.1 refactor        |
+| Bespoke result header / tags / action row + body skeleton | render `DetailPane`               | **Spec wins** — §7.1; the comp's own annotation agrees             |
+| No "include untimed" control                              | `includeUntimed` opt-in           | **Spec wins** — kept, moved into the sheet (§2.3, §6.3)            |
+| "Protein-forward (low-carb)" row in the sheet             | low-carb proxy toggle             | **Both cut** — no classifier; use the Diets section (§2.4)         |
+| ~700ms dice tumble, hardcoded                             | silent                            | **Comp wins, adjusted** — kept, driven by `prefers-reduced-motion` |
+| Filter change clears the result                           | silent                            | **Overridden** — result persists, marked stale (§5.6)              |
+| Favourite button on a corpus result                       | box actions after keeping         | **Comp bug** — dropped; no `household_recipe` row exists (§4.5)    |
+| `slotNow()` from `new Date().getHours()`                  | household timezone                | **Spec wins** — §8                                                 |
+| "More filters" as a right-side sheet                      | "disclosure"                      | **Comp wins** — §6.3                                               |
+| Coverage line in the empty state only                     | "empty/short-pool states"         | **Comp wins** — empty state only (§4.3)                            |
+| Widening rolls immediately                                | silent                            | **Comp wins** — §4.5                                               |
+| Skip-recent as an on/off chip at a fixed 14 days          | numeric `skipRecentDays`          | **Both** — chip in the UI, number in the API (§6.3)                |
+| Diets list excludes `gluten_free` / `dairy_free`          | all LLM diet slugs                | **Comp wins** — those two live under Avoid… (§6.3)                 |
