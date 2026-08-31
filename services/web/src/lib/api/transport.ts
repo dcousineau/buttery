@@ -105,6 +105,7 @@ import {
 } from "#/server/household/preferences";
 import { dismissInviteNudge as dismissInviteNudgeFn, getHouseholdNudges as getHouseholdNudgesFn } from "#/server/household/settings";
 import { clearPendingInvite as clearPendingInviteFn, errorMessage as errorMessage_, stashPendingInvite as stashPendingInviteFn } from "#/server/household/pending-invite";
+import { getRandomizerPool as getRandomizerPoolFn } from "#/server/randomizer";
 import { getRecipe as getRecipeFn, listRecentRecipes as listRecentRecipesFn } from "#/server/recipes";
 import {
   getRecipeDebugPayload as getRecipeDebugPayloadFn,
@@ -145,6 +146,8 @@ import type {
   OnboardingVerdict,
   PlanWeek,
   PlannedUsage,
+  RandomizerFilters,
+  RandomizerPool,
   RecipeCardData,
   RecipeDetailData,
 } from "./types";
@@ -318,6 +321,17 @@ export function setMealPlanEntryCooked(input: { entryId: string; cooked: boolean
 
 export function copyMealPlanWeek(input: { fromWeek: PlanDate; toWeek: PlanDate; mode: "append" | "replace" }): Promise<CopiedWeek> {
   return copyMealPlanWeekFn({ data: input });
+}
+
+// --- the randomizer -------------------------------------------------------
+
+/**
+ * Online-only (meal randomizer plan §1.2): unlike the reads above, this one
+ * has no `queryOptions` factory that survives an offline restore — see
+ * `randomizerPoolQuery` in `queries.ts` for how it opts out of the persister.
+ */
+export function getRandomizerPool(input: RandomizerFilters): Promise<RandomizerPool> {
+  return getRandomizerPoolFn({ data: input });
 }
 
 // --- the grocery list ---------------------------------------------------

@@ -76,6 +76,18 @@ export const keys = {
     collections: (hid: HouseholdId) => ["household", hid, "collections"] as const,
     members: (hid: HouseholdId) => ["household", hid, "members"] as const,
     preferences: (hid: HouseholdId) => ["household", hid, "preferences"] as const,
+    /**
+     * One randomizer pool read, keyed by its filters (meal randomizer plan
+     * §4). Unlike every other row in this namespace, a query built on this
+     * key is deliberately NOT offline-capable — `randomizerPoolQuery`
+     * (`queries.ts`) opts itself out of the persister, because the pool must
+     * fail like the app's other online-only surfaces (plan §1.2) rather than
+     * serve a stale draw pool from a household that has since changed its
+     * box. `filters` is JSON-stringified into the key (rather than spread as
+     * individual tuple entries) because its field set is open-ended — a new
+     * filter added later must not require a matching edit here.
+     */
+    randomizer: (hid: HouseholdId, filters: unknown) => ["household", hid, "randomizer", JSON.stringify(filters ?? {})] as const,
   },
 
   /** The public browse/search surface. Not household-scoped, not yet migrated. */

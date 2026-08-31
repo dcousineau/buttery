@@ -539,3 +539,98 @@ export type AttributionChoice =
 export interface HouseholdNudges {
   inviteNudge: boolean;
 }
+
+// --- the randomizer (meal randomizer plan §4) ----------------------------
+
+/**
+ * What `getRandomizerPool` is asked for — a **request** contract, like
+ * `GroceryPreviewInput` above. All optional and AND-combined (plan §4.1); the
+ * server re-clamps every field (`normalizeFilters` in `server/randomizer.ts`)
+ * regardless of what a caller sends, so this type only documents the SHAPE,
+ * never the trusted bound.
+ */
+export interface RandomizerFilters {
+  /** Draw from the household box, or (opt-in) the wider public corpus. Default `"box"`. */
+  source?: "box" | "corpus";
+  /** Draw from one collection only (box source only — a no-op for `"corpus"`). */
+  collectionId?: string;
+  favoritesOnly?: boolean;
+  /** §2.1: matches `recipe.recipe_cuisine` OR an enrichment `cuisine` label — same `recipe_vocab` dimension either way. */
+  cuisine?: string;
+  /** Minutes; filters `total_time_seconds <= n * 60`. */
+  maxCookMinutes?: number;
+  /** Keep recipes with no `total_time_seconds` eligible even while `maxCookMinutes` is set. Default `false`. */
+  includeUntimed?: boolean;
+  /** Case-insensitive ingredient-text substring. */
+  ingredient?: string;
+  mealType?: string;
+  /** Every listed slug must be `likely` (AND). */
+  diets?: string[];
+  /** A recipe is excluded if ANY listed slug is `contains`/`may_contain` — an exclusion, never a positive "safe for" claim (§4.2). */
+  avoidAllergens?: string[];
+  spiceLevel?: string;
+  /** Hide recipes planned in the last N days. `undefined` ⇒ the default (14); `null` ⇒ off. */
+  skipRecentDays?: number | null;
+}
+
+/** One lightweight drawn-recipe card — the same fields `HouseholdRecipeRow` carries, so the card renders before the full detail query lands (§4.4). */
+export interface RandomizerCard {
+  recipeId: string;
+  title: string;
+  sourceKind: RecipeSource["kind"];
+  sourceLabel: string;
+  sourceUrl: string | null;
+  totalMinutes: number | null;
+  totalTimeDisplay: string | null;
+  thumbUrl: string | null;
+  /** Always `false` for a `source: "corpus"` card — no `household_recipe` row exists to favorite until it's kept (§4.5). */
+  favorite: boolean;
+}
+
+/** One facet option — a slug the pool actually contains, with its display label. */
+export interface RandomizerFacetOption {
+  slug: string;
+  label: string;
+}
+
+/**
+ * The filter menus' options, scoped to slugs PRESENT IN THE CURRENT SCOPE
+ * (plan §6.3: "never the full vocabulary") — computed over the same scope as
+ * `totalInScope`/`unenrichedInScope`/`skippedRecent` below, so options never
+ * vanish as other filters narrow the pool.
+ *
+ * `diets` excludes `gluten_free` and `dairy_free` — those two live under the
+ * `avoidAllergens` control instead (§6.3), so a household never has two
+ * differently-spelled controls for the same intent. `mealTypes` and
+ * `spiceLevels` are ORDERED sets (breakfast→…→drink; mild→medium→hot), not
+ * alphabetical lists; `cuisines`/`diets`/`allergens` are sorted by label.
+ */
+export interface RandomizerFacets {
+  cuisines: RandomizerFacetOption[];
+  mealTypes: RandomizerFacetOption[];
+  diets: RandomizerFacetOption[];
+  allergens: RandomizerFacetOption[];
+  spiceLevels: RandomizerFacetOption[];
+}
+
+/**
+ * `getRandomizerPool`'s response (plan §4.3, §4.5). `totalInScope`,
+ * `unenrichedInScope`, `skippedRecent` and `facets` are ALL computed over the
+ * same "scope" — source (+ collection), before every other filter — so they
+ * describe one consistent baseline rather than four different slices.
+ */
+export interface RandomizerPool {
+  source: "box" | "corpus";
+  pool: RandomizerCard[];
+  /** Scope size (box, or the collection) before ANY filter. */
+  totalInScope: number;
+  /** Of the scope, how many carry no `recipe_enrichment` row, or a row with `status !== "ok"` — the §4.3 coverage line's input. */
+  unenrichedInScope: number;
+  /** Of the scope, how many the recency filter currently hides — drives "· skipping 6 from the last 2 weeks". `0` when `skipRecentDays` is off. */
+  skippedRecent: number;
+  /** `true` when a `source: "corpus"` draw hit the cap and was truncated. Always `false` for `"box"`. */
+  capped: boolean;
+  /** The cap constant applied when `capped` is (or would be) hit — currently 200. */
+  cap: number;
+  facets: RandomizerFacets;
+}
