@@ -12,6 +12,7 @@
     "dev": "node --watch src/server.ts",
     "dev:worker": "node --watch src/worker.ts",
     "trigger": "node src/cli/trigger.ts",
+    "backfill": "node src/cli/backfill.ts",
     "prompt": "node src/cli/enrichment-prompt.ts",
     "sync:trigger": "node src/cli/trigger.ts atproto-sync",
     "test": "vitest run",
