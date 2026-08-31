@@ -9,6 +9,7 @@ import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { RecipesViewProvider } from "#/components/recipes/RecipesViewProvider";
 import { clearFilters, countSheetFilters, defaultFilters, draw, hasActiveFilters, isResultStale, toPoolFilters, type RandomizerFilterState } from "#/lib/randomizer/draw";
 import { useReducedMotion } from "#/components/randomizer/use-reduced-motion";
+import { usePersistedRandomizerFilters } from "#/components/randomizer/use-persisted-randomizer-filters";
 import { RandomizerFilterBar } from "#/components/randomizer/RandomizerFilterBar";
 import { RandomizerFiltersSheet } from "#/components/randomizer/RandomizerFiltersSheet";
 import { RandomizerEmptyState } from "#/components/randomizer/RandomizerEmptyState";
@@ -78,7 +79,7 @@ interface DrawnResult {
 function activeFilterKeys(f: RandomizerFilterState): string[] {
   const d = defaultFilters();
   const active: string[] = [];
-  if (f.collectionId !== d.collectionId) active.push("collectionId");
+  if (f.collectionIds.length > 0) active.push("collectionIds");
   if (f.favoritesOnly !== d.favoritesOnly) active.push("favoritesOnly");
   if (f.cuisine !== d.cuisine) active.push("cuisine");
   if (f.maxCookMinutes !== d.maxCookMinutes) active.push("maxCookMinutes");
@@ -128,7 +129,13 @@ function RandomizerPage() {
   const reducedMotion = useReducedMotion();
 
   const queryClient = useQueryClient();
-  const [filters, setFilters] = useState<RandomizerFilterState>(defaultFilters);
+  // Change 2: filters persist to `localStorage` per household — see the
+  // hook's own doc comment for the SSR/hydration handling and why the
+  // write-back can't fire before the restore has. `source` is deliberately
+  // never restored (widening to the public corpus is opt-in every visit,
+  // never sticky); the hook's `restoreFilters` call always comes back
+  // `source: "box"`.
+  const [filters, setFilters] = usePersistedRandomizerFilters(householdId);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [drawn, setDrawn] = useState<DrawnResult | null>(null);
   const [rolling, setRolling] = useState(false);

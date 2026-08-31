@@ -4,21 +4,35 @@ import type { RandomizerFacets } from "#/lib/api";
 import { SKIP_RECENT_DAYS, type RandomizerFilterState } from "#/lib/randomizer/draw";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "#/components/ui/dropdown-menu";
 import { cn } from "#/lib/utils";
 
 /**
- * §6.3's fixed time-chip options — "Under 15/30/45/60 min", nothing else.
+ * §6.3's fixed time-chip options — "≤ 15/30/45/60 min", nothing else.
  * Deliberately NOT facet-driven (unlike meal type / cuisine below): the
  * design comp's time chip is this exact fixed list, and the "unset" option
  * comes from {@link SingleSelectChip}'s own `anyLabel`, so no `null` entry
  * belongs in this array.
+ *
+ * Change 4: "Under N min" → "≤ N min", using the real U+2264 character (never
+ * `&le;`, never `<=`) — the brand's copy rules call for real typographic
+ * characters. "Under" implied strictly-less-than, which was never what the
+ * server filtered on (`total_time_seconds <= n * 60`, §4.4) — the new label
+ * says what the predicate actually does.
  */
 const TIME_OPTIONS: Array<{ value: number; label: string }> = [
-  { value: 15, label: "Under 15 min" },
-  { value: 30, label: "Under 30 min" },
-  { value: 45, label: "Under 45 min" },
-  { value: 60, label: "Under 60 min" },
+  { value: 15, label: "≤ 15 min" },
+  { value: 30, label: "≤ 30 min" },
+  { value: 45, label: "≤ 45 min" },
+  { value: 60, label: "≤ 60 min" },
 ];
 
 /** How long to wait after the last keystroke before the ingredient text becomes a filter (§6.3: "debounced ~250–300ms"). */
@@ -73,7 +87,31 @@ export function RandomizerFilterBar({
   return (
     <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Randomizer filters">
       <SingleSelectChip label="Meal type" anyLabel="Any meal" value={filters.mealType} options={facets.mealTypes} onChange={(mealType) => onChange({ mealType })} />
-      <SingleSelectChip label="Max time" anyLabel="Any time" value={filters.maxCookMinutes} options={TIME_OPTIONS} onChange={(maxCookMinutes) => onChange({ maxCookMinutes })} />
+      <SingleSelectChip
+        label="Max time"
+        anyLabel="Any time"
+        value={filters.maxCookMinutes}
+        options={TIME_OPTIONS}
+        onChange={(maxCookMinutes) => onChange({ maxCookMinutes })}
+        footer={
+          // Change 3: "include untimed recipes" moved out of the sheet and
+          // into this dropdown — it IS a time control (§4.4: it only changes
+          // what the max-time predicate does with a null
+          // `total_time_seconds`), so it belongs beside the options it
+          // modifies rather than in "More filters". `DropdownMenuSeparator`
+          // draws the divider the vendored primitive already owns — no
+          // hand-rolled `<hr>`. Deliberately NEVER disabled: it has no effect
+          // until a max time is picked, but a disabled control that silently
+          // re-enables the moment "Any time" changes is worse than a control
+          // that is always live and simply inert until it matters.
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem checked={filters.includeUntimed} onCheckedChange={(checked) => onChange({ includeUntimed: checked })}>
+              Include untimed recipes
+            </DropdownMenuCheckboxItem>
+          </>
+        }
+      />
       <SingleSelectChip label="Cuisine" anyLabel="Any cuisine" value={filters.cuisine} options={facets.cuisines} onChange={(cuisine) => onChange({ cuisine })} />
 
       <ToggleChip
@@ -120,12 +158,15 @@ function SingleSelectChip<V extends string | number>({
   value,
   options,
   onChange,
+  footer,
 }: {
   label: string;
   anyLabel: string;
   value: V | null;
   options: Array<{ slug?: string; value?: V; label: string }>;
   onChange: (value: V | null) => void;
+  /** Extra content rendered below the radio group, e.g. the "Max time" chip's include-untimed checkbox (change 3). Callers own their own `DropdownMenuSeparator`. */
+  footer?: React.ReactNode;
 }) {
   // Normalize both `RandomizerFacetOption` (`{slug,label}`) and the time
   // chip's literal `{value,label}` list to one `{value, label}` shape.
@@ -151,7 +192,13 @@ function SingleSelectChip<V extends string | number>({
           </Button>
         }
       />
-      <DropdownMenuContent align="start">
+      {/* `DropdownMenuContent` defaults to `w-(--anchor-width)` — the trigger's
+        width — and these triggers are short chips ("Any time"). That is fine for
+        the option labels themselves but not for the "Include untimed recipes"
+        checkbox the time chip carries, which wrapped onto three lines. One floor
+        on the shared menu rather than a special case on one of them, so the
+        three chips' menus stay the same width as each other. */}
+      <DropdownMenuContent align="start" className="min-w-52">
         <DropdownMenuRadioGroup
           value={currentStr}
           onValueChange={(next: string) => {
@@ -178,6 +225,7 @@ function SingleSelectChip<V extends string | number>({
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
+        {footer}
       </DropdownMenuContent>
     </DropdownMenu>
   );

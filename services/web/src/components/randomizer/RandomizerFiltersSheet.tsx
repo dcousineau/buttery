@@ -2,15 +2,17 @@ import type { CollectionSummary, RandomizerFacets } from "#/lib/api";
 import type { RandomizerFilterState } from "#/lib/randomizer/draw";
 import { CheckboxRow } from "#/components/ui/checkbox";
 import { Radio, RadioGroup } from "#/components/ui/radio-group";
-import { Select } from "#/components/ui/select";
-import { Label } from "#/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "#/components/ui/sheet";
 
 /**
- * The "More filters" sheet (§6.3): Diets · Avoid… · Spice level · Collection ·
- * Include untimed recipes. A right-side `Sheet`, per §12's reconciliation
- * table ("More filters as a right-side sheet" — comp wins over the spec's
- * looser "disclosure").
+ * The "More filters" sheet (§6.3): Diets · Avoid… · Spice level · Collections.
+ * A right-side `Sheet`, per §12's reconciliation table ("More filters as a
+ * right-side sheet" — comp wins over the spec's looser "disclosure").
+ *
+ * "Include untimed recipes" USED to live here (§2.3's original placement).
+ * Change 3 moved it into the filter bar's "Any time" dropdown — it is a time
+ * control, not a sheet control, so it is gone from this file entirely; see
+ * `RandomizerFilterBar.tsx`.
  *
  * Section headings are **sentence case**, set in Rubik semibold at the body
  * size rather than as tracked-out small caps: the brand is sentence case
@@ -48,7 +50,7 @@ export function RandomizerFiltersSheet({
       <SheetContent side="right" className="w-[min(24rem,92vw)] gap-0 overflow-y-auto p-0 data-[side=right]:w-[min(24rem,92vw)]">
         <SheetHeader>
           <SheetTitle>More filters</SheetTitle>
-          <SheetDescription className="sr-only">Diets, allergens to avoid, spice level, collection, and whether to include recipes with no listed time.</SheetDescription>
+          <SheetDescription className="sr-only">Diets, allergens to avoid, spice level, and collections.</SheetDescription>
         </SheetHeader>
 
         <div className="flex flex-col gap-5 px-4 pb-6">
@@ -119,32 +121,46 @@ export function RandomizerFiltersSheet({
             )}
           </section>
 
-          {/* Collection */}
-          <section className="flex flex-col gap-2">
-            <Label htmlFor="randomizer-collection" className="text-[0.8125rem] font-bold text-foreground">
-              Collection
-            </Label>
-            <Select
-              id="randomizer-collection"
-              size="sm"
-              disabled={!collections || collections.length === 0}
-              value={filters.collectionId ?? ""}
-              onChange={(e) => onChange({ collectionId: e.target.value === "" ? null : e.target.value })}
-            >
-              <option value="">Every recipe in your box</option>
-              {(collections ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </section>
+          {/*
+            Collections — change 5: was a native `Select` (single collection,
+            or "every recipe in your box"). Now a checkbox list, styled
+            EXACTLY like Diets and Avoid… above (same `CheckboxRow`, same
+            `tone="selection"`, same gap) so the three read as one family, and
+            multi-select: filters.collectionIds is ORed server-side (a recipe
+            qualifies if it's in ANY checked collection), matching what a
+            checkbox list means when two boxes are ticked.
 
-          {/* Include untimed recipes — §2.3, default off, opt-in only. */}
-          <section>
-            <CheckboxRow size="sm" tone="selection" checked={filters.includeUntimed} onCheckedChange={(includeUntimed) => onChange({ includeUntimed })}>
-              Include untimed recipes
-            </CheckboxRow>
+            `collections` is `undefined` only while `householdCollectionsQuery`
+            is still in flight — the route's loader primes it, so in practice
+            this sheet almost never opens before it has settled, but the
+            distinct "Loading…" copy exists so an honest state renders instead
+            of a silently empty list if it ever does. `collections?.length ===
+            0` is the real, common case for this household ("no collections")
+            and gets its own honest empty state too — an empty checkbox list
+            with no explanation would just look broken.
+          */}
+          <section className="flex flex-col gap-2">
+            <h3 className="m-0 text-[0.8125rem] font-bold text-foreground">Collections</h3>
+            <p className="m-0 text-[0.75rem] text-muted-foreground">Tick more than one and the draw comes from any of them.</p>
+            {collections === undefined ? (
+              <p className="m-0 text-[0.75rem] text-muted-foreground italic">Loading collections…</p>
+            ) : collections.length === 0 ? (
+              <p className="m-0 text-[0.75rem] text-muted-foreground italic">You haven't made any collections yet.</p>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {collections.map((c) => (
+                  <CheckboxRow
+                    key={c.id}
+                    size="sm"
+                    tone="selection"
+                    checked={filters.collectionIds.includes(c.id)}
+                    onCheckedChange={() => onChange({ collectionIds: toggle(filters.collectionIds, c.id) })}
+                  >
+                    {c.name}
+                  </CheckboxRow>
+                ))}
+              </div>
+            )}
           </section>
         </div>
       </SheetContent>

@@ -66,6 +66,17 @@ const INGREDIENT_MAX_CHARS = 200;
 const SLUG_MAX_CHARS = 64;
 /** §4.1: "diets/avoidAllergens capped in length". */
 const SLUG_LIST_MAX = 20;
+/**
+ * Collection ids are app ULIDs (`ulid()` in `server/household/ids.ts`), not
+ * enrichment slugs — they were already clamped to 128 chars as a single
+ * value before `collectionIds` existed, so that per-id bound carries over
+ * unchanged. The list itself is capped at `SLUG_LIST_MAX`, same as
+ * `diets`/`avoidAllergens`: no stated reason a household would ever
+ * multi-select more collections than diets, so there is no reason to give
+ * this list a different ceiling than the others it sits beside in the
+ * clamp pass.
+ */
+const COLLECTION_ID_MAX_CHARS = 128;
 /** §4.1: "maxCookMinutes a positive finite number" — clamp to a sane outer bound (a day). No real recipe legitimately needs more; this only bounds a hostile value. */
 const MAX_COOK_MINUTES_CEILING = 24 * 60;
 /** §4.6: "Default ON at 14 days." */
@@ -93,7 +104,8 @@ const DIET_FACET_EXCLUDED = new Set(["gluten_free", "dairy_free"]);
  */
 interface NormalizedFilters {
   source: "box" | "corpus";
-  collectionId: string | null;
+  /** ORed (§2's `collectionIds` doc): a recipe qualifies if it sits in ANY listed collection. Empty = no filter, never "match nothing". */
+  collectionIds: string[];
   favoritesOnly: boolean;
   cuisine: string | null;
   maxCookMinutes: number | null;
@@ -107,23 +119,33 @@ interface NormalizedFilters {
   skipRecentDays: number | null;
 }
 
+/** Trim + cap one slug-ish string to `maxChars`; `null` for anything empty or not a string. */
+function clampString(raw: unknown, maxChars: number): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim().slice(0, maxChars);
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 /** Trim + cap one slug-ish string; `null` for anything empty or not a string. */
 function clampSlug(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim().slice(0, SLUG_MAX_CHARS);
-  return trimmed.length > 0 ? trimmed : null;
+  return clampString(raw, SLUG_MAX_CHARS);
+}
+
+/** Clamp (to `maxChars` each) + de-dupe + cap-length (to `SLUG_LIST_MAX`) a string array. */
+function clampStringList(raw: unknown, maxChars: number): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const entry of raw) {
+    const value = clampString(entry, maxChars);
+    if (value && !out.includes(value)) out.push(value);
+    if (out.length >= SLUG_LIST_MAX) break;
+  }
+  return out;
 }
 
 /** Clamp + de-dupe + cap-length a slug array. Never longer than `SLUG_LIST_MAX`. */
 function clampSlugList(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  const out: string[] = [];
-  for (const entry of raw) {
-    const slug = clampSlug(entry);
-    if (slug && !out.includes(slug)) out.push(slug);
-    if (out.length >= SLUG_LIST_MAX) break;
-  }
-  return out;
+  return clampStringList(raw, SLUG_MAX_CHARS);
 }
 
 function normalizeFilters(input: RandomizerFilters): NormalizedFilters {
@@ -145,11 +167,16 @@ function normalizeFilters(input: RandomizerFilters): NormalizedFilters {
 
   return {
     source: input.source === "corpus" ? "corpus" : "box",
-    collectionId: typeof input.collectionId === "string" && input.collectionId.length > 0 ? input.collectionId.slice(0, 128) : null,
+    collectionIds: clampStringList(input.collectionIds, COLLECTION_ID_MAX_CHARS),
     favoritesOnly: input.favoritesOnly === true,
     cuisine: clampSlug(input.cuisine),
     maxCookMinutes,
-    includeUntimed: input.includeUntimed === true,
+    // Default TRUE (types.ts `RandomizerFilters.includeUntimed` doc, and the
+    // user override of plan §2.3): only ~49% of a real box carries
+    // `total_time_seconds`, so defaulting this off meant touching the time
+    // chip at all silently halved the shelf. Only an explicit `false` turns
+    // untimed recipes back off — do not "fix" this back to `=== true`.
+    includeUntimed: input.includeUntimed !== false,
     ingredient: ingredientRaw.length > 0 ? ingredientRaw : null,
     mealType: clampSlug(input.mealType),
     diets: clampSlugList(input.diets),
@@ -408,7 +435,7 @@ function emptyPool(source: "box" | "corpus"): RandomizerPool {
 const filtersValidator = z
   .object({
     source: z.enum(["box", "corpus"]).optional(),
-    collectionId: z.string().max(128).optional(),
+    collectionIds: z.array(z.string().max(128)).max(SLUG_LIST_MAX).optional(),
     favoritesOnly: z.boolean().optional(),
     cuisine: z.string().max(SLUG_MAX_CHARS).optional(),
     maxCookMinutes: z.number().optional(),
@@ -483,14 +510,17 @@ export async function readRandomizerPool(db: Kysely<DB>, did: string, householdI
   const { timezone } = await readHouseholdPreferences(householdId);
   const today = todayIn(timezone);
 
-  // --- scope (§4.3): source (+ collection) only, nothing else yet ----------
+  // --- scope (§4.3): source (+ collections) only, nothing else yet ---------
   //
-  // `collectionId` is applied as a correlated `EXISTS` rather than an
-  // `innerJoin` on purpose: an `innerJoin` added only when a collection is
+  // `collectionIds` is applied as a correlated `EXISTS` rather than an
+  // `innerJoin` on purpose: an `innerJoin` added only when collections are
   // requested would change the box query's table-alias set (`TB`) between
   // branches, which breaks the repo's `let query = …; if (cond) query =
   // query.where(…)` reassignment idiom (`AGENTS.md`: no `$if`). An `EXISTS`
   // keeps `TB` identical on both branches, so the reassignment type-checks.
+  // Multiple ids are ORed via `= any(...)` over one bound array parameter —
+  // never string-interpolated — inside that same single `EXISTS`, so a
+  // recipe in ANY of the selected collections satisfies it once.
   // The box join (`hm`/`h`/`hr`/`r`) and the bare corpus scan (`r` only) are
   // structurally different table-alias sets — `any` is the only shape both
   // branches below can assign into one variable. Every predicate applied to
@@ -503,7 +533,7 @@ export async function readRandomizerPool(db: Kysely<DB>, did: string, householdI
   let scopeQuery: SelectQueryBuilder<DB, any, any>;
   if (f.source === "corpus") {
     // The public corpus, left-anti-joined against the box so widening
-    // surfaces genuinely new recipes (§4.5). `collectionId` and
+    // surfaces genuinely new recipes (§4.5). `collectionIds` and
     // `favoritesOnly` are box-only concepts and are silent no-ops here — a
     // public recipe not yet in anyone's box cannot belong to a household
     // collection or carry a `household_recipe.favorite` flag.
@@ -513,10 +543,16 @@ export async function readRandomizerPool(db: Kysely<DB>, did: string, householdI
       .where(sql<boolean>`not exists (select 1 from household_recipe hr2 where hr2.recipe_id = r.id and hr2.household_id = ${householdId})`);
   } else {
     let box = householdScopedQuery(db, did, householdId).innerJoin("household_recipe as hr", "hr.household_id", "hm.household_id").innerJoin("recipe as r", "r.id", "hr.recipe_id");
-    if (f.collectionId) {
-      const collectionId = f.collectionId;
+    if (f.collectionIds.length > 0) {
+      const collectionIds = f.collectionIds;
+      // `rce.household_id = ${householdId}` is load-bearing, not redundant
+      // with `rce.recipe_id = r.id`: without it, a recipe sitting in this
+      // household's box AND in some OTHER household's collection (same
+      // recipe row, two boxes) would leak in the moment that other
+      // household's collection id appeared in `collectionIds` — see
+      // `randomizer.db.test.ts`'s cross-household guard test.
       box = box.where(
-        sql<boolean>`exists (select 1 from recipe_collection_entry rce where rce.recipe_id = r.id and rce.collection_id = ${collectionId} and rce.household_id = ${householdId})`,
+        sql<boolean>`exists (select 1 from recipe_collection_entry rce where rce.recipe_id = r.id and rce.collection_id = any(${collectionIds}::text[]) and rce.household_id = ${householdId})`,
       );
     }
     scopeQuery = box;

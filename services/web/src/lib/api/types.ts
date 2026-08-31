@@ -552,14 +552,29 @@ export interface HouseholdNudges {
 export interface RandomizerFilters {
   /** Draw from the household box, or (opt-in) the wider public corpus. Default `"box"`. */
   source?: "box" | "corpus";
-  /** Draw from one collection only (box source only — a no-op for `"corpus"`). */
-  collectionId?: string;
+  /**
+   * Draw from these collections only (box source only — a no-op for
+   * `"corpus"`). ORed: a recipe qualifies if it sits in ANY of them, which is
+   * what a checkbox list means when two boxes are ticked. Empty or absent is
+   * no collection filter at all, not "no collections".
+   */
+  collectionIds?: string[];
   favoritesOnly?: boolean;
   /** §2.1: matches `recipe.recipe_cuisine` OR an enrichment `cuisine` label — same `recipe_vocab` dimension either way. */
   cuisine?: string;
   /** Minutes; filters `total_time_seconds <= n * 60`. */
   maxCookMinutes?: number;
-  /** Keep recipes with no `total_time_seconds` eligible even while `maxCookMinutes` is set. Default `false`. */
+  /**
+   * Keep recipes with no `total_time_seconds` eligible even while
+   * `maxCookMinutes` is set. **Default `true`.**
+   *
+   * The plan (§2.3) specified `false`, on the reasoning that a max-time filter
+   * should mean what it says. Measured coverage overturned it: only 49% of a
+   * seeded box carries `total_time_seconds`, so defaulting off meant touching
+   * the time chip silently halved the shelf — the exact failure §2.3 named,
+   * arrived at from the other direction. Defaulting on makes the destructive
+   * act the deliberate one.
+   */
   includeUntimed?: boolean;
   /** Case-insensitive ingredient-text substring. */
   ingredient?: string;

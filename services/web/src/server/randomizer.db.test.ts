@@ -106,6 +106,10 @@ const R_ENRICHMENT_ERROR = `r-enrichment-error-${RUN}`; // recipe_enrichment.sta
 const R_ENRICHMENT_OK = `r-enrichment-ok-${RUN}`; // recipe_enrichment.status = 'ok', no labels
 const R_FAVORITE = `r-favorite-${RUN}`;
 const R_IN_COLLECTION = `r-in-collection-${RUN}`;
+/** In a SECOND HH_A collection only — proves a two-collection union pulls in a second collection's member, not just re-finding `R_IN_COLLECTION`. */
+const R_IN_COLLECTION_2 = `r-in-collection-2-${RUN}`;
+/** In neither collection — the union must not become "everything in scope". */
+const R_IN_NO_COLLECTION = `r-in-no-collection-${RUN}`;
 const R_RECENT_PLAN = `r-recent-plan-${RUN}`;
 const R_OLD_PLAN = `r-old-plan-${RUN}`;
 const R_SOFT_DELETED_RECENT = `r-soft-deleted-recent-${RUN}`;
@@ -141,6 +145,8 @@ const HH_A_RECIPES = [
   R_ENRICHMENT_OK,
   R_FAVORITE,
   R_IN_COLLECTION,
+  R_IN_COLLECTION_2,
+  R_IN_NO_COLLECTION,
   R_RECENT_PLAN,
   R_OLD_PLAN,
   R_SOFT_DELETED_RECENT,
@@ -157,6 +163,8 @@ const CORPUS_RECIPES = [R_CORPUS_PUBLIC, R_CORPUS_BOXED, R_CORPUS_DRAFT, R_CORPU
 const RECIPES = [...HH_A_RECIPES, ...CORPUS_RECIPES];
 
 const COLLECTION_ID = `col-${RUN}`;
+/** A second HH_A collection, for the union test — distinct membership from `COLLECTION_ID`. */
+const COLLECTION_ID_2 = `col2-${RUN}`;
 
 /**
  * 14 hours off UTC, deliberately: `readRandomizerPool`'s recency window must
@@ -227,6 +235,8 @@ async function reset(): Promise<void> {
       { id: R_ENRICHMENT_OK, origin: "local", visibility: "public", name: "Enrichment OK No Labels", total_time_seconds: 1500 },
       { id: R_FAVORITE, origin: "local", visibility: "public", name: "Favorited", total_time_seconds: 1500 },
       { id: R_IN_COLLECTION, origin: "local", visibility: "public", name: "In Collection", total_time_seconds: 1500 },
+      { id: R_IN_COLLECTION_2, origin: "local", visibility: "public", name: "In Collection 2", total_time_seconds: 1500 },
+      { id: R_IN_NO_COLLECTION, origin: "local", visibility: "public", name: "In No Collection", total_time_seconds: 1500 },
       { id: R_RECENT_PLAN, origin: "local", visibility: "public", name: "Recently Planned", total_time_seconds: 1500 },
       { id: R_OLD_PLAN, origin: "local", visibility: "public", name: "Planned Long Ago", total_time_seconds: 1500 },
       { id: R_SOFT_DELETED_RECENT, origin: "local", visibility: "public", name: "Soft Deleted Recent Plan", total_time_seconds: 1500 },
@@ -307,10 +317,19 @@ async function reset(): Promise<void> {
     ])
     .execute();
 
-  await db.insertInto("recipe_collection").values({ id: COLLECTION_ID, household_id: HH_A, name: "Test Collection", position: 0, created_by_did: DID_A }).execute();
+  await db
+    .insertInto("recipe_collection")
+    .values([
+      { id: COLLECTION_ID, household_id: HH_A, name: "Test Collection", position: 0, created_by_did: DID_A },
+      { id: COLLECTION_ID_2, household_id: HH_A, name: "Test Collection 2", position: 1, created_by_did: DID_A },
+    ])
+    .execute();
   await db
     .insertInto("recipe_collection_entry")
-    .values({ collection_id: COLLECTION_ID, household_id: HH_A, recipe_id: R_IN_COLLECTION, position: 0, added_by_did: DID_A })
+    .values([
+      { collection_id: COLLECTION_ID, household_id: HH_A, recipe_id: R_IN_COLLECTION, position: 0, added_by_did: DID_A },
+      { collection_id: COLLECTION_ID_2, household_id: HH_A, recipe_id: R_IN_COLLECTION_2, position: 0, added_by_did: DID_A },
+    ])
     .execute();
 
   await db
@@ -494,26 +513,43 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
   // --- §2.3 cook time ------------------------------------------------------------
 
   describe("cook time (§2.3)", () => {
-    it("filters total_time_seconds <= maxCookMinutes * 60, excluding untimed recipes by default", async () => {
+    it("filters total_time_seconds <= maxCookMinutes * 60, excluding untimed recipes when includeUntimed: false", async () => {
       // Of the four italian-flavored fixture recipes: R_IT_AUTHOR is 30m and
       // R_COMBO is ~17m (both <= 35m); R_IT_LABEL is 42m (over) and
-      // R_UNTIMED_IT has no time at all (excluded by default).
-      const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { cuisine: "italian", maxCookMinutes: 35 });
+      // R_UNTIMED_IT has no time at all — excluded here only because
+      // `includeUntimed: false` is passed explicitly. The server's OWN
+      // default is now `true` (types.ts `RandomizerFilters.includeUntimed`);
+      // this test pins the opt-OUT behaviour, not the default — see the
+      // "defaults to includeUntimed: true" test below for the default itself.
+      const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { cuisine: "italian", maxCookMinutes: 35, includeUntimed: false });
       expect(ids(pool.pool).sort()).toEqual([R_COMBO, R_IT_AUTHOR].sort());
     });
 
-    it("includeUntimed keeps NULL-time recipes eligible", async () => {
-      const without = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { cuisine: "italian", maxCookMinutes: 10 });
+    it("includeUntimed: false / true toggles NULL-time recipes, stated explicitly on both sides", async () => {
+      const without = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { cuisine: "italian", maxCookMinutes: 10, includeUntimed: false });
       expect(ids(without.pool)).not.toContain(R_UNTIMED_IT);
 
       const withUntimed = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { cuisine: "italian", maxCookMinutes: 10, includeUntimed: true });
       expect(ids(withUntimed.pool)).toContain(R_UNTIMED_IT);
     });
 
+    it("defaults to includeUntimed: true when the caller omits it — untimed recipes stay eligible", async () => {
+      // The types.ts doc comment and the code-site comment in
+      // `normalizeFilters` both assert this default; this test is what
+      // breaks if either drifts back to `false` (matching plan §2.3, which
+      // this default deliberately overrides).
+      const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { cuisine: "italian", maxCookMinutes: 10 });
+      expect(ids(pool.pool)).toContain(R_UNTIMED_IT);
+      // And the opt-out is still reachable — this isn't "the filter is gone",
+      // it only flipped which value is implicit.
+      const optedOut = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { cuisine: "italian", maxCookMinutes: 10, includeUntimed: false });
+      expect(ids(optedOut.pool)).not.toContain(R_UNTIMED_IT);
+    });
+
     it("excludes the slow recipe from a tight window and includes it in a loose one", async () => {
-      const tight = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { maxCookMinutes: 60 });
+      const tight = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { maxCookMinutes: 60, includeUntimed: false });
       expect(ids(tight.pool)).not.toContain(R_SLOW);
-      const loose = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { maxCookMinutes: 150 });
+      const loose = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { maxCookMinutes: 150, includeUntimed: false });
       expect(ids(loose.pool)).toContain(R_SLOW);
     });
   });
@@ -720,10 +756,32 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
   // --- collection + favorites scoping ------------------------------------------
 
   describe("collection and favourites scoping", () => {
-    it("collectionId scopes totalInScope and the pool to just that collection's members", async () => {
-      const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { collectionId: COLLECTION_ID });
+    it("one collection selected scopes totalInScope and the pool to just that collection's members", async () => {
+      const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { collectionIds: [COLLECTION_ID] });
       expect(pool.totalInScope).toBe(1);
       expect(ids(pool.pool)).toEqual([R_IN_COLLECTION]);
+    });
+
+    it("two collections selected → the union, not an intersection or just the first", async () => {
+      const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { collectionIds: [COLLECTION_ID, COLLECTION_ID_2] });
+      // R_IN_COLLECTION lives only in COLLECTION_ID, R_IN_COLLECTION_2 lives
+      // only in COLLECTION_ID_2, and R_IN_NO_COLLECTION lives in neither. If
+      // this collapsed to an intersection (AND) the union would be empty; if
+      // it silently ignored everything past the first id, R_IN_COLLECTION_2
+      // would be missing.
+      expect(pool.totalInScope).toBe(2);
+      expect(ids(pool.pool).sort()).toEqual([R_IN_COLLECTION, R_IN_COLLECTION_2].sort());
+      expect(ids(pool.pool)).not.toContain(R_IN_NO_COLLECTION);
+    });
+
+    it("an empty collectionIds array is 'no collection filter', not 'match nothing'", async () => {
+      const empty = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { collectionIds: [] });
+      const absent = await randomizer.readRandomizerPool(db!, DID_A, HH_A, {});
+      // Same as no filter at all: R_IN_NO_COLLECTION (in no collection) is
+      // still present, and both reads see the whole box.
+      expect(empty.totalInScope).toBe(absent.totalInScope);
+      expect(ids(empty.pool)).toContain(R_IN_NO_COLLECTION);
+      expect(ids(empty.pool).sort()).toEqual(ids(absent.pool).sort());
     });
 
     it("a collection id belonging to ANOTHER household selects nothing, even for a recipe both boxes hold", async () => {
@@ -736,17 +794,52 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
       await db!.insertInto("recipe_collection").values({ id: foreignCollection, household_id: HH_B, name: "B's Collection", position: 0, created_by_did: DID_B }).execute();
       await db!.insertInto("recipe_collection_entry").values({ collection_id: foreignCollection, household_id: HH_B, recipe_id: R_MX, position: 0, added_by_did: DID_B }).execute();
       try {
-        const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { collectionId: foreignCollection });
+        const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { collectionIds: [foreignCollection] });
         expect(pool.totalInScope).toBe(0);
         expect(ids(pool.pool)).toEqual([]);
 
+        // The guard has to hold with the household's OWN id in the list too —
+        // not just when the foreign id is selected alone — because that is
+        // exactly the shape a real multi-select sends: this household's own
+        // collection PLUS the id it doesn't own.
+        const mixed = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { collectionIds: [COLLECTION_ID, foreignCollection] });
+        expect(ids(mixed.pool)).toEqual([R_IN_COLLECTION]);
+        expect(ids(mixed.pool)).not.toContain(R_MX);
+
         // Positive control: HH_B's own member DOES see it through that id.
-        const asOwner = await randomizer.readRandomizerPool(db!, DID_B, HH_B, { collectionId: foreignCollection });
+        const asOwner = await randomizer.readRandomizerPool(db!, DID_B, HH_B, { collectionIds: [foreignCollection] });
         expect(ids(asOwner.pool)).toEqual([R_MX]);
       } finally {
         await db!.deleteFrom("recipe_collection_entry").where("collection_id", "=", foreignCollection).execute();
         await db!.deleteFrom("recipe_collection").where("id", "=", foreignCollection).execute();
         await db!.deleteFrom("household_recipe").where("household_id", "=", HH_B).where("recipe_id", "=", R_MX).execute();
+      }
+    });
+
+    it("totalInScope / unenrichedInScope / skippedRecent / facets are all scoped to the union of selected collections", async () => {
+      // Give R_IN_COLLECTION_2 a recent plan entry and swap it for the
+      // no-enrichment fixture's role within just these two collections, so
+      // every §4.3 aggregate has something to disagree about between "scope
+      // is the union" and "scope is only the first collection" (which would
+      // read 1, not 2, on every one of these).
+      const entryId = `${RUN}-mpe-union-recent`;
+      await db!
+        .insertInto("meal_plan_entry")
+        .values({ id: entryId, household_id: HH_A, plan_date: RECENT_DATE, slot: "dinner", kind: "recipe", position: 0, recipe_id: R_IN_COLLECTION_2, created_by_did: DID_A })
+        .execute();
+      await db!
+        .insertInto("recipe_enrichment_label")
+        .values({ recipe_id: R_IN_COLLECTION, dimension: "cuisine", slug: "french", verdict: "likely", confidence: "0.9", method: "rules@1" })
+        .execute();
+      try {
+        const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { collectionIds: [COLLECTION_ID, COLLECTION_ID_2] });
+        expect(pool.totalInScope).toBe(2);
+        expect(pool.unenrichedInScope).toBe(0); // both fixture recipes carry a status='ok' enrichment row
+        expect(pool.skippedRecent).toBe(1); // only R_IN_COLLECTION_2's entry — the union, not the whole box's recent count
+        expect(pool.facets.cuisines.map((f) => f.slug)).toContain("french"); // only reachable if the scope join actually includes COLLECTION_ID's member
+      } finally {
+        await db!.deleteFrom("meal_plan_entry").where("id", "=", entryId).execute();
+        await db!.deleteFrom("recipe_enrichment_label").where("recipe_id", "=", R_IN_COLLECTION).where("dimension", "=", "cuisine").where("slug", "=", "french").execute();
       }
     });
 
@@ -765,6 +858,7 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
         cuisine: "italian",
         diets: ["vegetarian"],
         maxCookMinutes: 20,
+        includeUntimed: false,
         avoidAllergens: ["peanut"],
       });
       expect(ids(pool.pool)).toEqual([R_COMBO]);

@@ -112,14 +112,14 @@ describe("isResultStale", () => {
 });
 
 describe("defaultFilters / clearFilters", () => {
-  it("§5.5: defaults are not all-empty — skipRecentDays=14, includeUntimed=off", () => {
+  it("§5.5: defaults are not all-empty — skipRecentDays=14", () => {
     expect(defaultFilters()).toEqual({
       source: "box",
-      collectionId: null,
+      collectionIds: [],
       favoritesOnly: false,
       cuisine: null,
       maxCookMinutes: null,
-      includeUntimed: false,
+      includeUntimed: true,
       ingredient: "",
       mealType: null,
       diets: [],
@@ -129,14 +129,23 @@ describe("defaultFilters / clearFilters", () => {
     });
   });
 
+  // Pinned so the default cannot silently drift back to the plan §2.3 value
+  // (`false`) — see the reasoning in `defaultFilters`'s own doc comment and
+  // `RandomizerFilters.includeUntimed` in `lib/api/types.ts`: only 49% of a
+  // real box carries `total_time_seconds`, so this default is load-bearing,
+  // not incidental.
+  it("§2.3/results-doc override: includeUntimed defaults to true, not the spec's false", () => {
+    expect(defaultFilters().includeUntimed).toBe(true);
+  });
+
   it("clears every filter back to the non-empty defaults", () => {
     const dirty = {
       source: "box" as const,
-      collectionId: "c1",
+      collectionIds: ["c1"],
       favoritesOnly: true,
       cuisine: "italian",
       maxCookMinutes: 30,
-      includeUntimed: true,
+      includeUntimed: false,
       ingredient: "garlic",
       mealType: "dinner",
       diets: ["vegan"],
@@ -163,11 +172,11 @@ describe("hasActiveFilters", () => {
   });
 
   it("is true when any single filter differs from default", () => {
-    expect(hasActiveFilters({ ...defaultFilters(), collectionId: "c1" })).toBe(true);
+    expect(hasActiveFilters({ ...defaultFilters(), collectionIds: ["c1"] })).toBe(true);
     expect(hasActiveFilters({ ...defaultFilters(), favoritesOnly: true })).toBe(true);
     expect(hasActiveFilters({ ...defaultFilters(), cuisine: "thai" })).toBe(true);
     expect(hasActiveFilters({ ...defaultFilters(), maxCookMinutes: 20 })).toBe(true);
-    expect(hasActiveFilters({ ...defaultFilters(), includeUntimed: true })).toBe(true);
+    expect(hasActiveFilters({ ...defaultFilters(), includeUntimed: false })).toBe(true);
     expect(hasActiveFilters({ ...defaultFilters(), ingredient: "egg" })).toBe(true);
     expect(hasActiveFilters({ ...defaultFilters(), mealType: "snack" })).toBe(true);
     expect(hasActiveFilters({ ...defaultFilters(), diets: ["vegan"] })).toBe(true);
@@ -183,16 +192,24 @@ describe("countSheetFilters", () => {
     expect(countSheetFilters(defaultFilters())).toBe(0);
   });
 
-  it("counts each of the five sheet controls independently", () => {
+  it("counts each of the four sheet controls independently", () => {
     expect(countSheetFilters({ ...defaultFilters(), diets: ["vegan"] })).toBe(1);
     expect(countSheetFilters({ ...defaultFilters(), avoidAllergens: ["peanut"] })).toBe(1);
     expect(countSheetFilters({ ...defaultFilters(), spiceLevel: "hot" })).toBe(1);
-    expect(countSheetFilters({ ...defaultFilters(), collectionId: "c1" })).toBe(1);
-    expect(countSheetFilters({ ...defaultFilters(), includeUntimed: true })).toBe(1);
+    expect(countSheetFilters({ ...defaultFilters(), collectionIds: ["c1"] })).toBe(1);
   });
 
   it("counts a control once regardless of how many slugs are selected inside it", () => {
     expect(countSheetFilters({ ...defaultFilters(), diets: ["vegan", "vegetarian", "keto"] })).toBe(1);
+    expect(countSheetFilters({ ...defaultFilters(), collectionIds: ["c1", "c2"] })).toBe(1);
+  });
+
+  // Change 3: "include untimed recipes" moved out of the sheet and into the
+  // filter bar's "Any time" dropdown — it is a time control now, not a sheet
+  // control, so it must NOT move this count regardless of its value.
+  it("does not count includeUntimed — it moved into the time dropdown, not the sheet", () => {
+    expect(countSheetFilters({ ...defaultFilters(), includeUntimed: false })).toBe(0);
+    expect(countSheetFilters({ ...defaultFilters(), includeUntimed: true })).toBe(0);
   });
 
   it("sums independent controls, and ignores non-sheet filters entirely", () => {
@@ -200,10 +217,12 @@ describe("countSheetFilters", () => {
       ...defaultFilters(),
       diets: ["vegan"],
       spiceLevel: "hot",
-      collectionId: "c1",
-      // Inline chips — not part of the sheet, must not affect the count.
+      collectionIds: ["c1"],
+      // Inline chips / time-dropdown controls — not part of the sheet, must
+      // not affect the count.
       cuisine: "thai",
       maxCookMinutes: 20,
+      includeUntimed: false,
       favoritesOnly: true,
       skipRecentDays: 30,
     };
@@ -212,14 +231,14 @@ describe("countSheetFilters", () => {
 });
 
 describe("toPoolFilters", () => {
-  it("maps the defaults to the wire shape: nulls/empty-string become undefined, empty arrays pass through, skipRecentDays=14 stays 14", () => {
+  it("maps the defaults to the wire shape: nulls/empty-string/empty collectionIds become undefined, skipRecentDays=14 stays 14, includeUntimed stays true", () => {
     expect(toPoolFilters(defaultFilters())).toEqual({
       source: "box",
-      collectionId: undefined,
+      collectionIds: undefined,
       favoritesOnly: false,
       cuisine: undefined,
       maxCookMinutes: undefined,
-      includeUntimed: false,
+      includeUntimed: true,
       ingredient: undefined,
       mealType: undefined,
       diets: [],
@@ -233,11 +252,11 @@ describe("toPoolFilters", () => {
     const state = {
       ...defaultFilters(),
       source: "corpus" as const,
-      collectionId: "c1",
+      collectionIds: ["c1", "c2"],
       favoritesOnly: true,
       cuisine: "thai",
       maxCookMinutes: 30,
-      includeUntimed: true,
+      includeUntimed: false,
       ingredient: "garlic",
       mealType: "dinner",
       diets: ["vegan", "keto"],
@@ -247,11 +266,11 @@ describe("toPoolFilters", () => {
     };
     expect(toPoolFilters(state)).toEqual({
       source: "corpus",
-      collectionId: "c1",
+      collectionIds: ["c1", "c2"],
       favoritesOnly: true,
       cuisine: "thai",
       maxCookMinutes: 30,
-      includeUntimed: true,
+      includeUntimed: false,
       ingredient: "garlic",
       mealType: "dinner",
       diets: ["vegan", "keto"],
@@ -259,6 +278,10 @@ describe("toPoolFilters", () => {
       spiceLevel: "hot",
       skipRecentDays: 7,
     });
+  });
+
+  it("omits collectionIds entirely when empty, rather than sending an empty array", () => {
+    expect(toPoolFilters({ ...defaultFilters(), collectionIds: [] }).collectionIds).toBeUndefined();
   });
 
   it("§4.1: skipRecentDays=null (explicit off) is NOT coerced to undefined — the two mean different things on the wire", () => {

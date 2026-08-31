@@ -31,7 +31,7 @@ new table, one new server function.
 | `src/components/AppSidebar.tsx`                  | Randomizer stops being `soon`                                                                           |
 | `scripts/dev/vitest-db.sh`                       | **new** — run the `db` project without a Railway login                                                  |
 
-600 unit tests and 320 db tests pass; typecheck, oxlint and oxfmt are clean.
+622 unit tests and 324 db tests pass; typecheck, oxlint and oxfmt are clean.
 
 ---
 
@@ -72,11 +72,14 @@ Two of the real numbers change how the surface should be read:
   but the cuisine filter is an enrichment filter in practice, and it inherits
   enrichment's coverage hole entirely.
 - **`total_time_seconds` is present on 49% of the box.** This is the number that
-  vindicates §2.3 against the comp. Without the "include untimed recipes"
-  opt-in, touching the time chip silently halves the shelf. The spec put the
-  control in the sheet defaulted off and said "it is a correction, not a
-  question the surface should ask up front"; at 49% coverage that is a
-  defensible default and a load-bearing control, not a nicety.
+  vindicates §2.3's control and then overturns its default — see "Post-review
+  changes" below. Measured in the browser: with untimed recipes included,
+  "≤ 30 min" narrows a 196-recipe pool to 132; with them excluded, to 32. §2.3
+  put the control in the sheet defaulted **off**, on the reasoning that a
+  max-time filter should mean what it says. At 49% coverage that default turns
+  one chip click into an 84% collapse of the shelf with nothing on screen
+  saying why — which is the failure §2.3 itself named, reached from the other
+  side. It now defaults **on**.
 
 **Does the coverage line deserve to be inline rather than in the sheet?** §11
 asks this. On these numbers, no change: `unenrichedInScope` — recipes with no
@@ -227,6 +230,66 @@ that the cap be surfaced, and it was; a surfaced cap over a biased sample is
 still a biased answer. Now `order by random()`, so the capped pool is a uniform
 sample of what matched. Re-rolling never refetches (§5.2), so a session still
 sees one stable pool.
+
+---
+
+## Post-review changes
+
+Five changes the user asked for after the first pass landed. Each is recorded
+here because three of them contradict the frozen spec, and the spec says to
+capture reality rather than edit it.
+
+**`includeUntimed` now defaults to `true`** — §2.3 said `false`. The reasoning
+is the 49% measurement above: the old default made touching the time chip
+collapse a 196-recipe pool to 32, silently. Flipping it makes the destructive
+act the deliberate one, which also retires the concern §2.3 raised about
+untimed recipes disappearing with nothing on screen to say so. Defaulted in
+both halves — `defaultFilters()` and the server's `normalizeFilters` — with the
+reasoning at both code sites, because a reader checking the spec will otherwise
+"correct" it back.
+
+**"Include untimed recipes" moved out of the sheet and into the "Any time"
+dropdown**, below a separator. It is a time control, so it now lives with the
+control it modifies rather than three sections away in "More filters". It is
+therefore no longer a sheet control, and `countSheetFilters` — which drives the
+"More filters · N" badge — stopped counting it.
+
+**Time options dropped "Under" for `≤`.** `Under 30 min` → `≤ 30 min`, on the
+options and on the chip. A real U+2264, per the brand's "real typographic
+characters" rule.
+
+**The collection filter became a multi-select checkbox list.** It was a native
+`Select` — one collection or none. It is now a `CheckboxRow` list styled
+identically to Diets and Avoid… in the same sheet, and `collectionId?: string`
+became `collectionIds?: string[]`, ORed server-side: a recipe qualifies if it
+sits in **any** ticked collection. That is what a checkbox list means when two
+boxes are ticked, and rendering a single-select as checkboxes would have been
+the worse half of the two readings. The `rce.household_id` guard on the
+predicate is unchanged and still load-bearing. Verified in a browser against
+two seeded collections of 28 and 22 disjoint recipes: one ticked gives 27
+(one hidden by skip-recent), both give 49.
+
+**Filters persist in `localStorage`, per household.** They reset to defaults on
+every visit before this. The pure serialize/parse/merge half is
+`lib/randomizer/persist.ts` (19 tests); the hook half owns the two storage
+calls, both in try/catch — Safari private mode and "block site data" throw on
+_access_, not only on write. The blob is version-tagged and every field is
+type-validated individually, so a corrupt, truncated or older-shape value falls
+back to defaults rather than throwing, and a field added in a later release
+comes back as its own default rather than `undefined`.
+
+**`source` is deliberately not persisted.** Widening to the public corpus is
+explicit and opt-in (§4.5); restoring someone into corpus mode on their next
+visit would make it implicit. Every visit starts in the box. It is never
+written to the blob at all, rather than written and ignored on read — verified
+by reading the stored value in the browser after widening.
+
+The one thing SSR forces: the route server-renders, so filters cannot be read
+from storage during the first render without a hydration mismatch. State starts
+at `defaultFilters()` (matching what the loader primed) and the stored set is
+applied once hydration completes, costing one refetch on mount that
+`keepPreviousData` covers. Verified: no flash, no double fetch, no hydration
+warning.
 
 ---
 

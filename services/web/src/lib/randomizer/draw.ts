@@ -115,7 +115,14 @@ export function isResultStale<T extends DrawCandidate>(recipeId: string | null, 
  */
 export interface RandomizerFilterState {
   source: "box" | "corpus";
-  collectionId: string | null;
+  /**
+   * ORed — a recipe qualifies if it sits in ANY listed collection (change 5:
+   * was a single `collectionId: string | null` native `Select`; the sheet is
+   * now a checkbox list, so this is the checkbox-list shape all the way down
+   * to the wire (`lib/api/types.ts`'s `RandomizerFilters.collectionIds`).
+   * Empty = no filter, never "match nothing".
+   */
+  collectionIds: string[];
   favoritesOnly: boolean;
   cuisine: string | null;
   maxCookMinutes: number | null;
@@ -142,20 +149,32 @@ export interface RandomizerFilterState {
 export const SKIP_RECENT_DAYS = 14;
 
 /**
- * §5.5: the defaults are NOT all-empty. `skipRecentDays` defaults to 14 and
- * `includeUntimed` defaults to off — everything else defaults to "unset".
- * `source` defaults to "box" per §4.5. This is the one definition of
- * "default"; {@link clearFilters} and the initial filter state both read it
- * so the UI has no second place to (re)invent what "cleared" means.
+ * §5.5: the defaults are NOT all-empty. `skipRecentDays` defaults to 14 —
+ * everything else defaults to "unset". `source` defaults to "box" per §4.5.
+ * This is the one definition of "default"; {@link clearFilters} and the
+ * initial filter state both read it so the UI has no second place to
+ * (re)invent what "cleared" means.
+ *
+ * **`includeUntimed` defaults to `true`** — a deliberate override of plan
+ * §2.3, which specified `false`. The wire type's doc comment
+ * (`lib/api/types.ts`, `RandomizerFilters.includeUntimed`) carries the full
+ * reasoning; the short version: only 49% of a real household box carries
+ * `total_time_seconds` (results doc §1), so defaulting the checkbox OFF meant
+ * the moment anyone touched the time chip, roughly half the shelf vanished
+ * with no on-screen explanation — exactly the failure §2.3 was trying to
+ * prevent, arrived at from the other direction. Defaulting it ON makes
+ * EXCLUDING untimed recipes the deliberate, opt-in act instead. Do not "fix"
+ * this back to `false` to match the spec — the spec is superseded here by
+ * this measurement and an explicit user decision.
  */
 export function defaultFilters(): RandomizerFilterState {
   return {
     source: "box",
-    collectionId: null,
+    collectionIds: [],
     favoritesOnly: false,
     cuisine: null,
     maxCookMinutes: null,
-    includeUntimed: false,
+    includeUntimed: true,
     ingredient: "",
     mealType: null,
     diets: [],
@@ -182,7 +201,7 @@ export function clearFilters(filters: RandomizerFilterState): RandomizerFilterSt
 export function hasActiveFilters(filters: RandomizerFilterState): boolean {
   const d = defaultFilters();
   return (
-    filters.collectionId !== d.collectionId ||
+    filters.collectionIds.length > 0 ||
     filters.favoritesOnly !== d.favoritesOnly ||
     filters.cuisine !== d.cuisine ||
     filters.maxCookMinutes !== d.maxCookMinutes ||
@@ -197,18 +216,23 @@ export function hasActiveFilters(filters: RandomizerFilterState): boolean {
 }
 
 /**
- * §6.3's "More filters · N" badge count. The sheet holds exactly five
- * controls — diets, avoid-allergens, spice level, collection, include-untimed
- * — and N counts how many of those FIVE are set, not how many slugs are
- * picked inside a multi-select (two diets selected is still one control set).
+ * §6.3's "More filters · N" badge count. The sheet holds four controls —
+ * diets, avoid-allergens, spice level, collections — and N counts how many of
+ * those FOUR are set, not how many slugs are picked inside a multi-select
+ * (two diets selected is still one control set).
+ *
+ * `includeUntimed` used to be the sheet's fifth control and counted here.
+ * Change 3 moved it into the filter bar's "Any time" dropdown — it is now a
+ * time control, not a sheet control, so the "More filters" badge must stop
+ * counting it: the badge counts what is IN the sheet, and this checkbox no
+ * longer is.
  */
 export function countSheetFilters(filters: RandomizerFilterState): number {
   let n = 0;
   if (filters.diets.length > 0) n++;
   if (filters.avoidAllergens.length > 0) n++;
   if (filters.spiceLevel !== null) n++;
-  if (filters.collectionId !== null) n++;
-  if (filters.includeUntimed) n++;
+  if (filters.collectionIds.length > 0) n++;
   return n;
 }
 
@@ -229,7 +253,7 @@ export function countSheetFilters(filters: RandomizerFilterState): number {
 export function toPoolFilters(state: RandomizerFilterState): RandomizerFilters {
   return {
     source: state.source,
-    collectionId: state.collectionId ?? undefined,
+    collectionIds: state.collectionIds.length > 0 ? state.collectionIds : undefined,
     favoritesOnly: state.favoritesOnly,
     cuisine: state.cuisine ?? undefined,
     maxCookMinutes: state.maxCookMinutes ?? undefined,
