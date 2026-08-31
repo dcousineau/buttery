@@ -40,6 +40,7 @@ export function DetailPane({
   recipe,
   householdId,
   autoOpenCook = false,
+  analyticsSurface = "recipe_detail",
   onCookModeClosed,
   showBackLink = true,
   onResultAction,
@@ -69,6 +70,24 @@ export function DetailPane({
   householdId: string;
   /** `?cook` — the external deep link straight into cook mode (meal planner §7.5). */
   autoOpenCook?: boolean;
+  /**
+   * Which surface this pane is mounted on, for the `source:` field of the
+   * events the pane sends itself (`meal_plan_entry_added`,
+   * `grocery_items_added`, and the apron's `cook_mode_opened` below).
+   *
+   * This pane renders on more than one surface now — `/household/recipes/$id`
+   * and the randomizer — and those `source:` values used to be the literal
+   * `"recipe_detail"` on both. A grocery add made from the randomizer was
+   * therefore reported as a recipe-page add, which is worse than a missing
+   * event: the number looks right and is attributed to the wrong surface.
+   *
+   * Defaulted to today's value, not a fork, so `/household/recipes/$id`'s
+   * events are byte-for-byte what they were.
+   *
+   * Separate from `onResultAction` below, which answers a different question —
+   * see its doc.
+   */
+  analyticsSurface?: string;
   onCookModeClosed?: () => void;
   /**
    * The mobile-only "Back to the shelf" link. On by default, because every
@@ -93,11 +112,11 @@ export function DetailPane({
    * an event, and a surface asking "did anyone act on what we suggested?" wants
    * to count the reach for the list, not only the confirmed adds.
    *
-   * Deliberately NOT an `analyticsSource` string threaded into the `source:`
-   * fields the pane's own captures already carry. That would be the cheaper
-   * change and would also fix those events' hardcoded `source: "recipe_detail"`
-   * — but it would not produce the event §9 names, and the two are separate
-   * problems with separate fixes.
+   * Deliberately NOT the same thing as `analyticsSurface` above, which is the
+   * separate fix for those captures' formerly-hardcoded `source:`. That one
+   * says which surface the PANE's own events came from; this one produces the
+   * event §9 names, under the CALLER's name, which no event the pane sends can
+   * stand in for. Two problems, two fixes, and both exist.
    */
   onResultAction?: (action: "plan_dialog" | "grocery" | "cook") => void;
 }) {
@@ -223,7 +242,7 @@ export function DetailPane({
   }
 
   async function onPlanned(date: PlanDate, slot: MealSlot) {
-    posthog.capture("meal_plan_entry_added", { recipe_id: recipe.recipeId, slot, source: "recipe_detail" });
+    posthog.capture("meal_plan_entry_added", { recipe_id: recipe.recipeId, slot, source: analyticsSurface });
     pushToast(`Added to ${SLOT_LABELS[slot].toLowerCase()} on ${formatPlanDate(date)}`);
     // Three entries move on this write, not two. The box pair, because the
     // pane's "on your meal plan" line comes from the detail payload's
@@ -324,7 +343,18 @@ export function DetailPane({
 
         {/* Action row */}
         <div className="flex flex-wrap items-center gap-2">
-          <CookModeLauncher recipe={recipe} autoOpen={autoOpenCook} onAutoOpenConsumed={onCookModeClosed} onOpened={onResultAction ? () => onResultAction("cook") : undefined} />
+          {/* `cook_mode_opened`'s `source` names where the apron was tapped in a
+            vocabulary that predates `analyticsSurface` — the recipe page's
+            button is `"button"`, the planner's card is `"plan_card"`. Keep the
+            recipe page's historical value so its event is unchanged; every
+            other surface names itself. */}
+          <CookModeLauncher
+            recipe={recipe}
+            autoOpen={autoOpenCook}
+            analyticsSource={analyticsSurface === "recipe_detail" ? "button" : analyticsSurface}
+            onAutoOpenConsumed={onCookModeClosed}
+            onOpened={onResultAction ? () => onResultAction("cook") : undefined}
+          />
           {/* Offline, every control on this row disables rather than queuing.
             M1 ships offline READS; the writes here are the ones §5.2 shows are
             not replay-safe by shape — a server-side favourite toggle flips twice
@@ -545,7 +575,7 @@ export function DetailPane({
         onClose={() => setListRequest(null)}
         onCommitted={(result) => {
           setListRequest(null);
-          posthog.capture("grocery_items_added", { recipe_id: recipe.recipeId, added: result.added, merged: result.merged, source: "recipe_detail" });
+          posthog.capture("grocery_items_added", { recipe_id: recipe.recipeId, added: result.added, merged: result.merged, source: analyticsSurface });
           pushToast(summarizeGroceryAdd(result.added, result.merged));
           void queryClient.invalidateQueries({ queryKey: keys.household.grocery(householdId) });
         }}

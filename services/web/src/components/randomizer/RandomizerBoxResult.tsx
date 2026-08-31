@@ -68,5 +68,9 @@ export function RandomizerBoxResult({
     );
   }
 
-  return <DetailPane key={recipe.recipeId} recipe={recipe} householdId={householdId} showBackLink={false} onResultAction={onResultAction} />;
+  // `analyticsSurface`: the pane's own `meal_plan_entry_added` /
+  // `grocery_items_added` / `cook_mode_opened` are sent from here, and without
+  // this they claimed to come from the recipe page. Distinct from
+  // `onResultAction`, which is §9's `randomizer_result_action`.
+  return <DetailPane key={recipe.recipeId} recipe={recipe} householdId={householdId} showBackLink={false} analyticsSurface="randomizer" onResultAction={onResultAction} />;
 }

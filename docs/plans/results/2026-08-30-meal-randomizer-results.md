@@ -355,11 +355,32 @@ drawn recipe _is_ the full recipe view, so there is no gesture to record, and
 §7.2 forbids adding an action the design does not have just to make an event
 fire.
 
-**Known and not fixed, because it is a different problem:** `DetailPane`'s own
-`meal_plan_entry_added` and `grocery_items_added` captures hardcode
-`source: "recipe_detail"`, so a randomizer-driven grocery add is currently
-mis-attributed to the recipe page. Threading a surface name through those fields
-is the fix; it is not this feature's to make.
+**Was known and not fixed; fixed in a follow-up.** `DetailPane`'s own
+`meal_plan_entry_added` and `grocery_items_added` captures hardcoded
+`source: "recipe_detail"`, so a randomizer-driven grocery add was mis-attributed
+to the recipe page. The follow-up threaded the surface in as `analyticsSurface`,
+defaulted to `"recipe_detail"` so `/household/recipes/$id` emits byte-for-byte
+what it did before, with `RandomizerBoxResult` passing `"randomizer"`.
+
+The same pass found two more of the shape. `CookModeLauncher`'s button path
+hardcoded `source: "button"` across all three surfaces it mounts on, so the
+public recipe page's apron was indistinguishable from the household page's; it
+takes an `analyticsSource` now (`"public_recipe"` from `/recipes/$id`), named
+for the value rather than the surface because that event's vocabulary is already
+caller-supplied and already mixes surface names in — `/household/plan` sends the
+same event with `source: "plan_card"`. Left literal on purpose:
+`source: "deep_link"`, which names how the reader arrived rather than where they
+were, and `recipe_published`'s `from: "detail_lock"`, same shape but a different
+field and a different event's problem.
+
+`onResultAction` is unchanged and stays: it reports a gesture under the caller's
+event name (§9's `randomizer_result_action`), which is a separate question from
+which surface the pane's own events claim to come from.
+
+None of it was verified in a browser, and cannot be: PostHog is production-only
+(`lib/analytics.ts` hands back a no-op stand-in everywhere else), so no dev
+browser can watch these captures fire. Read against all four call sites instead,
+with `typecheck` and `test` clean.
 
 ---
 
