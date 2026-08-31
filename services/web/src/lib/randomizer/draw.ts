@@ -14,7 +14,19 @@
  * needs — generic is the right call regardless of timing, since it keeps this
  * file usable by anything that can produce a pool of "things with a recipe
  * id" (tests included, with tiny literal fixtures instead of full cards).
+ *
+ * `lib/api/types.ts` also exports a type named `RandomizerFilters` — the
+ * *request* contract `getRandomizerPool` accepts (every field optional, the
+ * server re-clamps everything). This module's own filter shape below used to
+ * share that name with a different meaning (client state, every field
+ * required) — a real drift hazard, since "RandomizerFilters" then meant two
+ * different shapes depending on which file you were reading. Route/UI plan
+ * §"the wire types" renamed this one to {@link RandomizerFilterState} and
+ * added {@link toPoolFilters} as the one place that converts between them, so
+ * nothing else has to guess the mapping.
  */
+
+import type { RandomizerFilters } from "#/lib/api/types";
 
 /** The only shape a pool element must have for this module to operate on it. */
 export interface DrawCandidate {
@@ -94,8 +106,14 @@ export function isResultStale<T extends DrawCandidate>(recipeId: string | null, 
  * filter fields, and §4.5's "widen to corpus" is its own affordance with its
  * own "rolls immediately" behavior, never the "Clear filters" button. Clearing
  * filters must not silently un-widen someone back to their box mid-browse.
+ *
+ * Named `RandomizerFilterState` (not `RandomizerFilters`) to keep this
+ * distinct from `lib/api/types.ts`'s `RandomizerFilters` — the wire request
+ * contract, where every field is optional and absence means "unset", not
+ * "cleared to this shape's defaults". {@link toPoolFilters} is the one
+ * sanctioned conversion between the two.
  */
-export interface RandomizerFilters {
+export interface RandomizerFilterState {
   source: "box" | "corpus";
   collectionId: string | null;
   favoritesOnly: boolean;
@@ -111,13 +129,26 @@ export interface RandomizerFilters {
 }
 
 /**
+ * §4.6/§6.3's skip-recent window, in days — the ONE place the number 14 lives.
+ *
+ * §6.3 pins the chip to a fixed window with no picker in v1, so the window is a
+ * constant; but it was previously spelled three times (the default, the chip's
+ * toggle-on value, the chip's label) plus a fourth time, in different units, in
+ * the route's pool line ("the last 2 weeks"). That is how a screen ends up
+ * saying "14 days" and "2 weeks" about one number, and how moving the constant
+ * silently leaves a sentence lying. Everything that renders or sets the window
+ * reads this.
+ */
+export const SKIP_RECENT_DAYS = 14;
+
+/**
  * §5.5: the defaults are NOT all-empty. `skipRecentDays` defaults to 14 and
  * `includeUntimed` defaults to off — everything else defaults to "unset".
  * `source` defaults to "box" per §4.5. This is the one definition of
  * "default"; {@link clearFilters} and the initial filter state both read it
  * so the UI has no second place to (re)invent what "cleared" means.
  */
-export function defaultFilters(): RandomizerFilters {
+export function defaultFilters(): RandomizerFilterState {
   return {
     source: "box",
     collectionId: null,
@@ -130,25 +161,25 @@ export function defaultFilters(): RandomizerFilters {
     diets: [],
     avoidAllergens: [],
     spiceLevel: null,
-    skipRecentDays: 14,
+    skipRecentDays: SKIP_RECENT_DAYS,
   };
 }
 
 /**
  * §5.5's "Clear filters" button. Everything resets to {@link defaultFilters},
  * except `source`, which is scope rather than a filter (see the
- * {@link RandomizerFilters} doc) and survives the clear untouched.
+ * {@link RandomizerFilterState} doc) and survives the clear untouched.
  */
-export function clearFilters(filters: RandomizerFilters): RandomizerFilters {
+export function clearFilters(filters: RandomizerFilterState): RandomizerFilterState {
   return { ...defaultFilters(), source: filters.source };
 }
 
 /**
  * "Is any filter set?" — the inline "Clear filters" affordance needs to know
  * whether it has anything to do. Compares every field except `source` (see
- * the {@link RandomizerFilters} doc) against {@link defaultFilters}.
+ * the {@link RandomizerFilterState} doc) against {@link defaultFilters}.
  */
-export function hasActiveFilters(filters: RandomizerFilters): boolean {
+export function hasActiveFilters(filters: RandomizerFilterState): boolean {
   const d = defaultFilters();
   return (
     filters.collectionId !== d.collectionId ||
@@ -171,7 +202,7 @@ export function hasActiveFilters(filters: RandomizerFilters): boolean {
  * — and N counts how many of those FIVE are set, not how many slugs are
  * picked inside a multi-select (two diets selected is still one control set).
  */
-export function countSheetFilters(filters: RandomizerFilters): number {
+export function countSheetFilters(filters: RandomizerFilterState): number {
   let n = 0;
   if (filters.diets.length > 0) n++;
   if (filters.avoidAllergens.length > 0) n++;
@@ -179,4 +210,35 @@ export function countSheetFilters(filters: RandomizerFilters): number {
   if (filters.collectionId !== null) n++;
   if (filters.includeUntimed) n++;
   return n;
+}
+
+/**
+ * The one sanctioned conversion from client filter state to the server's
+ * request shape (`lib/api/types.ts`'s `RandomizerFilters`, imported
+ * type-only — this module stays free of any non-type import from the wire
+ * layer). Every `null`/empty field becomes `undefined` ("unset"), **except**
+ * `skipRecentDays`, whose own `null` already means "off" on both sides (§4.1:
+ * "`undefined` ⇒ the default (14); `null` ⇒ off") — passed straight through
+ * unchanged, never coerced to `undefined`.
+ *
+ * A pure, unit-tested mapping so nothing else in the UI has to reinvent "what
+ * does an unset chip look like on the wire" — the pool query, the route
+ * loader's `ensureQueryData` and every refetch all call this on the same
+ * `RandomizerFilterState` and get the same request shape back.
+ */
+export function toPoolFilters(state: RandomizerFilterState): RandomizerFilters {
+  return {
+    source: state.source,
+    collectionId: state.collectionId ?? undefined,
+    favoritesOnly: state.favoritesOnly,
+    cuisine: state.cuisine ?? undefined,
+    maxCookMinutes: state.maxCookMinutes ?? undefined,
+    includeUntimed: state.includeUntimed,
+    ingredient: state.ingredient.trim() === "" ? undefined : state.ingredient,
+    mealType: state.mealType ?? undefined,
+    diets: state.diets,
+    avoidAllergens: state.avoidAllergens,
+    spiceLevel: state.spiceLevel ?? undefined,
+    skipRecentDays: state.skipRecentDays,
+  };
 }

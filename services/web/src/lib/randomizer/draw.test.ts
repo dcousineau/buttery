@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clearFilters, countSheetFilters, defaultFilters, draw, hasActiveFilters, isResultStale } from "./draw";
+import { clearFilters, countSheetFilters, defaultFilters, draw, hasActiveFilters, isResultStale, toPoolFilters } from "./draw";
 
 // Tiny fixtures — this module only cares about `recipeId`.
 function pool(n: number) {
@@ -208,5 +208,64 @@ describe("countSheetFilters", () => {
       skipRecentDays: 30,
     };
     expect(countSheetFilters(filters)).toBe(3);
+  });
+});
+
+describe("toPoolFilters", () => {
+  it("maps the defaults to the wire shape: nulls/empty-string become undefined, empty arrays pass through, skipRecentDays=14 stays 14", () => {
+    expect(toPoolFilters(defaultFilters())).toEqual({
+      source: "box",
+      collectionId: undefined,
+      favoritesOnly: false,
+      cuisine: undefined,
+      maxCookMinutes: undefined,
+      includeUntimed: false,
+      ingredient: undefined,
+      mealType: undefined,
+      diets: [],
+      avoidAllergens: [],
+      spiceLevel: undefined,
+      skipRecentDays: 14,
+    });
+  });
+
+  it("passes every set field straight through", () => {
+    const state = {
+      ...defaultFilters(),
+      source: "corpus" as const,
+      collectionId: "c1",
+      favoritesOnly: true,
+      cuisine: "thai",
+      maxCookMinutes: 30,
+      includeUntimed: true,
+      ingredient: "garlic",
+      mealType: "dinner",
+      diets: ["vegan", "keto"],
+      avoidAllergens: ["peanut"],
+      spiceLevel: "hot",
+      skipRecentDays: 7,
+    };
+    expect(toPoolFilters(state)).toEqual({
+      source: "corpus",
+      collectionId: "c1",
+      favoritesOnly: true,
+      cuisine: "thai",
+      maxCookMinutes: 30,
+      includeUntimed: true,
+      ingredient: "garlic",
+      mealType: "dinner",
+      diets: ["vegan", "keto"],
+      avoidAllergens: ["peanut"],
+      spiceLevel: "hot",
+      skipRecentDays: 7,
+    });
+  });
+
+  it("§4.1: skipRecentDays=null (explicit off) is NOT coerced to undefined — the two mean different things on the wire", () => {
+    expect(toPoolFilters({ ...defaultFilters(), skipRecentDays: null }).skipRecentDays).toBeNull();
+  });
+
+  it("a whitespace-only ingredient string is treated the same as empty — unset, not a substring search for spaces", () => {
+    expect(toPoolFilters({ ...defaultFilters(), ingredient: "   " }).ingredient).toBeUndefined();
   });
 });

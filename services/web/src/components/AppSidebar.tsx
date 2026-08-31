@@ -29,7 +29,7 @@ const NAV_ENTRIES: Array<NavEntry> = [
   { label: "Recipes", icon: BookOpenText, to: "/household/recipes" },
   { label: "Shopping list", icon: ShoppingBasket, to: "/household/list" },
   { label: "Meal planner", icon: CalendarRange, to: "/household/plan" },
-  { label: "Randomizer", icon: Dices, soon: true },
+  { label: "Randomizer", icon: Dices, to: "/household/randomizer" },
 ];
 
 export default function AppSidebar() {

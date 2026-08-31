@@ -23,6 +23,7 @@ import { Route as TipJarRouteImport } from './routes/tip-jar'
 import { Route as HouseholdIndexRouteImport } from './routes/household.index'
 import { Route as HouseholdListRouteImport } from './routes/household.list'
 import { Route as HouseholdPlanRouteImport } from './routes/household.plan'
+import { Route as HouseholdRandomizerRouteImport } from './routes/household.randomizer'
 import { Route as HouseholdRecipesRouteImport } from './routes/household.recipes'
 import { Route as HouseholdsIndexRouteImport } from './routes/households.index'
 import { Route as HouseholdsSwitchRouteImport } from './routes/households.switch'
@@ -108,6 +109,11 @@ const HouseholdPlanRoute = HouseholdPlanRouteImport.update({
   path: '/household/plan',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HouseholdRandomizerRoute = HouseholdRandomizerRouteImport.update({
+  id: '/household/randomizer',
+  path: '/household/randomizer',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HouseholdRecipesRoute = HouseholdRecipesRouteImport.update({
   id: '/household/recipes',
   path: '/household/recipes',
@@ -189,6 +195,7 @@ export interface FileRoutesByFullPath {
   '/tip-jar': typeof TipJarRoute
   '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
+  '/household/randomizer': typeof HouseholdRandomizerRoute
   '/household/recipes': typeof HouseholdRecipesRouteWithChildren
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -218,6 +225,7 @@ export interface FileRoutesByTo {
   '/tip-jar': typeof TipJarRoute
   '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
+  '/household/randomizer': typeof HouseholdRandomizerRoute
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
   '/recipes/$id': typeof RecipesIdRoute
@@ -247,6 +255,7 @@ export interface FileRoutesById {
   '/tip-jar': typeof TipJarRoute
   '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
+  '/household/randomizer': typeof HouseholdRandomizerRoute
   '/household/recipes': typeof HouseholdRecipesRouteWithChildren
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -278,6 +287,7 @@ export interface FileRouteTypes {
     | '/tip-jar'
     | '/household/list'
     | '/household/plan'
+    | '/household/randomizer'
     | '/household/recipes'
     | '/households/switch'
     | '/invite/$token'
@@ -307,6 +317,7 @@ export interface FileRouteTypes {
     | '/tip-jar'
     | '/household/list'
     | '/household/plan'
+    | '/household/randomizer'
     | '/households/switch'
     | '/invite/$token'
     | '/recipes/$id'
@@ -335,6 +346,7 @@ export interface FileRouteTypes {
     | '/tip-jar'
     | '/household/list'
     | '/household/plan'
+    | '/household/randomizer'
     | '/household/recipes'
     | '/households/switch'
     | '/invite/$token'
@@ -365,6 +377,7 @@ export interface RootRouteChildren {
   TipJarRoute: typeof TipJarRoute
   HouseholdListRoute: typeof HouseholdListRoute
   HouseholdPlanRoute: typeof HouseholdPlanRoute
+  HouseholdRandomizerRoute: typeof HouseholdRandomizerRoute
   HouseholdRecipesRoute: typeof HouseholdRecipesRouteWithChildren
   HouseholdsSwitchRoute: typeof HouseholdsSwitchRoute
   InviteTokenRoute: typeof InviteTokenRoute
@@ -476,6 +489,13 @@ declare module '@tanstack/react-router' {
       path: '/household/plan'
       fullPath: '/household/plan'
       preLoaderRoute: typeof HouseholdPlanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/household/randomizer': {
+      id: '/household/randomizer'
+      path: '/household/randomizer'
+      fullPath: '/household/randomizer'
+      preLoaderRoute: typeof HouseholdRandomizerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/household/recipes': {
@@ -601,6 +621,7 @@ const rootRouteChildren: RootRouteChildren = {
   TipJarRoute: TipJarRoute,
   HouseholdListRoute: HouseholdListRoute,
   HouseholdPlanRoute: HouseholdPlanRoute,
+  HouseholdRandomizerRoute: HouseholdRandomizerRoute,
   HouseholdRecipesRoute: HouseholdRecipesRouteWithChildren,
   HouseholdsSwitchRoute: HouseholdsSwitchRoute,
   InviteTokenRoute: InviteTokenRoute,
