@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useRouteContext, useRouter } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CalendarRange, Clock, EyeOff, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
@@ -38,33 +38,90 @@ import { RecipeTimerStrip } from "#/components/timers/RecipeTimerStrip";
  */
 export function DetailPane({
   recipe,
+  householdId,
   autoOpenCook = false,
+  analyticsSurface = "recipe_detail",
   onCookModeClosed,
+  showBackLink = true,
+  onResultAction,
 }: {
   recipe: HouseholdRecipeDetail;
+  /**
+   * The cache partition every key below is built from — the value the
+   * surrounding route's `beforeLoad` already resolved, passed explicitly rather
+   * than read back out of the route context.
+   *
+   * It used to be `useRouteContext({ from: "/household/recipes" })`, which
+   * pinned this pane to one route id. The randomizer renders the same pane from
+   * `/household/randomizer` (randomizer plan §6.1), and a second route id is not
+   * something a `from` literal can express. The reasoning that put it in route
+   * context in the first place is unchanged and still binding on callers:
+   *
+   * Route context and `useActiveHouseholdId()` name the same household when
+   * everything is working, but they fail differently, and the difference is a
+   * silent one here. The hook reads the better-auth session (with the
+   * localStorage snapshot behind it) and answers `null` until `/get-session`
+   * lands — and permanently if that request fails. A `null` id makes every key
+   * below unbuildable, so `invalidateBox()` returned early and the ledger simply
+   * never updated after a favourite, with no error anywhere. So callers MUST
+   * pass the id their route resolved and keyed their queries with — never the
+   * hook.
+   */
+  householdId: string;
   /** `?cook` — the external deep link straight into cook mode (meal planner §7.5). */
   autoOpenCook?: boolean;
+  /**
+   * Which surface this pane is mounted on, for the `source:` field of the
+   * events the pane sends itself (`meal_plan_entry_added`,
+   * `grocery_items_added`, and the apron's `cook_mode_opened` below).
+   *
+   * This pane renders on more than one surface now — `/household/recipes/$id`
+   * and the randomizer — and those `source:` values used to be the literal
+   * `"recipe_detail"` on both. A grocery add made from the randomizer was
+   * therefore reported as a recipe-page add, which is worse than a missing
+   * event: the number looks right and is attributed to the wrong surface.
+   *
+   * Defaulted to today's value, not a fork, so `/household/recipes/$id`'s
+   * events are byte-for-byte what they were.
+   *
+   * Separate from `onResultAction` below, which answers a different question —
+   * see its doc.
+   */
+  analyticsSurface?: string;
   onCookModeClosed?: () => void;
+  /**
+   * The mobile-only "Back to the shelf" link. On by default, because every
+   * surface that had this pane before was reached *from* the shelf. The
+   * randomizer sets it `false`: its controls sit directly above the result in
+   * one scrolling column, so there is no other pane to go back to and the link
+   * would navigate away from the surface instead of up it (randomizer §7.2 —
+   * an optional prop defaulted to today's behaviour, not a fork).
+   */
+  showBackLink?: boolean;
+  /**
+   * Fired when the reader acts on this recipe, so a surface that renders this
+   * pane can record the action under its own event name — the randomizer's
+   * `randomizer_result_action` (randomizer plan §9), which no event this pane
+   * already sends can stand in for.
+   *
+   * Optional and unset on `/household/recipes/$id`, so that surface is
+   * unchanged: the pane keeps sending its own `meal_plan_entry_added` /
+   * `grocery_items_added` / `cook_mode_opened` events either way, and this is
+   * additional rather than a replacement. It reports the GESTURE (a dialog was
+   * opened, cook mode was launched), not the outcome — the outcome already has
+   * an event, and a surface asking "did anyone act on what we suggested?" wants
+   * to count the reach for the list, not only the confirmed adds.
+   *
+   * Deliberately NOT the same thing as `analyticsSurface` above, which is the
+   * separate fix for those captures' formerly-hardcoded `source:`. That one
+   * says which surface the PANE's own events came from; this one produces the
+   * event §9 names, under the CALLER's name, which no event the pane sends can
+   * stand in for. Two problems, two fixes, and both exist.
+   */
+  onResultAction?: (action: "plan_dialog" | "grocery" | "cook") => void;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  /**
-   * The cache partition, from the **route context** rather than from
-   * `useActiveHouseholdId()`.
-   *
-   * Both name the same household when everything is working, but they fail
-   * differently, and the difference is a silent one here. The hook reads the
-   * better-auth session (with the localStorage snapshot behind it) and answers
-   * `null` until `/get-session` lands — and permanently if that request fails.
-   * A `null` id makes every key below unbuildable, so `invalidateBox()` returned
-   * early and the ledger simply never updated after a favourite, with no error
-   * anywhere. The route context is the value the parent layout's `beforeLoad`
-   * already resolved and the value the queries on screen were *keyed* with
-   * (`household.recipes.tsx`, `household.recipes.$id.tsx`), so reading it here
-   * cannot disagree with them and cannot be absent — the pane does not render
-   * until it exists.
-   */
-  const { householdId } = useRouteContext({ from: "/household/recipes" });
   // M1 writes are online-only (§4.1): the affordance disables rather than
   // queuing, because the favourite toggle is server-side (so replaying it flips
   // twice) and the note is the field two humans erase each other on. Both get
@@ -185,7 +242,7 @@ export function DetailPane({
   }
 
   async function onPlanned(date: PlanDate, slot: MealSlot) {
-    posthog.capture("meal_plan_entry_added", { recipe_id: recipe.recipeId, slot, source: "recipe_detail" });
+    posthog.capture("meal_plan_entry_added", { recipe_id: recipe.recipeId, slot, source: analyticsSurface });
     pushToast(`Added to ${SLOT_LABELS[slot].toLowerCase()} on ${formatPlanDate(date)}`);
     // Three entries move on this write, not two. The box pair, because the
     // pane's "on your meal plan" line comes from the detail payload's
@@ -219,14 +276,16 @@ export function DetailPane({
         {/* Mobile back affordance. `search: (prev) => prev` keeps the collection
           or smart scope you came from (collections plan §7) — going back to "the
           shelf" should land on the shelf you were on, not the whole box. */}
-        <Link
-          to="/household/recipes"
-          search={(prev) => prev}
-          className="flex w-fit items-center gap-1 text-xs font-semibold text-muted-foreground no-underline hover:text-foreground lg:hidden"
-        >
-          <ArrowLeft className="size-3.5" aria-hidden="true" />
-          Back to the shelf
-        </Link>
+        {showBackLink && (
+          <Link
+            to="/household/recipes"
+            search={(prev) => prev}
+            className="flex w-fit items-center gap-1 text-xs font-semibold text-muted-foreground no-underline hover:text-foreground lg:hidden"
+          >
+            <ArrowLeft className="size-3.5" aria-hidden="true" />
+            Back to the shelf
+          </Link>
+        )}
 
         {recipe.unavailable && <UnavailableBanner since={recipe.unavailableSince} />}
 
@@ -284,7 +343,18 @@ export function DetailPane({
 
         {/* Action row */}
         <div className="flex flex-wrap items-center gap-2">
-          <CookModeLauncher recipe={recipe} autoOpen={autoOpenCook} onAutoOpenConsumed={onCookModeClosed} />
+          {/* `cook_mode_opened`'s `source` names where the apron was tapped in a
+            vocabulary that predates `analyticsSurface` — the recipe page's
+            button is `"button"`, the planner's card is `"plan_card"`. Keep the
+            recipe page's historical value so its event is unchanged; every
+            other surface names itself. */}
+          <CookModeLauncher
+            recipe={recipe}
+            autoOpen={autoOpenCook}
+            analyticsSource={analyticsSurface === "recipe_detail" ? "button" : analyticsSurface}
+            onAutoOpenConsumed={onCookModeClosed}
+            onOpened={onResultAction ? () => onResultAction("cook") : undefined}
+          />
           {/* Offline, every control on this row disables rather than queuing.
             M1 ships offline READS; the writes here are the ones §5.2 shows are
             not replay-safe by shape — a server-side favourite toggle flips twice
@@ -312,7 +382,10 @@ export function DetailPane({
             variant="outline"
             disabled={!online}
             title={online ? undefined : OFFLINE_WRITE_HINT}
-            onClick={() => setListRequest({ recipes: [{ recipeId: recipe.recipeId, scale: factor }], label: recipe.title })}
+            onClick={() => {
+              onResultAction?.("grocery");
+              setListRequest({ recipes: [{ recipeId: recipe.recipeId, scale: factor }], label: recipe.title });
+            }}
           >
             <ShoppingBasket data-icon="inline-start" aria-hidden="true" />
             Add to shopping list
@@ -321,7 +394,10 @@ export function DetailPane({
             variant="outline"
             disabled={!online}
             title={online ? undefined : OFFLINE_WRITE_HINT}
-            onClick={() => setPlanRequest({ recipeId: recipe.recipeId, title: recipe.title })}
+            onClick={() => {
+              onResultAction?.("plan_dialog");
+              setPlanRequest({ recipeId: recipe.recipeId, title: recipe.title });
+            }}
           >
             <CalendarRange data-icon="inline-start" aria-hidden="true" />
             Add to meal planner
@@ -499,7 +575,7 @@ export function DetailPane({
         onClose={() => setListRequest(null)}
         onCommitted={(result) => {
           setListRequest(null);
-          posthog.capture("grocery_items_added", { recipe_id: recipe.recipeId, added: result.added, merged: result.merged, source: "recipe_detail" });
+          posthog.capture("grocery_items_added", { recipe_id: recipe.recipeId, added: result.added, merged: result.merged, source: analyticsSurface });
           pushToast(summarizeGroceryAdd(result.added, result.merged));
           void queryClient.invalidateQueries({ queryKey: keys.household.grocery(householdId) });
         }}

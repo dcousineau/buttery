@@ -350,7 +350,7 @@ function PublicCookMode({ recipe }: { recipe: RecipeDetailData }) {
     serves: parseServes(recipe.recipeYield),
     totalTimeDisplay: recipe.totalTime ? formatDuration(recipe.totalTime) : null,
   };
-  return <CookModeLauncher recipe={cook} />;
+  return <CookModeLauncher recipe={cook} analyticsSource="public_recipe" />;
 }
 
 function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {

@@ -20,6 +20,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { PlanDate } from "#/lib/plan/week";
 import { keys } from "./keys";
+import type { RandomizerFilters } from "./types";
 import * as api from "./transport";
 
 /**
@@ -117,6 +118,30 @@ export function myHouseholdsQuery() {
   return queryOptions({
     queryKey: keys.me.households(),
     queryFn: () => api.listMyHouseholds(),
+  });
+}
+
+/**
+ * The randomizer pool (meal randomizer plan §4). One entry per distinct
+ * filter set — changing a filter is a new key, not a refetch of the same
+ * entry, which is exactly what §5.6 wants: the previous draw's result stays
+ * on screen (component state, not this cache) while a filter change fetches
+ * fresh underneath it.
+ *
+ * Deliberately opts OUT of the offline persister (`persister: undefined`,
+ * overriding the client's default persister for this one query) — the
+ * randomizer is online-only by design (plan §1.2: "must fail like the other
+ * online-only surfaces … not throw"), and every other factory in this file is
+ * offline-capable by construction (module doc). A stale pool served from a
+ * disconnected phone could offer a recipe the household plan or box has since
+ * changed out from under, which is a worse failure than the network error the
+ * route's `OfflineRouteError` already knows how to show.
+ */
+export function randomizerPoolQuery(householdId: string, filters: RandomizerFilters) {
+  return queryOptions({
+    queryKey: keys.household.randomizer(householdId, filters),
+    queryFn: () => api.getRandomizerPool(filters),
+    persister: undefined,
   });
 }
 
