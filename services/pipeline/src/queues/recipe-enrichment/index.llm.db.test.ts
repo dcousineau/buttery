@@ -14,14 +14,14 @@ import { runLlmEnrich } from "#/queues/recipe-enrichment/index.ts";
  * handler calls the function the test told it to call. What matters is that
  * `recipe_enrichment.llm_status` actually reads `'skipped'` afterwards, since
  * that value is what stops a backfill re-claiming the same recipes on every
- * run while the flag is off.
+ * run while the gate is off.
  *
  * `index.ts` is a Fastify plugin registering a BullMQ `Queue`/`Worker` now
  * (S3), not a `defineWorkflow` result — there is no more spec to capture and
  * dig a step out of. `runLlmEnrich` is exported from `index.ts` directly for
  * exactly this reason, and is reached the same way `atproto-sync/steps.test.ts`
  * reaches a step: build a stub `FastifyInstance` carrying only what
- * `runLlmEnrich` actually touches (`db`, `log`, `ai`, `posthog`), a fake `Job`
+ * `runLlmEnrich` actually touches (`env`, `db`, `log`, `ai`, `posthog`), a fake `Job`
  * with just the members it reads (`data`, `name`, `log`, `updateProgress`),
  * and call the exported handler directly with both.
  *
@@ -35,8 +35,10 @@ import { runLlmEnrich } from "#/queues/recipe-enrichment/index.ts";
  * happens once the gate has let a run through.
  *
  * No live model call and no live PostHog call happens here or anywhere in
- * this package's suites — the env override is checked BEFORE the flag
- * precisely so that this path needs neither.
+ * this package's suites. The gate is a plain read of
+ * `fastify.env.LLM_ENRICHMENT_ENABLED` — it used to be a PostHog flag
+ * evaluation with an env override in front of it — so the stub supplies the
+ * value directly and nothing in this file has to reach for a flag service.
  *
  * Skips (never fails) without a reachable migrated database, exactly like
  * `lib/load.db.test.ts` — see that file's header for the convention.
@@ -81,8 +83,10 @@ function shouldNotBeCalled(what: string): () => never {
   };
 }
 
-function buildStub(pool: Pool | null): FastifyInstance {
+/** `enabled` is the gate's whole input: `runLlmEnrich` reads `fastify.env.LLM_ENRICHMENT_ENABLED` and nothing else. */
+function buildStub(pool: Pool | null, enabled = "false"): FastifyInstance {
   return {
+    env: { LLM_ENRICHMENT_ENABLED: enabled },
     db: pool,
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     ai: {
@@ -126,9 +130,6 @@ beforeAll(async () => {
     savedEnv[key] = process.env[key];
     delete process.env[key];
   }
-  // The override under test.
-  process.env.LLM_ENRICHMENT_ENABLED = "false";
-
   client = await pool.connect();
   await client.query(`insert into recipe (id, origin, name) values ($1, 'local', $2)`, [GATED_ID, `Test recipe ${GATED_ID}`]);
   await client.query(`insert into recipe_enrichment (recipe_id, status, classifier_version, input_hash) values ($1, 'ok', 2, 'sha256:gate')`, [GATED_ID]);
@@ -177,16 +178,11 @@ describe.skipIf(!pool)("llm-enrich — the fail-closed gate", () => {
 
   it("completes as `gone` for a recipe that no longer exists, rather than failing the job", async () => {
     // The gate is checked BEFORE the load, so a gated run never gets here —
-    // re-enable the override for this one case to reach the load itself.
-    process.env.LLM_ENRICHMENT_ENABLED = "true";
-    try {
-      const fastify = buildStub(pool);
-      // `markLlmSkipped` is not reached either: there is no row to mark, and a
-      // deleted recipe is not a failure — jobs outlive rows.
-      expect(await run(fastify, { recipeId: GONE_ID })).toEqual({ status: "gone" });
-    } finally {
-      process.env.LLM_ENRICHMENT_ENABLED = "false";
-    }
+    // open it for this one case to reach the load itself.
+    const fastify = buildStub(pool, "true");
+    // `markLlmSkipped` is not reached either: there is no row to mark, and a
+    // deleted recipe is not a failure — jobs outlive rows.
+    expect(await run(fastify, { recipeId: GONE_ID })).toEqual({ status: "gone" });
   });
 });
 

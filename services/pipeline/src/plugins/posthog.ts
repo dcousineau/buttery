@@ -37,11 +37,14 @@ import { fetchPrompt, type PromptsClient, type ResolvedPrompt, PROMPT_CACHE_TTL_
  * gate today because it is a much lighter import; this plugin still only
  * constructs it when the personal-key credentials are present.
  *
- * What is recipe-specific — `LLM_ENRICHMENT_FLAG`, `isLlmEnrichmentEnabled`,
- * `captureEvent`'s shaping of `$ai_generation` payloads — stays out of this
- * plugin and out of `plugins/ai.ts` too; it is workflow-owned and continues
- * to live in `workflows/recipe-enrichment/lib/posthog.ts` and
- * `lib/capture.ts` untouched. This plugin's job is only the two clients and
+ * What is recipe-specific — `captureEvent`'s shaping of `$ai_generation`
+ * payloads — stays out of this plugin and out of `plugins/ai.ts` too; it is
+ * queue-owned and lives in `queues/recipe-enrichment/lib/capture.ts`.
+ *
+ * Note that no client here gates anything any more: the LLM kill switch used
+ * to be a PostHog flag read through this plugin and is now a plain env var
+ * (`queues/recipe-enrichment/lib/gate.ts`). PostHog receives what happened;
+ * it does not decide whether it happens. This plugin's job is only the two clients and
  * the one teardown hook a client actually needs.
  */
 export interface PostHogService {

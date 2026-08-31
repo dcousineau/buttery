@@ -51,9 +51,9 @@ import { ENRICH_JOB_OPTIONS, LLM_ENRICH_JOB_OPTIONS } from "#/queues/recipe-enri
  * ── RUNNING IT WITH THE LLM FLAG OFF ───────────────────────────────────────
  *
  * That is the intended order, not a limitation. Every `enrich` hands off to
- * `llm-enrich` unconditionally; with `llm-enrichment-enabled` off, the gate
+ * `llm-enrich` unconditionally; with `LLM_ENRICHMENT_ENABLED` off, the gate
  * fails closed and each of those marks the recipe `llm_status = 'skipped'`
- * without calling a model — one flag evaluation and one upsert per recipe, no
+ * without calling a model — one env read and one upsert per recipe, no
  * tokens. Crucially `markLlmSkipped` leaves `llm_version` alone, so it stays
  * below `LLM_ENRICHMENT_VERSION`, and the FIRST non-force `--llm` run after
  * you flip the flag on reclaims every one of them. Backfill rules now, flip

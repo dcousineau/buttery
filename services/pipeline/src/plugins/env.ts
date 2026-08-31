@@ -54,7 +54,11 @@ const schema = z
 
     LLM_ENRICHMENT_PROVIDER: z.string().optional(),
     LLM_ENRICHMENT_MODEL: z.string().optional(),
-    LLM_ENRICHMENT_ENABLED: z.string().optional(),
+    // The kill switch for the whole LLM pass, read by
+    // `queues/recipe-enrichment/lib/gate.ts`. Defaulted rather than optional
+    // so "nobody set this" and "somebody set it to off" are the same state:
+    // a service that has never heard of this variable spends no tokens.
+    LLM_ENRICHMENT_ENABLED: z.string().default("false"),
     OPENROUTER_API_KEY: z.string().optional(),
     OPENROUTER_BASE_URL: z.string().optional(),
     LLM_INPUT_TOKEN_PRICE_USD: z.string().optional(),

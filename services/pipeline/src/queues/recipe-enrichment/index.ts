@@ -22,7 +22,7 @@ import {
   writeLlmEnrichment,
 } from "#/queues/recipe-enrichment/lib/load.ts";
 import { FALLBACK_PROMPT, isEmptyLlmOutput, LLM_ENRICHMENT_VERSION, llmOutputSchema, PROMPT_NAME, PROMPT_SLUG_LISTS } from "@buttery/food/llm";
-import { isLlmEnrichmentEnabled } from "#/queues/recipe-enrichment/lib/posthog.ts";
+import { isLlmEnrichmentEnabled } from "#/queues/recipe-enrichment/lib/gate.ts";
 import { mergeLlmLabels } from "#/queues/recipe-enrichment/lib/merge.ts";
 import { AI_FEATURE, captureEnrichmentCompleted, captureEnrichmentFailed, PIPELINE_DISTINCT_ID } from "#/queues/recipe-enrichment/lib/capture.ts";
 import { generationTelemetry } from "#/lib/ai/telemetry.ts";
@@ -41,7 +41,7 @@ import { buildMessages, buildRecipeJson } from "#/queues/recipe-enrichment/lib/l
  *   lib/merge.ts          pure: reconciling rules labels against the LLM's opinion
  *   lib/load.ts           the reads and writes against `recipe_enrichment*`
  *   lib/capture.ts        the `$ai_generation`/disagreement event shapes
- *   lib/posthog.ts        the fail-closed `LLM_ENRICHMENT_FLAG` gate
+ *   lib/gate.ts           the fail-closed `LLM_ENRICHMENT_ENABLED` kill switch
  *
  * The prompt itself is NOT in this folder any more. `PROMPT_NAME`,
  * `FALLBACK_PROMPT`, `PROMPT_SLUG_LISTS`, the closed slug sets,
@@ -184,8 +184,11 @@ export async function runLlmEnrich(fastify: FastifyInstance, job: Job): Promise<
   const { recipeId, force } = parseLlmEnrichPayload(job.data);
   const pool = fastify.db;
 
-  // The gate FAILS CLOSED: no PostHog, or the flag not explicitly true, marks the recipe skipped and calls nothing.
-  if (!(await isLlmEnrichmentEnabled(fastify.posthog.client, recipeId, fastify.log))) {
+  // The gate FAILS CLOSED: anything but an explicit opt-in in
+  // `LLM_ENRICHMENT_ENABLED` marks the recipe skipped and calls nothing. It is
+  // a plain env read now rather than a PostHog flag evaluation — see gate.ts —
+  // so this costs no round trip on a queue that runs once per recipe.
+  if (!isLlmEnrichmentEnabled(fastify.env.LLM_ENRICHMENT_ENABLED)) {
     await markLlmSkipped(pool, recipeId);
     await job.log(`llm enrichment is not enabled for ${recipeId} — skipped`);
     return { status: "skipped" };

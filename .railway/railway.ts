@@ -243,18 +243,20 @@ export default defineRailway((ctx) => {
       // (plan D15), reached with POST /jobs/recipe-enrichment.
       RECIPE_ENRICHMENT_MAX_IN_FLIGHT: "16",
 
-      // --- workflow: recipe-enrichment, LLM second opinion --------------------
-      // The `llm-enrich` step (services/pipeline/src/workflows/recipe-enrichment/
-      // llm/). Read by the WORKER, which is the only process that ever calls a
-      // model — the same set is on `pipeline` so a job triggered from that
-      // container behaves identically instead of silently skipping.
+      // --- queue: recipe-enrichment, LLM second opinion ----------------------
+      // The `llm-enrich` job (services/pipeline/src/queues/recipe-enrichment/).
+      // Read by the WORKER, which is the only process that ever calls a model —
+      // the same set is on `pipeline` so a job triggered from that container
+      // behaves identically instead of silently skipping.
       //
-      // FAIL-CLOSED, twice over. `LLM_ENRICHMENT_ENABLED` is left UNSET here on
-      // purpose: unset means "defer to the PostHog flag", and the flag
-      // (`llm-enrichment-enabled`) starts at 0% rollout, so landing this deploy
-      // spends nothing. Setting it to "true" here would bypass the flag for the
-      // whole corpus in one apply — the override exists for dev and emergencies,
-      // not for rollout. Ratchet the flag in PostHog instead.
+      // FAIL-CLOSED. `LLM_ENRICHMENT_ENABLED` is the whole gate now (it used to
+      // defer to a PostHog flag) and it is left UNDECLARED here on purpose,
+      // exactly like the API keys below: a declared value would overwrite the
+      // operator's Railway-UI setting on the next apply, which is the one thing
+      // a kill switch must never do. Unset means disabled — `plugins/env.ts`
+      // defaults it to "false" — so landing this deploy spends nothing, and
+      // turning the LLM on or off is a dashboard edit plus a restart, not a
+      // commit.
       LLM_ENRICHMENT_PROVIDER: "openrouter",
       // OpenRouter is a gateway, so switching MODELS is this one line rather
       // than a new registry entry, dependency and secret. No default in code
@@ -356,18 +358,20 @@ export default defineRailway((ctx) => {
       RELAY_URL: "https://relay1.us-east.bsky.network",
       NODE_ENV: "production",
 
-      // --- workflow: recipe-enrichment, LLM second opinion --------------------
-      // The `llm-enrich` step (services/pipeline/src/workflows/recipe-enrichment/
-      // llm/). Read by the WORKER, which is the only process that ever calls a
-      // model — the same set is on `pipeline` so a job triggered from that
-      // container behaves identically instead of silently skipping.
+      // --- queue: recipe-enrichment, LLM second opinion ----------------------
+      // The `llm-enrich` job (services/pipeline/src/queues/recipe-enrichment/).
+      // Read by the WORKER, which is the only process that ever calls a model —
+      // the same set is on `pipeline` so a job triggered from that container
+      // behaves identically instead of silently skipping.
       //
-      // FAIL-CLOSED, twice over. `LLM_ENRICHMENT_ENABLED` is left UNSET here on
-      // purpose: unset means "defer to the PostHog flag", and the flag
-      // (`llm-enrichment-enabled`) starts at 0% rollout, so landing this deploy
-      // spends nothing. Setting it to "true" here would bypass the flag for the
-      // whole corpus in one apply — the override exists for dev and emergencies,
-      // not for rollout. Ratchet the flag in PostHog instead.
+      // FAIL-CLOSED. `LLM_ENRICHMENT_ENABLED` is the whole gate now (it used to
+      // defer to a PostHog flag) and it is left UNDECLARED here on purpose,
+      // exactly like the API keys below: a declared value would overwrite the
+      // operator's Railway-UI setting on the next apply, which is the one thing
+      // a kill switch must never do. Unset means disabled — `plugins/env.ts`
+      // defaults it to "false" — so landing this deploy spends nothing, and
+      // turning the LLM on or off is a dashboard edit plus a restart, not a
+      // commit.
       LLM_ENRICHMENT_PROVIDER: "openrouter",
       // OpenRouter is a gateway, so switching MODELS is this one line rather
       // than a new registry entry, dependency and secret. No default in code

@@ -21,7 +21,8 @@ import { modelRawText } from "#/lib/ai/errors.ts";
  *
  * What stays out of `fastify.ai` on purpose, because it knows what a recipe
  * is: the domain events in `queues/recipe-enrichment/lib/capture.ts`,
- * `AI_FEATURE`, `PROMPT_NAME`, `LLM_ENRICHMENT_FLAG`, `buildRecipeJson`.
+ * `AI_FEATURE`, `PROMPT_NAME`, the `LLM_ENRICHMENT_ENABLED` gate,
+ * `buildRecipeJson`.
  * Those remain queue-owned. The per-call telemetry OPTIONS builder is the
  * borderline case and went generic (`lib/ai/telemetry.ts`): its shape is
  * about the AI SDK, not about recipes.
