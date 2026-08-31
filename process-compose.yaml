@@ -142,6 +142,42 @@ processes:
     log_location: ./.dev-logs/redis.log
     log_configuration: *log_config
 
+  local-s3:
+    description: "S3-compatible object storage (docker compose; host port 59000, UI /_ui)"
+    command: "docker compose up --no-log-prefix local-s3"
+    working_dir: "."
+    availability: *container_availability
+    readiness_probe:
+      # Not an S3 call: every S3 route wants a SigV4 signature and there is no
+      # signing client in the container. `/_ui` answering proves it is up and
+      # listening, and `local-s3-bucket` right after does make a real, signed
+      # API call — so a container that is listening but not serving S3 still
+      # fails the boot, one process later and with a clearer message.
+      exec:
+        command: "docker compose exec -T local-s3 wget -q -O /dev/null http://127.0.0.1:9000/_ui"
+      initial_delay_seconds: 2
+      period_seconds: 2
+      failure_threshold: 30
+    shutdown:
+      timeout_seconds: 30
+    log_location: ./.dev-logs/local-s3.log
+    log_configuration: *log_config
+
+  # The bucket is an API call, not configuration — local-s3 creates none on its
+  # own. Same shape and same reasoning as `migrate`: a cheap idempotent catch-up
+  # on every boot so a fresh clone (or a `docker compose down -v`) needs no
+  # documented extra step, and `web` gates on it having completed.
+  local-s3-bucket:
+    description: "Create the local uploads bucket (idempotent)"
+    command: "pnpm --filter=@buttery/web dev:bucket"
+    depends_on:
+      local-s3:
+        condition: process_healthy
+    availability:
+      restart: "no"
+    log_location: ./.dev-logs/local-s3-bucket.log
+    log_configuration: *log_config
+
   # ---------------------------------------------------------------------------
   # App processes
   # ---------------------------------------------------------------------------
@@ -207,6 +243,12 @@ processes:
         condition: process_healthy
       atproto-dev-env:
         condition: process_healthy
+      # Every recipe that comes through Buttery uploads its image here before it
+      # is anything else (src/server/recipe-images.ts), so a web server up
+      # without a bucket is one that 500s the moment anyone saves a recipe with
+      # a photo.
+      local-s3-bucket:
+        condition: process_completed_successfully
     availability: *app_availability
     readiness_probe:
       http_get:

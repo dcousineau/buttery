@@ -5,11 +5,12 @@
 # so `pnpm dev` starts them and `pnpm dev:down` stops them. `docker compose …`
 # by hand still works for one-offs (`ps`, `exec`, `down -v`). Railway is no
 # longer in the local loop at all; it stays only for deploys
-# (.railway/railway.ts) and the remote blob bucket (see
-# services/web/.env.example → BLOB_S3_*).
+# (.railway/railway.ts). Object storage used to be the one exception — the web
+# service talked to the shared remote `buttery-uploads` bucket — and is now the
+# `local-s3` service below.
 #
-# Neither service declares a `restart:` policy, deliberately: process-compose is
-# the supervisor (`restart: always` on both processes), and a docker-level
+# No service declares a `restart:` policy, deliberately: process-compose is
+# the supervisor (`restart: always` on each of them), and a docker-level
 # policy would race it — docker restarting a container that compose is in the
 # middle of tearing down after the attached `up` returned.
 #
@@ -27,9 +28,10 @@
 #     in the stack routed through it, and its `*.railway.localhost` domain is
 #     rejected by the atproto OAuth client anyway (see oauth-node.ts).
 #
-# Host ports are the high 55432/56379 rather than the standard 5432/6379 so a
-# developer's own local Postgres/Redis (very likely on the defaults) does not
-# collide. services/web/.env points DATABASE_URL / REDIS_URL at these.
+# Host ports are the high 55432/56379/59000 rather than the standard
+# 5432/6379/9000 so a developer's own local Postgres/Redis/S3 (very likely on
+# the defaults) does not collide. services/web/.env points DATABASE_URL /
+# REDIS_URL / BLOB_S3_ENDPOINT at these.
 
 services:
   postgres:
@@ -87,6 +89,45 @@ services:
       timeout: 5s
       retries: 20
 
+  # S3-compatible object storage, standing in for the Railway `buttery-uploads`
+  # bucket. Recipe images land here the moment a recipe comes through Buttery —
+  # before publish, and for every draft that never publishes — so a laptop that
+  # cannot reach this container cannot exercise the image path at all. That is
+  # why it is in the stack rather than pointed at the shared remote bucket, as
+  # it used to be: the one part of local dev that talked to Railway was also the
+  # part where a mistake writes objects other developers see.
+  #
+  # `local-s3` (github.com/shyim/local-s3) over MinIO deliberately: one binary,
+  # buckets created by an `aws s3 mb`-equivalent on boot, no cluster and no IAM.
+  # What it costs is path-style-only routing — a virtual-hosted request would
+  # resolve `buttery-uploads.localhost` and never arrive — so services/web/.env
+  # sets BLOB_S3_FORCE_PATH_STYLE=true. That flag is a local-dev knob, not a
+  # production one; Railway's buckets are virtual-hosted and leave it unset.
+  #
+  # Credentials are throwaway and identical for every developer, exactly like
+  # the postgres/redis passwords above.
+  local-s3:
+    image: ghcr.io/shyim/local-s3:latest
+    environment:
+      S3_ACCOUNT_BUTTERY: butterydev:butterydevsecret
+      # Defaults to a relative ./data inside the image; point it at the mount
+      # so objects survive a container replacement like every other volume here.
+      S3_DATA_DIR: /data
+    ports:
+      - "59000:9000"
+    volumes:
+      - buttery_s3:/data
+    healthcheck:
+      # The UI route answers without credentials; every S3 route requires a
+      # SigV4 signature, so probing one would need a signing client in the
+      # container. Serving `/_ui` proves the process is up and listening, which
+      # is all a readiness gate needs.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/_ui || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
 volumes:
   buttery_pgdata:
   buttery_redis:
+  buttery_s3:

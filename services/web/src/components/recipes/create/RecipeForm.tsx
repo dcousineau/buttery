@@ -19,6 +19,7 @@ import { reconnectAtproto } from "#/lib/atproto-reauth";
 import { type AttributionState, EMPTY_ATTRIBUTION, attributionComplete, buildAttribution } from "#/lib/recipe-attribution";
 import { deriveSource } from "#/lib/recipe-provenance";
 import { type FieldIssue, getImportPrefill, keys, type RecipeRecordInput, saveRecipe } from "#/lib/api";
+import { fetchRemoteImage, readAsDataUrl } from "#/lib/recipe-image-upload";
 import { useRecipesView } from "../context";
 import type { RecipeViewData } from "../RecipeView";
 import { type EditorMode } from "./LineEditor";
@@ -51,8 +52,15 @@ function isoToMinutes(iso: string | undefined): string {
   return mins > 0 ? String(mins) : "";
 }
 
-/** The form's photo: either uploaded bytes, or an imported hero we only have a
- * URL for (fetched + uploaded to the PDS on publish). */
+/**
+ * The form's photo.
+ *
+ * `bytes` is the normal case and covers both the file picker and an imported
+ * hero the browser managed to fetch for itself. `url` survives only for the
+ * hero the tab could *not* read — a host with no CORS headers — where the
+ * server's own SSRF-guarded fetch is the remaining chance. Either way the bytes
+ * end up in Buttery's bucket; the URL is never stored (src/server/recipe-images.ts).
+ */
 type FormImage = { kind: "bytes"; dataBase64: string; mime: string; previewUrl: string; alt: string } | { kind: "url"; url: string; alt: string };
 
 /**
@@ -153,7 +161,22 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
       if (r.nutrition?.fatContent) setFat(String(r.nutrition.fatContent));
       if (r.nutrition?.proteinContent) setProtein(String(r.nutrition.proteinContent));
       if (r.nutrition?.carbohydrateContent) setCarbs(String(r.nutrition.carbohydrateContent));
-      if (r.imageUrl) setImage({ kind: "url", url: r.imageUrl, alt: r.name ?? "" });
+      if (r.imageUrl) {
+        const alt = r.name ?? "";
+        // Optimistic: render the origin's URL right away so the preview is not
+        // blank while we try to become its owner. An `<img src>` is not
+        // CORS-gated, so this shows even for the hosts the fetch below fails on.
+        setImage({ kind: "url", url: r.imageUrl, alt });
+        // Then take our own copy. The tab has the user's referer and is far
+        // likelier to be served than our backend is; when it works, the save
+        // carries bytes instead of a URL and the server never has to reach out
+        // at all. When it doesn't (no `Access-Control-Allow-Origin`, the usual
+        // reason) the `url` above stands and the server tries instead.
+        const blob = await fetchRemoteImage(r.imageUrl);
+        const dataUrl = blob ? await readAsDataUrl(blob) : null;
+        if (cancelled || !blob || !dataUrl) return;
+        setImage({ kind: "bytes", dataBase64: dataUrl, mime: blob.type || "image/jpeg", previewUrl: URL.createObjectURL(blob), alt });
+      }
     })();
     return () => {
       cancelled = true;
@@ -219,8 +242,13 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
         visibility: "draft",
         publish,
         sourceUrl,
-        image: image?.kind === "bytes" ? { dataBase64: image.dataBase64, mime: image.mime, alt: image.alt } : null,
-        imageSourceUrl: image?.kind === "url" ? image.url : null,
+        // One field, one image, and the server lands it in our bucket either
+        // way. `url` here means only "we could not read these bytes, you try".
+        image: image
+          ? image.kind === "bytes"
+            ? { kind: "bytes", dataBase64: image.dataBase64, mime: image.mime, alt: image.alt }
+            : { kind: "url", url: image.url, alt: image.alt }
+          : null,
       });
       if (result.status === "invalid") {
         setIssues(result.issues);

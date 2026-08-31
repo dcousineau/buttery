@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import type { Kysely } from "kysely";
 import type { DB } from "#/db/types";
 import { blobImageUrl } from "#/lib/atproto/images";
+import { pendingImageUrl } from "#/lib/pending-image";
 import { deriveSource, prettify } from "#/lib/recipe-provenance";
 import type { GlobalRecipeResult, HouseholdRecipeDetail, HouseholdRecipeNoteView, HouseholdRecipeRow, RecipeNutrition } from "#/lib/api/types";
 
@@ -132,6 +133,10 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
     .innerJoin("household_recipe as hr", "hr.household_id", "hm.household_id")
     .innerJoin("recipe as r", "r.id", "hr.recipe_id")
     .leftJoin("recipe_image as img", (join) => join.onRef("img.recipe_id", "=", "r.id").on("img.ordinal", "=", 0))
+    // A draft's photo lives in our bucket, not as a blob ref. Joined for its
+    // existence only — the bytes come back through `/api/recipe-image/:id` —
+    // so an unpublished recipe shows its thumbnail in the box like any other.
+    .leftJoin("recipe_pending_image as pimg", "pimg.recipe_id", "r.id")
     .leftJoin("recipe_attribution as attr", "attr.recipe_id", "r.id")
     .leftJoin("atproto_repo as repo", "repo.did", "r.did")
     .leftJoin("atproto_collection_recipe as acr", (join) => join.onRef("acr.did", "=", "r.did").onRef("acr.rkey", "=", "r.rkey"))
@@ -148,6 +153,7 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
       "hr.added_by_did as added_by_did",
       "img.blob_cid as blob_cid",
       "img.blob_mime as blob_mime",
+      "pimg.object_key as pending_object_key",
       "attr.display_name as attr_display_name",
       "attr.author as attr_author",
       "attr.publisher as attr_publisher",
@@ -197,7 +203,7 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
       totalMinutes: minutes,
       totalTimeDisplay: display,
       keywords: keywordsByRecipe.get(row.id) ?? [],
-      thumbUrl: row.did && row.blob_cid ? blobImageUrl(row.did, row.blob_cid, row.blob_mime, "feed_thumbnail") : null,
+      thumbUrl: row.did && row.blob_cid ? blobImageUrl(row.did, row.blob_cid, row.blob_mime, "feed_thumbnail") : row.pending_object_key ? pendingImageUrl(row.id) : null,
       addedAt: new Date(row.added_at).toISOString(),
       addedByHandle: handleByDid.get(row.added_by_did) ?? null,
       unavailable,
@@ -280,11 +286,12 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
 
     const [images, pendingImage, ingredients, instructions, keywords, note, adder, plannedUsage, enrichment] = await Promise.all([
       db.selectFrom("recipe_image").select(["blob_cid", "blob_mime", "alt"]).where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
-      // Draft/private hero fallback: a not-yet-published import keeps its photo as
-      // a pending pointer (recipe_pending_image). No published recipe_image row
-      // exists yet, so fall back to the source URL (rendered cross-origin, same as
-      // the create form preview).
-      db.selectFrom("recipe_pending_image").select(["source_url", "alt"]).where("recipe_id", "=", data.recipeId).executeTakeFirst(),
+      // Draft/private hero: a not-yet-published recipe keeps its photo in OUR
+      // bucket (recipe_pending_image → `pending/<id>`), served back through
+      // `/api/recipe-image/:id`. Only the existence of the row is needed here —
+      // the bytes are the proxy route's business. This used to select
+      // `source_url` and render the third-party URL straight into the page.
+      db.selectFrom("recipe_pending_image").select(["alt"]).where("recipe_id", "=", data.recipeId).executeTakeFirst(),
       db.selectFrom("recipe_ingredient").select("text").where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
       db.selectFrom("recipe_instruction").select("text").where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
       db.selectFrom("recipe_keyword").select("keyword").where("recipe_id", "=", data.recipeId).execute(),
@@ -317,8 +324,8 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
           .filter((img) => row.did && img.blob_cid)
           .map((img) => ({ url: blobImageUrl(row.did as string, img.blob_cid as string, img.blob_mime, "feed_fullsize"), alt: img.alt }));
         if (published.length) return published;
-        // No published blob yet → show the draft's imported hero from its source URL.
-        return pendingImage?.source_url ? [{ url: pendingImage.source_url, alt: pendingImage.alt }] : [];
+        // No published blob yet → serve the draft's hero from our own storage.
+        return pendingImage ? [{ url: pendingImageUrl(row.id), alt: pendingImage.alt }] : [];
       })(),
       ingredients: ingredients.map((i) => i.text),
       instructions: instructions.map((i) => i.text),
@@ -585,6 +592,8 @@ export const searchGlobalRecipes = createServerFn({ method: "GET" })
         attrPublisher: row.attr_publisher,
         attrUrl: row.attr_url,
       }),
+      // Public recipes only, so the image is always an atproto blob: no pending
+      // fallback here, and the caller has no box row that would authorize one.
       thumbUrl: row.did && row.blob_cid ? blobImageUrl(row.did, row.blob_cid, row.blob_mime, "feed_thumbnail") : null,
       // Same `repo` join `deriveSource` already consumes — prefixed the way every
       // other handle in this module is surfaced.

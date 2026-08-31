@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { DroppedFile, RecipeImporter } from "@buttery/recipe-extract/import";
 import type { ImporterId } from "#/lib/recipe-import-ids";
 import { importApi } from "./api.ts";
-import { type ComparisonResult, type ImportApi, type ProbeVerdict, PROBE_CHUNK_SIZE, COMPARISON_CHUNK_SIZE } from "./contracts.ts";
+import { type CommitItem, type ComparisonResult, type ImportApi, type ProbeVerdict, PROBE_CHUNK_SIZE, COMPARISON_CHUNK_SIZE } from "./contracts.ts";
 import { createLocalImageCache, type LocalImageCache } from "./image-cache.ts";
+import { type ItemImageSource, stageChunkImages } from "./stage-images.ts";
+import { fetchRemoteImage } from "#/lib/recipe-image-upload";
 import {
   commitProgress,
   finalizeOutcome,
@@ -82,6 +84,25 @@ function chunk<T>(items: readonly T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
+}
+
+/**
+ * The photo facts for a chunk, pulled out of the machine's items.
+ *
+ * `CommitItem` deliberately carries neither `localImagePath` nor the raw
+ * `imageUrl` — the wire has no business knowing about a path inside somebody's
+ * dropped folder — so the staging pass is handed them alongside, keyed by
+ * `clientId`, rather than the wire shape being widened to suit it.
+ */
+function imageSourcesFor(state: ImportState, items: readonly CommitItem[]): ItemImageSource[] {
+  const sources: ItemImageSource[] = [];
+  for (const { clientId } of items) {
+    const index = state.itemIndex[clientId];
+    if (index === undefined) continue;
+    const item = state.items[index];
+    sources.push({ clientId, localImagePath: item.localImagePath, imageUrl: item.imageUrl });
+  }
+  return sources;
 }
 
 function messageOf(error: unknown): string {
@@ -231,7 +252,19 @@ export function useImportSession({ importer, api = importApi, createWorker = def
     commitChunkRef.current = next.index;
     void (async () => {
       try {
-        const results = await api.commitChunk({ sessionId, items: next.items });
+        // §11: the chunk's photos go to Buttery's storage BEFORE the chunk is
+        // sent, so the commit carries upload ids instead of URLs. Per chunk
+        // rather than once up front for the same reason the commit is chunked —
+        // a resumable import must not redo work for chunks that already landed.
+        // Every failure in here is silent by design: an item whose upload did
+        // not work is sent exactly as it would have been, and the server falls
+        // back to its own fetch.
+        const items = await stageChunkImages(next.items, imageSourcesFor(stateRef.current, next.items), {
+          uploadImage: (blob) => api.uploadImage(blob),
+          localFile: (path) => imagesRef.current?.file(path) ?? null,
+          fetchRemote: fetchRemoteImage,
+        });
+        const results = await api.commitChunk({ sessionId, items });
         dispatch({ type: "chunk_complete", results });
       } catch (error) {
         dispatch({ type: "chunk_failed", message: messageOf(error) });

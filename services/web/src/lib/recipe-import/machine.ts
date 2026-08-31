@@ -306,8 +306,10 @@ export function importEventForWorkerMessage(message: ImportWorkerEvent): ImportE
 /**
  * Everything the lexicon record holds, with the four required fields defaulted.
  *
- * `imageUrl` and `vocab` are extractor-side scratch, not record fields: the image travels as
- * `CommitItem.imageSourceUrl` (§11) and free-text vocab is resolved server-side (§12.3).
+ * `imageUrl` and `vocab` are extractor-side scratch, not record fields: the image travels
+ * beside the record (§11) — as `CommitItem.imageUploadId` once the browser has put the bytes
+ * in Buttery's storage, or as `imageSourceUrl` for the server to try — and free-text vocab is
+ * resolved server-side (§12.3).
  */
 function toRecordInput(recipe: ExtractedRecipe): RecipeRecordInput {
   const { imageUrl: _imageUrl, vocab: _vocab, name, text, ingredients, instructions, ...rest } = recipe;
@@ -548,6 +550,10 @@ export function commitItemFor(state: ImportState, item: ImportItem): CommitItem 
     sourceUrl: item.sourceUrl,
     // Null when the URL carries the attribution — the server derives Website from it (§8.2).
     attribution: groupKey ? choiceToAttribution(state.groupChoices[groupKey]) : null,
+    // The fallback half only. `imageUploadId` is filled in by the staging pass
+    // just before the chunk is sent (`stage-images.ts`), because that is where
+    // the bytes are; the server uses this URL only if that did not work, and
+    // stores it either way — nowhere.
     imageSourceUrl: item.imageUrl,
     notes: item.notes,
     tags: item.tags,

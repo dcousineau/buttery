@@ -30,12 +30,33 @@ dayjs.extend(duration);
 export type { FieldIssue, RecipeRecordInput };
 import type { AttributionChoice } from "#/lib/api/types";
 
-export interface RecipeImageInput {
-  /** base64 (no data: prefix) of the image bytes; ≤1MB decoded. */
-  dataBase64: string;
-  mime: string;
-  alt?: string;
-}
+/**
+ * Where a recipe's hero image comes from — and there is no fourth case.
+ *
+ * Every one of these ends the same way: the bytes are in Buttery's bucket under
+ * `pending/<recipeId>` before the save returns, and the URL (where there was
+ * one) is discarded. `src/server/recipe-images.ts` is the module that enforces
+ * that; this union is what makes the alternatives sayable at the boundary.
+ *
+ * They are ordered by preference, which is also the order of how likely the
+ * bytes are to arrive at all:
+ *
+ *   - `upload` — the browser already PUT the bytes to `/api/recipe-image/staged`
+ *     and holds the id. This is the path for anything the tab could read: a
+ *     file picker, a photo out of a dropped export folder, a remote image whose
+ *     host allows a cross-origin fetch.
+ *   - `bytes`  — inline base64, for a small image the caller would rather not
+ *     make a second round trip for.
+ *   - `url`    — the browser could not get the bytes (no CORS headers, the
+ *     usual reason), so the server tries its own SSRF-guarded fetch. It may
+ *     well be refused where the browser was not — hotlink protection keys on
+ *     Referer and datacenter IPs are easy to block — and then the recipe simply
+ *     has no image. The URL is not kept.
+ */
+export type RecipeImageInput =
+  | { kind: "upload"; uploadId: string; alt?: string }
+  | { kind: "bytes"; dataBase64: string; mime: string; alt?: string }
+  | { kind: "url"; url: string; alt?: string };
 
 export interface SaveRecipeInput {
   record: RecipeRecordInput;
@@ -45,13 +66,6 @@ export interface SaveRecipeInput {
   /** Set for imported recipes; locks Website attribution + drives dedupe. */
   sourceUrl?: string | null;
   image?: RecipeImageInput | null;
-  /**
-   * An imported hero image we haven't fetched yet (cross-origin — the client
-   * can't turn it into bytes). Stored as a `recipe_pending_image.source_url`
-   * pointer; the bytes are fetched (SSRF-guarded) and uploaded to the PDS on
-   * publish. Ignored when `image` (uploaded bytes) is present.
-   */
-  imageSourceUrl?: string | null;
 }
 
 export type SaveRecipeResult =
@@ -259,8 +273,13 @@ export interface PersistRecipeDraftInput {
   attribution: RecipeRecord["attribution"];
   /** Provenance. Used only to derive `source_url_key`; attribution was the caller's job. */
   sourceUrl: string | null;
-  /** A cross-origin hero we only have a URL for. Fetched here (SSRF-guarded) if set. */
-  imageSourceUrl?: string | null;
+  /**
+   * The hero. Landed in Buttery's bucket here, after the row commits — never
+   * stored as a URL. Null when the caller owns the image pass itself: the batch
+   * import runs one bounded, post-commit pass for a whole chunk rather than
+   * holding 25 row-locked transactions open across 25 outbound fetches (§11).
+   */
+  image?: RecipeImageInput | null;
   visibility: "draft" | "private";
 }
 
@@ -335,12 +354,13 @@ export const persistRecipeDraft = createServerOnlyFn(async (db: Kysely<DB>, ctx:
     await enqueueEnrich(recipeId);
   }
 
-  // 3. Imported hero we only have a cross-origin URL for. Fetch it now
-  //    (SSRF-guarded, ≤1MB) and store it in the bucket like an uploaded image so
-  //    a privately-saved import keeps its photo. Falls back to a URL-only
-  //    pointer (fetched at publish) if the fetch fails.
-  if (input.imageSourceUrl) {
-    await storePendingImageFromUrl(db, recipeId, input.imageSourceUrl, input.record.name);
+  // 3. The hero, into Buttery's bucket. Whatever shape it arrived in — a
+  //    browser upload, inline bytes, or a URL only the server can reach — it
+  //    ends as an object we own, so a privately-saved import keeps its photo
+  //    and the publish path has bytes to pipe to the PDS. A hero we cannot get
+  //    is a recipe with no photo, never a recipe that borrows one.
+  if (input.image) {
+    await storeRecipeImage(db, ctx.did, recipeId, input.image, input.record.name);
   }
 
   return { status: "ok", recipeId, record };
@@ -372,39 +392,39 @@ const runSave = createServerOnlyFn(async (db: Kysely<DB>, ctx: Ctx, input: SaveR
     if (dup) return { status: "duplicate", existingRecipeId: dup.id };
   }
 
-  // 3. Validate + insert + dedupe keys + imported hero. An uploaded image
-  //    (bytes on the wire) suppresses the URL hero exactly as before.
+  // 3. Validate + insert + dedupe keys + the hero into our bucket. One image
+  //    path for draft and publish alike: `persistRecipeDraft` always lands the
+  //    bytes in `pending/<recipeId>`, and step 5 reads them back from there.
+  //    Publishing used to bypass the bucket and hand the create-time bytes
+  //    straight to the PDS, which meant the two paths could disagree about what
+  //    the image even was — and left the URL case with nowhere to put bytes but
+  //    a `source_url` column.
   const persisted = await persistRecipeDraft(db, ctx, {
     record: input.record,
     attribution,
     sourceUrl,
-    imageSourceUrl: input.image ? null : input.imageSourceUrl,
+    image: input.image ?? null,
     visibility: input.visibility,
   });
   if (persisted.status === "invalid") return persisted;
   const { recipeId, record } = persisted;
 
-  // 4. Uploaded image → bucket + pointer row (draft path). On the publish path
-  //    we upload the blob directly instead (below), so skip the pending row.
-  if (input.image && !input.publish) {
-    await storePendingImage(db, recipeId, input.image);
-  }
-
   if (!input.publish) {
     return { status: "ok", recipeId, published: false };
   }
 
-  // 5. Publish — gated by the atproto-publishing kill switch. If disabled, the
+  // 4. Publish — gated by the atproto-publishing kill switch. If disabled, the
   //    draft above is kept and we return without any PDS write.
   const { isAtprotoPublishEnabled } = await import("#/lib/posthog-server");
   if (!(await isAtprotoPublishEnabled(ctx.did))) {
     return { status: "publish_disabled", recipeId };
   }
 
-  // Upload image blob (if any), write the record to the PDS with the ULID as
-  // rkey, then flip the row public + reconcile the sync tables. An under-scoped
-  // grant leaves the draft intact and asks the caller to re-authorize.
-  const scopeErr = await publishOrScopeError(db, ctx, recipeId, record, input.image ?? null);
+  // Pipe our stored bytes to the PDS as a blob (if the recipe has an image),
+  // write the record with the ULID as rkey, then flip the row public +
+  // reconcile the sync tables. An under-scoped grant leaves the draft intact
+  // and asks the caller to re-authorize.
+  const scopeErr = await publishOrScopeError(db, ctx, recipeId, record);
   if (scopeErr) return scopeErr;
   return { status: "ok", recipeId, published: true };
 });
@@ -419,11 +439,10 @@ async function publishOrScopeError(
   ctx: Ctx,
   recipeId: string,
   record: RecipeRecord,
-  image: RecipeImageInput | null,
 ): Promise<{ status: "reauth_required"; recipeId: string; missingScope: string | null } | null> {
   const { AtprotoScopeError } = await import("#/lib/atproto/recipe-writes");
   try {
-    await publishLocalRecipe(db, ctx, recipeId, record, image);
+    await publishLocalRecipe(db, ctx, recipeId, record);
     return null;
   } catch (err) {
     if (err instanceof AtprotoScopeError) {
@@ -475,7 +494,7 @@ const runPublishExisting = createServerOnlyFn(async (db: Kysely<DB>, ctx: Ctx, r
     return { status: "publish_disabled", recipeId };
   }
 
-  const scopeErr = await publishOrScopeError(db, ctx, recipeId, validated.record, built.pendingImage);
+  const scopeErr = await publishOrScopeError(db, ctx, recipeId, validated.record);
   if (scopeErr) return scopeErr;
   return { status: "ok", recipeId, published: true };
 });
@@ -632,111 +651,67 @@ async function writeChildren(trx: Kysely<DB>, id: string, record: RecipeRecord, 
 }
 
 /**
- * Fetch an imported hero now and store it in the bucket (draft path), so a
- * privately-saved import keeps its photo instead of waiting for publish. Keeps
- * `source_url` alongside `object_key` for provenance; publish prefers the bucket
- * bytes. Falls back to a URL-only pointer if the fetch fails (retried at publish).
+ * Land a recipe's hero in Buttery's bucket, whatever shape it arrived in.
+ *
+ * This is the *only* thing any write path does with an image, and it is a thin
+ * dispatch over `#/server/recipe-images` — the module that owns the rule that a
+ * recipe image is our bytes or an atproto blob and never a third-party URL.
+ * Returns whether an image ended up stored; every caller treats `false` as "this
+ * recipe has no photo", never as an error, because the recipe row is already
+ * committed by the time this runs and a dead hero must not take it down.
+ *
+ * `did` is the session's, used to reconstruct the staged key for an `upload` —
+ * the wire only ever carries the id half, so one account cannot claim another's
+ * staged bytes (see `stagedImageKey`).
  *
  * Exported for the batch import commit path (§11): it runs this as a bounded,
  * **post-commit** pass rather than letting `persistRecipeDraft` do it inline, so
  * a chunk of 25 never holds 25 row-locked transactions open across 25 outbound
- * fetches. Same function either way — one image path, one SSRF guard, one cap.
+ * fetches. Same function either way — one image path, one guard, one cap.
  */
-export async function storePendingImageFromUrl(db: Kysely<DB>, recipeId: string, sourceUrl: string, alt: string | null): Promise<void> {
-  const fetched = await fetchImageFromUrl(sourceUrl);
-  if (!fetched) {
-    await storePendingImageSourceUrl(db, recipeId, sourceUrl, alt);
-    return;
+export async function storeRecipeImage(db: Kysely<DB>, did: string, recipeId: string, image: RecipeImageInput, alt: string | null): Promise<boolean> {
+  const { claimStagedImage, storePendingImageBytes, storePendingImageFromUrl, validateImageBytes } = await import("./recipe-images");
+  const imageAlt = image.alt ?? alt ?? null;
+  switch (image.kind) {
+    case "upload":
+      return await claimStagedImage(db, did, recipeId, image.uploadId, imageAlt);
+    case "bytes": {
+      // Sniffed, not believed: `validateImageBytes` decides the mime from the
+      // bytes, so a caller's `image.mime` is a hint we do not store.
+      const validated = validateImageBytes(decodeBase64(image.dataBase64));
+      if (!validated) return false;
+      return await storePendingImageBytes(db, recipeId, { ...validated, alt: imageAlt });
+    }
+    case "url":
+      return await storePendingImageFromUrl(db, recipeId, image.url, imageAlt);
   }
-  const { putBlob } = await import("#/lib/blob-storage");
-  const objectKey = `pending/${recipeId}`;
-  await putBlob(objectKey, fetched.bytes, fetched.mime);
-  await db
-    .insertInto("recipe_pending_image")
-    .values({ recipe_id: recipeId, object_key: objectKey, mime: fetched.mime, alt: alt ?? null, source_url: sourceUrl })
-    .onConflict((oc) => oc.column("recipe_id").doUpdateSet({ object_key: objectKey, mime: fetched.mime, alt: alt ?? null, source_url: sourceUrl }))
-    .execute();
 }
 
-// Store an imported hero as a URL-only pending pointer (no bytes yet). Fetched
-// and uploaded to the PDS on publish (publishLocalRecipe).
-async function storePendingImageSourceUrl(db: Kysely<DB>, recipeId: string, sourceUrl: string, alt: string | null): Promise<void> {
-  await db
-    .insertInto("recipe_pending_image")
-    .values({ recipe_id: recipeId, object_key: null, mime: null, alt: alt ?? null, source_url: sourceUrl })
-    .onConflict((oc) => oc.column("recipe_id").doUpdateSet({ object_key: null, mime: null, alt: alt ?? null, source_url: sourceUrl }))
-    .execute();
-}
-
-// Fetch an imported hero image (SSRF-guarded, ≤1MB per the lexicon blob cap).
-const fetchImageFromUrl = createServerOnlyFn(async (url: string): Promise<{ bytes: Uint8Array; mime: string } | null> => {
-  const { safeFetchBytes } = await import("#/lib/net/safe-fetch");
-  try {
-    const res = await safeFetchBytes(url, { maxBytes: 1_000_000 });
-    const mime = res.contentType?.split(";")[0]?.trim() || "image/jpeg";
-    if (!mime.startsWith("image/")) return null;
-    return { bytes: res.bytes, mime };
-  } catch {
-    return null; // a missing hero shouldn't fail the whole publish.
-  }
-});
-
-// Store a draft image in the bucket + a pointer row (draft path).
-async function storePendingImage(db: Kysely<DB>, recipeId: string, image: RecipeImageInput): Promise<void> {
-  const { putBlob } = await import("#/lib/blob-storage");
-  const bytes = decodeBase64(image.dataBase64);
-  if (bytes.byteLength > 1_000_000) throw new Error("Recipe image must be 1 MB or smaller.");
-  const objectKey = `pending/${recipeId}`;
-  await putBlob(objectKey, bytes, image.mime);
-  await db
-    .insertInto("recipe_pending_image")
-    .values({ recipe_id: recipeId, object_key: objectKey, mime: image.mime, alt: image.alt ?? null, source_url: null })
-    .onConflict((oc) => oc.column("recipe_id").doUpdateSet({ object_key: objectKey, mime: image.mime, alt: image.alt ?? null }))
-    .execute();
-}
-
-// Publish a local recipe to the PDS and reconcile all local state.
-async function publishLocalRecipe(db: Kysely<DB>, ctx: Ctx, recipeId: string, record: RecipeRecord, image: RecipeImageInput | null): Promise<void> {
+/**
+ * Publish a local recipe to the PDS and reconcile all local state.
+ *
+ * The image half is one sentence long now: **our bytes go to the PDS.** There
+ * is no create-time byte path and no fetch-from-the-origin path here any more —
+ * both existed, and between them the record that reached a user's repo could be
+ * built from bytes nothing had ever stored. Everything lands in
+ * `pending/<recipeId>` on the way in (`storeRecipeImage`), so publish reads that
+ * one object, uploads it as a blob, and deletes it once the record is written.
+ */
+async function publishLocalRecipe(db: Kysely<DB>, ctx: Ctx, recipeId: string, record: RecipeRecord): Promise<void> {
   const { sql } = await import("kysely");
   const { createRecipe, uploadRecipeImage } = await import("#/lib/atproto/recipe-writes");
-  const { getBlob, deleteBlob } = await import("#/lib/blob-storage");
+  const { clearPendingImage, readPendingImage } = await import("./recipe-images");
 
-  // Resolve image bytes: (a) the just-uploaded create-time image, (b) a pending
-  // draft object already in the bucket, or (c) an imported hero we only have a
-  // URL for — fetched now, SSRF-guarded (untested end-to-end: the publish path is
-  // gated off by the kill switch in dev — see results doc).
-  let imageBytes: Uint8Array | null = null;
-  let imageMime: string | null = null;
-  let imageAlt: string | null = null;
-  let pendingKey: string | null = null;
-  if (image) {
-    imageBytes = decodeBase64(image.dataBase64);
-    imageMime = image.mime;
-    imageAlt = image.alt ?? null;
-  } else {
-    const pending = await db.selectFrom("recipe_pending_image").selectAll().where("recipe_id", "=", recipeId).executeTakeFirst();
-    if (pending?.object_key) {
-      imageBytes = await getBlob(pending.object_key);
-      imageMime = pending.mime;
-      imageAlt = pending.alt;
-      pendingKey = pending.object_key;
-    } else if (pending?.source_url) {
-      const fetched = await fetchImageFromUrl(pending.source_url);
-      if (fetched) {
-        imageBytes = fetched.bytes;
-        imageMime = fetched.mime;
-        imageAlt = pending.alt;
-      }
-    }
-  }
+  const pending = await readPendingImage(db, recipeId);
+  const imageAlt = pending?.alt ?? null;
 
   // Build the record to publish (attach the blob embed if we have an image).
   let toPublish: Omit<RecipeRecord, "$type" | "createdAt" | "updatedAt"> & Partial<Pick<RecipeRecord, "createdAt" | "updatedAt">> = stripStamps(record);
   let imageBlobMeta: { cid: string; mime: string; size: number } | null = null;
-  if (imageBytes && imageMime) {
-    const blob = await uploadRecipeImage(ctx.did, imageBytes, imageMime);
+  if (pending) {
+    const blob = await uploadRecipeImage(ctx.did, pending.bytes, pending.mime);
     const ref = blob as { ref?: { $link?: string }; mimeType?: string; size?: number };
-    imageBlobMeta = { cid: ref.ref?.$link ?? "", mime: ref.mimeType ?? imageMime, size: ref.size ?? imageBytes.byteLength };
+    imageBlobMeta = { cid: ref.ref?.$link ?? "", mime: ref.mimeType ?? pending.mime, size: ref.size ?? pending.bytes.byteLength };
     toPublish = {
       ...toPublish,
       embed: { $type: "exchange.recipe.recipe#imagesEmbed", images: [{ alt: imageAlt ?? "", image: blob }] },
@@ -801,9 +776,6 @@ async function publishLocalRecipe(db: Kysely<DB>, ctx: Ctx, recipeId: string, re
       )
       .execute();
 
-    // Clear the pending draft image pointer (bytes cleaned up after commit).
-    await trx.deleteFrom("recipe_pending_image").where("recipe_id", "=", recipeId).execute();
-
     // Mark stale in the same transaction as the publish (§9/D3), same as
     // insertLocalRecipe. Publishing never changes name or ingredients, so the
     // fingerprint the `enrich` step compares against will still match and it
@@ -822,7 +794,12 @@ async function publishLocalRecipe(db: Kysely<DB>, ctx: Ctx, recipeId: string, re
   const { enqueueEnrich } = await import("./enrichment-queue");
   await enqueueEnrich(recipeId);
 
-  if (pendingKey) await deleteBlob(pendingKey).catch(() => {});
+  // The image now lives on the PDS as a blob and renders from an atproto CDN
+  // (`recipe_image` above); our pre-publish copy has no reader left. Dropped
+  // after the transaction commits, and best-effort: an orphan object costs
+  // storage, whereas clearing it inside the transaction would delete bytes a
+  // rollback still needed.
+  await clearPendingImage(db, recipeId);
 }
 
 // Rebuild the record + envelope facts from a stored local row (publish-later).
@@ -830,7 +807,7 @@ async function buildRecordFromRow(
   db: Kysely<DB>,
   ctx: Ctx,
   recipeId: string,
-): Promise<{ record: RecipeRecordInput; createdAt: string | null; uri: string | null; sourceUrl: string | null; pendingImage: RecipeImageInput | null } | null> {
+): Promise<{ record: RecipeRecordInput; createdAt: string | null; uri: string | null; sourceUrl: string | null } | null> {
   // Ownership: the recipe must be boxed in the caller's active household.
   const row = await db
     .selectFrom("recipe as r")
@@ -874,16 +851,16 @@ async function buildRecordFromRow(
         : undefined,
   };
 
-  const pendingRow = await db.selectFrom("recipe_pending_image").selectAll().where("recipe_id", "=", recipeId).executeTakeFirst();
-  const pendingImage: RecipeImageInput | null = null; // bytes fetched from bucket at publish time, not here
-  void pendingRow;
+  // No image lookup here on purpose: publishing reads `pending/<recipeId>`
+  // straight from the bucket (`publishLocalRecipe`), which is the only place
+  // that needs the bytes and the only place that should know where they live.
 
   const sourceUrl = attribution?.kind === "website" ? attribution.url : null;
   // The record's frozen `createdAt` if this row ever carried one, else when the
   // local row came into being. Never `now` here — the caller decides that, and
   // only when there is nothing truer to use.
   const createdAt = (row.record_created_at ?? row.indexed_at)?.toISOString() ?? null;
-  return { record, createdAt, uri: row.uri, sourceUrl, pendingImage };
+  return { record, createdAt, uri: row.uri, sourceUrl };
 }
 
 // --- small helpers -------------------------------------------------------

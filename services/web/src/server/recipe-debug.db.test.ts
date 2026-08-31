@@ -215,7 +215,7 @@ async function reset(): Promise<void> {
 
   await db
     .insertInto("recipe_pending_image")
-    .values({ recipe_id: R_PRIV, object_key: `pending/${R_PRIV}`, mime: "image/jpeg", alt: "fixture hero", source_url: null })
+    .values({ recipe_id: R_PRIV, object_key: `pending/${R_PRIV}`, mime: "image/jpeg", alt: "fixture hero" })
     .execute();
 
   await meta.setHouseholdRecipeMeta(db, HH, R_PRIV, "import", { importer: "paprika", session_id: SESSION_ID, entry_name: "Private Fixture.html" });

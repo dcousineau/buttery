@@ -6,7 +6,7 @@ user-invocable: true
 
 # Local dev stack
 
-Whole local app = **one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project**: docker-compose containers (postgres, redis), migrations, atproto dev-env, web server.
+Whole local app = **one singleton [process-compose](https://f1bonacc1.github.io/process-compose/) project**: docker-compose containers (postgres, redis, local-s3), migrations, bucket create, atproto dev-env, web server.
 
 Files — no search for them:
 
@@ -135,5 +135,5 @@ Stack down = containers down: `postgres`/`redis` processes ARE the containers (a
 - `curl` return `000` have TWO causes: stack down, or command sandbox blocking `localhost:3000`. Check `pc_project_state` BEFORE blaming sandbox — else you assert "sandbox" at dead server, walk it back later.
 - macOS `grep` treat curl'd SSR HTML as **binary** (one huge line, UTF-8 punctuation) and exit 1 silently — look exactly like real miss. Always `grep -a` on fetched HTML, else every content assertion lie.
 - Vite auto-bump 3000 → 3001 if port busy. `pc_process_ports` show real port; usual cause = second dev server someone forgot to kill.
-- `postgres`/`redis` **ARE the containers** — each process run `docker compose up <svc>` attached. So `pc_process_restart postgres` really restart the container, and its log = container log. They carry `restart: always` (attached `up` can exit 0 on container death, which `on_failure` would file as clean); `web`/`atproto-dev-env` carry `restart: on_failure` + `max_restarts: 5`. Process stuck dead = real failure — read its log before restarting.
+- `postgres`/`redis`/`local-s3` **ARE the containers** — each process run `docker compose up <svc>` attached. So `pc_process_restart postgres` really restart the container, and its log = container log. They carry `restart: always` (attached `up` can exit 0 on container death, which `on_failure` would file as clean); `web`/`atproto-dev-env` carry `restart: on_failure` + `max_restarts: 5`. Process stuck dead = real failure — read its log before restarting.
 - `docker compose stop postgres` by hand take 10s and SIGKILL (image PID 1 = `wrapper.sh`, swallow signals). Stack teardown avoid this with in-container `pg_ctl stop -m fast`. Prefer `pnpm dev:down` / `pc_process_stop postgres` over raw docker stop.

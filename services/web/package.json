@@ -22,6 +22,7 @@
     "db:seed:run": "kysely seed run",
     "db:seed:list": "kysely seed list",
     "db:reset:users": "node scripts/reset-user-data.ts",
+    "dev:bucket": "node scripts/create-bucket.mjs",
     "db:codegen": "kysely-codegen --out-file src/db/types.ts --exclude-pattern \"*.kysely_migration*\"",
     "typecheck": "pnpm --filter @buttery/lexicons build && tsc && tsc -p tsconfig.sw.json"
   },
