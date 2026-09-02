@@ -202,3 +202,47 @@ Railway bucket **CORS is not configured by this branch** and the browser upload 
 in production until it is: Railway buckets do not expose a CORS policy through IaC, so it has
 to be set out of band (`aws s3api put-bucket-cors --endpoint-url <ENDPOINT>`) to allow the
 app's origin for `POST` and `GET`. Noted in `.railway/railway.ts` beside the bucket.
+
+---
+
+## 2026-09-02b — `source_url` comes back, demoted
+
+> Task: undo the drop of `source_url` by amending the existing migration rather than adding
+> a new one, and decide whether it can stay as an attribution log without much new code.
+
+### The reframing
+
+The 2026-08-31 entry above says the fix was deleting the column. That was wrong about which
+half was load-bearing. The defect was that **`object_key` was nullable** — that is what made
+"no bytes, someone else's URL instead" a row the table would accept, and only once it was
+acceptable did three call sites write it and a read path render it. Deleting `source_url` was
+one way to make that unrepresentable; requiring `object_key` is another, and it is the one
+that does not throw away the information.
+
+So `1788143104839_pending_image_bytes_only` no longer drops the column. It still deletes the
+URL-only rows and still tightens `object_key` and `mime` to `not null`, which is the whole
+invariant: **a row that exists is a row with our bytes behind it.** With that in place
+`source_url` cannot be a substitute for bytes — there is no state where it is the image — so
+it is what is left over: a note on where the bytes we hold came from.
+
+### Cost of keeping it populated
+
+Four lines of plumbing, all of it code this branch had already written and then deleted:
+`RecipeImageInput.sourceUrl`, one field on the insert, `CommitItem.imageSourceUrl` back on the
+import wire, and the create form passing the origin URL once the upload succeeds. It rides
+along _with_ the upload id and never without it, which is what keeps the fallback from
+growing back.
+
+The schema guard changed shape with it. It used to assert "no URL-shaped column"; it now
+asserts the not-null constraints and that `source_url` is nullable — the constraint is the
+difference between a log and a fallback, so the constraint is the thing to pin. A second test
+saves a recipe with a source URL and reads the row back.
+
+### Open question
+
+`clearPendingImage` deletes the row at publish, so **the log lives only as long as the recipe
+is unpublished.** That may be fine — after publish the image is the author's own blob on their
+own PDS, and where we originally fetched it is moot — or it may be the exact moment the log
+becomes interesting. Making it survive needs a home `clearPendingImage` does not reach (a
+column on `recipe_image`, or a `recipe_meta` row), which is a new migration and past what this
+change was scoped to. Flagged rather than guessed.

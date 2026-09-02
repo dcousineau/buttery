@@ -60,8 +60,12 @@ function isoToMinutes(iso: string | undefined): string {
  * render of an imported hero's origin URL while the browser tries to fetch and
  * upload it for itself. A save carries the id or it carries no image; the
  * preview URL is never persisted and never reaches the server.
+ *
+ * `sourceUrl` is set only for an imported hero, and only travels once the bytes
+ * are ours. It is logged beside them and never read back — the recipe's image is
+ * the object, always.
  */
-type FormImage = { previewUrl: string; uploadId: string | null; alt: string };
+type FormImage = { previewUrl: string; uploadId: string | null; alt: string; sourceUrl?: string };
 
 /**
  * The full-page recipe create/import form (plan §A5). Plain controlled state
@@ -174,7 +178,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
         // reason) the preview above stands and the recipe saves without a photo.
         const uploadId = await stageRemoteImage(r.imageUrl);
         if (cancelled || !uploadId) return;
-        setImage({ previewUrl: r.imageUrl, uploadId, alt });
+        setImage({ previewUrl: r.imageUrl, uploadId, alt, sourceUrl: r.imageUrl });
       }
     })();
     return () => {
@@ -243,7 +247,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
         sourceUrl,
         // The bytes are already in our bucket; this is only the id that says
         // which object. A preview with no id saves no photo.
-        image: image?.uploadId ? { uploadId: image.uploadId, alt: image.alt } : null,
+        image: image?.uploadId ? { uploadId: image.uploadId, alt: image.alt, sourceUrl: image.sourceUrl ?? null } : null,
       });
       if (result.status === "invalid") {
         setIssues(result.issues);

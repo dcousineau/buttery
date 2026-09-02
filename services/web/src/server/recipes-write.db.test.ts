@@ -571,6 +571,28 @@ describeImages("saveRecipe — the image is always OURS (never the origin's URL)
     expect(row).toBeUndefined();
   });
 
+  it("logs where an imported hero came from, beside the bytes and never instead of them", async () => {
+    // `source_url` survived the migration that made `object_key` required, which
+    // is what turned it from a fallback into a note. Pinned here from the outside:
+    // a save that carries one records it, and a save that carries no bytes writes
+    // no row at all — so there is no state where the URL is the image.
+    const uploadId = await uploadAsBrowser(jpegBytes());
+    const origin = `https://cdn.example/${RUN}/hero.jpg`;
+
+    const result = await save({
+      record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
+      visibility: "private",
+      publish: false,
+      image: { uploadId, sourceUrl: origin },
+    });
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+
+    const row = await db!.selectFrom("recipe_pending_image").selectAll().where("recipe_id", "=", result.recipeId).executeTakeFirstOrThrow();
+    expect(row.source_url).toBe(origin);
+    expect(row.object_key).not.toBeNull();
+  });
+
   it("saves the recipe with NO image when the upload never landed", async () => {
     // A well-formed id for bytes that are not there. The browser reporting
     // success is not evidence the bucket agreed, which is why the save HEADs the
@@ -590,30 +612,37 @@ describeImages("saveRecipe — the image is always OURS (never the origin's URL)
   });
 });
 
-describeDb("recipe_pending_image — the schema has no room for someone else's URL", () => {
+describeDb("recipe_pending_image — a URL can never be the image again", () => {
   /**
    * The guard that goes red if the class comes back.
    *
-   * The bug was not that a line of code stored a URL; it was that the table had
-   * a column for one, so three call sites could independently decide to use it
-   * and a read path could decide to render it. Deleting the column is the fix,
-   * and this is what keeps it deleted: a future migration re-adding any
-   * URL-shaped column to this table fails here, in a test whose name says why.
+   * The bug was not that a line of code stored a URL; it was that `object_key`
+   * was NULLABLE, so "no bytes, here is someone else's URL instead" was a row
+   * the table would accept — and once it was acceptable, three call sites wrote
+   * it and a read path rendered it as an `<img src>` on our own page.
+   *
+   * `source_url` is still here, and that is deliberate: with `object_key`
+   * required it cannot be a substitute for bytes, only a note about the bytes we
+   * have. The not-null constraint is the whole difference between a log and a
+   * fallback, so it is the thing this test pins. A migration that relaxes it
+   * fails here, in a test whose name says why.
    */
-  it("has no URL-shaped column, and requires an object key", async () => {
+  it("requires an object key and a mime, so `source_url` can only ever be a note", async () => {
     const columns = await sql<{ column_name: string; is_nullable: string }>`
       select column_name, is_nullable
       from information_schema.columns
       where table_name = 'recipe_pending_image'
     `.execute(db!);
 
-    const names = columns.rows.map((c) => c.column_name).sort();
-    expect(names).toEqual(["alt", "created_at", "mime", "object_key", "recipe_id"]);
-    expect(names.filter((n) => n.includes("url"))).toEqual([]);
+    const nullable = new Map(columns.rows.map((c) => [c.column_name, c.is_nullable]));
+    expect([...nullable.keys()].sort()).toEqual(["alt", "created_at", "mime", "object_key", "recipe_id", "source_url"]);
 
-    // Not-null is the other half: a row that exists is a row with bytes behind
-    // it, which is what lets every reader treat "row present" as "we have it".
-    const required = columns.rows.filter((c) => c.column_name === "object_key" || c.column_name === "mime");
-    expect(required.map((c) => c.is_nullable)).toEqual(["NO", "NO"]);
+    // A row that exists is a row with our bytes behind it, which is what lets
+    // every reader treat "row present" as "we have it" and never look further.
+    expect(nullable.get("object_key")).toBe("NO");
+    expect(nullable.get("mime")).toBe("NO");
+    // And the log stays optional — an image the user picked off their own disk
+    // came from nowhere, and saying so must not be a constraint violation.
+    expect(nullable.get("source_url")).toBe("YES");
   });
 });

@@ -416,6 +416,7 @@ export interface RecipePendingImage {
   mime: string;
   object_key: string;
   recipe_id: string;
+  source_url: string | null;
 }
 
 export interface RecipeSearch {

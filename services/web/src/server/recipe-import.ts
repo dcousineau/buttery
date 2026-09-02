@@ -120,13 +120,20 @@ export type CommitItem =
       /** Resolved in review (§8). Ignored when `sourceUrl` is set — the server builds Website itself. */
       attribution: AttributionInput | null;
       /**
-       * The hero: the id of an object the browser already PUT into Buttery's
-       * bucket with a presigned URL (§11) — a photo out of the dropped folder,
+       * The hero: the id of an object the browser already POSTed into Buttery's
+       * bucket with a presigned form (§11) — a photo out of the dropped folder,
        * or a remote image whose host allowed a cross-origin fetch. Null when the
-       * tab could not read the bytes, and then the recipe simply has no photo.
-       * A URL is never stored, and there is no server-side fetch behind this.
+       * tab could not read the bytes, and then the recipe simply has no photo:
+       * there is no server-side fetch behind this.
        */
       imageUploadId?: string | null;
+      /**
+       * Where a remote hero came from, recorded beside the bytes we made of it.
+       *
+       * Never fetched and never rendered — it reaches the row only when
+       * `imageUploadId` did too, so there is no state where this is the image.
+       */
+      imageSourceUrl: string | null;
       notes: string | null;
       tags: string[];
       /**
@@ -413,11 +420,13 @@ const commitItem = z.discriminatedUnion("action", [
     sourceUrl: z.string().max(4096).nullable(),
     attribution: z.custom<AttributionInput>((v) => typeof v === "object" && v !== null).nullable(),
     /**
-     * The browser's own copy of the hero, already PUT into our bucket with a
-     * presigned URL (§11). Never a URL, and there is no fallback behind it: an
-     * image the tab could not read is a recipe with no photo.
+     * The browser's own copy of the hero, already POSTed into our bucket with a
+     * presigned form (§11). There is no fallback behind it: an image the tab
+     * could not read is a recipe with no photo.
      */
     imageUploadId: z.string().max(64).nullable().optional(),
+    /** Provenance for that copy. Logged with the bytes, never read back. */
+    imageSourceUrl: z.string().max(4096).nullable(),
     notes: z.string().max(10_000).nullable(),
     tags: z.array(z.string().max(256)).max(100),
     sourceText: z.string().max(4096).nullable(),
@@ -1363,9 +1372,10 @@ async function commitImport(
     // The browser either got the bytes into our bucket (a photo out of the
     // dropped folder, or a remote host that allowed a cross-origin fetch) or it
     // did not, and there is nothing behind that: the server's own fetch was the
-    // losing fetcher and the reason a third-party URL was ever storable.
+    // losing fetcher. The source URL rides along only when the bytes did, so it
+    // is a note on what we hold rather than a stand-in for it.
     const uploadId = item.imageUploadId?.trim() || null;
-    const image: RecipeImageInput | null = uploadId ? { uploadId } : null;
+    const image: RecipeImageInput | null = uploadId ? { uploadId, sourceUrl: item.imageSourceUrl?.trim() || null } : null;
     return {
       result: { clientId: item.clientId, status: "imported", recipeId },
       ...(image ? { image: { recipeId, image, alt: record.name ?? null } } : {}),

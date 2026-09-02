@@ -40,14 +40,24 @@ import type { AttributionChoice } from "#/lib/api/types";
  *
  * This used to be a three-armed union — a staged id, inline base64, or a
  * third-party URL for the server to go fetch itself. The last of those was the
- * reason `recipe_pending_image` once had a `source_url` column, and it was the
- * losing fetcher besides: hotlink protection refuses a datacenter IP far more
- * often than it refuses a browser. Now there is one door. An image the browser
- * could not read is a recipe with no photo, never a recipe that borrows one.
+ * losing fetcher: hotlink protection refuses a datacenter IP far more often than
+ * it refuses a browser. Now there is one door. An image the browser could not
+ * read is a recipe with no photo, never a recipe that borrows one.
  */
 export interface RecipeImageInput {
   uploadId: string;
   alt?: string;
+  /**
+   * Where these bytes came from, when they came from somewhere — an imported
+   * hero the browser fetched cross-origin, rather than a file the user picked.
+   *
+   * Recorded, never used. It is not an alternative to the upload and cannot
+   * become one: `recipe_pending_image.object_key` is `not null`, so a row always
+   * has our bytes behind it and no read path has a URL to fall back to. That is
+   * the difference between this and the `source_url` column as it was, which was
+   * a *substitute* for bytes and got rendered as an `<img src>` on our own page.
+   */
+  sourceUrl?: string | null;
 }
 
 export interface SaveRecipeInput {
@@ -729,11 +739,12 @@ export async function storeRecipeImage(db: Kysely<DB>, did: string, recipeId: st
   const head = await headBlob(objectKey);
   if (!head || !isAllowedImageMime(head.mime)) return false;
 
+  const row = { object_key: objectKey, mime: head.mime, alt: image.alt ?? alt ?? null, source_url: image.sourceUrl ?? null };
   const previous = await db.selectFrom("recipe_pending_image").select("object_key").where("recipe_id", "=", recipeId).executeTakeFirst();
   await db
     .insertInto("recipe_pending_image")
-    .values({ recipe_id: recipeId, object_key: objectKey, mime: head.mime, alt: image.alt ?? alt ?? null })
-    .onConflict((oc) => oc.column("recipe_id").doUpdateSet({ object_key: objectKey, mime: head.mime, alt: image.alt ?? alt ?? null }))
+    .values({ recipe_id: recipeId, ...row })
+    .onConflict((oc) => oc.column("recipe_id").doUpdateSet(row))
     .execute();
 
   // The replaced object has no reader left. Best-effort and *after* the row

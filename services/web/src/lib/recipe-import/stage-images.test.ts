@@ -20,6 +20,7 @@ function importItem(clientId: string): CommitItem {
     record: { name: clientId, text: "", ingredients: [], instructions: [] },
     sourceUrl: null,
     attribution: null,
+    imageSourceUrl: null,
     notes: null,
     tags: [],
     sourceText: null,
