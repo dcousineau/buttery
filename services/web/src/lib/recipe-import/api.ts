@@ -1,5 +1,5 @@
 import { importTransport } from "#/lib/api";
-import { uploadStagedImage } from "#/lib/recipe-image-upload";
+import { uploadRecipeImage } from "#/lib/recipe-image-upload";
 import type { ImportApi } from "./contracts.ts";
 
 /**
@@ -20,10 +20,10 @@ import type { ImportApi } from "./contracts.ts";
  */
 export const importApi: ImportApi = {
   openSession: importTransport.openSession,
-  // Not a server function: the payload is bytes, and a server function would
-  // mean base64 in a JSON envelope — a third larger, on the one call in the
-  // flow that is nothing but a binary body. See routes/api/recipe-image/staged.ts.
-  uploadImage: async (blob) => (await uploadStagedImage(blob))?.uploadId ?? null,
+  // Two steps behind one call: a server function signs an upload URL, and the
+  // browser PUTs the bytes straight at the bucket. The payload never crosses
+  // this service. See lib/recipe-image-upload.ts.
+  uploadImage: uploadRecipeImage,
   probeDuplicates: importTransport.probeDuplicates,
   getComparison: importTransport.getComparison,
   commitChunk: importTransport.commitChunk,

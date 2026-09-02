@@ -20,7 +20,6 @@ function importItem(clientId: string): CommitItem {
     record: { name: clientId, text: "", ingredients: [], instructions: [] },
     sourceUrl: null,
     attribution: null,
-    imageSourceUrl: null,
     notes: null,
     tags: [],
     sourceText: null,
@@ -94,9 +93,9 @@ describe("stageChunkImages", () => {
 
   it("leaves the item untouched when the browser cannot read the image", async () => {
     // A CDN with no `Access-Control-Allow-Origin` — the ordinary case. The item
-    // goes out exactly as it would have, carrying `imageSourceUrl`, and the
-    // server tries its own SSRF-guarded fetch. What must NOT happen is the
-    // import failing, or a URL being treated as the stored image.
+    // goes out exactly as it would have, minus its photo; there is no
+    // server-side fetch behind this. What must NOT happen is the import
+    // failing, or a URL being treated as the stored image.
     const out = await stageChunkImages([importItem("a")], sources({ clientId: "a", localImagePath: null, imageUrl: "https://img.example/a.jpg" }), harness().deps);
 
     expect(out[0]).not.toHaveProperty("imageUploadId");

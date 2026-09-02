@@ -27,10 +27,10 @@
  * ── WHAT IS NOT HANDLED ─────────────────────────────────────────────────────
  *
  * Blob storage. Hero images for deleted local recipes
- * (`recipe_pending_image.object_key`, i.e. `pending/<recipeId>`) and any
- * unclaimed browser uploads under `staged/` are orphaned in the bucket, not
- * deleted — this script only speaks SQL. In local dev that is a few stray
- * objects; nobody pays for them and nothing reads them.
+ * (`recipe_pending_image.object_key`) and any browser uploads no save ever
+ * claimed are orphaned under `uploads/`, not deleted — this script only speaks
+ * SQL. In local dev that is a few stray objects; nobody pays for them and
+ * nothing reads them.
  *
  * Redis. The scrape rate limiter and cache are keyed by DID/host and will still
  * hold entries for the deleted user. They expire on their own.

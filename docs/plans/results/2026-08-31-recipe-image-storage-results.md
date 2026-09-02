@@ -123,3 +123,82 @@ Unclaimed `staged/` objects are garbage collected by nothing today. ULIDs sort b
 the intended cleanup is an expiry lifecycle rule on the prefix; Railway buckets do not expose
 lifecycle rules through IaC, so it is documented in `.railway/railway.ts` rather than
 declared.
+
+---
+
+## 2026-09-02 — the bytes stop passing through the server
+
+> Follow-up on the same branch. Task: use presigned uploads (Railway's documented mechanism)
+> instead of an upload route, cap a photo at 2 MB (Bluesky's current blob limit), serve
+> pre-publish heroes with signed bucket URLs instead of a proxy, and delete as much of the
+> code above as that allows.
+
+### What went
+
+Every byte-handling path on the server. `src/server/recipe-images.ts` (289 lines),
+`POST /api/recipe-image/staged`, `GET /api/recipe-image/:recipeId`, `src/lib/pending-image.ts`,
+`putBlob`, the magic-byte sniffer, and the server-side SSRF-guarded image fetch. What replaced
+them is one server function that signs a form, and three small helpers on `recipes-write.ts`
+that point a recipe at an object, read it for publish, and drop it.
+
+`SaveRecipeInput.image` went from a three-armed union (`upload` | `bytes` | `url`) to
+`{ uploadId, alt? }`. `CommitItem.imageSourceUrl` is gone; only `imageUploadId` remains.
+
+### Decisions
+
+- **Presigned POST, and MinIO in the dev stack instead of `local-s3`.** Measured, one client
+  against both emulators: `local-s3` refuses a presigned POST (403 `AccessDenied`) _and_
+  answers 403 to an unsigned `OPTIONS`, so no browser upload of any kind reaches it — the
+  signature check is never even the thing that fails. MinIO does presigned POST, presigned
+  GET, and sends permissive CORS preflight headers out of the box. The 2026-08-31 entry
+  picked `local-s3` over MinIO for "one binary, no cluster, no IAM"; `minio server /data` is
+  also one container, and that reason does not survive the requirement that a laptop
+  exercise the real upload path.
+  - A presigned PUT with signed `content-type`/`content-length` was tried first and works on
+    both emulators, but it does not fix CORS, so it bought nothing — and POST is the
+    mechanism Railway documents.
+- **The 2 MB cap lives in the POST policy, not in a check.** `content-length-range` is
+  enforced by the bucket on the body itself, so a client that lies about `size` when asking
+  for a form gets a form that will not take the bytes (verified: 2 000 001 bytes is
+  `EntityTooLarge`). The same policy pins `$key` and `$Content-Type` — a re-keyed or
+  re-typed POST is `AccessDenied` — which is what makes a stolen form useless against
+  another account's prefix.
+- **The mime is declared and pinned, not sniffed.** Superseding "mime is sniffed, never
+  believed", which was true when the server held the bytes and is unavailable now that it
+  does not. The client names a type from a fixed allowlist (`image/svg+xml` deliberately
+  absent), the policy binds the upload to it, and the save takes the authoritative value
+  back off a `HeadObject` rather than from the request. A signature is a stronger promise
+  than a header.
+- **No server-side URL fetch any more.** It was already documented as the losing fetcher —
+  hotlink protection blocks datacenter IPs far more often than it blocks a browser — and it
+  was the only remaining reason for `putBlob`, the sniffer and the third union arm. An
+  imported hero the tab cannot read cross-origin is now a recipe with no photo. That is a
+  real regression for CORS-less hosts, taken deliberately.
+- **The object never moves.** `uploads/<sha256(did)>/<ulid>` is where the browser writes it
+  and where it stays; the row records that key. The previous design copied it to
+  `pending/<recipeId>` — a get and a put through this server's memory to buy a key shape
+  nothing reads. One prefix now, and it is still the handle for the expiry lifecycle rule.
+- **Signed GET instead of a proxy route.** The proxy's authorization is not lost: a signed
+  URL is only ever minted inside `listHouseholdRecipes` / `getHouseholdRecipe`, after the
+  same household check the route ran. What is lost is a megabyte of memory and egress per
+  view. The trade is that the URL is a bearer token for an hour, which is why nothing but
+  those two authorized readers can mint one.
+
+### Verified
+
+- Unit suites: 562 passed, 281 skipped (no database).
+- DB suites against a real Postgres **and a real MinIO bucket**: 281 passed. The image suite
+  now does what a browser does — asks for a form, POSTs it, hands the save the id — so what
+  is pinned is the real upload path. Three separate assertions that the policy, not the
+  server, is what refuses an over-sized, re-typed or re-keyed upload.
+- `tsc --noEmit` clean; `oxlint` clean (three pre-existing React warnings elsewhere).
+
+### Not covered
+
+The PDS blob upload inside `publishLocalRecipe`, still — it needs an OAuth session against
+the dev-env PDS. Unchanged from the entry above.
+
+Railway bucket **CORS is not configured by this branch** and the browser upload will not work
+in production until it is: Railway buckets do not expose a CORS policy through IaC, so it has
+to be set out of band (`aws s3api put-bucket-cors --endpoint-url <ENDPOINT>`) to allow the
+app's origin for `POST` and `GET`. Noted in `.railway/railway.ts` beside the bucket.

@@ -19,7 +19,8 @@ import { reconnectAtproto } from "#/lib/atproto-reauth";
 import { type AttributionState, EMPTY_ATTRIBUTION, attributionComplete, buildAttribution } from "#/lib/recipe-attribution";
 import { deriveSource } from "#/lib/recipe-provenance";
 import { type FieldIssue, getImportPrefill, keys, type RecipeRecordInput, saveRecipe } from "#/lib/api";
-import { fetchRemoteImage, readAsDataUrl } from "#/lib/recipe-image-upload";
+import { stageRemoteImage, uploadRecipeImage } from "#/lib/recipe-image-upload";
+import { MAX_IMAGE_BYTES } from "#/lib/recipe-image";
 import { useRecipesView } from "../context";
 import type { RecipeViewData } from "../RecipeView";
 import { type EditorMode } from "./LineEditor";
@@ -53,15 +54,14 @@ function isoToMinutes(iso: string | undefined): string {
 }
 
 /**
- * The form's photo.
+ * The form's photo: what to show, and what the save will point at.
  *
- * `bytes` is the normal case and covers both the file picker and an imported
- * hero the browser managed to fetch for itself. `url` survives only for the
- * hero the tab could *not* read — a host with no CORS headers — where the
- * server's own SSRF-guarded fetch is the remaining chance. Either way the bytes
- * end up in Buttery's bucket; the URL is never stored (src/server/recipe-images.ts).
+ * `uploadId` null means "showing something, owning nothing" — the optimistic
+ * render of an imported hero's origin URL while the browser tries to fetch and
+ * upload it for itself. A save carries the id or it carries no image; the
+ * preview URL is never persisted and never reaches the server.
  */
-type FormImage = { kind: "bytes"; dataBase64: string; mime: string; previewUrl: string; alt: string } | { kind: "url"; url: string; alt: string };
+type FormImage = { previewUrl: string; uploadId: string | null; alt: string };
 
 /**
  * The full-page recipe create/import form (plan §A5). Plain controlled state
@@ -106,7 +106,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
   const [carbs, setCarbs] = useState("");
   const [attr, setAttr] = useState<AttributionState>({ ...EMPTY_ATTRIBUTION });
   const [image, setImage] = useState<FormImage | null>(null);
-  const imageSrc = image ? (image.kind === "bytes" ? image.previewUrl : image.url) : null;
+  const imageSrc = image?.previewUrl ?? null;
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState(false);
@@ -165,17 +165,16 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
         const alt = r.name ?? "";
         // Optimistic: render the origin's URL right away so the preview is not
         // blank while we try to become its owner. An `<img src>` is not
-        // CORS-gated, so this shows even for the hosts the fetch below fails on.
-        setImage({ kind: "url", url: r.imageUrl, alt });
-        // Then take our own copy. The tab has the user's referer and is far
-        // likelier to be served than our backend is; when it works, the save
-        // carries bytes instead of a URL and the server never has to reach out
-        // at all. When it doesn't (no `Access-Control-Allow-Origin`, the usual
-        // reason) the `url` above stands and the server tries instead.
-        const blob = await fetchRemoteImage(r.imageUrl);
-        const dataUrl = blob ? await readAsDataUrl(blob) : null;
-        if (cancelled || !blob || !dataUrl) return;
-        setImage({ kind: "bytes", dataBase64: dataUrl, mime: blob.type || "image/jpeg", previewUrl: URL.createObjectURL(blob), alt });
+        // CORS-gated, so this shows even for the hosts the fetch below fails on
+        // — but with no `uploadId` it is a picture on screen and nothing more.
+        setImage({ previewUrl: r.imageUrl, uploadId: null, alt });
+        // Then take our own copy, straight into our bucket. The tab has the
+        // user's referer and is far likelier to be served than our backend was.
+        // When it doesn't work (no `Access-Control-Allow-Origin`, the usual
+        // reason) the preview above stands and the recipe saves without a photo.
+        const uploadId = await stageRemoteImage(r.imageUrl);
+        if (cancelled || !uploadId) return;
+        setImage({ previewUrl: r.imageUrl, uploadId, alt });
       }
     })();
     return () => {
@@ -242,13 +241,9 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
         visibility: "draft",
         publish,
         sourceUrl,
-        // One field, one image, and the server lands it in our bucket either
-        // way. `url` here means only "we could not read these bytes, you try".
-        image: image
-          ? image.kind === "bytes"
-            ? { kind: "bytes", dataBase64: image.dataBase64, mime: image.mime, alt: image.alt }
-            : { kind: "url", url: image.url, alt: image.alt }
-          : null,
+        // The bytes are already in our bucket; this is only the id that says
+        // which object. A preview with no id saves no photo.
+        image: image?.uploadId ? { uploadId: image.uploadId, alt: image.alt } : null,
       });
       if (result.status === "invalid") {
         setIssues(result.issues);
@@ -299,18 +294,24 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
     }
   }
 
-  function onPickFile(file: File) {
-    if (file.size > 1_000_000) {
-      setIssues([{ path: "image", message: "That image is over 1 MB. Pick a smaller one." }]);
+  async function onPickFile(file: File) {
+    if (file.size > MAX_IMAGE_BYTES) {
+      setIssues([{ path: "image", message: "That image is over 2 MB. Pick a smaller one." }]);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      // `readAsDataURL` always resolves to a string; the union is for the other read modes.
-      const dataUrl = typeof reader.result === "string" ? reader.result : "";
-      setImage({ kind: "bytes", dataBase64: dataUrl, mime: file.type, previewUrl: URL.createObjectURL(file), alt: name.trim() });
-    };
-    reader.readAsDataURL(file);
+    // Show it immediately off the local `File`, then upload. The preview is the
+    // same bytes either way, so a slow bucket costs the user nothing visible.
+    const previewUrl = URL.createObjectURL(file);
+    const alt = name.trim();
+    setImage({ previewUrl, uploadId: null, alt });
+    const uploadId = await uploadRecipeImage(file);
+    if (!uploadId) {
+      URL.revokeObjectURL(previewUrl);
+      setImage(null);
+      setIssues([{ path: "image", message: "That photo could not be uploaded. Try another one." }]);
+      return;
+    }
+    setImage({ previewUrl, uploadId, alt });
   }
 
   const previewData: RecipeViewData = useMemo(() => {
@@ -448,7 +449,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
                   </div>
                   <div className="flex flex-col gap-2">
                     <label className="bt-label">Photo</label>
-                    <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && onPickFile(e.target.files[0])} />
+                    <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && void onPickFile(e.target.files[0])} />
                     {image ? (
                       <div className="flex flex-col gap-2">
                         <div className="aspect-[4/3] w-full overflow-hidden rounded-lg border-2 border-border">

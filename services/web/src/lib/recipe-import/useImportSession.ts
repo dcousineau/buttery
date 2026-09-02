@@ -257,8 +257,7 @@ export function useImportSession({ importer, api = importApi, createWorker = def
         // rather than once up front for the same reason the commit is chunked —
         // a resumable import must not redo work for chunks that already landed.
         // Every failure in here is silent by design: an item whose upload did
-        // not work is sent exactly as it would have been, and the server falls
-        // back to its own fetch.
+        // not work is sent exactly as it would have been, minus its photo.
         const items = await stageChunkImages(next.items, imageSourcesFor(stateRef.current, next.items), {
           uploadImage: (blob) => api.uploadImage(blob),
           localFile: (path) => imagesRef.current?.file(path) ?? null,

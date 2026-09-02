@@ -187,8 +187,9 @@ const attributionOf = (recipeId: string) => db!.selectFrom("recipe_attribution")
 /**
  * A one-pixel JPEG's opening bytes, padded.
  *
- * It only has to be sniffable: `validateImageBytes` decides the mime from the
- * magic bytes, so a real encoder would prove nothing this does not.
+ * Nothing sniffs these bytes any more — the mime is declared and then bound by
+ * the upload's signature — so a real encoder would prove nothing this does not.
+ * They stay JPEG-shaped only so a failure reads as a real photo would.
  */
 function jpegBytes(): Uint8Array {
   const bytes = new Uint8Array(64);
@@ -196,19 +197,15 @@ function jpegBytes(): Uint8Array {
   return bytes;
 }
 
-function jpegBase64(): string {
-  return `data:image/jpeg;base64,${Buffer.from(jpegBytes()).toString("base64")}`;
-}
-
 /**
  * The image suites need a bucket as well as a database, so they carry their own
- * skip. The `local-s3` container in the repo's docker-compose.yml is what
+ * skip. The MinIO container in the repo's docker-compose.yml is what
  * satisfies this locally (`pnpm dev` starts it and creates the bucket); without
  * BLOB_S3_* they skip rather than fail, exactly like the database probe above.
  */
 const hasBucket = Boolean(process.env.BLOB_S3_ENDPOINT && process.env.BLOB_S3_BUCKET && process.env.BLOB_S3_ACCESS_KEY_ID && process.env.BLOB_S3_SECRET_ACCESS_KEY);
 if (db && !hasBucket) {
-  process.stderr.write("\nSKIPPING recipes-write image tests — BLOB_S3_* is not set.\nStart the dev stack (`pnpm dev`) so the local-s3 container and its bucket exist.\n\n");
+  process.stderr.write("\nSKIPPING recipes-write image tests — BLOB_S3_* is not set.\nStart the dev stack (`pnpm dev`) so the MinIO container and its bucket exist.\n\n");
 }
 const describeImages = db && hasBucket ? describe : describe.skip;
 
@@ -473,24 +470,45 @@ describeDb("publishRecipe — publishing a draft that already exists", () => {
 describeImages("saveRecipe — the image is always OURS (never the origin's URL)", () => {
   /**
    * The invariant, asserted against a real bucket: a recipe that comes through
-   * Buttery has Buttery's bytes. Both halves matter and both used to be false —
-   * a hero the server could not fetch was persisted as a third-party URL and
-   * then rendered as one, and a folder import's local photos were never
-   * uploaded at all.
+   * Buttery has Buttery's bytes, and they got there without passing through this
+   * server. Each test does what the browser does — ask for a signed URL, PUT the
+   * bytes at it, hand the save the id — so what is pinned here is the real
+   * upload path, signature and all.
    */
-  it("puts inline bytes in the bucket and points the row at the object", async () => {
-    const { getBlob } = await import("#/lib/blob-storage");
+
+  /** POST a presigned form the way a browser does: policy fields first, file last. */
+  async function postForm(upload: { url: string; fields: Record<string, string> }, bytes: Uint8Array, over: Record<string, string> = {}): Promise<Response> {
+    const form = new FormData();
+    for (const [name, value] of Object.entries({ ...upload.fields, ...over })) form.append(name, value);
+    form.append("file", new Blob([bytes as unknown as BlobPart], { type: over["Content-Type"] ?? upload.fields["Content-Type"] }));
+    return await fetch(upload.url, { method: "POST", body: form });
+  }
+
+  /** The browser's half: sign, POST, return the id a save can redeem. */
+  async function uploadAsBrowser(bytes: Uint8Array, mime = "image/jpeg"): Promise<string> {
+    const ticket = await write.createRecipeImageUpload({ data: { mime, size: bytes.byteLength } });
+    expect(ticket).not.toBeNull();
+    expect((await postForm(ticket!, bytes)).ok).toBe(true);
+    return ticket!.uploadId;
+  }
+
+  it("points the row at the very object the browser uploaded — no copy, no move", async () => {
+    const { getBlob, uploadKey } = await import("#/lib/blob-storage");
+    const uploadId = await uploadAsBrowser(jpegBytes());
+
     const result = await save({
       record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
       visibility: "private",
       publish: false,
-      image: { kind: "bytes", dataBase64: jpegBase64(), mime: "image/jpeg", alt: "the bird" },
+      image: { uploadId, alt: "the bird" },
     });
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
 
     const row = await db!.selectFrom("recipe_pending_image").selectAll().where("recipe_id", "=", result.recipeId).executeTakeFirstOrThrow();
-    expect(row.object_key).toBe(`pending/${result.recipeId}`);
+    // The key the browser wrote to, unchanged. The previous design copied the
+    // bytes to `pending/<recipeId>` through this server's memory.
+    expect(row.object_key).toBe(uploadKey(DID, uploadId));
     expect(row.mime).toBe("image/jpeg");
     expect(row.alt).toBe("the bird");
 
@@ -498,84 +516,53 @@ describeImages("saveRecipe — the image is always OURS (never the origin's URL)
     await expect(getBlob(row.object_key)).resolves.toHaveLength(64);
   });
 
-  it("stores the SNIFFED type, not the caller's claim", async () => {
-    // The mime becomes the PDS blob's encoding and the proxy route's
-    // content-type, so believing a client here would put a mislabelled body
-    // behind both.
-    const result = await save({
-      record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
-      visibility: "private",
-      publish: false,
-      image: { kind: "bytes", dataBase64: jpegBase64(), mime: "image/svg+xml" },
-    });
-    expect(result.status).toBe("ok");
-    if (result.status !== "ok") return;
-
-    const row = await db!.selectFrom("recipe_pending_image").select("mime").where("recipe_id", "=", result.recipeId).executeTakeFirstOrThrow();
-    expect(row.mime).toBe("image/jpeg");
+  it("will not sign an upload over the 2 MB cap", async () => {
+    // Bluesky's current blob limit, and the only place it has to be stated —
+    // the signature is what makes it binding.
+    const { MAX_IMAGE_BYTES } = await import("#/lib/recipe-image");
+    await expect(write.createRecipeImageUpload({ data: { mime: "image/jpeg", size: MAX_IMAGE_BYTES + 1 } })).resolves.toBeNull();
+    await expect(write.createRecipeImageUpload({ data: { mime: "image/jpeg", size: 0 } })).resolves.toBeNull();
   });
 
-  it("saves the recipe with NO image when the bytes are not an image at all", async () => {
-    // What a hotlink-blocking host actually serves: an HTML page, with a 200.
-    const html = `data:text/html;base64,${Buffer.from("<!doctype html>Hotlinking not allowed").toString("base64")}`;
-    const result = await save({
-      record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
-      visibility: "private",
-      publish: false,
-      image: { kind: "bytes", dataBase64: html, mime: "image/jpeg" },
-    });
-    expect(result.status).toBe("ok");
-    if (result.status !== "ok") return;
-
-    // No photo, and — the point — no row either. A recipe without our bytes has
-    // nothing to point at, so there is nothing for a read path to render.
-    const row = await db!.selectFrom("recipe_pending_image").selectAll().where("recipe_id", "=", result.recipeId).executeTakeFirst();
-    expect(row).toBeUndefined();
+  it("will not sign a type that is not an image we serve", async () => {
+    // `image/svg+xml` is the one worth naming: an SVG is a document that can
+    // script, and these bytes are user-supplied and served back under our own
+    // authorization.
+    await expect(write.createRecipeImageUpload({ data: { mime: "image/svg+xml", size: 64 } })).resolves.toBeNull();
+    await expect(write.createRecipeImageUpload({ data: { mime: "text/html", size: 64 } })).resolves.toBeNull();
   });
 
-  it("claims a browser upload out of the staged prefix and cleans it up", async () => {
-    // The primary path, end to end against a real bucket: the tab PUTs bytes to
-    // `staged/<did>/<id>` and the save moves them to `pending/<recipeId>`. This
-    // is what covers the two cases the server could never fetch for itself — a
-    // photo out of a dropped folder, and a host that refuses our backend.
-    const { getBlob, putBlob } = await import("#/lib/blob-storage");
-    const { mintUploadId, stagedImageKey } = await import("./recipe-images");
+  it("the signed form itself refuses a body the policy does not allow", async () => {
+    // The three conditions, checked where they are actually enforced. A client
+    // that lies to `createRecipeImageUpload` gets a form that will not take the
+    // bytes — which is what makes the 2 MB cap real rather than advisory, and
+    // what stops a stolen form being pointed at another account's key.
+    const { MAX_IMAGE_BYTES } = await import("#/lib/recipe-image");
+    const ticket = await write.createRecipeImageUpload({ data: { mime: "image/jpeg", size: 64 } });
+    expect(ticket).not.toBeNull();
 
-    const uploadId = await mintUploadId();
-    await putBlob(stagedImageKey(DID, uploadId), jpegBytes(), "image/jpeg");
+    const tooBig = new Uint8Array(MAX_IMAGE_BYTES + 1);
+    tooBig.set([0xff, 0xd8, 0xff, 0xe0]);
+    expect((await postForm(ticket!, tooBig)).ok).toBe(false);
 
-    const result = await save({
-      record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
-      visibility: "private",
-      publish: false,
-      image: { kind: "upload", uploadId, alt: "staged hero" },
-    });
-    expect(result.status).toBe("ok");
-    if (result.status !== "ok") return;
-
-    const row = await db!.selectFrom("recipe_pending_image").selectAll().where("recipe_id", "=", result.recipeId).executeTakeFirstOrThrow();
-    expect(row.object_key).toBe(`pending/${result.recipeId}`);
-    expect(row.alt).toBe("staged hero");
-    await expect(getBlob(row.object_key)).resolves.toHaveLength(64);
-    // Moved, not copied: a staged object left behind is an orphan nothing frees.
-    await expect(getBlob(stagedImageKey(DID, uploadId))).rejects.toThrow();
+    expect((await postForm(ticket!, jpegBytes(), { "Content-Type": "image/png" })).ok).toBe(false);
+    expect((await postForm(ticket!, jpegBytes(), { key: `uploads/elsewhere/${ulid()}` })).ok).toBe(false);
   });
 
   it("refuses an upload id belonging to another account", async () => {
-    // The whole authorization for a staged claim: the key is rebuilt from the
-    // SESSION's did, so an id lifted from someone else's upload names a key this
-    // account does not own and resolves to nothing.
-    const { putBlob } = await import("#/lib/blob-storage");
-    const { mintUploadId, stagedImageKey } = await import("./recipe-images");
-
-    const uploadId = await mintUploadId();
-    await putBlob(stagedImageKey(`did:test:someone-else-${RUN}`, uploadId), jpegBytes(), "image/jpeg");
+    // The whole authorization for a claim: the key is rebuilt from the SESSION's
+    // did, so an id lifted from someone else's upload names a key this account
+    // does not own and resolves to nothing.
+    const { presignUpload, uploadKey } = await import("#/lib/blob-storage");
+    const uploadId = ulid();
+    const upload = await presignUpload(uploadKey(`did:test:someone-else-${RUN}`, uploadId), "image/jpeg");
+    expect((await postForm(upload, jpegBytes())).ok).toBe(true);
 
     const result = await save({
       record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
       visibility: "private",
       publish: false,
-      image: { kind: "upload", uploadId },
+      image: { uploadId },
     });
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
@@ -584,35 +571,16 @@ describeImages("saveRecipe — the image is always OURS (never the origin's URL)
     expect(row).toBeUndefined();
   });
 
-  it("hands publish back exactly the bytes it stored", async () => {
-    // `readPendingImage` is the publish path's ONLY image read — what it returns
-    // is what gets uploaded to the author's PDS as a blob, and its mime is that
-    // blob's encoding. Pinned here because the publish path itself needs a PDS
-    // session this suite does not have.
-    const { readPendingImage } = await import("./recipe-images");
+  it("saves the recipe with NO image when the upload never landed", async () => {
+    // A well-formed id for bytes that are not there. The browser reporting
+    // success is not evidence the bucket agreed, which is why the save HEADs the
+    // object rather than trusting the id — and why a recipe without our bytes
+    // has no row for a read path to render.
     const result = await save({
       record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
       visibility: "private",
       publish: false,
-      image: { kind: "bytes", dataBase64: jpegBase64(), mime: "image/jpeg", alt: "the bird" },
-    });
-    expect(result.status).toBe("ok");
-    if (result.status !== "ok") return;
-
-    const image = await readPendingImage(db!, result.recipeId);
-    expect(image).toMatchObject({ mime: "image/jpeg", alt: "the bird" });
-    expect(Array.from(image!.bytes.slice(0, 4))).toEqual([0xff, 0xd8, 0xff, 0xe0]);
-  });
-
-  it("keeps nothing when the server cannot fetch the URL either", async () => {
-    // `safe-fetch` refuses a private address outright, which is the cheapest
-    // real "we could not get it" to reproduce. The recipe still saves; the URL
-    // is not written anywhere.
-    const result = await save({
-      record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
-      visibility: "private",
-      publish: false,
-      image: { kind: "url", url: "http://127.0.0.1:1/hero.jpg" },
+      image: { uploadId: ulid() },
     });
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;

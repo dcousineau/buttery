@@ -1,69 +1,64 @@
-/**
- * The browser half of "Buttery stores its own image bytes".
- *
- * The server is the worse of the two fetchers, which is why this exists. A
- * recipe host that serves a photo happily to the tab looking at its page will
- * refuse the identical request from our backend — hotlink protection keys on
- * `Referer` and datacenter IP ranges are trivially blocked. And for a folder
- * import there is no fetch to refuse: the tab already holds the photo as a
- * `File` out of the dropped export, bytes the server has never had any way to
- * reach at all.
- *
- * So the browser goes first, and the server's SSRF-guarded fetch is the
- * fallback for the reverse case — a host with no CORS headers, which the tab
- * cannot read but we can. Between them the corpus is covered; neither alone is.
- *
- * Everything here returns null rather than throwing. A photo is the one part of
- * a recipe that is allowed to go missing: losing an import because a CDN was
- * rude would be the wrong trade, and the caller always has the fallback left.
- */
-
-/** Lexicon blob cap for `exchange.recipe.recipe` images. Mirrored server-side. */
-export const MAX_IMAGE_BYTES = 1_000_000;
-
-/** The endpoint's success shape. `mime` is what the server sniffed, not what we claimed. */
-export interface StagedUpload {
-  uploadId: string;
-  mime: string;
-}
+import { createRecipeImageUpload } from "#/lib/api";
+import { MAX_IMAGE_BYTES, isAllowedImageMime } from "#/lib/recipe-image";
 
 /**
- * PUT bytes to `/api/recipe-image/staged` and get back the id the commit
- * references.
+ * The browser puts a recipe photo in Buttery's bucket. Directly — we are not in
+ * the middle of it.
  *
- * The id is opaque and is only redeemable by the account that uploaded it: the
- * server rebuilds the object key from the *session's* DID, so nothing the
- * client sends reaches the bucket's key space.
+ * Two steps, one round trip each: ask the server for a presigned POST, then send
+ * the file at it as a form. The bytes never touch the web service, so an import
+ * of 341 recipes costs it 341 signatures instead of 341 megabytes of memory and
+ * egress. This replaced a `POST /api/recipe-image/staged` route that read the
+ * whole body into the server and re-uploaded it.
+ *
+ * The checks below only save a round trip. What actually bounds the upload is
+ * the policy inside `fields` — key, content type and a 2 MB `content-length-range`
+ * — which the bucket enforces on the body itself, where we could not.
+ *
+ * The `uploadId` that comes back is opaque and only redeemable by the account
+ * that asked for it: the server derived the object key from the *session's* DID,
+ * so nothing a client sends reaches the bucket's key space.
+ *
+ * Returns null rather than throwing, always. A photo is the one part of a recipe
+ * that is allowed to go missing — losing an import because a bucket was slow
+ * would be the wrong trade — so every caller reads null as "this recipe has no
+ * image", never as an error.
  */
-export async function uploadStagedImage(blob: Blob, signal?: AbortSignal): Promise<StagedUpload | null> {
+export async function uploadRecipeImage(blob: Blob, signal?: AbortSignal): Promise<string | null> {
+  // A blob with no `type` is not guessed at: an upload declares a mime the
+  // policy will be written against, or it does not happen.
   if (blob.size === 0 || blob.size > MAX_IMAGE_BYTES) return null;
+  if (!isAllowedImageMime(blob.type)) return null;
   try {
-    const res = await fetch("/api/recipe-image/staged", {
-      method: "POST",
-      body: blob,
-      // A hint only — the server sniffs magic bytes and stores what it found.
-      headers: { "content-type": blob.type || "application/octet-stream" },
-      signal,
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as Partial<StagedUpload>;
-    return body.uploadId ? { uploadId: body.uploadId, mime: body.mime ?? blob.type } : null;
+    const ticket = await createRecipeImageUpload({ mime: blob.type, size: blob.size });
+    if (!ticket) return null;
+    const form = new FormData();
+    for (const [name, value] of Object.entries(ticket.fields)) form.append(name, value);
+    // S3 reads the policy fields in order and takes the first `file` part as the
+    // body, so the file goes last.
+    form.append("file", blob);
+    const res = await fetch(ticket.url, { method: "POST", body: form, signal });
+    return res.ok ? ticket.uploadId : null;
   } catch {
     return null;
   }
 }
 
 /**
- * Try to read a remote image from the browser.
+ * Try to read a remote image from the browser, so it can be uploaded as ours.
  *
  * This is a plain CORS fetch, and it fails on any host that does not send
- * `Access-Control-Allow-Origin` — which is many of them. That is expected and
- * is the whole reason the server keeps its own fetch: the two fail on disjoint
- * sets of hosts. `no-cors` is not an option here and never will be — an opaque
- * response has no readable body, so there would be no bytes to upload.
+ * `Access-Control-Allow-Origin` — which is many of them. There is no server-side
+ * fetch behind it any more: that fallback was refused more often than this is
+ * (hotlink protection keys on Referer, and a datacenter IP is an easy block) and
+ * it was the only thing that ever made a third-party URL storable. A hero we
+ * cannot read is a recipe with no photo.
  *
- * Nothing about the URL is retained on success or failure. It is a place we
- * read from once.
+ * `no-cors` is not an option here and never will be — an opaque response has no
+ * readable body, so there would be nothing to upload.
+ *
+ * Nothing about the URL is retained on success or failure. It is a place we read
+ * from once.
  */
 export async function fetchRemoteImage(url: string, signal?: AbortSignal): Promise<Blob | null> {
   try {
@@ -71,37 +66,17 @@ export async function fetchRemoteImage(url: string, signal?: AbortSignal): Promi
     if (!res.ok) return null;
     const blob = await res.blob();
     if (blob.size === 0 || blob.size > MAX_IMAGE_BYTES) return null;
-    // A hotlink-refusal page served with a 200 is common enough to check for.
-    if (blob.type && !blob.type.startsWith("image/")) return null;
+    // A hotlink-refusal page served with a 200 is common enough to check for,
+    // and the type has to be one we can declare on the upload anyway.
+    if (!isAllowedImageMime(blob.type)) return null;
     return blob;
   } catch {
     return null;
   }
 }
 
-/**
- * Best effort, browser-side: remote URL → staged upload id.
- *
- * Returns null when the tab could not get the bytes, which is the caller's
- * signal to fall back to handing the server the URL instead. It is never the
- * signal to give up on the recipe.
- */
-export async function stageRemoteImage(url: string, signal?: AbortSignal): Promise<StagedUpload | null> {
+/** Best effort, browser-side: remote URL → bytes in our bucket → upload id. */
+export async function stageRemoteImage(url: string, signal?: AbortSignal): Promise<string | null> {
   const blob = await fetchRemoteImage(url, signal);
-  if (!blob) return null;
-  return await uploadStagedImage(blob, signal);
-}
-
-/**
- * Blob → `data:` URL, for the one caller that sends its image inline rather
- * than staging it: the create form, which has a single image and no reason to
- * spend a second round trip on it. The server decodes past the `data:` prefix.
- */
-export function readAsDataUrl(blob: Blob): Promise<string | null> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
-    reader.onerror = () => resolve(null);
-    reader.readAsDataURL(blob);
-  });
+  return blob ? await uploadRecipeImage(blob, signal) : null;
 }

@@ -15,23 +15,29 @@ import type { CommitItem } from "./contracts.ts";
  *     tab holds it as a `File`; there is no URL, remote or otherwise, and no
  *     amount of server-side fetching would ever have found it. Before this,
  *     every such photo was silently dropped on import.
- *   - **`imageUrl`** — a remote hero. Fetched here first because the tab is
+ *   - **`imageUrl`** — a remote hero, fetched cross-origin by the tab. It is
  *     served where our backend is refused (hotlink protection keys on Referer
- *     and datacenter IPs). When the fetch fails — a host with no
- *     `Access-Control-Allow-Origin`, the common case — the item keeps its
- *     `imageSourceUrl` and the server tries its own SSRF-guarded fetch instead.
+ *     and datacenter IPs), and when the fetch fails — a host with no
+ *     `Access-Control-Allow-Origin`, the common case — that is the end of it.
+ *     There is no server-side fetch behind this any more: it was the losing
+ *     fetcher, and it was the only reason a third-party URL was ever storable.
  *
  * Failure is never fatal and never blocks: an item whose upload did not work
- * goes out exactly as it would have before, and an item with no photo at all is
- * untouched. The one thing that cannot happen is a stored URL — see
- * `src/server/recipe-images.ts`.
+ * goes out exactly as it would have before, carrying no image, and an item with
+ * no photo at all is untouched. The one thing that cannot happen is a stored
+ * URL.
  */
 
-/** Concurrent uploads. Bounded for the same reason the server's fetch pass is. */
+/** Concurrent uploads. Bounded so a 341-recipe drop does not open 341 sockets at once. */
 const UPLOAD_CONCURRENCY = 4;
 
 export interface StageImagesDeps {
-  /** `ImportApi.uploadImage` — bytes in, opaque upload id out, null on failure. */
+  /**
+   * `ImportApi.uploadImage` — bytes in, opaque upload id out, null on failure.
+   * Behind it: a signed upload URL from the server and a PUT straight to the
+   * bucket, so a 341-recipe drop costs the web service 341 signatures rather
+   * than 341 megabytes.
+   */
   uploadImage(blob: Blob): Promise<string | null>;
   /** The dropped folder's `File` for a source-relative path, or null. */
   localFile(path: string): File | null;
@@ -90,7 +96,8 @@ function hasImage(source: ItemImageSource | undefined): boolean {
 }
 
 /**
- * One item's bytes → an upload id, or null to leave it to the server.
+ * One item's bytes → an upload id, or null for a recipe that imports without a
+ * photo.
  *
  * The local file wins when there is one: it is bytes we already hold, so it
  * costs no network and cannot be refused, whereas the remote URL is a request

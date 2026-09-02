@@ -120,19 +120,12 @@ export type CommitItem =
       /** Resolved in review (§8). Ignored when `sourceUrl` is set — the server builds Website itself. */
       attribution: AttributionInput | null;
       /**
-       * The hero, in the two shapes the client can produce (§11), preferred in
-       * this order:
-       *
-       *   - `imageUploadId` — the browser read the bytes (a photo out of the
-       *     dropped folder, or a remote image whose host allowed a cross-origin
-       *     fetch) and already PUT them to `/api/recipe-image/staged`.
-       *   - `imageSourceUrl` — it could not, so the server tries its own
-       *     SSRF-guarded fetch as a fallback.
-       *
-       * Neither is stored as a URL: both end as an object in Buttery's bucket,
-       * or the recipe has no photo. See src/server/recipe-images.ts.
+       * The hero: the id of an object the browser already PUT into Buttery's
+       * bucket with a presigned URL (§11) — a photo out of the dropped folder,
+       * or a remote image whose host allowed a cross-origin fetch. Null when the
+       * tab could not read the bytes, and then the recipe simply has no photo.
+       * A URL is never stored, and there is no server-side fetch behind this.
        */
-      imageSourceUrl: string | null;
       imageUploadId?: string | null;
       notes: string | null;
       tags: string[];
@@ -419,12 +412,10 @@ const commitItem = z.discriminatedUnion("action", [
     record: z.custom<RecipeRecordInput>((v) => typeof v === "object" && v !== null),
     sourceUrl: z.string().max(4096).nullable(),
     attribution: z.custom<AttributionInput>((v) => typeof v === "object" && v !== null).nullable(),
-    imageSourceUrl: z.string().max(4096).nullable(),
     /**
-     * The browser's own copy of the hero, already PUT to
-     * `/api/recipe-image/staged` (§11). Preferred over `imageSourceUrl`, which
-     * is only the fallback for a host the tab could not read. Neither is ever
-     * persisted as a URL — see src/server/recipe-images.ts.
+     * The browser's own copy of the hero, already PUT into our bucket with a
+     * presigned URL (§11). Never a URL, and there is no fallback behind it: an
+     * image the tab could not read is a recipe with no photo.
      */
     imageUploadId: z.string().max(64).nullable().optional(),
     notes: z.string().max(10_000).nullable(),
@@ -1369,13 +1360,12 @@ async function commitImport(
     await writeNote(trx, householdId, recipeId, did, item.notes);
     await setManyHouseholdRecipeMeta(trx, householdId, [{ recipeId, ns: IMPORT_NS, entries: provenance }]);
 
-    // Preference order, and it is the order of how likely the bytes are to
-    // exist at all: the browser either already has them (a photo out of the
+    // The browser either got the bytes into our bucket (a photo out of the
     // dropped folder, or a remote host that allowed a cross-origin fetch) or it
-    // could not read them, and only then is it worth the server's own attempt.
+    // did not, and there is nothing behind that: the server's own fetch was the
+    // losing fetcher and the reason a third-party URL was ever storable.
     const uploadId = item.imageUploadId?.trim() || null;
-    const imageUrl = item.imageSourceUrl?.trim() || null;
-    const image: RecipeImageInput | null = uploadId ? { kind: "upload", uploadId } : imageUrl ? { kind: "url", url: imageUrl } : null;
+    const image: RecipeImageInput | null = uploadId ? { uploadId } : null;
     return {
       result: { clientId: item.clientId, status: "imported", recipeId },
       ...(image ? { image: { recipeId, image, alt: record.name ?? null } } : {}),

@@ -111,7 +111,7 @@ import {
   triggerEnrichPayload as triggerEnrichPayloadFn,
   triggerLlmEnrichPayload as triggerLlmEnrichPayloadFn,
 } from "#/server/recipe-debug";
-import { publishRecipe as publishRecipeFn, saveRecipe as saveRecipeFn } from "#/server/recipes-write";
+import { createRecipeImageUpload as createRecipeImageUploadFn, publishRecipe as publishRecipeFn, saveRecipe as saveRecipeFn } from "#/server/recipes-write";
 import { getImportPrefill as getImportPrefillFn, scrapeRecipe as scrapeRecipeFn, submitImport as submitImportFn } from "#/server/recipe-scrape";
 import type { CommitChunkInput, ComparisonInput, FailImportSessionInput, FinalizeInput, OpenImportSessionInput, ProbeInput } from "#/server/recipe-import";
 import {
@@ -552,6 +552,15 @@ export function saveRecipe(input: SaveRecipeArgs) {
 
 export function publishRecipe(recipeId: string) {
   return publishRecipeFn({ data: { recipeId } });
+}
+
+/**
+ * Sign a URL for one recipe photo the browser is about to PUT into Buttery's
+ * bucket. The bytes go straight there and never cross this transport — see
+ * `#/lib/recipe-image-upload`, the only caller.
+ */
+export function createRecipeImageUpload(input: { mime: string; size: number }) {
+  return createRecipeImageUploadFn({ data: input });
 }
 
 export function scrapeRecipe(input: ScrapeArgs) {

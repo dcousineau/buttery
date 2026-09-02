@@ -5,10 +5,10 @@
 //
 // Creates the local S3 bucket the web service uploads recipe images to.
 //
-// `local-s3` (the repo's docker-compose.yml) persists objects on a volume but
+// MinIO (the repo's docker-compose.yml) persists objects on a volume but
 // does not pre-create buckets from configuration — `CreateBucket` is an API
 // call, and something has to make it. This is that something, run once per boot
-// by the `local-s3-bucket` process in process-compose.yaml, after the container
+// by the `minio-bucket` process in process-compose.yaml, after the container
 // is healthy and before the web server can be asked for an image.
 //
 // It lives under services/web rather than scripts/dev because it imports the
@@ -70,12 +70,12 @@ if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
 // Placeholder values from `.env.example` that a developer never filled in. Same
 // reasoning as above: not configured is not an error.
 if (endpoint.startsWith("<")) {
-  // A checkout whose `.env` predates the local-s3 container: bootstrap-env.mjs
+  // A checkout whose `.env` predates the local bucket: bootstrap-env.mjs
   // never overwrites an existing file, so the old remote-bucket placeholders
   // are still in there. Say exactly what to do — the alternative is a web
   // server that boots fine and then 500s on the first recipe photo.
   console.log("create-bucket: services/web/.env still has the old remote-bucket placeholders for BLOB_S3_*.");
-  console.log("create-bucket: copy the BLOB_S3_* block from services/web/.env.example over them to use the local-s3 container. Skipping for now.");
+  console.log("create-bucket: copy the BLOB_S3_* block from services/web/.env.example over them to use the local MinIO container. Skipping for now.");
   process.exit(0);
 }
 
@@ -87,7 +87,7 @@ const client = new S3Client({
   endpoint,
   region: cfg("BLOB_S3_REGION") || "us-east-1",
   credentials: { accessKeyId, secretAccessKey },
-  // local-s3 is path-style only; see docker-compose.yml.
+  // The dev MinIO is path-style only; see docker-compose.yml.
   forcePathStyle: (cfg("BLOB_S3_FORCE_PATH_STYLE") || "").toLowerCase() === "true",
 });
 

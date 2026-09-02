@@ -30,8 +30,6 @@ import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as RecipesIdRouteImport } from './routes/recipes.$id'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiPlanWeekDoticsRouteImport } from './routes/api/plan/week[.]ics'
-import { Route as ApiRecipeImageRecipeIdRouteImport } from './routes/api/recipe-image/$recipeId'
-import { Route as ApiRecipeImageStagedRouteImport } from './routes/api/recipe-image/staged'
 import { Route as HouseholdRecipesIndexRouteImport } from './routes/household.recipes.index'
 import { Route as HouseholdRecipesIdRouteImport } from './routes/household.recipes.$id'
 import { Route as HouseholdRecipesNewRouteImport } from './routes/household.recipes.new'
@@ -145,16 +143,6 @@ const ApiPlanWeekDoticsRoute = ApiPlanWeekDoticsRouteImport.update({
   path: '/api/plan/week.ics',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiRecipeImageRecipeIdRoute = ApiRecipeImageRecipeIdRouteImport.update({
-  id: '/api/recipe-image/$recipeId',
-  path: '/api/recipe-image/$recipeId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiRecipeImageStagedRoute = ApiRecipeImageStagedRouteImport.update({
-  id: '/api/recipe-image/staged',
-  path: '/api/recipe-image/staged',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const HouseholdRecipesIndexRoute = HouseholdRecipesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -209,8 +197,6 @@ export interface FileRoutesByFullPath {
   '/households/': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
-  '/api/recipe-image/$recipeId': typeof ApiRecipeImageRecipeIdRoute
-  '/api/recipe-image/staged': typeof ApiRecipeImageStagedRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
   '/household/recipes/new': typeof HouseholdRecipesNewRoute
   '/household/recipes/import': typeof HouseholdRecipesImportRoute
@@ -239,8 +225,6 @@ export interface FileRoutesByTo {
   '/households': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
-  '/api/recipe-image/$recipeId': typeof ApiRecipeImageRecipeIdRoute
-  '/api/recipe-image/staged': typeof ApiRecipeImageStagedRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
   '/household/recipes/new': typeof HouseholdRecipesNewRoute
   '/household/recipes/import': typeof HouseholdRecipesImportRoute
@@ -271,8 +255,6 @@ export interface FileRoutesById {
   '/households/': typeof HouseholdsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
-  '/api/recipe-image/$recipeId': typeof ApiRecipeImageRecipeIdRoute
-  '/api/recipe-image/staged': typeof ApiRecipeImageStagedRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
   '/household/recipes/new': typeof HouseholdRecipesNewRoute
   '/household/recipes_/import': typeof HouseholdRecipesImportRoute
@@ -304,8 +286,6 @@ export interface FileRouteTypes {
     | '/households/'
     | '/api/auth/$'
     | '/api/plan/week.ics'
-    | '/api/recipe-image/$recipeId'
-    | '/api/recipe-image/staged'
     | '/household/recipes/$id'
     | '/household/recipes/new'
     | '/household/recipes/import'
@@ -334,8 +314,6 @@ export interface FileRouteTypes {
     | '/households'
     | '/api/auth/$'
     | '/api/plan/week.ics'
-    | '/api/recipe-image/$recipeId'
-    | '/api/recipe-image/staged'
     | '/household/recipes/$id'
     | '/household/recipes/new'
     | '/household/recipes/import'
@@ -365,8 +343,6 @@ export interface FileRouteTypes {
     | '/households/'
     | '/api/auth/$'
     | '/api/plan/week.ics'
-    | '/api/recipe-image/$recipeId'
-    | '/api/recipe-image/staged'
     | '/household/recipes/$id'
     | '/household/recipes/new'
     | '/household/recipes_/import'
@@ -397,8 +373,6 @@ export interface RootRouteChildren {
   HouseholdsIndexRoute: typeof HouseholdsIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiPlanWeekDoticsRoute: typeof ApiPlanWeekDoticsRoute
-  ApiRecipeImageRecipeIdRoute: typeof ApiRecipeImageRecipeIdRoute
-  ApiRecipeImageStagedRoute: typeof ApiRecipeImageStagedRoute
   HouseholdRecipesImportRoute: typeof HouseholdRecipesImportRoute
   HouseholdRecipesImportBridgeRoute: typeof HouseholdRecipesImportBridgeRoute
   RecipesIdOgDotpngRoute: typeof RecipesIdOgDotpngRoute
@@ -553,20 +527,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPlanWeekDoticsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/recipe-image/$recipeId': {
-      id: '/api/recipe-image/$recipeId'
-      path: '/api/recipe-image/$recipeId'
-      fullPath: '/api/recipe-image/$recipeId'
-      preLoaderRoute: typeof ApiRecipeImageRecipeIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/recipe-image/staged': {
-      id: '/api/recipe-image/staged'
-      path: '/api/recipe-image/staged'
-      fullPath: '/api/recipe-image/staged'
-      preLoaderRoute: typeof ApiRecipeImageStagedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/household/recipes/': {
       id: '/household/recipes/'
       path: '/'
@@ -649,8 +609,6 @@ const rootRouteChildren: RootRouteChildren = {
   HouseholdsIndexRoute: HouseholdsIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiPlanWeekDoticsRoute: ApiPlanWeekDoticsRoute,
-  ApiRecipeImageRecipeIdRoute: ApiRecipeImageRecipeIdRoute,
-  ApiRecipeImageStagedRoute: ApiRecipeImageStagedRoute,
   HouseholdRecipesImportRoute: HouseholdRecipesImportRoute,
   HouseholdRecipesImportBridgeRoute: HouseholdRecipesImportBridgeRoute,
   RecipesIdOgDotpngRoute: RecipesIdOgDotpngRoute,
@@ -658,12 +616,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
