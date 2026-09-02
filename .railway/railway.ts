@@ -63,7 +63,7 @@ export default defineRailway((ctx) => {
   // This is not an optional feature of the image path — it IS the image path.
   // Every recipe that comes through Buttery has its photo here, and the original
   // URL is never stored. Local dev used to point at this same bucket and now
-  // runs its own MinIO container; that is the only difference between the
+  // runs its own RustFS container; that is the only difference between the
   // two.
   //
   // The web service never relays the bytes. It signs a URL and the BROWSER talks

@@ -199,13 +199,13 @@ function jpegBytes(): Uint8Array {
 
 /**
  * The image suites need a bucket as well as a database, so they carry their own
- * skip. The MinIO container in the repo's docker-compose.yml is what
+ * skip. The RustFS container in the repo's docker-compose.yml is what
  * satisfies this locally (`pnpm dev` starts it and creates the bucket); without
  * BLOB_S3_* they skip rather than fail, exactly like the database probe above.
  */
 const hasBucket = Boolean(process.env.BLOB_S3_ENDPOINT && process.env.BLOB_S3_BUCKET && process.env.BLOB_S3_ACCESS_KEY_ID && process.env.BLOB_S3_SECRET_ACCESS_KEY);
 if (db && !hasBucket) {
-  process.stderr.write("\nSKIPPING recipes-write image tests — BLOB_S3_* is not set.\nStart the dev stack (`pnpm dev`) so the MinIO container and its bucket exist.\n\n");
+  process.stderr.write("\nSKIPPING recipes-write image tests — BLOB_S3_* is not set.\nStart the dev stack (`pnpm dev`) so the RustFS container and its bucket exist.\n\n");
 }
 const describeImages = db && hasBucket ? describe : describe.skip;
 

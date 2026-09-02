@@ -3,13 +3,22 @@
 // ^ Plain JS run directly by Node (not part of the bundled app), so the Node
 // globals have to be declared for the linter. Same reason as bootstrap-env.mjs.
 //
-// Creates the local S3 bucket the web service uploads recipe images to.
+// Creates the local S3 bucket recipe images are uploaded to, and the CORS rule
+// the browser needs to upload them.
 //
-// MinIO (the repo's docker-compose.yml) persists objects on a volume but
-// does not pre-create buckets from configuration — `CreateBucket` is an API
-// call, and something has to make it. This is that something, run once per boot
-// by the `minio-bucket` process in process-compose.yaml, after the container
-// is healthy and before the web server can be asked for an image.
+// RustFS (the repo's docker-compose.yml) persists objects on a volume but does
+// not pre-create buckets from configuration — `CreateBucket` is an API call, and
+// something has to make it. This is that something, run once per boot by the
+// `rustfs-bucket` process in process-compose.yaml, after the container is
+// healthy and before the web server can be asked to sign an upload.
+//
+// It also puts the bucket's CORS rule on, and that is not incidental: the
+// browser POSTs recipe photos straight at the bucket with a presigned form, so
+// without a rule allowing the app's origin every upload dies at the preflight
+// with nothing in any server log. RustFS is not permissively CORS-open the way
+// MinIO was, which is the correct S3 behaviour and the same thing Railway's
+// buckets need — so configuring it here is local dev proving a requirement that
+// used to be production's alone to discover.
 //
 // It lives under services/web rather than scripts/dev because it imports the
 // app's own S3 client: `@aws-sdk/client-s3` is this package's dependency, and
@@ -75,40 +84,80 @@ if (endpoint.startsWith("<")) {
   // are still in there. Say exactly what to do — the alternative is a web
   // server that boots fine and then 500s on the first recipe photo.
   console.log("create-bucket: services/web/.env still has the old remote-bucket placeholders for BLOB_S3_*.");
-  console.log("create-bucket: copy the BLOB_S3_* block from services/web/.env.example over them to use the local MinIO container. Skipping for now.");
+  console.log("create-bucket: copy the BLOB_S3_* block from services/web/.env.example over them to use the local bucket container. Skipping for now.");
   process.exit(0);
 }
 
 // Imported after the config check so a stack running without object storage
 // does not pay for loading the SDK.
-const { CreateBucketCommand, HeadBucketCommand, S3Client } = await import("@aws-sdk/client-s3");
+const { CreateBucketCommand, HeadBucketCommand, PutBucketCorsCommand, S3Client } = await import("@aws-sdk/client-s3");
 
 const client = new S3Client({
   endpoint,
   region: cfg("BLOB_S3_REGION") || "us-east-1",
   credentials: { accessKeyId, secretAccessKey },
-  // The dev MinIO is path-style only; see docker-compose.yml.
+  // The dev bucket is path-style only; see docker-compose.yml.
   forcePathStyle: (cfg("BLOB_S3_FORCE_PATH_STYLE") || "").toLowerCase() === "true",
 });
 
+let exists = false;
 try {
   await client.send(new HeadBucketCommand({ Bucket: bucket }));
+  exists = true;
   console.log(`create-bucket: ${bucket} already exists at ${endpoint}`);
-  process.exit(0);
 } catch {
   // Absent (or the server does not answer HEAD on a bucket) — fall through to
   // the create, which is the call that actually decides.
 }
 
-try {
-  await client.send(new CreateBucketCommand({ Bucket: bucket }));
-  console.log(`create-bucket: created ${bucket} at ${endpoint}`);
-} catch (err) {
-  const name = err?.name ?? "";
-  if (name === "BucketAlreadyOwnedByYou" || name === "BucketAlreadyExists") {
-    console.log(`create-bucket: ${bucket} already exists at ${endpoint}`);
-    process.exit(0);
+if (!exists) {
+  try {
+    await client.send(new CreateBucketCommand({ Bucket: bucket }));
+    console.log(`create-bucket: created ${bucket} at ${endpoint}`);
+  } catch (err) {
+    const name = err?.name ?? "";
+    if (name === "BucketAlreadyOwnedByYou" || name === "BucketAlreadyExists") {
+      console.log(`create-bucket: ${bucket} already exists at ${endpoint}`);
+    } else {
+      console.error(`create-bucket: could not create ${bucket} at ${endpoint}: ${err?.message ?? err}`);
+      process.exit(1);
+    }
   }
-  console.error(`create-bucket: could not create ${bucket} at ${endpoint}: ${err?.message ?? err}`);
+}
+
+// The CORS rule, every boot — an existing bucket is not evidence it has one,
+// and a bucket with no rule is a bucket every browser upload fails against.
+//
+// The origin is the app's, taken from the same variable the dev server binds to,
+// because a CORS rule and the origin it allows are the same fact written twice
+// otherwise. `PUT`/`DELETE` are deliberately absent: the browser only ever POSTs
+// a presigned form and GETs a presigned URL, and a rule is a statement about
+// what the bucket will accept, not a list of what S3 can do.
+const appOrigin = cfg("VITE_APP_URL") || "http://127.0.0.1:3000";
+try {
+  await client.send(
+    new PutBucketCorsCommand({
+      Bucket: bucket,
+      CORSConfiguration: {
+        CORSRules: [
+          {
+            AllowedOrigins: [appOrigin],
+            AllowedMethods: ["GET", "POST"],
+            AllowedHeaders: ["*"],
+            // The browser reads nothing off the upload response today; ETag is
+            // the one header worth having available if it ever wants to.
+            ExposeHeaders: ["ETag"],
+            MaxAgeSeconds: 3000,
+          },
+        ],
+      },
+    }),
+  );
+  console.log(`create-bucket: CORS on ${bucket} allows ${appOrigin} (GET, POST)`);
+} catch (err) {
+  // Fatal, unlike a missing bucket would not be: the web server boots fine
+  // without this and then every recipe photo fails in the browser with nothing
+  // in any server log to explain it. Better to fail the stack here.
+  console.error(`create-bucket: could not set CORS on ${bucket} at ${endpoint}: ${err?.message ?? err}`);
   process.exit(1);
 }

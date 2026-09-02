@@ -246,3 +246,63 @@ own PDS, and where we originally fetched it is moot — or it may be the exact m
 becomes interesting. Making it survive needs a home `clearPendingImage` does not reach (a
 column on `recipe_image`, or a `recipe_meta` row), which is a new migration and past what this
 change was scoped to. Flagged rather than guessed.
+
+---
+
+## 2026-09-02c — the dev bucket again: MinIO is archived, and ministack cannot hold the design
+
+> Task: MinIO has been deprecated; use ministack instead.
+
+### The premise was right
+
+MinIO's community edition went into maintenance mode in December 2025, stopped publishing
+Docker images in October 2025, and the repository was formally archived on 2026-04-25. The
+`minio/minio:latest` this branch pinned an hour earlier is an unmaintained image that upstream
+no longer builds. It had to go.
+
+### ministack cannot replace it here
+
+Probed with one client against the six behaviours the upload path actually depends on:
+
+|                                         | ministack                              | RustFS              |
+| --------------------------------------- | -------------------------------------- | ------------------- |
+| POST policy `eq $key` enforced          | **204 — accepts any key**              | 400                 |
+| POST policy `eq $Content-Type` enforced | **204 — stored as `text/html`**        | 400                 |
+| `content-length-range` (the 2 MB cap)   | 400                                    | 400                 |
+| `HeadObject`                            | 64b `text/html`                        | 64b `image/jpeg`    |
+| Presigned GET                           | 200                                    | 200                 |
+| Unsigned GET refused                    | **200, and the bucket lists publicly** | 403                 |
+| CORS preflight                          | `*`                                    | via `PutBucketCors` |
+
+The two rows in bold are not cosmetic. `eq $key` and `eq $Content-Type` are the entire
+authorization of a presigned form: without them a form we signed for one account's prefix is a
+write-anywhere credential, and the stored content type — which becomes the PDS blob's encoding
+— is whatever the uploader felt like. And an unsigned `GET` returning 200 means every private
+draft photo is world-readable, which is the read model deleted rather than emulated. Local dev
+would have stopped exercising both properties, and
+`the signed form itself refuses a body the policy does not allow` goes red against it.
+
+SeaweedFS was measured too: it 403s every presigned POST without additional S3 auth
+configuration, so it is not a drop-in either.
+
+### RustFS
+
+Apache 2.0, actively maintained, and it passes all six. One difference from MinIO, and it is
+an improvement: **RustFS is not permissively CORS-open by default.** A bucket CORS rule has to
+be configured, which is the correct S3 behaviour and exactly what Railway's buckets need. So
+`scripts/create-bucket.mjs` now puts the rule on at boot (origin from `VITE_APP_URL`, `GET` and
+`POST`), and the requirement the previous entry listed under "before this works in production"
+is now something local dev proves rather than something production alone discovers. That call
+is fatal if it fails, deliberately: a bucket with no rule is a bucket every browser upload dies
+against with nothing in any server log.
+
+Caveat worth knowing: RustFS is at 1.0.0-beta. It is a dev-stack emulator, not production
+storage — production is Railway's bucket — so the exposure is a developer's laptop.
+
+### Verified
+
+Booted a fresh RustFS container and ran `scripts/create-bucket.mjs` against it exactly as
+`pnpm dev` does (twice, for idempotence), then re-probed all six through the configured bucket:
+all pass, and preflight returns `Access-Control-Allow-Origin: http://127.0.0.1:3000` for the
+app's origin and 403 for anything else. DB suites against a real Postgres and that bucket: 282
+passed. Unit: 562. `tsc` and `oxlint` clean.

@@ -5,7 +5,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { MAX_IMAGE_BYTES } from "#/lib/recipe-image";
 
 // Server-only module: Buttery-owned object storage (Railway bucket in prod,
-// MinIO container in dev — both S3-compatible). This is the single door to
+// RustFS container in dev — both S3-compatible). This is the single door to
 // anything Buttery holds on a user's behalf that is NOT yet an atproto blob —
 // today that's recipe images before they are published.
 //
@@ -42,7 +42,7 @@ function env(name: string): string {
  * Whether the bucket is configured at all.
  *
  * Local dev can run the whole app without object storage (the dev stack does
- * configure it — see docker-compose.yml's `minio` — but a bare `vite dev`
+ * configure it — see docker-compose.yml's `rustfs` — but a bare `vite dev`
  * against a remote database may not). Callers on the image path use this to
  * fail with a sentence a developer can act on instead of an S3 stack trace.
  */
@@ -60,7 +60,7 @@ export function getBlobClient(): S3Client {
         accessKeyId: env("BLOB_S3_ACCESS_KEY_ID"),
         secretAccessKey: env("BLOB_S3_SECRET_ACCESS_KEY"),
       },
-      // The dev MinIO routes path-style only — a virtual-hosted request would
+      // The dev bucket routes path-style only — a virtual-hosted request would
       // resolve `<bucket>.localhost` and never reach it. Railway's buckets are
       // virtual-hosted, so this stays off unless the environment asks for it.
       forcePathStyle: isTruthy(process.env.BLOB_S3_FORCE_PATH_STYLE),
