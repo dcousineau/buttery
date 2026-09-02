@@ -413,8 +413,8 @@ export interface RecipeMeta {
 export interface RecipePendingImage {
   alt: string | null;
   created_at: Generated<Timestamp>;
-  mime: string | null;
-  object_key: string | null;
+  mime: string;
+  object_key: string;
   recipe_id: string;
   source_url: string | null;
 }

@@ -91,6 +91,15 @@ export const COMPARISON_CHUNK_SIZE = 25;
  */
 export interface ImportApi {
   openSession(input: OpenImportSessionInput): Promise<ImportSessionView>;
+  /**
+   * PUT one recipe photo's bytes to Buttery's own storage, ahead of the commit
+   * that will claim them (§11). Returns the opaque id the commit references, or
+   * null when the upload failed — a photo may go missing, an import may not.
+   *
+   * On the port rather than called directly so the whole flow still runs in a
+   * unit test with no network: it is the one image call the client makes.
+   */
+  uploadImage(blob: Blob): Promise<string | null>;
   probeDuplicates(input: ProbeInput): Promise<ProbeVerdict[]>;
   getComparison(input: ComparisonInput): Promise<ComparisonResult>;
   commitChunk(input: CommitChunkInput): Promise<CommitItemResult[]>;

@@ -54,11 +54,33 @@ export default defineRailway((ctx) => {
   cache.networking = { tcpProxies: { "6379": {} } };
 
   // S3-compatible object storage for Buttery-owned uploads (pre-publish recipe
-  // draft images). Buckets are per-environment with isolated credentials.
-  // Railway provides BUCKET/ACCESS_KEY_ID/SECRET_ACCESS_KEY/REGION/ENDPOINT as
+  // images). Buckets are per-environment with isolated credentials. Railway
+  // provides BUCKET/ACCESS_KEY_ID/SECRET_ACCESS_KEY/REGION/ENDPOINT as
   // referenceable outputs; the web service consumes them as BLOB_S3_* (see
-  // services/web/src/lib/blob-storage.ts). Draft bytes live here until publish,
-  // when they're read back and uploaded to the user's PDS as an atproto blob.
+  // services/web/src/lib/blob-storage.ts). Bytes live here until publish, when
+  // they're read back and uploaded to the user's PDS as an atproto blob.
+  //
+  // This is not an optional feature of the image path — it IS the image path.
+  // Every recipe that comes through Buttery has its photo here, and the original
+  // URL is never stored. Local dev used to point at this same bucket and now
+  // runs its own RustFS container; that is the only difference between the
+  // two.
+  //
+  // The web service never relays the bytes. It signs a URL and the BROWSER talks
+  // to this bucket directly — a PUT to upload, a GET to render. Two consequences
+  // that are not visible from the variables below:
+  //
+  //   * **CORS has to allow the app's origin**, for `PUT` and `GET`, or every
+  //     upload fails in the browser with no server-side trace. Railway buckets
+  //     do not expose a CORS policy through IaC today, so it is configured out
+  //     of band (`aws s3api put-bucket-cors --endpoint-url <ENDPOINT>`); see
+  //     docs.railway.com/storage-buckets/uploading-serving.
+  //   * **One prefix, `uploads/<hashed did>/<ulid>`.** The object never moves:
+  //     the browser writes it, the recipe row points at it, publish reads it
+  //     back for the PDS blob and deletes it. An upload whose save never arrived
+  //     is garbage; ULIDs sort by time, so an expiry lifecycle rule on the prefix
+  //     is the cleanup, not a sweeper. Railway buckets do not expose lifecycle
+  //     rules through IaC either, so that is not declared here.
   const uploads = bucket("buttery-uploads", { region: "iad" });
 
   // Public origin for this environment. Single source of truth: feeds both

@@ -125,6 +125,7 @@ export async function resolveAdderHandles(db: Kysely<DB>, dids: string[]): Promi
 export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(async (): Promise<HouseholdRecipeRow[]> => {
   const { getDb } = await import("#/lib/db");
   const { householdScopedQuery } = await import("./household/scoped-query");
+  const { presignDownload } = await import("#/lib/blob-storage");
   const { did, householdId } = await activeContext();
   const db = getDb();
 
@@ -132,6 +133,10 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
     .innerJoin("household_recipe as hr", "hr.household_id", "hm.household_id")
     .innerJoin("recipe as r", "r.id", "hr.recipe_id")
     .leftJoin("recipe_image as img", (join) => join.onRef("img.recipe_id", "=", "r.id").on("img.ordinal", "=", 0))
+    // A draft's photo lives in our bucket, not as a blob ref. The key is joined
+    // so the row can be handed a signed URL straight to the object, and an
+    // unpublished recipe shows its thumbnail in the box like any other.
+    .leftJoin("recipe_pending_image as pimg", "pimg.recipe_id", "r.id")
     .leftJoin("recipe_attribution as attr", "attr.recipe_id", "r.id")
     .leftJoin("atproto_repo as repo", "repo.did", "r.did")
     .leftJoin("atproto_collection_recipe as acr", (join) => join.onRef("acr.did", "=", "r.did").onRef("acr.rkey", "=", "r.rkey"))
@@ -148,6 +153,7 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
       "hr.added_by_did as added_by_did",
       "img.blob_cid as blob_cid",
       "img.blob_mime as blob_mime",
+      "pimg.object_key as pending_object_key",
       "attr.display_name as attr_display_name",
       "attr.author as attr_author",
       "attr.publisher as attr_publisher",
@@ -173,37 +179,48 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
 
   const handleByDid = await resolveAdderHandles(db, [...new Set(rows.map((r) => r.added_by_did))]);
 
-  return rows.map((row): HouseholdRecipeRow => {
-    const { minutes, display } = minutesDisplay(row.total_time_seconds);
-    const source = deriveSource({
-      origin: row.origin,
-      id: row.id,
-      repoHandle: row.repo_handle,
-      attrDisplayName: row.attr_display_name,
-      attrAuthor: row.attr_author,
-      attrPublisher: row.attr_publisher,
-      attrUrl: row.attr_url,
-    });
-    // origin='local' recipes are Buttery-owned and always available; only synced
-    // recipes can lose their network source (raw layer deleted/invalid).
-    const unavailable = row.origin === "sync" && (row.acr_deleted_at !== null || row.acr_validation_status == null || row.acr_validation_status !== "valid");
-    return {
-      recipeId: row.id,
-      title: row.name,
-      favorite: row.favorite,
-      sourceKind: source.kind,
-      sourceLabel: source.label,
-      sourceUrl: source.url,
-      totalMinutes: minutes,
-      totalTimeDisplay: display,
-      keywords: keywordsByRecipe.get(row.id) ?? [],
-      thumbUrl: row.did && row.blob_cid ? blobImageUrl(row.did, row.blob_cid, row.blob_mime, "feed_thumbnail") : null,
-      addedAt: new Date(row.added_at).toISOString(),
-      addedByHandle: handleByDid.get(row.added_by_did) ?? null,
-      unavailable,
-      unpublished: row.visibility !== "public" || row.uri == null,
-    };
-  });
+  // A draft hero is a signed URL onto the bucket, minted here because here is
+  // where the caller has already passed the household check that authorizes it.
+  // Signing is a local HMAC, not a round trip, so a page of them costs nothing
+  // worth batching.
+  return await Promise.all(
+    rows.map(async (row): Promise<HouseholdRecipeRow> => {
+      const { minutes, display } = minutesDisplay(row.total_time_seconds);
+      const source = deriveSource({
+        origin: row.origin,
+        id: row.id,
+        repoHandle: row.repo_handle,
+        attrDisplayName: row.attr_display_name,
+        attrAuthor: row.attr_author,
+        attrPublisher: row.attr_publisher,
+        attrUrl: row.attr_url,
+      });
+      // origin='local' recipes are Buttery-owned and always available; only synced
+      // recipes can lose their network source (raw layer deleted/invalid).
+      const unavailable = row.origin === "sync" && (row.acr_deleted_at !== null || row.acr_validation_status == null || row.acr_validation_status !== "valid");
+      return {
+        recipeId: row.id,
+        title: row.name,
+        favorite: row.favorite,
+        sourceKind: source.kind,
+        sourceLabel: source.label,
+        sourceUrl: source.url,
+        totalMinutes: minutes,
+        totalTimeDisplay: display,
+        keywords: keywordsByRecipe.get(row.id) ?? [],
+        thumbUrl:
+          row.did && row.blob_cid
+            ? blobImageUrl(row.did, row.blob_cid, row.blob_mime, "feed_thumbnail")
+            : row.pending_object_key
+              ? await presignDownload(row.pending_object_key)
+              : null,
+        addedAt: new Date(row.added_at).toISOString(),
+        addedByHandle: handleByDid.get(row.added_by_did) ?? null,
+        unavailable,
+        unpublished: row.visibility !== "public" || row.uri == null,
+      };
+    }),
+  );
 });
 
 // --- §6.2 getHouseholdRecipe --------------------------------------------
@@ -280,11 +297,12 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
 
     const [images, pendingImage, ingredients, instructions, keywords, note, adder, plannedUsage, enrichment] = await Promise.all([
       db.selectFrom("recipe_image").select(["blob_cid", "blob_mime", "alt"]).where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
-      // Draft/private hero fallback: a not-yet-published import keeps its photo as
-      // a pending pointer (recipe_pending_image). No published recipe_image row
-      // exists yet, so fall back to the source URL (rendered cross-origin, same as
-      // the create form preview).
-      db.selectFrom("recipe_pending_image").select(["source_url", "alt"]).where("recipe_id", "=", data.recipeId).executeTakeFirst(),
+      // Draft/private hero: a not-yet-published recipe keeps its photo in OUR
+      // bucket. The page gets a signed URL onto that object — minted below,
+      // where the caller has already passed the household check that authorizes
+      // it. This used to select `source_url` and render a third-party URL
+      // straight into the page, and then a proxy route on our own origin.
+      db.selectFrom("recipe_pending_image").select(["object_key", "alt"]).where("recipe_id", "=", data.recipeId).executeTakeFirst(),
       db.selectFrom("recipe_ingredient").select("text").where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
       db.selectFrom("recipe_instruction").select("text").where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
       db.selectFrom("recipe_keyword").select("keyword").where("recipe_id", "=", data.recipeId).execute(),
@@ -307,19 +325,24 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
     const { parseServes } = await import("#/lib/recipe-scale");
     const unavailable = row.origin === "sync" && (row.acr_deleted_at !== null || row.acr_validation_status == null || row.acr_validation_status !== "valid");
 
+    // A published recipe renders from an atproto CDN; before that, from a signed
+    // URL onto our bucket. There is no third case and no `<img src>` on someone
+    // else's host.
+    const published = images
+      .filter((img) => row.did && img.blob_cid)
+      .map((img) => ({ url: blobImageUrl(row.did as string, img.blob_cid as string, img.blob_mime, "feed_fullsize"), alt: img.alt }));
+    let heroImages = published;
+    if (!published.length && pendingImage) {
+      const { presignDownload } = await import("#/lib/blob-storage");
+      heroImages = [{ url: await presignDownload(pendingImage.object_key), alt: pendingImage.alt }];
+    }
+
     return {
       recipeId: row.id,
       title: row.name,
       description: row.description,
       source,
-      images: (() => {
-        const published = images
-          .filter((img) => row.did && img.blob_cid)
-          .map((img) => ({ url: blobImageUrl(row.did as string, img.blob_cid as string, img.blob_mime, "feed_fullsize"), alt: img.alt }));
-        if (published.length) return published;
-        // No published blob yet → show the draft's imported hero from its source URL.
-        return pendingImage?.source_url ? [{ url: pendingImage.source_url, alt: pendingImage.alt }] : [];
-      })(),
+      images: heroImages,
       ingredients: ingredients.map((i) => i.text),
       instructions: instructions.map((i) => i.text),
       keywords: keywords.map((k) => k.keyword),
@@ -585,6 +608,8 @@ export const searchGlobalRecipes = createServerFn({ method: "GET" })
         attrPublisher: row.attr_publisher,
         attrUrl: row.attr_url,
       }),
+      // Public recipes only, so the image is always an atproto blob: no pending
+      // fallback here, and the caller has no box row that would authorize one.
       thumbUrl: row.did && row.blob_cid ? blobImageUrl(row.did, row.blob_cid, row.blob_mime, "feed_thumbnail") : null,
       // Same `repo` join `deriveSource` already consumes — prefixed the way every
       // other handle in this module is surfaced.

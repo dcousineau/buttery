@@ -114,6 +114,18 @@ const GATED: readonly [name: string, call: () => Promise<unknown>][] = [
   ["publishRecipe", () => writes.publishRecipe({ data: { recipeId: "r1" } })],
 ];
 
+/**
+ * Entry points that authorize the same way but never reach the database.
+ *
+ * There is one, and it is the odd shape on purpose: `createRecipeImageUpload`
+ * hands back a signed URL for the browser to PUT a photo at, and the key it
+ * signs is derived from the DID alone — no household row is read or written, so
+ * there is no `getDb()` for the ordering assertion above to hang on. What still
+ * has to hold is the gate itself: a signed upload URL is a write credential for
+ * shared infrastructure, and a caller `assertMember` rejects must not get one.
+ */
+const SESSION_ONLY: [string, () => Promise<unknown>][] = [["createRecipeImageUpload", () => writes.createRecipeImageUpload({ data: { mime: "image/jpeg", size: 64 } })]];
+
 // `reset`, not `clear`: a `mockRejectedValueOnce` that the case under test never
 // consumed — precisely what happens when a gate goes missing — would otherwise
 // leak into the next entry point and report the failure against the wrong one.
@@ -144,9 +156,26 @@ describe.each(GATED)("%s", (_name, call) => {
   });
 });
 
+describe.each(SESSION_ONLY)("%s", (_name, call) => {
+  it("calls assertMember with the request context's did + household before doing any work", async () => {
+    await call();
+
+    expect(assertMember).toHaveBeenCalledTimes(1);
+    expect(assertMember).toHaveBeenCalledWith(DID, HH);
+    // And it stayed out of the database, which is why it is in this list.
+    expect(getDb).not.toHaveBeenCalled();
+  });
+
+  it("refuses a caller assertMember rejects", async () => {
+    assertMember.mockRejectedValueOnce(new NotAMemberError());
+
+    await expect(call()).rejects.toBeInstanceOf(NotAMemberError);
+  });
+});
+
 /**
- * `describe.each` can only gate the entry points it is handed, so the list above
- * is only as good as its completeness. This reads the two modules' source and
+ * `describe.each` can only gate the entry points it is handed, so the lists above
+ * are only as good as their completeness. This reads the two modules' source and
  * fails when a `createServerFn` appears that nothing here drives — a new entry
  * point cannot ship un-gated *and* unnoticed.
  *
@@ -163,6 +192,6 @@ describe("the gated list covers every exported server function", () => {
     );
 
     expect(declared.length).toBeGreaterThan(0); // the regex still matches the idiom
-    expect(declared.sort()).toEqual(GATED.map(([n]) => n).sort());
+    expect(declared.sort()).toEqual([...GATED, ...SESSION_ONLY].map(([n]) => n).sort());
   });
 });

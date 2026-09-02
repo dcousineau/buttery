@@ -22,6 +22,7 @@
     "db:seed:run": "kysely seed run",
     "db:seed:list": "kysely seed list",
     "db:reset:users": "node scripts/reset-user-data.ts",
+    "dev:bucket": "node scripts/create-bucket.mjs",
     "db:codegen": "kysely-codegen --out-file src/db/types.ts --exclude-pattern \"*.kysely_migration*\"",
     "typecheck": "pnpm --filter @buttery/lexicons build && tsc && tsc -p tsconfig.sw.json"
   },
@@ -30,7 +31,9 @@
     "@atproto/oauth-client": "^0.8.3",
     "@atproto/oauth-client-node": "^0.5.3",
     "@atproto/oauth-types": "^0.7.5",
-    "@aws-sdk/client-s3": "^3.1113.0",
+    "@aws-sdk/client-s3": "^3.1123.0",
+    "@aws-sdk/s3-presigned-post": "^3.1123.0",
+    "@aws-sdk/s3-request-presigner": "^3.1123.0",
     "@base-ui/react": "^1.7.0",
     "@buttery/food": "workspace:*",
     "@buttery/lexicons": "workspace:*",

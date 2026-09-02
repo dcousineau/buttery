@@ -1,12 +1,15 @@
 import { type DroppedFile, normalizeEntryPath } from "@buttery/recipe-extract/import";
 
 /**
- * Local image previews for the review screen (§11, D26).
+ * The dropped folder's photos: previews for the review screen (§11, D26), and the
+ * `File` handles the commit path uploads.
  *
- * Reading is not uploading. The review pane shows the photo that came out of the dropped
- * folder, straight off the `File` handle the browser already has, while the commit path
- * sends `imageSourceUrl` — the **remote** URL — and no bytes ever leave the tab. That is
- * the entire scope of phase 1's image work.
+ * The review pane shows the photo straight off the `File` the browser already has. The
+ * commit then uploads those same bytes to Buttery's own storage — it used to send the
+ * export's **remote** URL instead and upload nothing, which meant an export whose photos
+ * were local files (every Paprika export of a hand-photographed recipe) imported with no
+ * image at all, and one whose photos were remote imported as a hotlink to someone else's
+ * CDN. Neither is a thing Buttery does now: an image is our bytes or it is absent.
  *
  * Object URLs are the hazard this module exists to contain. A session that previews 250
  * recipes leaks 250 blob URLs — each pinning its `File`'s decoded bytes — unless every one
@@ -42,6 +45,15 @@ export interface LocalImageCache {
    * the photo was never synced).
    */
   get(path: string): string | null;
+  /**
+   * The `File` itself, for the commit path.
+   *
+   * Reading is no longer *only* previewing: a photo that came out of the dropped
+   * folder is bytes the server has no way to reach, so the commit uploads it to
+   * Buttery's storage (`ImportApi.uploadImage`). This returns the handle to
+   * upload; it mints no object URL and so has no lifecycle to leak.
+   */
+  file(path: string): File | null;
   /** Revoke everything. Idempotent; the cache is unusable afterwards. */
   dispose(): void;
   /** Live URL count — asserted by the leak test rather than trusted. */
@@ -81,7 +93,19 @@ export function createLocalImageCache(files: readonly DroppedFile[]): LocalImage
     }
   }
 
+  /** Normalize, then look up. A path the guardrails reject is simply absent. */
+  function lookup(path: string): File | null {
+    try {
+      return byPath.get(normalizeEntryPath(path)) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   return {
+    file(path) {
+      return disposed ? null : lookup(path);
+    },
     get(path) {
       if (disposed) return null;
       let key: string;

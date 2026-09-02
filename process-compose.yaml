@@ -142,6 +142,43 @@ processes:
     log_location: ./.dev-logs/redis.log
     log_configuration: *log_config
 
+  rustfs:
+    description: "S3-compatible object storage (docker compose; host port 59000)"
+    command: "docker compose up --no-log-prefix rustfs"
+    working_dir: "."
+    availability: *container_availability
+    readiness_probe:
+      # Not an S3 call: every S3 route wants a SigV4 signature and there is no
+      # signing client to hand. The health route answering proves it is up and
+      # listening, and `rustfs-bucket` right after does make a real, signed API
+      # call — so a container that is listening but not serving S3 still fails
+      # the boot, one process later and with a clearer message.
+      exec:
+        command: "docker compose exec -T rustfs curl -fsS -o /dev/null http://127.0.0.1:9000/health"
+      initial_delay_seconds: 2
+      period_seconds: 2
+      failure_threshold: 30
+    shutdown:
+      timeout_seconds: 30
+    log_location: ./.dev-logs/rustfs.log
+    log_configuration: *log_config
+
+  # The bucket (and its CORS rule) is an API call, not configuration — RustFS
+  # creates neither on its own.
+  # Same shape and same reasoning as `migrate`: a cheap idempotent catch-up on
+  # every boot so a fresh clone (or a `docker compose down -v`) needs no
+  # documented extra step, and `web` gates on it having completed.
+  rustfs-bucket:
+    description: "Create the local uploads bucket + its CORS rule (idempotent)"
+    command: "pnpm --filter=@buttery/web dev:bucket"
+    depends_on:
+      rustfs:
+        condition: process_healthy
+    availability:
+      restart: "no"
+    log_location: ./.dev-logs/rustfs-bucket.log
+    log_configuration: *log_config
+
   # ---------------------------------------------------------------------------
   # App processes
   # ---------------------------------------------------------------------------
@@ -207,6 +244,11 @@ processes:
         condition: process_healthy
       atproto-dev-env:
         condition: process_healthy
+      # Every recipe that comes through Buttery has its image here before it is
+      # anything else, so a web server without a bucket is one that cannot sign
+      # an upload the moment anyone saves a recipe with a photo.
+      rustfs-bucket:
+        condition: process_completed_successfully
     availability: *app_availability
     readiness_probe:
       http_get:

@@ -184,6 +184,31 @@ async function save(input: SaveRecipeInput): Promise<SaveRecipeResult> {
 
 const attributionOf = (recipeId: string) => db!.selectFrom("recipe_attribution").selectAll().where("recipe_id", "=", recipeId).executeTakeFirst();
 
+/**
+ * A one-pixel JPEG's opening bytes, padded.
+ *
+ * Nothing sniffs these bytes any more — the mime is declared and then bound by
+ * the upload's signature — so a real encoder would prove nothing this does not.
+ * They stay JPEG-shaped only so a failure reads as a real photo would.
+ */
+function jpegBytes(): Uint8Array {
+  const bytes = new Uint8Array(64);
+  bytes.set([0xff, 0xd8, 0xff, 0xe0]);
+  return bytes;
+}
+
+/**
+ * The image suites need a bucket as well as a database, so they carry their own
+ * skip. The RustFS container in the repo's docker-compose.yml is what
+ * satisfies this locally (`pnpm dev` starts it and creates the bucket); without
+ * BLOB_S3_* they skip rather than fail, exactly like the database probe above.
+ */
+const hasBucket = Boolean(process.env.BLOB_S3_ENDPOINT && process.env.BLOB_S3_BUCKET && process.env.BLOB_S3_ACCESS_KEY_ID && process.env.BLOB_S3_SECRET_ACCESS_KEY);
+if (db && !hasBucket) {
+  process.stderr.write("\nSKIPPING recipes-write image tests — BLOB_S3_* is not set.\nStart the dev stack (`pnpm dev`) so the RustFS container and its bucket exist.\n\n");
+}
+const describeImages = db && hasBucket ? describe : describe.skip;
+
 // --- tests ---------------------------------------------------------------
 
 describeDb("saveRecipe — the private save", () => {
@@ -439,5 +464,185 @@ describeDb("publishRecipe — publishing a draft that already exists", () => {
       if (previous === undefined) delete process.env.ATPROTO_PUBLISH_ENABLED;
       else process.env.ATPROTO_PUBLISH_ENABLED = previous;
     }
+  });
+});
+
+describeImages("saveRecipe — the image is always OURS (never the origin's URL)", () => {
+  /**
+   * The invariant, asserted against a real bucket: a recipe that comes through
+   * Buttery has Buttery's bytes, and they got there without passing through this
+   * server. Each test does what the browser does — ask for a signed URL, PUT the
+   * bytes at it, hand the save the id — so what is pinned here is the real
+   * upload path, signature and all.
+   */
+
+  /** POST a presigned form the way a browser does: policy fields first, file last. */
+  async function postForm(upload: { url: string; fields: Record<string, string> }, bytes: Uint8Array, over: Record<string, string> = {}): Promise<Response> {
+    const form = new FormData();
+    for (const [name, value] of Object.entries({ ...upload.fields, ...over })) form.append(name, value);
+    form.append("file", new Blob([bytes as unknown as BlobPart], { type: over["Content-Type"] ?? upload.fields["Content-Type"] }));
+    return await fetch(upload.url, { method: "POST", body: form });
+  }
+
+  /** The browser's half: sign, POST, return the id a save can redeem. */
+  async function uploadAsBrowser(bytes: Uint8Array, mime = "image/jpeg"): Promise<string> {
+    const ticket = await write.createRecipeImageUpload({ data: { mime, size: bytes.byteLength } });
+    expect(ticket).not.toBeNull();
+    expect((await postForm(ticket!, bytes)).ok).toBe(true);
+    return ticket!.uploadId;
+  }
+
+  it("points the row at the very object the browser uploaded — no copy, no move", async () => {
+    const { getBlob, uploadKey } = await import("#/lib/blob-storage");
+    const uploadId = await uploadAsBrowser(jpegBytes());
+
+    const result = await save({
+      record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
+      visibility: "private",
+      publish: false,
+      image: { uploadId, alt: "the bird" },
+    });
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+
+    const row = await db!.selectFrom("recipe_pending_image").selectAll().where("recipe_id", "=", result.recipeId).executeTakeFirstOrThrow();
+    // The key the browser wrote to, unchanged. The previous design copied the
+    // bytes to `pending/<recipeId>` through this server's memory.
+    expect(row.object_key).toBe(uploadKey(DID, uploadId));
+    expect(row.mime).toBe("image/jpeg");
+    expect(row.alt).toBe("the bird");
+
+    // The row is a promise about the bucket, so read the bucket.
+    await expect(getBlob(row.object_key)).resolves.toHaveLength(64);
+  });
+
+  it("will not sign an upload over the 2 MB cap", async () => {
+    // Bluesky's current blob limit, and the only place it has to be stated —
+    // the signature is what makes it binding.
+    const { MAX_IMAGE_BYTES } = await import("#/lib/recipe-image");
+    await expect(write.createRecipeImageUpload({ data: { mime: "image/jpeg", size: MAX_IMAGE_BYTES + 1 } })).resolves.toBeNull();
+    await expect(write.createRecipeImageUpload({ data: { mime: "image/jpeg", size: 0 } })).resolves.toBeNull();
+  });
+
+  it("will not sign a type that is not an image we serve", async () => {
+    // `image/svg+xml` is the one worth naming: an SVG is a document that can
+    // script, and these bytes are user-supplied and served back under our own
+    // authorization.
+    await expect(write.createRecipeImageUpload({ data: { mime: "image/svg+xml", size: 64 } })).resolves.toBeNull();
+    await expect(write.createRecipeImageUpload({ data: { mime: "text/html", size: 64 } })).resolves.toBeNull();
+  });
+
+  it("the signed form itself refuses a body the policy does not allow", async () => {
+    // The three conditions, checked where they are actually enforced. A client
+    // that lies to `createRecipeImageUpload` gets a form that will not take the
+    // bytes — which is what makes the 2 MB cap real rather than advisory, and
+    // what stops a stolen form being pointed at another account's key.
+    const { MAX_IMAGE_BYTES } = await import("#/lib/recipe-image");
+    const ticket = await write.createRecipeImageUpload({ data: { mime: "image/jpeg", size: 64 } });
+    expect(ticket).not.toBeNull();
+
+    const tooBig = new Uint8Array(MAX_IMAGE_BYTES + 1);
+    tooBig.set([0xff, 0xd8, 0xff, 0xe0]);
+    expect((await postForm(ticket!, tooBig)).ok).toBe(false);
+
+    expect((await postForm(ticket!, jpegBytes(), { "Content-Type": "image/png" })).ok).toBe(false);
+    expect((await postForm(ticket!, jpegBytes(), { key: `uploads/elsewhere/${ulid()}` })).ok).toBe(false);
+  });
+
+  it("refuses an upload id belonging to another account", async () => {
+    // The whole authorization for a claim: the key is rebuilt from the SESSION's
+    // did, so an id lifted from someone else's upload names a key this account
+    // does not own and resolves to nothing.
+    const { presignUpload, uploadKey } = await import("#/lib/blob-storage");
+    const uploadId = ulid();
+    const upload = await presignUpload(uploadKey(`did:test:someone-else-${RUN}`, uploadId), "image/jpeg");
+    expect((await postForm(upload, jpegBytes())).ok).toBe(true);
+
+    const result = await save({
+      record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
+      visibility: "private",
+      publish: false,
+      image: { uploadId },
+    });
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+
+    const row = await db!.selectFrom("recipe_pending_image").selectAll().where("recipe_id", "=", result.recipeId).executeTakeFirst();
+    expect(row).toBeUndefined();
+  });
+
+  it("logs where an imported hero came from, beside the bytes and never instead of them", async () => {
+    // `source_url` survived the migration that made `object_key` required, which
+    // is what turned it from a fallback into a note. Pinned here from the outside:
+    // a save that carries one records it, and a save that carries no bytes writes
+    // no row at all — so there is no state where the URL is the image.
+    const uploadId = await uploadAsBrowser(jpegBytes());
+    const origin = `https://cdn.example/${RUN}/hero.jpg`;
+
+    const result = await save({
+      record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
+      visibility: "private",
+      publish: false,
+      image: { uploadId, sourceUrl: origin },
+    });
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+
+    const row = await db!.selectFrom("recipe_pending_image").selectAll().where("recipe_id", "=", result.recipeId).executeTakeFirstOrThrow();
+    expect(row.source_url).toBe(origin);
+    expect(row.object_key).not.toBeNull();
+  });
+
+  it("saves the recipe with NO image when the upload never landed", async () => {
+    // A well-formed id for bytes that are not there. The browser reporting
+    // success is not evidence the bucket agreed, which is why the save HEADs the
+    // object rather than trusting the id — and why a recipe without our bytes
+    // has no row for a read path to render.
+    const result = await save({
+      record: validRecord({ attribution: { $type: "exchange.recipe.defs#attributionPerson", name: "Grandma" } as never }),
+      visibility: "private",
+      publish: false,
+      image: { uploadId: ulid() },
+    });
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+
+    const row = await db!.selectFrom("recipe_pending_image").selectAll().where("recipe_id", "=", result.recipeId).executeTakeFirst();
+    expect(row).toBeUndefined();
+  });
+});
+
+describeDb("recipe_pending_image — a URL can never be the image again", () => {
+  /**
+   * The guard that goes red if the class comes back.
+   *
+   * The bug was not that a line of code stored a URL; it was that `object_key`
+   * was NULLABLE, so "no bytes, here is someone else's URL instead" was a row
+   * the table would accept — and once it was acceptable, three call sites wrote
+   * it and a read path rendered it as an `<img src>` on our own page.
+   *
+   * `source_url` is still here, and that is deliberate: with `object_key`
+   * required it cannot be a substitute for bytes, only a note about the bytes we
+   * have. The not-null constraint is the whole difference between a log and a
+   * fallback, so it is the thing this test pins. A migration that relaxes it
+   * fails here, in a test whose name says why.
+   */
+  it("requires an object key and a mime, so `source_url` can only ever be a note", async () => {
+    const columns = await sql<{ column_name: string; is_nullable: string }>`
+      select column_name, is_nullable
+      from information_schema.columns
+      where table_name = 'recipe_pending_image'
+    `.execute(db!);
+
+    const nullable = new Map(columns.rows.map((c) => [c.column_name, c.is_nullable]));
+    expect([...nullable.keys()].sort()).toEqual(["alt", "created_at", "mime", "object_key", "recipe_id", "source_url"]);
+
+    // A row that exists is a row with our bytes behind it, which is what lets
+    // every reader treat "row present" as "we have it" and never look further.
+    expect(nullable.get("object_key")).toBe("NO");
+    expect(nullable.get("mime")).toBe("NO");
+    // And the log stays optional — an image the user picked off their own disk
+    // came from nowhere, and saying so must not be a constraint violation.
+    expect(nullable.get("source_url")).toBe("YES");
   });
 });

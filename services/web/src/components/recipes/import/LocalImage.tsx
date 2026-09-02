@@ -3,10 +3,13 @@ import { cn } from "#/lib/utils.ts";
 /**
  * A recipe's photo, read from the folder the user dropped (plan §11, D26).
  *
- * The bytes never leave the tab: this renders an object URL over the local `File`, while
- * the commit path sends `imageSourceUrl` — the original remote URL — and uploads nothing.
- * The URL comes from the session's image cache, which owns revoking it, so this component
- * holds no lifecycle of its own and can render 341 times without leaking.
+ * This renders an object URL over the local `File`. The URL comes from the session's image
+ * cache, which owns revoking it, so this component holds no lifecycle of its own and can
+ * render 341 times without leaking.
+ *
+ * The commit path uploads those same bytes to Buttery's own storage (`stage-images.ts`) —
+ * it used to send the export's remote URL and upload nothing, so a photo the user had taken
+ * themselves was previewed here and then thrown away.
  *
  * A missing photo is normal (an export whose assets never synced), so the fallback is a
  * plain tile rather than a broken-image icon or an error.

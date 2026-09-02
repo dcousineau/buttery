@@ -947,7 +947,13 @@ describeDb("getImportComparison (§7.6)", () => {
       .insertInto("recipe_instruction")
       .values([{ recipe_id: BOX_URL, ordinal: 0, text: "Fry the tomatoes." }])
       .execute();
-    await db!.insertInto("recipe_pending_image").values({ recipe_id: BOX_URL, source_url: "https://img.example/x.jpg" }).execute();
+    // A draft's photo is bytes in our bucket, never a URL: `hasImage` is true
+    // because a pointer row exists, and a pointer row cannot exist without an
+    // object behind it.
+    await db!
+      .insertInto("recipe_pending_image")
+      .values({ recipe_id: BOX_URL, object_key: `pending/${BOX_URL}`, mime: "image/jpeg" })
+      .execute();
 
     const sessionId = await openSession();
     const result = await imp.runGetImportComparison(db!, DID, HH, { sessionId, recipeIds: [BOX_URL, PUBLIC, PRIVATE_ELSEWHERE, `rec-missing-${RUN}`] });

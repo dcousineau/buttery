@@ -5,7 +5,7 @@ import type { JsonObject, JsonValue } from "@buttery/recipe-extract/import";
 import type { DB } from "#/db/types";
 import { IMPORTER_IDS, type ImporterId } from "#/lib/recipe-import-ids";
 import { slugForLabel, tokenForSlug } from "#/lib/recipe-vocab";
-import { DEDUPE_NS, type AttributionChoice, type RecipeRecordInput } from "./recipes-write";
+import { DEDUPE_NS, type AttributionChoice, type RecipeImageInput, type RecipeRecordInput } from "./recipes-write";
 
 /**
  * Batch recipe import — the **pipeline** server contracts (plan §7).
@@ -119,7 +119,20 @@ export type CommitItem =
       sourceUrl: string | null;
       /** Resolved in review (§8). Ignored when `sourceUrl` is set — the server builds Website itself. */
       attribution: AttributionInput | null;
-      /** Remote URL only (§11). Local bytes are never uploaded in phase 1. */
+      /**
+       * The hero: the id of an object the browser already POSTed into Buttery's
+       * bucket with a presigned form (§11) — a photo out of the dropped folder,
+       * or a remote image whose host allowed a cross-origin fetch. Null when the
+       * tab could not read the bytes, and then the recipe simply has no photo:
+       * there is no server-side fetch behind this.
+       */
+      imageUploadId?: string | null;
+      /**
+       * Where a remote hero came from, recorded beside the bytes we made of it.
+       *
+       * Never fetched and never rendered — it reaches the row only when
+       * `imageUploadId` did too, so there is no state where this is the image.
+       */
       imageSourceUrl: string | null;
       notes: string | null;
       tags: string[];
@@ -406,6 +419,13 @@ const commitItem = z.discriminatedUnion("action", [
     record: z.custom<RecipeRecordInput>((v) => typeof v === "object" && v !== null),
     sourceUrl: z.string().max(4096).nullable(),
     attribution: z.custom<AttributionInput>((v) => typeof v === "object" && v !== null).nullable(),
+    /**
+     * The browser's own copy of the hero, already POSTed into our bucket with a
+     * presigned form (§11). There is no fallback behind it: an image the tab
+     * could not read is a recipe with no photo.
+     */
+    imageUploadId: z.string().max(64).nullable().optional(),
+    /** Provenance for that copy. Logged with the bytes, never read back. */
     imageSourceUrl: z.string().max(4096).nullable(),
     notes: z.string().max(10_000).nullable(),
     tags: z.array(z.string().max(256)).max(100),
@@ -953,10 +973,16 @@ export function validateItemMeta(value: unknown): MetaCheck {
 
 // --- §7.2 commit ---------------------------------------------------------
 
-/** An image the chunk owes a fetch, queued for the bounded post-commit pass (§11). */
+/**
+ * An image the chunk owes a store, queued for the bounded post-commit pass (§11).
+ *
+ * `image` is the same discriminated union `saveRecipe` takes, so the batch path
+ * and the single-recipe path hand identical shapes to the same
+ * `storeRecipeImage` — there is one implementation of "an image becomes ours".
+ */
 interface PendingImage {
   recipeId: string;
-  sourceUrl: string;
+  image: RecipeImageInput;
   alt: string | null;
 }
 
@@ -1016,7 +1042,7 @@ export async function runCommitImportChunk(db: Kysely<DB>, did: string, househol
   // §11: remote-URL heroes, fetched AFTER every row is committed and bounded to
   // IMAGE_FETCH_CONCURRENCY. A dead or hotlink-blocked source loses the image,
   // never the recipe — the row is already saved and the failure is swallowed.
-  await fetchChunkImages(db, images);
+  await fetchChunkImages(db, did, images);
 
   // §9: recipe-enrichment enqueue, same "AFTER every row is committed" shape as
   // the image pass above — and the right neighbour for it, not a piggyback on
@@ -1324,10 +1350,11 @@ async function commitImport(
         record,
         attribution,
         sourceUrl,
-        // §11: the hero is fetched by the bounded post-commit pass, not inside
+        // §11: the hero is stored by the bounded post-commit pass, not inside
         // this transaction. Passing it here would hold the chunk's row locks
-        // open across a third-party HTTP request.
-        imageSourceUrl: null,
+        // open across a bucket write and, in the fallback case, a third-party
+        // HTTP request.
+        image: null,
         // §2.1/§2.2. Private, household-scoped, and there is no publish step to
         // reach from here even if this said otherwise.
         visibility: "private",
@@ -1342,10 +1369,16 @@ async function commitImport(
     await writeNote(trx, householdId, recipeId, did, item.notes);
     await setManyHouseholdRecipeMeta(trx, householdId, [{ recipeId, ns: IMPORT_NS, entries: provenance }]);
 
-    const imageUrl = item.imageSourceUrl?.trim() || null;
+    // The browser either got the bytes into our bucket (a photo out of the
+    // dropped folder, or a remote host that allowed a cross-origin fetch) or it
+    // did not, and there is nothing behind that: the server's own fetch was the
+    // losing fetcher. The source URL rides along only when the bytes did, so it
+    // is a note on what we hold rather than a stand-in for it.
+    const uploadId = item.imageUploadId?.trim() || null;
+    const image: RecipeImageInput | null = uploadId ? { uploadId, sourceUrl: item.imageSourceUrl?.trim() || null } : null;
     return {
       result: { clientId: item.clientId, status: "imported", recipeId },
-      ...(imageUrl ? { image: { recipeId, sourceUrl: imageUrl, alt: record.name ?? null } } : {}),
+      ...(image ? { image: { recipeId, image, alt: record.name ?? null } } : {}),
     };
   });
 }
@@ -1392,17 +1425,23 @@ function applyTags(record: RecipeRecordInput, tags: readonly string[]): RecipeRe
 }
 
 /**
- * §11's whole server half: fetch each hero from its REMOTE url and store it the
- * same way the single-recipe import path does — `storePendingImageFromUrl`, which
- * is SSRF-guarded and size-capped. No local byte from the export ever reaches the
- * server in phase 1; the browser reads those for review thumbnails and revokes
- * the object URLs on unmount.
+ * §11's whole server half: put every hero in Buttery's bucket, the same way the
+ * single-recipe path does — `storeRecipeImage`, one implementation, one guard,
+ * one cap.
+ *
+ * Most of these are now a claim on bytes the browser already uploaded (a photo
+ * read straight off the dropped export, or a remote image the tab was allowed
+ * to fetch), which costs one bucket move and no outbound request. The rest are
+ * the fallback: an SSRF-guarded server-side fetch of a URL the browser could
+ * not read. Either way the URL is an argument and never a stored value — an
+ * image we cannot get is a recipe without a photo, not a recipe pointing at
+ * someone else's CDN.
  *
  * Bounded to {@link IMAGE_FETCH_CONCURRENCY} and run with no transaction open.
  */
-async function fetchChunkImages(db: Kysely<DB>, images: readonly PendingImage[]): Promise<void> {
+async function fetchChunkImages(db: Kysely<DB>, did: string, images: readonly PendingImage[]): Promise<void> {
   if (!images.length) return;
-  const { storePendingImageFromUrl } = await import("./recipes-write");
+  const { storeRecipeImage } = await import("./recipes-write");
   let next = 0;
   const worker = async (): Promise<void> => {
     for (;;) {
@@ -1410,7 +1449,7 @@ async function fetchChunkImages(db: Kysely<DB>, images: readonly PendingImage[])
       if (index >= images.length) return;
       const image = images[index];
       try {
-        await storePendingImageFromUrl(db, image.recipeId, image.sourceUrl, image.alt);
+        await storeRecipeImage(db, did, image.recipeId, image.image, image.alt);
       } catch {
         // A dead, paywalled or hotlink-blocked source loses the image, never the
         // recipe — the row committed before this pass ran (§11, accepted cost).

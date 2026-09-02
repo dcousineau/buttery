@@ -19,6 +19,8 @@ import { reconnectAtproto } from "#/lib/atproto-reauth";
 import { type AttributionState, EMPTY_ATTRIBUTION, attributionComplete, buildAttribution } from "#/lib/recipe-attribution";
 import { deriveSource } from "#/lib/recipe-provenance";
 import { type FieldIssue, getImportPrefill, keys, type RecipeRecordInput, saveRecipe } from "#/lib/api";
+import { stageRemoteImage, uploadRecipeImage } from "#/lib/recipe-image-upload";
+import { MAX_IMAGE_BYTES } from "#/lib/recipe-image";
 import { useRecipesView } from "../context";
 import type { RecipeViewData } from "../RecipeView";
 import { type EditorMode } from "./LineEditor";
@@ -51,9 +53,19 @@ function isoToMinutes(iso: string | undefined): string {
   return mins > 0 ? String(mins) : "";
 }
 
-/** The form's photo: either uploaded bytes, or an imported hero we only have a
- * URL for (fetched + uploaded to the PDS on publish). */
-type FormImage = { kind: "bytes"; dataBase64: string; mime: string; previewUrl: string; alt: string } | { kind: "url"; url: string; alt: string };
+/**
+ * The form's photo: what to show, and what the save will point at.
+ *
+ * `uploadId` null means "showing something, owning nothing" — the optimistic
+ * render of an imported hero's origin URL while the browser tries to fetch and
+ * upload it for itself. A save carries the id or it carries no image; the
+ * preview URL is never persisted and never reaches the server.
+ *
+ * `sourceUrl` is set only for an imported hero, and only travels once the bytes
+ * are ours. It is logged beside them and never read back — the recipe's image is
+ * the object, always.
+ */
+type FormImage = { previewUrl: string; uploadId: string | null; alt: string; sourceUrl?: string };
 
 /**
  * The full-page recipe create/import form (plan §A5). Plain controlled state
@@ -98,7 +110,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
   const [carbs, setCarbs] = useState("");
   const [attr, setAttr] = useState<AttributionState>({ ...EMPTY_ATTRIBUTION });
   const [image, setImage] = useState<FormImage | null>(null);
-  const imageSrc = image ? (image.kind === "bytes" ? image.previewUrl : image.url) : null;
+  const imageSrc = image?.previewUrl ?? null;
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState(false);
@@ -153,7 +165,21 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
       if (r.nutrition?.fatContent) setFat(String(r.nutrition.fatContent));
       if (r.nutrition?.proteinContent) setProtein(String(r.nutrition.proteinContent));
       if (r.nutrition?.carbohydrateContent) setCarbs(String(r.nutrition.carbohydrateContent));
-      if (r.imageUrl) setImage({ kind: "url", url: r.imageUrl, alt: r.name ?? "" });
+      if (r.imageUrl) {
+        const alt = r.name ?? "";
+        // Optimistic: render the origin's URL right away so the preview is not
+        // blank while we try to become its owner. An `<img src>` is not
+        // CORS-gated, so this shows even for the hosts the fetch below fails on
+        // — but with no `uploadId` it is a picture on screen and nothing more.
+        setImage({ previewUrl: r.imageUrl, uploadId: null, alt });
+        // Then take our own copy, straight into our bucket. The tab has the
+        // user's referer and is far likelier to be served than our backend was.
+        // When it doesn't work (no `Access-Control-Allow-Origin`, the usual
+        // reason) the preview above stands and the recipe saves without a photo.
+        const uploadId = await stageRemoteImage(r.imageUrl);
+        if (cancelled || !uploadId) return;
+        setImage({ previewUrl: r.imageUrl, uploadId, alt, sourceUrl: r.imageUrl });
+      }
     })();
     return () => {
       cancelled = true;
@@ -219,8 +245,9 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
         visibility: "draft",
         publish,
         sourceUrl,
-        image: image?.kind === "bytes" ? { dataBase64: image.dataBase64, mime: image.mime, alt: image.alt } : null,
-        imageSourceUrl: image?.kind === "url" ? image.url : null,
+        // The bytes are already in our bucket; this is only the id that says
+        // which object. A preview with no id saves no photo.
+        image: image?.uploadId ? { uploadId: image.uploadId, alt: image.alt, sourceUrl: image.sourceUrl ?? null } : null,
       });
       if (result.status === "invalid") {
         setIssues(result.issues);
@@ -271,18 +298,24 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
     }
   }
 
-  function onPickFile(file: File) {
-    if (file.size > 1_000_000) {
-      setIssues([{ path: "image", message: "That image is over 1 MB. Pick a smaller one." }]);
+  async function onPickFile(file: File) {
+    if (file.size > MAX_IMAGE_BYTES) {
+      setIssues([{ path: "image", message: "That image is over 2 MB. Pick a smaller one." }]);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      // `readAsDataURL` always resolves to a string; the union is for the other read modes.
-      const dataUrl = typeof reader.result === "string" ? reader.result : "";
-      setImage({ kind: "bytes", dataBase64: dataUrl, mime: file.type, previewUrl: URL.createObjectURL(file), alt: name.trim() });
-    };
-    reader.readAsDataURL(file);
+    // Show it immediately off the local `File`, then upload. The preview is the
+    // same bytes either way, so a slow bucket costs the user nothing visible.
+    const previewUrl = URL.createObjectURL(file);
+    const alt = name.trim();
+    setImage({ previewUrl, uploadId: null, alt });
+    const uploadId = await uploadRecipeImage(file);
+    if (!uploadId) {
+      URL.revokeObjectURL(previewUrl);
+      setImage(null);
+      setIssues([{ path: "image", message: "That photo could not be uploaded. Try another one." }]);
+      return;
+    }
+    setImage({ previewUrl, uploadId, alt });
   }
 
   const previewData: RecipeViewData = useMemo(() => {
@@ -420,7 +453,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
                   </div>
                   <div className="flex flex-col gap-2">
                     <label className="bt-label">Photo</label>
-                    <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && onPickFile(e.target.files[0])} />
+                    <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && void onPickFile(e.target.files[0])} />
                     {image ? (
                       <div className="flex flex-col gap-2">
                         <div className="aspect-[4/3] w-full overflow-hidden rounded-lg border-2 border-border">

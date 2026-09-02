@@ -1,4 +1,5 @@
 import { importTransport } from "#/lib/api";
+import { uploadRecipeImage } from "#/lib/recipe-image-upload";
 import type { ImportApi } from "./contracts.ts";
 
 /**
@@ -19,6 +20,10 @@ import type { ImportApi } from "./contracts.ts";
  */
 export const importApi: ImportApi = {
   openSession: importTransport.openSession,
+  // Two steps behind one call: a server function signs an upload URL, and the
+  // browser PUTs the bytes straight at the bucket. The payload never crosses
+  // this service. See lib/recipe-image-upload.ts.
+  uploadImage: uploadRecipeImage,
   probeDuplicates: importTransport.probeDuplicates,
   getComparison: importTransport.getComparison,
   commitChunk: importTransport.commitChunk,
