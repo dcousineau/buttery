@@ -92,7 +92,11 @@ The process declares no environment of its own. **Which network gets swept is `s
 pnpm --filter=@buttery/pipeline sync:trigger [--dry-run]
 ```
 
-Its defaults are the real atmosphere (`plc.directory` + the public relay), which is what fills a dev database with real recipes. To sweep the local dev-env instead, set `ATPROTO_PLC_URL=http://localhost:2582` and `SYNC_PDS_URL=http://localhost:2583` in that file. `SYNC_PDS_URL` swaps the relay's `listReposByCollection` for that one PDS's `listRepos`, because dev-env ships no relay and its PDS refuses the former unauthenticated (`AuthMissing`).
+Its defaults are the **local dev-env** (`ATPROTO_PLC_URL=http://localhost:2582`, `SYNC_PDS_URL=http://localhost:2583`), matching `services/web/.env`, which points publishing at that same PDS. The two halves have to agree, or dev is incoherent in both directions: a sweep against the real atmosphere never sees the record the app just published, and it pulls thousands of strangers' repos to miss it.
+
+`SYNC_PDS_URL` swaps the relay's `listReposByCollection` for that one PDS's `listRepos`, because dev-env ships no relay and its PDS refuses the former unauthenticated (`AuthMissing`). Setting it also makes the sweep **partial** — no missing-repo reconciliation, since one PDS is no basis for calling anything absent.
+
+To sweep the real atmosphere from here instead, comment those two lines and uncomment the `plc.directory` pair sitting under them; `RELAY_URL` is already set and is simply ignored while `SYNC_PDS_URL` is. Production never reads this file — [`.railway/railway.ts`](../.railway/railway.ts) sets `RELAY_URL` and leaves the other two unset, so the deployed sweep resolves through `plc.directory` and enumerates through the relay.
 
 There is a third way to run the same sweep — `POST /jobs/atproto-sync` on the pipeline — and it obeys that same `.env`. It is the one that shows the sweep's five steps, their progress and their failures in the Bull Board UI, and it is what the hourly production schedule uses. Prefer this process for a quick one-off; prefer the queue when you want to watch it.
 

@@ -22,6 +22,7 @@ function member(overrides: Partial<MemberRow> & Pick<MemberRow, "household_id" |
     invited_by_did: null,
     deleted_at: null,
     tombstoned: false,
+    autoimport_my_recipes: true,
     household_deleted: false,
     ...overrides,
   };

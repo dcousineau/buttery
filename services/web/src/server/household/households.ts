@@ -68,6 +68,10 @@ export const createHousehold = createServerFn({ method: "POST" })
         await trx.insertInto("household_member").values({ household_id: id, did, role: "owner", invited_by_did: null }).execute();
         // Put the creator straight into their new household's context.
         await setActiveHousehold(sessionId, id, trx);
+        // A founder's public recipes become household recipes automatically when
+        // their Autoimport My Recipes preference is on (default).
+        const { importMemberRecipes } = await import("./autoimport");
+        await importMemberRecipes(trx, id, did);
       });
 
     return { id, name: data.name, role: "owner" };

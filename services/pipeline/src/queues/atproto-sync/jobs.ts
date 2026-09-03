@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { UnrecoverableError, type Job, type JobsOptions, type Queue } from "bullmq";
 import { ENRICH_JOB, RECIPE_ENRICHMENT_QUEUE, type EnrichPayload } from "@buttery/pipeline-contract";
+import { autoimportRecipeForMemberHouseholds } from "#/queues/atproto-sync/lib/autoimport.ts";
 import { acquireLock, releaseLock } from "#/lib/lock.ts";
 import { emptySummary, foldRepos } from "#/queues/atproto-sync/plan.ts";
 import { loadSyncConfig, RECIPE_COLLECTION } from "#/queues/atproto-sync/lib/config.ts";
@@ -223,16 +224,15 @@ export async function syncRepo(fastify: FastifyInstance, job: Job): Promise<unkn
     const { outcome, advancedRecipeIds } = await sweepDid(fastify.db, config, did, fastify.log);
     await job.log(`${outcome.upserted} upserted, ${outcome.deleted} deleted`);
 
-    // Best-effort enqueue (D3): `renderRecipe` already wrote `status='stale'`
-    // in the same transaction as the content that advanced, so that row is
-    // the durable signal and §7.2's backfill will find anything this misses —
-    // a failed enqueue must cost this repo nothing: not its retries, not the
-    // rest of its own ids. `advancedRecipeIds` is already empty on a dry run
-    // (`sweepDid` never calls `renderRecipe` on that path), so this guard is
-    // belt-and-suspenders — kept explicit so the loop stays inert even if a
-    // future change to `sweepDid` ever stopped guaranteeing that.
+    // Best-effort downstream side effects for the recipes this repo advanced.
+    // `renderRecipe` already wrote `status='stale'` in the same transaction as
+    // the content that advanced, so that row is the durable signal and §7.2's
+    // backfill will find anything this misses. `advancedRecipeIds` is already
+    // empty on a dry run (`sweepDid` never calls `renderRecipe` on that path),
+    // so this guard is belt-and-suspenders — kept explicit so the loop stays
+    // inert even if a future change to `sweepDid` ever stopped guaranteeing that.
     //
-    // Judgement call: the generic cross-queue handoff this repo migrated to
+    // Judgement call: the generic cross-queue handoff for enrichment migrated to
     // (`fastify.bullmq.get(name)?.queue.add(...)`) resolves a bad queue name to
     // `undefined` and silently does nothing — no throw. The old `ctx.enqueue`
     // deliberately threw on an unregistered workflow/step so a typo would fail
@@ -243,6 +243,10 @@ export async function syncRepo(fastify: FastifyInstance, job: Job): Promise<unkn
     // throws when it is missing, rather than using the bare `?.` — the catch
     // below still turns that throw into a per-id `error` log instead of failing
     // the repo, same as before.
+    //
+    // Household autoimport is intentionally not a queued job: it is one
+    // idempotent insert per advanced recipe, so it runs inline and is logged
+    // best-effort like the enrichment enqueue.
     if (!config.dryRun) {
       for (const recipeId of advancedRecipeIds) {
         try {
@@ -251,6 +255,15 @@ export async function syncRepo(fastify: FastifyInstance, job: Job): Promise<unkn
           await enrichment.queue.add(ENRICH_JOB, { recipeId } satisfies EnrichPayload);
         } catch (err) {
           fastify.log.error({ did, recipeId, err: String(err) }, "failed to enqueue recipe enrichment");
+        }
+
+        try {
+          const imported = await autoimportRecipeForMemberHouseholds(fastify.db, recipeId);
+          if (imported > 0) {
+            fastify.log.info({ did, recipeId, households: imported }, "autoimported recipe into household");
+          }
+        } catch (err) {
+          fastify.log.error({ did, recipeId, err: String(err) }, "failed to autoimport recipe into household");
         }
       }
     }

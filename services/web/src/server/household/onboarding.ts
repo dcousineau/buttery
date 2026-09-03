@@ -266,7 +266,15 @@ export const listHouseholdMembers = createServerFn({ method: "GET" })
       .where("hm.deleted_at", "is", null)
       .where("hm.tombstoned", "=", false)
       .where("h.deleted_at", "is", null)
-      .select(["hm.did as did", "hm.role as role", "hm.joined_at as joinedAt", "hm.invited_by_did as invitedByDid", "u.handle as userHandle", "r.handle as repoHandle"])
+      .select([
+        "hm.did as did",
+        "hm.role as role",
+        "hm.joined_at as joinedAt",
+        "hm.invited_by_did as invitedByDid",
+        "hm.autoimport_my_recipes as autoimportMyRecipes",
+        "u.handle as userHandle",
+        "r.handle as repoHandle",
+      ])
       .orderBy("hm.joined_at", "asc")
       .execute();
 
@@ -277,6 +285,7 @@ export const listHouseholdMembers = createServerFn({ method: "GET" })
       invitedByDid: r.invitedByDid,
       handle: r.userHandle ?? r.repoHandle,
       isSelf: r.did === did,
+      autoimportMyRecipes: r.autoimportMyRecipes,
     }));
   });
 
@@ -354,6 +363,11 @@ export const acceptBoundInviteById = createServerFn({ method: "POST" })
         await trx.updateTable("household_invite").set({ uses: newUses, status: newStatus }).where("id", "=", invite.id).execute();
 
         await setActiveHousehold(sessionId, invite.household_id, trx);
+
+        // New member's public recipes become household recipes automatically when
+        // their Autoimport My Recipes preference is on (default).
+        const { importMemberRecipes } = await import("./autoimport");
+        await importMemberRecipes(trx, invite.household_id, did);
 
         // TODO(email): notify the inviting owner (`invite.created_by_did`) that
         // the invite was accepted (§6.3 / §11) — mirrors B's acceptInvite seam.

@@ -6,6 +6,7 @@ import { useAnalytics } from "#/lib/analytics";
 import { type HouseholdRecipeDetail, keys, publishRecipe, removeRecipeFromHousehold, toggleRecipeFavoriteMutation, upsertHouseholdRecipeNote } from "#/lib/api";
 import { OFFLINE_WRITE_HINT, useIsOnline } from "#/lib/offline/use-online";
 import { Button } from "#/components/ui/button";
+import { Img } from "#/components/ui/img";
 import { Textarea } from "#/components/ui/textarea";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { AddToPlanDialog, type AddToPlanRequest } from "#/components/plan/AddToPlanDialog";
@@ -36,6 +37,19 @@ import { RecipeTimerStrip } from "#/components/timers/RecipeTimerStrip";
  * settings are ephemeral reading prefs. Shopping and planner both open a
  * confirm dialog and persist; the apron is still stubbed (toast, no persistence).
  */
+/**
+ * Is this the server refusing a removal because autoimport pins the recipe?
+ *
+ * Two shapes, because the answer depends on how far the error travelled: a
+ * same-process call keeps the `AutoimportProtectedError` instance and its
+ * `code`, while one that crossed the server-function boundary arrives as a
+ * plain `Error` carrying only the message.
+ */
+function isAutoimportProtected(err: unknown): boolean {
+  if (typeof err === "object" && err !== null && (err as { code?: unknown }).code === "autoimport_protected") return true;
+  return err instanceof Error && err.message.includes("Autoimport My Recipes");
+}
+
 export function DetailPane({
   recipe,
   householdId,
@@ -179,6 +193,18 @@ export function DetailPane({
   const plannedAhead = (planned?.upcoming ?? 0) > 0;
   const nextPlannedLabel = planned?.nextDate ? `${shortDow(planned.nextDate)}, ${formatPlanDate(planned.nextDate)}` : null;
 
+  // Autoimport pins a recipe published by a member of this household: the
+  // server refuses the removal (`autoimport_protected`) because the next sweep
+  // would re-import it anyway. Say so where the button is, rather than letting
+  // the press be how you find out. Optional field — a payload cached in
+  // IndexedDB before this shipped has no key, and reads as unpinned.
+  const autoimportLock = recipe.autoimportLock ?? null;
+  const removeBlockedReason = autoimportLock
+    ? autoimportLock.isSelf
+      ? "You published this recipe, and your Autoimport My Recipes setting keeps it in the box. Turn that off in household settings to remove it."
+      : `${autoimportLock.handle ?? "The person who published this"} published this recipe and is in this household with Autoimport My Recipes on, so it stays in the box.`
+    : null;
+
   /** The box list and this recipe's detail — the two entries every write here touches. */
   async function invalidateBox() {
     await Promise.all([
@@ -263,6 +289,14 @@ export function DetailPane({
       await removeRecipeFromHousehold(recipe.recipeId);
       posthog.capture("recipe_removed_from_household", { recipe_id: recipe.recipeId, planned_upcoming: planned?.upcoming ?? 0 });
       await router.navigate({ to: "/household/recipes" });
+      await invalidateBox();
+    } catch (err) {
+      // The button is disabled whenever this pane knows the recipe is pinned,
+      // so getting here means the payload was stale (autoimport turned on in
+      // another session, or a pre-feature entry out of IndexedDB). Say why and
+      // refetch, rather than closing the dialog as if the removal worked.
+      if (!isAutoimportProtected(err)) throw err;
+      pushToast("That recipe stays in the box — its publisher has Autoimport My Recipes on.");
       await invalidateBox();
     } finally {
       setRemoving(false);
@@ -406,14 +440,19 @@ export function DetailPane({
             variant="ghost"
             size="sm"
             className="ml-auto text-muted-foreground"
-            disabled={!online}
-            title={online ? undefined : OFFLINE_WRITE_HINT}
+            disabled={!online || removeBlockedReason !== null}
+            title={removeBlockedReason ?? (online ? undefined : OFFLINE_WRITE_HINT)}
             onClick={() => setConfirmRemove(true)}
           >
             <Trash2 data-icon="inline-start" aria-hidden="true" />
             Remove
           </Button>
         </div>
+
+        {/* A disabled button fires no pointer events, so its `title` never
+          becomes a tooltip — and on touch there is no hover to begin with. The
+          reason has to be on the page. */}
+        {removeBlockedReason && <p className="m-0 text-xs text-pretty text-muted-foreground">{removeBlockedReason}</p>}
 
         {/* Timers running for this recipe (global store, filtered) — plan §6.5 */}
         <RecipeTimerStrip recipeId={recipe.recipeId} className="empty:hidden" />
@@ -423,16 +462,24 @@ export function DetailPane({
           {/* Left column */}
           <div className="flex min-w-0 flex-[1_1_240px] flex-col gap-3.5">
             <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border-2 border-border bg-muted">
-              {primaryImage ? (
-                // Absolutely filled so the image *covers* the 4/3 box (cropping to
-                // fit) instead of shrinking to its intrinsic size — a centering
-                // grid track collapses `size-full` to the image's natural width.
-                <img src={primaryImage.url} alt={primaryImage.alt ?? ""} className="absolute inset-0 size-full object-cover" />
-              ) : (
-                <div className="grid size-full place-content-center">
-                  <UtensilsCrossed className="size-10 text-muted-foreground" aria-hidden="true" />
-                </div>
-              )}
+              {/*
+                Absolutely filled so the image *covers* the 4/3 box (cropping to
+                fit) instead of shrinking to its intrinsic size — a centering
+                grid track collapses `size-full` to the image's natural width.
+
+                `Img` covers both the no-photo case and the URL-that-404s case
+                (a moved PDS, an evicted blob) with the same placeholder.
+              */}
+              <Img
+                src={primaryImage?.url}
+                alt={primaryImage?.alt ?? ""}
+                className="absolute inset-0 size-full object-cover"
+                fallback={
+                  <div className="grid size-full place-content-center">
+                    <UtensilsCrossed className="size-10 text-muted-foreground" aria-hidden="true" />
+                  </div>
+                }
+              />
             </div>
 
             <div className="flex items-center justify-between gap-2">

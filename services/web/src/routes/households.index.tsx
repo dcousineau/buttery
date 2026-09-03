@@ -5,7 +5,7 @@ import { useAnalytics } from "#/lib/analytics";
 import { requireActiveHousehold, listHouseholdMembers } from "#/lib/api";
 import { listMyHouseholds, renameHousehold, deleteHousehold, createHousehold } from "#/lib/api";
 import { listInvites, createInvite, revokeInvite } from "#/lib/api";
-import { removeMember, setMemberRole, leaveHousehold } from "#/lib/api";
+import { removeMember, setMemberRole, leaveHousehold, setHouseholdMemberAutoimport, backfillAutoimportRecipes } from "#/lib/api";
 import { errorMessage } from "#/lib/api";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { Badge } from "#/components/ui/badge";
@@ -18,6 +18,7 @@ import { RadioCard, RadioGroup } from "#/components/ui/radio-group";
 import { Select } from "#/components/ui/select";
 import { Separator } from "#/components/ui/separator";
 import { Spinner } from "#/components/ui/spinner";
+import { Switch } from "#/components/ui/switch";
 import { seo } from "#/lib/seo";
 import type { Role } from "#/lib/api";
 import type { HouseholdMemberView } from "#/lib/api";
@@ -189,6 +190,9 @@ function MemberRow({ householdId, member, isOwner }: { householdId: string; memb
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [removeOpen, setRemoveOpen] = useState(false);
+  const [autoimportPending, setAutoimportPending] = useState(false);
+  const [backfillPending, setBackfillPending] = useState(false);
+  const [autoimportEnabled, setAutoimportEnabled] = useState(member.autoimportMyRecipes);
 
   async function run(action: () => Promise<unknown>) {
     setError(null);
@@ -213,13 +217,48 @@ function MemberRow({ householdId, member, isOwner }: { householdId: string; memb
     });
     setRemoveOpen(false);
   }
+
+  async function onAutoimportChange(enabled: boolean) {
+    setError(null);
+    setAutoimportPending(true);
+    // Optimistically flip the local switch so the gesture feels instant; a
+    // failed request rolls it back on the next render after invalidate.
+    setAutoimportEnabled(enabled);
+    try {
+      await setHouseholdMemberAutoimport({ householdId, did: member.did, enabled });
+      posthog.capture("household_autoimport_toggled", { household_id: householdId, enabled });
+      await router.invalidate();
+    } catch (err) {
+      setAutoimportEnabled(member.autoimportMyRecipes);
+      setError(errorMessage(err));
+    } finally {
+      setAutoimportPending(false);
+    }
+  }
+
+  async function onBackfill() {
+    setError(null);
+    setBackfillPending(true);
+    try {
+      const result = await backfillAutoimportRecipes({ householdId, did: member.did });
+      posthog.capture("household_autoimport_backfilled", { household_id: householdId, added: result.added });
+      await router.invalidate();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBackfillPending(false);
+    }
+  }
+
   // Owner controls apply to OTHER members only; self-management is "Leave" in the
   // danger zone. The last-owner invariant is enforced server-side (LastOwnerError
   // → friendly message surfaced here) — we don't try to predict it in the client.
   const showControls = isOwner && !member.isSelf;
+  // A member may change their own autoimport setting; an owner may change anyone's.
+  const canEditAutoimport = member.isSelf || isOwner;
 
   return (
-    <div className="flex flex-col gap-1 border-b border-border/60 py-2 last:border-b-0">
+    <div className="flex flex-col gap-2 border-b border-border/60 py-3 last:border-b-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           {member.role === "owner" ? <Crown aria-hidden="true" className="size-4 shrink-0 text-primary" /> : null}
@@ -254,6 +293,26 @@ function MemberRow({ householdId, member, isOwner }: { householdId: string; memb
           </div>
         ) : null}
       </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <label className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+          <Switch
+            size="sm"
+            checked={autoimportEnabled}
+            disabled={!canEditAutoimport || autoimportPending}
+            onChange={(e) => onAutoimportChange(e.target.checked)}
+            aria-label={`Autoimport My Recipes for ${label}`}
+          />
+          <span className="truncate">Autoimport My Recipes</span>
+        </label>
+        {canEditAutoimport ? (
+          <Button size="xs" variant="outline" disabled={backfillPending || autoimportPending} onClick={onBackfill}>
+            {backfillPending ? <Spinner data-icon="inline-start" /> : <Plus data-icon="inline-start" aria-hidden="true" />}
+            Add all recipes
+          </Button>
+        ) : null}
+      </div>
+
       {error ? (
         <p role="alert" className="m-0 text-sm font-semibold text-destructive">
           {error}

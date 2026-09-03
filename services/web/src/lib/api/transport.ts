@@ -97,6 +97,7 @@ import {
   revokeInvite as revokeInviteFn,
 } from "#/server/household/invites";
 import { leaveHousehold as leaveHouseholdFn, removeMember as removeMemberFn, setMemberRole as setMemberRoleFn } from "#/server/household/members";
+import { backfillAutoimportRecipes as backfillAutoimportRecipesFn, setHouseholdMemberAutoimport as setHouseholdMemberAutoimportFn } from "#/server/household/autoimport";
 import {
   DEFAULT_HOUSEHOLD_PREFERENCES as DEFAULT_HOUSEHOLD_PREFERENCES_,
   getHouseholdPreferences as getHouseholdPreferencesFn,
@@ -431,6 +432,14 @@ type SetMemberRoleInput = Parameters<typeof setMemberRoleFn>[0] extends { data: 
 
 export function setMemberRole(input: SetMemberRoleInput) {
   return setMemberRoleFn({ data: input });
+}
+
+export function setHouseholdMemberAutoimport(input: { householdId: string; did: string; enabled: boolean }) {
+  return setHouseholdMemberAutoimportFn({ data: input });
+}
+
+export function backfillAutoimportRecipes(input: { householdId: string; did: string }) {
+  return backfillAutoimportRecipesFn({ data: input });
 }
 
 export function listInvites(householdId: string): Promise<InviteSummary[]> {
