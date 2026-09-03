@@ -234,141 +234,182 @@ export const getHouseholdRecipe = createServerFn({ method: "GET" })
   .validator((data: { recipeId: string }) => ({ recipeId: validateRecipeId(data?.recipeId) }))
   .handler(async ({ data }): Promise<HouseholdRecipeDetail | null> => {
     const { getDb } = await import("#/lib/db");
-    const { householdScopedQuery } = await import("./household/scoped-query");
     const { did, householdId } = await activeContext();
-    const db = getDb();
+    return await readHouseholdRecipeDetail(getDb(), did, householdId, data.recipeId);
+  });
 
-    // The box row (scoped by membership) is both the authz gate and the 404:
-    // you may only read content for recipes in YOUR box. No visibility filter.
-    const boxed = await householdScopedQuery(db, did, householdId)
-      .innerJoin("household_recipe as hr", "hr.household_id", "hm.household_id")
-      .where("hr.recipe_id", "=", data.recipeId)
-      .select(["hr.recipe_id as recipe_id", "hr.favorite as favorite", "hr.added_by_did as added_by_did"])
-      .executeTakeFirst();
-    if (!boxed) return null;
+/**
+ * The detail read itself, split out from the server fn for the same reason
+ * `getRecipeEnrichment` is a plain function: `household-recipes.db.test.ts` can
+ * exercise the query — including the membership gate — without faking a
+ * session. `did`/`householdId` MUST still come from the validated session.
+ */
+export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, householdId: string, recipeId: string): Promise<HouseholdRecipeDetail | null> {
+  const { householdScopedQuery } = await import("./household/scoped-query");
 
-    const row = await db
-      .selectFrom("recipe as r")
-      .leftJoin("recipe_attribution as attr", "attr.recipe_id", "r.id")
-      .leftJoin("atproto_repo as repo", "repo.did", "r.did")
-      .leftJoin("atproto_collection_recipe as acr", (join) => join.onRef("acr.did", "=", "r.did").onRef("acr.rkey", "=", "r.rkey"))
-      .where("r.id", "=", data.recipeId)
-      .select([
-        "r.id as id",
-        "r.name as name",
-        "r.description as description",
-        "r.origin as origin",
-        "r.did as did",
-        "r.visibility as visibility",
-        "r.uri as uri",
-        "r.recipe_yield as recipe_yield",
-        "r.total_time_seconds as total_time_seconds",
-        "r.recipe_cuisine as recipe_cuisine",
-        // The AUTHOR's own declared diets — the tag strip shows these beside
-        // whatever the pipeline derived, and the author's wins on collision.
-        "r.suitable_for_diet as suitable_for_diet",
-        "r.recipe_category as recipe_category",
-        "r.calories as calories",
-        "r.protein_content as protein_content",
-        "r.carbohydrate_content as carbohydrate_content",
-        "r.fat_content as fat_content",
-        "attr.display_name as attr_display_name",
-        "attr.author as attr_author",
-        "attr.publisher as attr_publisher",
-        "attr.url as attr_url",
-        "repo.handle as repo_handle",
-        "acr.deleted_at as acr_deleted_at",
-        "acr.validation_status as acr_validation_status",
-      ])
-      .executeTakeFirst();
-    if (!row) return null; // RESTRICT FK means this should never happen for a boxed recipe.
-
-    // §7.2: the planner's "is this planned?" read rides along in the same batch
-    // as the rest of the detail payload, so the remove flow costs no extra
-    // round trip. `readPlannedUsage` is the planner's own query — never a
-    // second copy of it here — and it is safe to call after the box row above
-    // has already authorized this household + recipe pair.
-    const { readPlannedUsage } = await import("./meal-plan");
-    // Same ride-along reasoning as `plannedUsage` above, with one extra
-    // consequence worth naming: riding on THIS payload is what puts enrichment
-    // into the offline IndexedDB cache, so a boxed recipe opened offline still
-    // shows its tags.
-    const { enrichmentTagLabels, getRecipeEnrichment } = await import("./recipe-enrichment");
-
-    const [images, pendingImage, ingredients, instructions, keywords, note, adder, plannedUsage, enrichment] = await Promise.all([
-      db.selectFrom("recipe_image").select(["blob_cid", "blob_mime", "alt"]).where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
+  // ONE round trip carries the authorization, the recipe row, and every child
+  // collection. `householdScopedQuery` + the `household_recipe` join IS both
+  // the authz gate and the 404 — you may only read content for recipes in
+  // YOUR box — and there is deliberately no visibility filter, because this
+  // must still render a recipe whose source has since gone unavailable (the
+  // whole point of the cache). The children ride along as json sub-selects
+  // rather than a fan-out of one-table-each queries: each is keyed by
+  // `recipe_id` (plus `household_id` for the note), so a second round trip
+  // has nothing left to learn.
+  const { jsonArrayFrom, jsonObjectFrom } = await import("kysely/helpers/postgres");
+  const row = await householdScopedQuery(db, did, householdId)
+    .innerJoin("household_recipe as hr", "hr.household_id", "hm.household_id")
+    .innerJoin("recipe as r", "r.id", "hr.recipe_id")
+    .leftJoin("recipe_attribution as attr", "attr.recipe_id", "r.id")
+    .leftJoin("atproto_repo as repo", "repo.did", "r.did")
+    .leftJoin("atproto_collection_recipe as acr", (join) => join.onRef("acr.did", "=", "r.did").onRef("acr.rkey", "=", "r.rkey"))
+    .where("hr.recipe_id", "=", recipeId)
+    .select((eb) => [
+      "hr.favorite as favorite",
+      "hr.added_by_did as added_by_did",
+      "r.id as id",
+      "r.name as name",
+      "r.description as description",
+      "r.origin as origin",
+      "r.did as did",
+      "r.visibility as visibility",
+      "r.uri as uri",
+      "r.recipe_yield as recipe_yield",
+      "r.total_time_seconds as total_time_seconds",
+      "r.recipe_cuisine as recipe_cuisine",
+      // The AUTHOR's own declared diets — the tag strip shows these beside
+      // whatever the pipeline derived, and the author's wins on collision.
+      "r.suitable_for_diet as suitable_for_diet",
+      "r.recipe_category as recipe_category",
+      "r.calories as calories",
+      "r.protein_content as protein_content",
+      "r.carbohydrate_content as carbohydrate_content",
+      "r.fat_content as fat_content",
+      "attr.display_name as attr_display_name",
+      "attr.author as attr_author",
+      "attr.publisher as attr_publisher",
+      "attr.url as attr_url",
+      "repo.handle as repo_handle",
+      "acr.deleted_at as acr_deleted_at",
+      "acr.validation_status as acr_validation_status",
+      jsonArrayFrom(eb.selectFrom("recipe_image as ri").select(["ri.blob_cid", "ri.blob_mime", "ri.alt"]).whereRef("ri.recipe_id", "=", "r.id").orderBy("ri.ordinal")).as("images"),
       // Draft/private hero: a not-yet-published recipe keeps its photo in OUR
       // bucket. The page gets a signed URL onto that object — minted below,
       // where the caller has already passed the household check that authorizes
       // it. This used to select `source_url` and render a third-party URL
       // straight into the page, and then a proxy route on our own origin.
-      db.selectFrom("recipe_pending_image").select(["object_key", "alt"]).where("recipe_id", "=", data.recipeId).executeTakeFirst(),
-      db.selectFrom("recipe_ingredient").select("text").where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
-      db.selectFrom("recipe_instruction").select("text").where("recipe_id", "=", data.recipeId).orderBy("ordinal").execute(),
-      db.selectFrom("recipe_keyword").select("keyword").where("recipe_id", "=", data.recipeId).execute(),
-      db.selectFrom("household_recipe_note").select(["body", "updated_at"]).where("household_id", "=", householdId).where("recipe_id", "=", data.recipeId).executeTakeFirst(),
-      resolveAdderHandles(db, [boxed.added_by_did]).then((byDid) => byDid.get(boxed.added_by_did) ?? null),
-      readPlannedUsage(db, householdId, data.recipeId),
-      getRecipeEnrichment(db, data.recipeId),
-    ]);
+      jsonObjectFrom(eb.selectFrom("recipe_pending_image as pimg").select(["pimg.object_key", "pimg.alt"]).whereRef("pimg.recipe_id", "=", "r.id").limit(1)).as("pending_image"),
+      jsonArrayFrom(eb.selectFrom("recipe_ingredient as ring").select("ring.text").whereRef("ring.recipe_id", "=", "r.id").orderBy("ring.ordinal")).as("ingredients"),
+      jsonArrayFrom(eb.selectFrom("recipe_instruction as rins").select("rins.text").whereRef("rins.recipe_id", "=", "r.id").orderBy("rins.ordinal")).as("instructions"),
+      jsonArrayFrom(eb.selectFrom("recipe_keyword as rkw").select("rkw.keyword").whereRef("rkw.recipe_id", "=", "r.id")).as("keywords"),
+      jsonObjectFrom(
+        eb
+          .selectFrom("household_recipe_note as hrn")
+          .select(["hrn.body", "hrn.updated_at"])
+          .whereRef("hrn.recipe_id", "=", "r.id")
+          .where("hrn.household_id", "=", householdId)
+          .limit(1),
+      ).as("note"),
+    ])
+    .executeTakeFirst();
+  if (!row) return null;
 
-    const { minutes, display } = minutesDisplay(row.total_time_seconds);
-    const source = deriveSource({
-      origin: row.origin,
-      id: row.id,
-      repoHandle: row.repo_handle,
-      attrDisplayName: row.attr_display_name,
-      attrAuthor: row.attr_author,
-      attrPublisher: row.attr_publisher,
-      attrUrl: row.attr_url,
-    });
-    const { parseServes } = await import("#/lib/recipe-scale");
-    const unavailable = row.origin === "sync" && (row.acr_deleted_at !== null || row.acr_validation_status == null || row.acr_validation_status !== "valid");
+  // What is left is the handful of reads that are NOT a child table of this
+  // recipe — each owned by another module, each carrying a rule (a household
+  // timezone, a label vocabulary, a membership preference) that a hand-rolled
+  // sub-select here would be a second copy of. They run in one parallel wave,
+  // after the box row above has authorized this household + recipe pair.
+  //
+  // §7.2: the planner's "is this planned?" read rides along, so the remove
+  // flow costs no extra round trip. `readPlannedUsage` is the planner's own
+  // query — never a second copy of it here.
+  const { readPlannedUsage } = await import("./meal-plan");
+  // Same ride-along reasoning as `plannedUsage` above, with one extra
+  // consequence worth naming: riding on THIS payload is what puts enrichment
+  // into the offline IndexedDB cache, so a boxed recipe opened offline still
+  // shows its tags.
+  const { enrichmentTagLabels, getRecipeEnrichment } = await import("./recipe-enrichment");
+  // Whether autoimport pins this recipe in the box rides along too: the pane
+  // disables Remove with it, so the only way to learn about the refusal is
+  // not by pressing the button and catching a 409.
+  const { autoimportPinnedBy } = await import("./household/autoimport");
 
-    // A published recipe renders from an atproto CDN; before that, from a signed
-    // URL onto our bucket. There is no third case and no `<img src>` on someone
-    // else's host.
-    const published = images
-      .filter((img) => row.did && img.blob_cid)
-      .map((img) => ({ url: blobImageUrl(row.did as string, img.blob_cid as string, img.blob_mime, "feed_fullsize"), alt: img.alt }));
-    let heroImages = published;
-    if (!published.length && pendingImage) {
-      const { presignDownload } = await import("#/lib/blob-storage");
-      heroImages = [{ url: await presignDownload(pendingImage.object_key), alt: pendingImage.alt }];
-    }
+  const [plannedUsage, enrichment, pinnedByDid, adderHandles] = await Promise.all([
+    readPlannedUsage(db, householdId, recipeId),
+    getRecipeEnrichment(db, recipeId),
+    autoimportPinnedBy(db, householdId, recipeId),
+    resolveAdderHandles(db, [row.added_by_did]),
+  ]);
+  const adder = adderHandles.get(row.added_by_did) ?? null;
 
-    return {
-      recipeId: row.id,
-      title: row.name,
-      description: row.description,
-      source,
-      images: heroImages,
-      ingredients: ingredients.map((i) => i.text),
-      instructions: instructions.map((i) => i.text),
-      keywords: keywords.map((k) => k.keyword),
-      recipeYield: row.recipe_yield,
-      serves: parseServes(row.recipe_yield),
-      totalMinutes: minutes,
-      totalTimeDisplay: display,
-      cuisine: prettify(row.recipe_cuisine),
-      category: prettify(row.recipe_category),
-      nutrition: {
-        calories: toNum(row.calories),
-        protein: toNum(row.protein_content),
-        carbs: toNum(row.carbohydrate_content),
-        fat: toNum(row.fat_content),
-      },
-      favorite: boxed.favorite,
-      note: note ? { body: note.body, updatedAt: new Date(note.updated_at).toISOString() } : null,
-      addedByHandle: adder,
-      unavailable,
-      unavailableSince: row.acr_deleted_at ? new Date(row.acr_deleted_at).toISOString() : null,
-      unpublished: row.visibility !== "public" || row.uri == null,
-      plannedUsage,
-      suitableForDiet: (row.suitable_for_diet ?? []).map((slug) => prettify(slug)).filter((label): label is string => label !== null),
-      enrichment: enrichmentTagLabels(enrichment),
-    };
+  const { minutes, display } = minutesDisplay(row.total_time_seconds);
+  const source = deriveSource({
+    origin: row.origin,
+    id: row.id,
+    repoHandle: row.repo_handle,
+    attrDisplayName: row.attr_display_name,
+    attrAuthor: row.attr_author,
+    attrPublisher: row.attr_publisher,
+    attrUrl: row.attr_url,
   });
+  const { parseServes } = await import("#/lib/recipe-scale");
+  const unavailable = row.origin === "sync" && (row.acr_deleted_at !== null || row.acr_validation_status == null || row.acr_validation_status !== "valid");
+
+  // The pin is always the recipe's own publisher (`r.did`), which is exactly
+  // the DID `repo.handle` was joined on above — so naming them costs no extra
+  // query. `resolveAdderHandles` is the fallback for a publisher we have a
+  // membership row for but no crawled repo (they signed in, never synced).
+  let autoimportLock: { handle: string | null; isSelf: boolean } | null = null;
+  if (pinnedByDid) {
+    const handle = row.repo_handle ? `@${row.repo_handle}` : ((await resolveAdderHandles(db, [pinnedByDid])).get(pinnedByDid) ?? null);
+    autoimportLock = { handle, isSelf: pinnedByDid === did };
+  }
+
+  // A published recipe renders from an atproto CDN; before that, from a signed
+  // URL onto our bucket. There is no third case and no `<img src>` on someone
+  // else's host.
+  const published = row.images
+    .filter((img) => row.did && img.blob_cid)
+    .map((img) => ({ url: blobImageUrl(row.did as string, img.blob_cid as string, img.blob_mime, "feed_fullsize"), alt: img.alt }));
+  let heroImages = published;
+  if (!published.length && row.pending_image) {
+    const { presignDownload } = await import("#/lib/blob-storage");
+    heroImages = [{ url: await presignDownload(row.pending_image.object_key), alt: row.pending_image.alt }];
+  }
+
+  return {
+    recipeId: row.id,
+    title: row.name,
+    description: row.description,
+    source,
+    images: heroImages,
+    ingredients: row.ingredients.map((i) => i.text),
+    instructions: row.instructions.map((i) => i.text),
+    keywords: row.keywords.map((k) => k.keyword),
+    recipeYield: row.recipe_yield,
+    serves: parseServes(row.recipe_yield),
+    totalMinutes: minutes,
+    totalTimeDisplay: display,
+    cuisine: prettify(row.recipe_cuisine),
+    category: prettify(row.recipe_category),
+    nutrition: {
+      calories: toNum(row.calories),
+      protein: toNum(row.protein_content),
+      carbs: toNum(row.carbohydrate_content),
+      fat: toNum(row.fat_content),
+    },
+    favorite: row.favorite,
+    note: row.note ? { body: row.note.body, updatedAt: new Date(row.note.updated_at).toISOString() } : null,
+    addedByHandle: adder,
+    unavailable,
+    unavailableSince: row.acr_deleted_at ? new Date(row.acr_deleted_at).toISOString() : null,
+    unpublished: row.visibility !== "public" || row.uri == null,
+    plannedUsage,
+    autoimportLock,
+    suitableForDiet: (row.suitable_for_diet ?? []).map((slug) => prettify(slug)).filter((label): label is string => label !== null),
+    enrichment: enrichmentTagLabels(enrichment),
+  };
+}
 
 // --- §6.3 addRecipeToHousehold ------------------------------------------
 
@@ -438,8 +479,18 @@ export const removeRecipeFromHousehold = createServerFn({ method: "POST" })
  */
 export async function unboxRecipe(db: Kysely<DB>, householdId: string, recipeId: string): Promise<{ unfiledFrom: string[]; staleCollectionIds: string[] }> {
   const { collectionsHoldingRecipe, renumberAfterUnfile, reputEach } = await import("./collections");
+  const { autoimportPinnedBy } = await import("./household/autoimport");
+  const { AutoimportProtectedError } = await import("./household/errors");
 
   const unfiledFrom = await db.transaction().execute(async (trx) => {
+    // A recipe published by a member who has Autoimport My Recipes on is
+    // protected from removal (it would just reappear on the next sweep). The
+    // detail payload reports the same fact ahead of time, so reaching this
+    // throw means a stale client — not the normal path.
+    if (await autoimportPinnedBy(trx, householdId, recipeId)) {
+      throw new AutoimportProtectedError();
+    }
+
     // Read (and therefore lock the read set of) the affected collections BEFORE
     // the delete, because the cascade is about to take those rows away.
     const affected = await collectionsHoldingRecipe(trx, householdId, recipeId);

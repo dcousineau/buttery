@@ -110,6 +110,19 @@ export interface HouseholdRecipeDetail {
    */
   plannedUsage: PlannedUsage | null;
   /**
+   * Set when this recipe is pinned in the box by autoimport: its publisher is a
+   * live member of this household with Autoimport My Recipes on, so removing it
+   * is refused server-side (`autoimport_protected`) — it would reappear on the
+   * next sweep anyway. `null` when nothing pins it.
+   *
+   * `handle` is the publisher's "@handle" (null when we know their DID but no
+   * handle), and `isSelf` marks the "this one is yours" wording.
+   *
+   * Optional for the same reason `plannedUsage` is nullable: a payload built
+   * before this shipped and still sitting in IndexedDB has no such key.
+   */
+  autoimportLock?: { handle: string | null; isSelf: boolean } | null;
+  /**
    * Diets the AUTHOR declared on the recipe itself (`recipe.suitable_for_diet`),
    * prettified. Distinct from anything the enrichment pipeline derived — see
    * `enrichment` below, and `lib/recipe-tags.ts` for how the two merge.
@@ -404,6 +417,8 @@ export interface HouseholdMemberView {
   invitedByDid: string | null;
   /** True when this row is the caller (so the UI can label "you"). */
   isSelf: boolean;
+  /** Whether this member's public recipes are autoimported into the household. */
+  autoimportMyRecipes: boolean;
 }
 
 /** A pending BOUND invite for the caller, surfaced on the onboarding screen. */

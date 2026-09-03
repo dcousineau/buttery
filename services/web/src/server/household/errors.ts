@@ -45,7 +45,8 @@ export type HouseholdErrorCode =
   | "invite_not_for_you"
   | "invite_revoked"
   | "invite_household_gone"
-  | "last_owner";
+  | "last_owner"
+  | "autoimport_protected";
 
 /** Base class for every typed household error. `instanceof`-discriminable. */
 export abstract class HouseholdError extends Error {
@@ -147,6 +148,15 @@ export class LastOwnerError extends HouseholdError {
   readonly code = "last_owner" as const;
   readonly httpStatus = 409;
   constructor(message = "Promote another owner or delete the household first.") {
+    super(message);
+  }
+}
+
+/** Blocked: a recipe published by a member with autoimport on may not be removed. */
+export class AutoimportProtectedError extends HouseholdError {
+  readonly code = "autoimport_protected" as const;
+  readonly httpStatus = 409;
+  constructor(message = "This recipe is kept in the box because the publisher has Autoimport My Recipes turned on.") {
     super(message);
   }
 }

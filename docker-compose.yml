@@ -135,8 +135,33 @@ services:
   #
   # Credentials are throwaway and identical for every developer, exactly like
   # the postgres/redis passwords above.
+  # A named volume outlives the service that filled it, and successive S3 images
+  # have not agreed on a uid. `local-s3` ran as root and left `/data` (and the
+  # `buttery-uploads` objects under it) owned by root; RustFS runs as uid 10001,
+  # could not write there, and died on every boot with
+  # `[FATAL] Server runtime failed: Io error: Permission denied (os error 13)`.
+  # The image's own entrypoint does not repair that: it chowns a data directory
+  # only when it had to create it, and this one already existed.
+  #
+  # So repair it here, on every boot. The chown is idempotent, costs one
+  # short-lived container, and — unlike the other obvious fix, deleting the
+  # volume — keeps the objects already uploaded. It reuses the RustFS image, so
+  # nothing extra is pulled, and reads the uid out of the image's own passwd
+  # entry rather than hardcoding 10001, so a future image that renumbers the
+  # user still lands on the right owner. `$$(` is an escaped `$(`: compose would
+  # otherwise try to interpolate it.
+  rustfs-init:
+    image: rustfs/rustfs:latest
+    user: "0:0"
+    entrypoint: ["sh", "-c", 'chown -R "$$(id -u rustfs):$$(id -g rustfs)" /data']
+    volumes:
+      - buttery_s3:/data
+
   rustfs:
     image: rustfs/rustfs:latest
+    depends_on:
+      rustfs-init:
+        condition: service_completed_successfully
     environment:
       RUSTFS_ACCESS_KEY: butterydev
       RUSTFS_SECRET_KEY: butterydevsecret

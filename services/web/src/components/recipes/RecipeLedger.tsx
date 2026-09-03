@@ -15,6 +15,7 @@ import { applyVisibleOrder, moveByKey, moveToInsertionPoint } from "#/lib/reorde
 import { cn } from "#/lib/utils";
 import { RecipeSlat, RecipeSlatAction, RecipeSlatAside, RecipeSlatBody, RecipeSlatDetail, RecipeSlatList, RecipeSlatMeta, RecipeSlatTitle } from "./RecipeSlat";
 import { SourceIcon } from "./SourceIcon";
+import { Img } from "../ui/img";
 
 /**
  * The recipe box ledger — now a **scoped** ledger (collections plan §7).
@@ -348,13 +349,17 @@ function LedgerRow({
         // rather than a bare "true" — same state the butter marker paints.
         aria-current={selected ? "page" : undefined}
       >
-        {row.thumbUrl ? (
-          <img src={row.thumbUrl} alt="" className="size-11 flex-none rounded-sm border-2 border-border object-cover" loading="lazy" />
-        ) : (
-          <span className="grid size-11 flex-none place-content-center rounded-sm border-2 border-border bg-muted">
-            <UtensilsCrossed className="size-4 text-muted-foreground" aria-hidden="true" />
-          </span>
-        )}
+        <Img
+          src={row.thumbUrl}
+          alt=""
+          className="size-11 flex-none rounded-sm border-2 border-border object-cover"
+          loading="lazy"
+          fallback={
+            <span className="grid size-11 flex-none place-content-center rounded-sm border-2 border-border bg-muted">
+              <UtensilsCrossed className="size-4 text-muted-foreground" aria-hidden="true" />
+            </span>
+          }
+        />
         <RecipeSlatBody>
           <RecipeSlatTitle>
             <span className="truncate">{row.title}</span>

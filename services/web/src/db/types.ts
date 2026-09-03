@@ -155,6 +155,7 @@ export interface HouseholdInvite {
 }
 
 export interface HouseholdMember {
+  autoimport_my_recipes: Generated<boolean>;
   deleted_at: Timestamp | null;
   did: string;
   household_id: string;

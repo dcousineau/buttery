@@ -296,6 +296,11 @@ export const acceptInvite = createServerFn({ method: "POST" })
 
         await setActiveHousehold(sessionId, invite.household_id, trx);
 
+        // New member's public recipes become household recipes automatically when
+        // their Autoimport My Recipes preference is on (default).
+        const { importMemberRecipes } = await import("./autoimport");
+        await importMemberRecipes(trx, invite.household_id, did);
+
         // TODO(email): notify the inviting owner (`invite.created_by_did`) that
         // the invite was accepted (§6.3 / §11).
 

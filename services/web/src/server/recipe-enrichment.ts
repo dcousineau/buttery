@@ -158,10 +158,23 @@ function toNum(v: string | number | null | undefined): number {
  * `recipe-enrichment.db.test.ts` can reach it without faking a session.
  */
 export async function getRecipeEnrichment(db: Kysely<DB>, recipeId: string): Promise<RecipeEnrichmentView | null> {
-  const row = await db.selectFrom("recipe_enrichment").selectAll().where("recipe_id", "=", recipeId).executeTakeFirst();
+  // The labels ride along as a json sub-select rather than a second await: they
+  // are keyed by the same `recipe_id` this row was found by, so a second round
+  // trip could only re-learn what the first already knows.
+  const { jsonArrayFrom } = await import("kysely/helpers/postgres");
+  const row = await db
+    .selectFrom("recipe_enrichment as re")
+    .selectAll("re")
+    .select((eb) =>
+      jsonArrayFrom(
+        eb.selectFrom("recipe_enrichment_label as rel").selectAll("rel").whereRef("rel.recipe_id", "=", "re.recipe_id").orderBy("rel.dimension").orderBy("rel.slug"),
+      ).as("labelRows"),
+    )
+    .where("re.recipe_id", "=", recipeId)
+    .executeTakeFirst();
   if (!row) return null;
 
-  const labelRows = await db.selectFrom("recipe_enrichment_label").selectAll().where("recipe_id", "=", recipeId).orderBy("dimension").orderBy("slug").execute();
+  const labelRows = row.labelRows;
 
   const labels: Record<string, RecipeEnrichmentLabelView[]> = {};
   for (const label of labelRows) {

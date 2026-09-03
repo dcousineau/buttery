@@ -278,9 +278,9 @@ describe.skipIf(!db)(db ? "collections DB integration (§9)" : `collections DB i
     await db!
       .insertInto("household_member")
       .values([
-        { household_id: HH_A, did: DID_A, role: "owner", invited_by_did: null },
-        { household_id: HH_A, did: DID_M, role: "member", invited_by_did: DID_A },
-        { household_id: HH_B, did: DID_B, role: "owner", invited_by_did: null },
+        { household_id: HH_A, did: DID_A, role: "owner", invited_by_did: null, autoimport_my_recipes: false },
+        { household_id: HH_A, did: DID_M, role: "member", invited_by_did: DID_A, autoimport_my_recipes: false },
+        { household_id: HH_B, did: DID_B, role: "owner", invited_by_did: null, autoimport_my_recipes: false },
       ])
       .execute();
     await db!

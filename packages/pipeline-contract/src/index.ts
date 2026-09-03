@@ -1,7 +1,7 @@
 /**
- * Contract between whoever enqueues recipe enrichment and the workflow that
- * drains it — queue name, step names, payload shapes — so a rename on one
- * side is a type error on the other, not a silently-ignored job.
+ * Contract between the pipeline queues and their producers — queue names, job
+ * names, payload shapes — so a rename on one side is a type error on the other,
+ * not a silently-ignored job.
  *
  * Zero runtime deps on purpose: this is the one module `@buttery/web` is
  * allowed to import from the pipeline's world.

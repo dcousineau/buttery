@@ -39,7 +39,7 @@ export async function loadLiveMembership(did: string, householdId: string, db: K
     .where("hm.deleted_at", "is", null)
     .where("hm.tombstoned", "=", false)
     .where("h.deleted_at", "is", null)
-    .select(["hm.household_id", "hm.did", "hm.role", "hm.joined_at", "hm.invited_by_did", "hm.deleted_at", "hm.tombstoned"])
+    .select(["hm.household_id", "hm.did", "hm.role", "hm.joined_at", "hm.invited_by_did", "hm.deleted_at", "hm.tombstoned", "hm.autoimport_my_recipes"])
     .executeTakeFirst();
 }
 
