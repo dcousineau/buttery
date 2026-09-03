@@ -121,7 +121,7 @@ export function GroceryRow({ item, onToggle, onEdit, onRemove, writable = true }
             </span>
           </label>
 
-          <span className="flex flex-none items-center gap-0.5 pr-1.5 pl-1 md:pr-2.5">
+          <span className="flex flex-none items-center gap-0.5 pr-1.5 pl-1 touch:gap-(--touch-gap) md:pr-2.5">
             <Button
               variant="ghost"
               size="icon-lg"

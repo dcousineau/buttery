@@ -75,7 +75,7 @@ function DialogDescription({ className, ...props }: DialogPrimitive.Description.
 }
 
 function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="dialog-footer" className={cn("mt-2 flex flex-wrap justify-end gap-2", className)} {...props} />;
+  return <div data-slot="dialog-footer" className={cn("mt-2 flex flex-wrap justify-end gap-2 touch:gap-(--touch-gap)", className)} {...props} />;
 }
 
 export { Dialog, DialogTrigger, DialogClose, DialogBackdrop, DialogContent, DialogTitle, DialogDescription, DialogFooter, dialogPopupVariants };

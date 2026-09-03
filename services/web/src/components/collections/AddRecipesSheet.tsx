@@ -276,7 +276,7 @@ export function AddRecipesSheet({
 
         {/* The combo publishes recipes, so an under-scoped grant refuses it the
           same way the recipe detail's own publish button does. */}
-        <AtprotoReauthDialog open={reauthOpen} onOpenChange={setReauthOpen} touch />
+        <AtprotoReauthDialog open={reauthOpen} onOpenChange={setReauthOpen} />
       </SheetContent>
     </Sheet>
   );

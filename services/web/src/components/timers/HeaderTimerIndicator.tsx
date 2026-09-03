@@ -43,12 +43,12 @@ export function HeaderTimerIndicator() {
         <PopoverTrigger
           aria-label={accessibleName}
           className={cn(
-            "relative inline-flex size-7 shrink-0 items-center justify-center rounded-lg border-2 border-border bg-card text-foreground shadow-pop-sm transition-all outline-none hover:-translate-y-0.5 hover:shadow-pop focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-0.5 active:shadow-none",
+            "relative inline-flex size-(--control-h-sm) shrink-0 items-center justify-center rounded-lg border-2 border-border bg-card text-foreground shadow-pop-sm transition-all outline-none hover:-translate-y-0.5 hover:shadow-pop focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-0.5 active:shadow-none",
             hasAlarming && "border-destructive text-destructive ring-2 ring-destructive/60",
             hasAlarming && "motion-safe:animate-timer-shake",
           )}
         >
-          {hasAlarming ? <AlarmClock className="size-4" aria-hidden="true" /> : <TimerIcon className="size-4" aria-hidden="true" />}
+          {hasAlarming ? <AlarmClock className="size-4 touch:size-5" aria-hidden="true" /> : <TimerIcon className="size-4 touch:size-5" aria-hidden="true" />}
           {inProgress > 0 && (
             <span
               aria-hidden="true"

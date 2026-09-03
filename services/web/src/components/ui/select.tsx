@@ -26,12 +26,12 @@ const selectVariants = cva(
   {
     variants: {
       size: {
-        xs: "h-6 bg-[position:right_6px_center] bg-[size:12px] pr-6 pl-2 text-xs",
-        sm: "h-7 bg-[position:right_8px_center] bg-[size:14px] pr-7 pl-2.5 text-sm",
-        default: "h-8 bg-[position:right_10px_center] bg-[size:15px] pr-8 pl-3 text-sm",
-        lg: "h-9 bg-[position:right_10px_center] bg-[size:16px] pr-9 pl-3.5 text-base",
-        xl: "h-12 rounded-xl bg-[position:right_16px_center] bg-[size:20px] pr-12 pl-5 text-lg",
-        "2xl": "h-16 rounded-xl bg-[position:right_20px_center] bg-[size:26px] pr-16 pl-7 text-2xl",
+        xs: "h-(--control-h-xs) bg-[position:right_6px_center] bg-[size:12px] pr-6 pl-(--control-px-xs) text-xs",
+        sm: "h-(--control-h-sm) bg-[position:right_8px_center] bg-[size:14px] pr-7 pl-(--control-px-sm) text-sm",
+        default: "h-(--control-h) bg-[position:right_10px_center] bg-[size:15px] pr-8 pl-(--control-px) text-sm",
+        lg: "h-(--control-h-lg) bg-[position:right_10px_center] bg-[size:16px] pr-9 pl-(--control-px-lg) text-base",
+        xl: "h-(--control-h-xl) rounded-xl bg-[position:right_16px_center] bg-[size:20px] pr-12 pl-5 text-lg",
+        "2xl": "h-(--control-h-2xl) rounded-xl bg-[position:right_20px_center] bg-[size:26px] pr-16 pl-7 text-2xl",
       },
     },
     defaultVariants: { size: "default" },

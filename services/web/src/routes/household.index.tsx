@@ -171,7 +171,7 @@ function PantryPage() {
     // The pantry is not that shell, so it supplies the same three affordances
     // rather than forking the chooser into a props-only variant.
     <RecipesViewContext.Provider value={{ openAddChooser: () => setChooserOpen(true), openPicker: () => setPickerOpen(true), pushToast }}>
-      <div className="page-wrap px-4 pt-10 pb-12 sm:pt-14">
+      <div className="page-wrap pt-6 pb-10 sm:px-4 sm:pt-14 sm:pb-12">
         <div className="rise-in flex flex-col gap-8">
           <header className="flex flex-col items-start">
             <Badge variant="secondary" className="mb-3">

@@ -371,12 +371,14 @@ function PlanPage() {
     <PlanActionsProvider value={actions}>
       <div className="flex h-[calc(100svh-var(--header-height,4rem))] min-h-0 w-full">
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {/* Below `md` every control has to fit one line on a 390px phone, so
-            the title steps down, the week label loses its 9rem reservation, and
-            the panel toggle is icon-only (see below). It still wraps rather than
-            overflows if a locale's week label runs long. */}
+          {/* Below `md` the title steps down, the week label loses its 9rem
+            reservation, and the panel toggle is icon-only (see below). Three
+            44px targets, a title and a date range do not fit one 390px line,
+            and the floor wins that argument — so the title takes the full row
+            to itself and the controls get the next one, which is a cleaner
+            break than letting the panel toggle wrap off on its own. */}
           <div className="flex flex-none flex-wrap items-center gap-x-2 gap-y-2 border-b-2 border-border bg-card px-3 py-2.5 md:gap-x-2.5 md:px-4">
-            <h1 className="display-title m-0 text-base leading-[1.1] md:text-[1.625rem]">Meal plan</h1>
+            <h1 className="display-title m-0 w-full text-base leading-[1.1] md:w-auto md:text-[1.625rem]">Meal plan</h1>
 
             <div role="group" aria-label="Layout" className="hidden overflow-hidden rounded-lg border-2 border-border shadow-pop-sm md:flex">
               <button
@@ -424,11 +426,14 @@ function PlanPage() {
                 is desktop-only and takes `md:pl-2` rather than
                 `data-icon="inline-start"` — that attribute tightens the left
                 padding through a `:has()` rule that outranks any `max-md:`
-                override, which would leave the mobile label off-centre. */}
+                override, which would leave the mobile label off-centre. The
+                height is the shared control scale's to set (44px on a coarse
+                pointer); only the horizontal padding is tightened here, because
+                that is what has to give for the row to stay on one line. */}
               <Button
                 variant="outline"
                 size="sm"
-                className="max-md:h-7 max-md:px-1.5 max-md:text-xs md:pl-2"
+                className="max-md:px-2 max-md:text-xs md:pl-2"
                 onClick={() => {
                   goToWeek(undefined);
                   setScrollNonce((nonce) => nonce + 1);
@@ -444,13 +449,15 @@ function PlanPage() {
                 // Icon-only below `md`: the label is what pushes this row onto a
                 // second line on a phone, and the `aria-label` (which the rail
                 // button already carries) keeps the name identical either way.
+                // Square it off the same token that sets the height so it stays
+                // a square at both 28px and the 44px coarse-pointer floor.
                 <Button
                   variant="outline"
                   size="sm"
                   aria-label="Show this week panel"
                   aria-expanded={false}
                   onClick={() => setPanel(true)}
-                  className="max-md:size-7 max-md:px-0 md:pl-2"
+                  className="max-md:w-(--control-h-sm) max-md:px-0 md:pl-2"
                 >
                   <PanelLeft aria-hidden="true" />
                   <span className="max-md:hidden">This week</span>

@@ -8,16 +8,17 @@ import type { ReactNode } from "react";
  * in a household" second-create confirm (acceptance item 11), and reused for
  * destructive management actions.
  *
- * Two optional slots, both added for the collections publish dialogs and both
- * inert when omitted:
+ * `children` render between the description and the footer. `description` is a
+ * `<p>` (`DialogDescription`), so anything with block structure — a list of the
+ * recipes blocking a publish, a failure notice the dialog stays open to show —
+ * has to live outside it rather than inside.
  *
- * - **`children`** render between the description and the footer. `description`
- *   is a `<p>` (`DialogDescription`), so anything with block structure — a list
- *   of the recipes blocking a publish, a failure notice the dialog stays open
- *   to show — has to live outside it rather than inside.
- * - **`touch`** makes the footer buttons 44px and full-width, for a dialog
- *   opened from a phone sheet, where the collections surfaces set that floor
- *   explicitly (collections plan §7).
+ * The footer is thumb-sized on a coarse pointer WITHOUT being asked: this used to
+ * be a `touch` boolean each caller threaded down from its own `useIsMobile()`, so
+ * a confirm reached from a phone sheet got 44px buttons and the identical confirm
+ * reached from anywhere else did not. The two `touch:` classes below say it once,
+ * for every caller, and are right even when the dialog is opened on a phone from
+ * a surface that never thought about phones.
  */
 export function ConfirmDialog({
   open,
@@ -28,7 +29,6 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   destructive = false,
   pending = false,
-  touch = false,
   onConfirm,
   children,
 }: {
@@ -40,8 +40,6 @@ export function ConfirmDialog({
   cancelLabel?: string;
   destructive?: boolean;
   pending?: boolean;
-  /** 44px, full-width footer buttons — for a dialog opened over a mobile sheet. */
-  touch?: boolean;
   onConfirm: () => void;
   /** Extra body content, between the description and the footer. */
   children?: ReactNode;
@@ -53,8 +51,12 @@ export function ConfirmDialog({
         <DialogDescription>{description}</DialogDescription>
         {children}
         <DialogFooter>
-          <DialogClose render={<Button variant="ghost" disabled={pending} className={touch ? "h-11 flex-1" : undefined} />}>{cancelLabel}</DialogClose>
-          <Button variant={destructive ? "destructive" : "default"} disabled={pending} className={touch ? "h-11 flex-1" : undefined} onClick={onConfirm}>
+          {/* Side by side on a cursor, half the sheet each on a thumb: `flex-1`
+              turns two 44px buttons into two targets you cannot miss, and
+              `--control-h-lg` is 48px on a coarse pointer, so the pair that
+              decides something irreversible sits a step above the floor. */}
+          <DialogClose render={<Button variant="ghost" disabled={pending} className="touch:h-(--control-h-lg) touch:flex-1" />}>{cancelLabel}</DialogClose>
+          <Button variant={destructive ? "destructive" : "default"} disabled={pending} className="touch:h-(--control-h-lg) touch:flex-1" onClick={onConfirm}>
             {confirmLabel}
           </Button>
         </DialogFooter>

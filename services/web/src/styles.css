@@ -9,6 +9,27 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
+ * `touch:` — "a thumb is doing this, not a mouse".
+ *
+ * Both signals, or-ed, because either one alone gets a real device wrong:
+ * `pointer: coarse` catches the touchscreen laptop and the tablet with a keyboard
+ * at any width, and `max-width: 767px` catches the phone-width window a mouse
+ * happens to be pointing at. 767px is not a fresh breakpoint — it is exactly
+ * `useIsMobile()` (lib/hooks/use-mobile.ts, `< 768`), the switch the sidebar
+ * already becomes a drawer on, so CSS and JS can never disagree about which
+ * layout is on screen.
+ *
+ * The trade this makes on purpose: a desktop window dragged under 768px gets
+ * touch density too. Key on `(pointer: coarse)` alone to undo that, and accept a
+ * touchscreen laptop in a small window getting mouse density instead.
+ */
+@custom-variant touch {
+  @media (pointer: coarse), (max-width: 767px) {
+    @slot;
+  }
+}
+
+/*
  * Buttery design tokens — see docs/BRAND.md.
  * Brand palette feeds the shadcn semantic layer below; components consume only
  * semantic tokens (bg-primary, border-border, …), never raw brand values.
@@ -60,13 +81,33 @@
   /* ---- control heights ----
    * ONE scale shared by Button, Badge, Input, Select and Textarea, so a badge, a
    * button and a field at the same `size` line up pixel-for-pixel.
-   * xs/sm/default/lg are app density; xl/2xl are the cook-mode tier. */
+   * xs/sm/default/lg are app density; xl/2xl are the cook-mode tier.
+   *
+   * The primitives READ these rather than hardcoding `h-8`, which is what lets the
+   * coarse-pointer block below (§ "The mobile floor") raise the whole app to a
+   * 44px tap target by re-pointing four names. Never set a height on a control by
+   * hand; pick a `size`. */
   --control-h-xs: 24px; /* h-6  */
   --control-h-sm: 28px; /* h-7  */
   --control-h: 32px; /* h-8  */
   --control-h-lg: 36px; /* h-9  */
   --control-h-xl: 48px; /* h-12 — cook mode */
   --control-h-2xl: 64px; /* h-16 — cook mode, full screen */
+
+  /* Inline padding, one step per height, so a control that grows also gets room
+   * for the label rather than a 44px box with 8px of side padding. */
+  --control-px-xs: 8px; /* px-2   */
+  --control-px-sm: 10px; /* px-2.5 */
+  --control-px: 12px; /* px-3   */
+  --control-px-lg: 14px; /* px-3.5 */
+
+  /* ---- the mobile floor ----
+   * The three numbers the coarse-pointer block re-points to, named here so the
+   * floor is stated once and the media query reads as a mapping. */
+  --control-h-touch: 44px; /* Apple HIG minimum, WCAG 2.5.5 (AAA) */
+  --control-px-touch: 16px;
+  --nav-row-h-touch: 52px; /* one step up: a nav row is the whole width, so it can afford it */
+  --touch-gap: 8px; /* minimum separation between two adjacent targets */
 
   /* Cursor for every interactive control. Themeable single source of truth —
    * set to `default` to opt the whole app out. Consumed by the unlayered
@@ -128,6 +169,37 @@
   --sidebar-accent-foreground: #2a1e12;
   --sidebar-border: #4d3a22;
   --sidebar-ring: #ffd84d;
+}
+
+/*
+ * THE MOBILE FLOOR — nothing you tap is smaller than 44px.
+ *
+ * The density that works with a mouse (32px rows, 28px icon buttons) is the
+ * density a thumb misses. 44×44px is Apple's HIG minimum and WCAG 2.5.5, and it
+ * lands HERE, on the shared control scale, rather than screen by screen: every
+ * primitive already reads `--control-h-*` by name, so re-pointing the steps below
+ * the floor onto it raises every `size="sm"` call site in the app at once, with no
+ * route touched and no desktop density changed.
+ *
+ * Below the floor collapses onto it; `lg` goes one step up so a form's primary
+ * control still outranks the things around it; `xl`/`2xl` (cook mode) are left
+ * alone because 48px and 64px are already past the floor.
+ *
+ * Same media query as the `touch:` variant at the top of this file — see the note
+ * there for why it is both signals rather than either one.
+ */
+@media (pointer: coarse), (max-width: 767px) {
+  :root {
+    --control-h-xs: var(--control-h-touch);
+    --control-h-sm: var(--control-h-touch);
+    --control-h: var(--control-h-touch);
+    --control-h-lg: 48px;
+
+    --control-px-xs: var(--control-px-touch);
+    --control-px-sm: var(--control-px-touch);
+    --control-px: var(--control-px-touch);
+    --control-px-lg: var(--control-px-touch);
+  }
 }
 
 @theme inline {

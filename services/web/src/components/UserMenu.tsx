@@ -117,7 +117,7 @@ export default function UserMenu() {
   const support = useSupport();
 
   if (isPending) {
-    return <Skeleton className="size-9 rounded-full" />;
+    return <Skeleton className="size-9 rounded-full touch:size-(--control-h-touch)" />;
   }
 
   if (!session && !snapshot) {
@@ -145,7 +145,7 @@ export default function UserMenu() {
         className="rounded-full shadow-pop transition-all outline-none hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-pop-lg active:translate-x-0.5 active:translate-y-0.5 active:shadow-pop-sm focus-visible:ring-3 focus-visible:ring-ring/50"
         render={
           <button type="button">
-            <UserAvatar handle={handle} image={image} size="lg" className="size-9" />
+            <UserAvatar handle={handle} image={image} size="lg" className="size-9 touch:size-(--control-h-touch)" />
           </button>
         }
       />

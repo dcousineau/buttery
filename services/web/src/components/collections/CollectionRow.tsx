@@ -32,10 +32,9 @@ import type { ScopeSearch } from "./scope";
  *   gutter, wide enough to clear the grip's 24px hit box at its 6px offset.
  *   Shared, so nothing is indented relative to anything else.
  * - **Right** — the gear is there at every width, so the padding is too: `pr-8`
- *   clears the 24px gear, and `pointer-coarse:pr-13` clears the 44px one. The
- *   gear must never sit on top of the count, on any pointer: it is a button
- *   painted above the link, so any overlap would be a tap the row link never
- *   gets.
+ *   clears the 24px gear, and `touch:pr-13` clears the 44px one. The gear must
+ *   never sit on top of the count, on any pointer: it is a button painted above
+ *   the link, so any overlap would be a tap the row link never gets.
  *
  * The selected paint is `selectableRowVariants` — the app's one "this row is the
  * current row" treatment (butter fill plus a leading butter bar), the same one
@@ -113,13 +112,15 @@ export function CollectionTreeRow({
       onDragLeave={drag?.onDragLeave}
       onDrop={drag?.onDrop}
       className={cn(
-        // `pointer-coarse:` is where the touch sizing lives: a finger needs 44px
-        // and a mouse does not, and the question is the *input device*, not the
-        // viewport — a phone-width desktop window keeps the dense rows, a
-        // touchscreen laptop gets the big ones. Milestone 4 had to apply these
-        // from outside (`TOUCH_TREE` in `CollectionsSheet`) because it did not
-        // own this file; they belong here, on the elements they describe.
-        "group/row relative flex items-center pointer-coarse:min-h-11",
+        // `touch:` is where the touch sizing lives — the app-wide variant
+        // (styles.css), which fires on a coarse pointer *or* below `md`. It used
+        // to be `pointer-coarse:` alone, on the argument that a finger needs
+        // 44px and a mouse does not; but this tree's only `<md` surface is a
+        // sheet, and a phone-width window that kept 30px rows disagreed with
+        // every other nav row in the app. Milestone 4 had to apply these from
+        // outside (`TOUCH_TREE` in `CollectionsSheet`) because it did not own
+        // this file; they belong here, on the elements they describe.
+        "group/row relative flex items-center touch:min-h-(--nav-row-h-touch)",
         selectableRowVariants({ selected: active }),
         // The same ink the drop line is drawn in, as an inset outline: rows sit
         // flush in a scrollport, so an outward ring would land on its neighbours.
@@ -135,14 +136,14 @@ export function CollectionTreeRow({
         aria-current={active ? "true" : undefined}
         // Uniform on every row: one indent for smart rows and collections
         // alike, and a right pad that clears the pinned gear — `pr-8` for the
-        // 24px one, `pointer-coarse:pr-13` for the 44px one — so the count sits
-        // at the same x whether or not the row has a gear.
-        className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-8 pl-2.5 text-[0.8125rem] font-semibold text-foreground no-underline focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-ring pointer-coarse:min-h-11 pointer-coarse:pr-13"
+        // 24px one, `touch:pr-13` for the 44px one — so the count sits at the
+        // same x whether or not the row has a gear.
+        className="flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-8 pl-2.5 text-[0.8125rem] font-semibold text-foreground no-underline focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-ring touch:min-h-(--nav-row-h-touch) touch:gap-3 touch:pr-13 touch:pl-3.5 touch:text-base"
       >
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <Icon className="size-3.5 shrink-0 text-muted-foreground touch:size-5" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {count != null && (
-          <span className="shrink-0 text-[0.6875rem] font-bold tabular-nums text-muted-foreground">
+          <span className="shrink-0 text-[0.6875rem] font-bold tabular-nums text-muted-foreground touch:text-xs">
             {count}
             <span className="sr-only"> {count === 1 ? "recipe" : "recipes"}</span>
           </span>
@@ -207,12 +208,13 @@ export function CollectionRow({
           type="button"
           onClick={() => onEdit(collection)}
           aria-label={`Edit ${collection.name}`}
-          // Hover-revealed for a mouse; on a coarse pointer there IS no hover
-          // (BRAND.md is explicit about it), so the gear that opens the edit
-          // sheet is simply there, at 44px. Without this, touch has no way in.
-          className="grid size-6 shrink-0 cursor-(--cursor-interactive) place-content-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:size-11 pointer-coarse:opacity-100"
+          // Hover-revealed for a mouse; on the `touch` layer there IS no hover
+          // to reveal it with (BRAND.md is explicit about it), so the gear that
+          // opens the edit sheet is simply there, at the 44px floor. Without
+          // this, touch has no way in.
+          className="grid size-6 shrink-0 cursor-(--cursor-interactive) place-content-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring group-hover/row:opacity-100 group-focus-within/row:opacity-100 touch:size-(--control-h-touch) touch:rounded-lg touch:opacity-100"
         >
-          <Settings2 className="size-3.5" aria-hidden="true" />
+          <Settings2 className="size-3.5 touch:size-5" aria-hidden="true" />
         </button>
       }
     />

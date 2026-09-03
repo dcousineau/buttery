@@ -130,7 +130,7 @@ export function PlanDaysAgenda({ week, scrollNonce = 0 }: { week: PlanWeek; scro
               ref={anchorRef}
               type="button"
               onClick={() => scrollToTop("smooth")}
-              className="-mb-1 inline-flex shrink-0 scroll-mt-3 items-center gap-1 self-center rounded-4xl border-2 border-dashed border-border/45 px-2.5 py-1 text-[0.6875rem] font-bold text-muted-foreground hover:border-border hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none md:hidden"
+              className="-mb-1 inline-flex shrink-0 scroll-mt-3 items-center gap-1 self-center rounded-4xl border-2 border-dashed border-border/45 px-2.5 py-1 text-[0.6875rem] font-bold text-muted-foreground hover:border-border hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none md:hidden touch:min-h-(--control-h-touch) touch:gap-1.5 touch:px-4 touch:text-sm touch:[&_svg]:size-4"
             >
               <ChevronUp className="size-3" aria-hidden="true" />
               See previous days
@@ -180,7 +180,7 @@ export function PlanDaysAgenda({ week, scrollNonce = 0 }: { week: PlanWeek; scro
                       onClick={() => actions.openAdd(day.date, slot)}
                       title={actions.writable ? addToSlotLabel(slot, day.date) : OFFLINE_WRITE_HINT}
                       aria-label={addToSlotLabel(slot, day.date)}
-                      className="inline-flex items-center gap-1 rounded-4xl border-2 border-dashed border-border/45 px-2 py-0.5 text-[0.6875rem] font-bold text-muted-foreground hover:border-border hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50"
+                      className="inline-flex items-center gap-1 rounded-4xl border-2 border-dashed border-border/45 px-2 py-0.5 text-[0.6875rem] font-bold text-muted-foreground hover:border-border hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50 touch:min-h-(--control-h-touch) touch:gap-1.5 touch:px-3.5 touch:text-sm touch:[&_svg]:size-4"
                     >
                       <Plus className="size-3" aria-hidden="true" />
                       Add

@@ -28,7 +28,6 @@ export function DeleteCollectionDialog({
   publisherHandle,
   failure,
   pending,
-  touch,
   onConfirm,
 }: {
   open: boolean;
@@ -38,7 +37,6 @@ export function DeleteCollectionDialog({
   publisherHandle: string | null;
   failure: string | null;
   pending: boolean;
-  touch: boolean;
   onConfirm: () => void;
 }) {
   const who = publisherName(publisherHandle);
@@ -63,7 +61,6 @@ export function DeleteCollectionDialog({
       confirmLabel="Delete collection"
       destructive
       pending={pending}
-      touch={touch}
       onConfirm={onConfirm}
     >
       {failure && (

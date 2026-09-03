@@ -26,7 +26,7 @@ import { ConfirmDialog } from "#/components/ConfirmDialog";
  * no "it worked" state to render — only the failure, which stays in the dialog
  * rather than vanishing with it.
  */
-export function AtprotoReauthDialog({ open, onOpenChange, touch = false }: { open: boolean; onOpenChange: (open: boolean) => void; touch?: boolean }) {
+export function AtprotoReauthDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   // `handle` is an atproto-plugin column, absent from better-auth's base user type.
   const { data: session } = useHydratedSession() as { data: { user?: { handle?: string | null } } | null };
   const [pending, setPending] = useState(false);
@@ -55,7 +55,6 @@ export function AtprotoReauthDialog({ open, onOpenChange, touch = false }: { ope
       confirmLabel="Reconnect account"
       cancelLabel="Not now"
       pending={pending}
-      touch={touch}
       onConfirm={() => void onConfirm()}
     >
       {failure ? (

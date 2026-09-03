@@ -47,7 +47,8 @@ import { publisherName, useStaleToast } from "./use-stale-toast";
  * (`ui/sheet.tsx` re-skins it), so `DialogTitle`, `DialogClose` and friends work
  * inside either root — the form below is byte-identical in both and never asks
  * which one it is in, except to decide whether to offer the mobile "Add
- * recipes" sheet and how big to draw a touch target.
+ * recipes" sheet. Sizing is not one of those decisions any more: the controls
+ * read the shared scale, which is 44px on a coarse pointer wherever they are.
  *
  * The shell is chosen with `useIsMobile()` rather than CSS, following
  * `ThisWeekPanel`: rendering both and hiding one would mount two modals, two
@@ -239,9 +240,9 @@ function EditCollectionForm({
         </div>
         {/* The sheet has no chrome of its own (`showCloseButton={false}`), and a
           full-height sheet with only a footer Cancel is a sheet people swipe at.
-          44px, like everything else on the mobile surface. */}
+          Sized by the shared scale — `icon-sm` is 44px on a coarse pointer. */}
         {mobile && (
-          <DialogClose render={<Button type="button" variant="ghost" size="icon" className="-mt-1 -mr-1.5 size-11 shrink-0" onClick={onClose} />}>
+          <DialogClose render={<Button type="button" variant="ghost" size="icon-sm" className="-mt-1 -mr-1.5 shrink-0" onClick={onClose} />}>
             <X aria-hidden="true" />
             <span className="sr-only">Close</span>
           </DialogClose>
@@ -282,9 +283,7 @@ function EditCollectionForm({
               <Button
                 type="button"
                 variant="outline"
-                // 44px on the sheet, like every other control on that surface.
-                size={mobile ? "icon" : "icon-sm"}
-                className={mobile ? "size-11" : undefined}
+                size="icon-sm"
                 disabled={!online || position === 0}
                 title={online ? undefined : OFFLINE_WRITE_HINT}
                 aria-label={`Move ${collection.name} up in your collections`}
@@ -295,8 +294,7 @@ function EditCollectionForm({
               <Button
                 type="button"
                 variant="outline"
-                size={mobile ? "icon" : "icon-sm"}
-                className={mobile ? "size-11" : undefined}
+                size="icon-sm"
                 disabled={!online || position === siblingIds.length - 1}
                 title={online ? undefined : OFFLINE_WRITE_HINT}
                 aria-label={`Move ${collection.name} down in your collections`}
@@ -374,8 +372,8 @@ function EditCollectionForm({
                       <Button
                         type="button"
                         variant="ghost"
-                        size={mobile ? "icon" : "icon-xs"}
-                        className={mobile ? "size-11 text-muted-foreground" : "text-muted-foreground"}
+                        size="icon-xs"
+                        className="text-muted-foreground"
                         disabled={!online || index === 0}
                         title={online ? undefined : OFFLINE_WRITE_HINT}
                         aria-label={`Move ${row.title} up`}
@@ -386,8 +384,8 @@ function EditCollectionForm({
                       <Button
                         type="button"
                         variant="ghost"
-                        size={mobile ? "icon" : "icon-xs"}
-                        className={mobile ? "size-11 text-muted-foreground" : "text-muted-foreground"}
+                        size="icon-xs"
+                        className="text-muted-foreground"
                         disabled={!online || index === members.length - 1}
                         title={online ? undefined : OFFLINE_WRITE_HINT}
                         aria-label={`Move ${row.title} down`}
@@ -400,10 +398,10 @@ function EditCollectionForm({
                   <Button
                     type="button"
                     variant="ghost"
-                    // 44px on a phone, where this is the only way out of a collection;
-                    // the desktop keeps the quiet 24px row action.
-                    size={mobile ? "icon" : "icon-xs"}
-                    className={mobile ? "size-11 text-muted-foreground" : "text-muted-foreground"}
+                    // The quiet 24px row action on a cursor, 44px under a thumb —
+                    // one `size`, because `--control-h-xs` carries the difference.
+                    size="icon-xs"
+                    className="text-muted-foreground"
                     disabled={!online}
                     title={online ? undefined : OFFLINE_WRITE_HINT}
                     aria-label={`Take ${row.title} off ${collection.name}`}
@@ -426,12 +424,12 @@ function EditCollectionForm({
           {moved}
         </p>
 
-        <PublishSection householdId={householdId} collection={collection} recipes={recipes} mobile={mobile} online={online} onDeleted={onClose} />
+        <PublishSection householdId={householdId} collection={collection} recipes={recipes} online={online} onDeleted={onClose} />
       </div>
 
       <DialogFooter className="mt-0 flex-none border-t-2 border-border px-5 py-3.5 md:px-6">
-        <DialogClose render={<Button type="button" variant="ghost" className={mobile ? "h-11 flex-1" : undefined} onClick={onClose} />}>Cancel</DialogClose>
-        <Button type="submit" className={mobile ? "h-11 flex-1" : undefined} disabled={!trimmed || !online} title={online ? undefined : OFFLINE_WRITE_HINT}>
+        <DialogClose render={<Button type="button" variant="ghost" className="touch:h-(--control-h-lg) touch:flex-1" onClick={onClose} />}>Cancel</DialogClose>
+        <Button type="submit" className="touch:h-(--control-h-lg) touch:flex-1" disabled={!trimmed || !online} title={online ? undefined : OFFLINE_WRITE_HINT}>
           Save collection
         </Button>
       </DialogFooter>
@@ -475,14 +473,12 @@ function PublishSection({
   householdId,
   collection,
   recipes,
-  mobile,
   online,
   onDeleted,
 }: {
   householdId: string;
   collection: CollectionSummary;
   recipes: HouseholdRecipeRow[];
-  mobile: boolean;
   online: boolean;
   onDeleted: () => void;
 }) {
@@ -618,7 +614,6 @@ function PublishSection({
     }
   }
 
-  const touchButton = mobile ? "h-11" : undefined;
   /** Shown to members as well as owners — see the note on the strip below. */
   const stale = published && collection.recordStale;
 
@@ -667,15 +662,7 @@ function PublishSection({
                   Out of date
                 </Badge>
                 <span className="min-w-0 flex-1 text-xs text-muted-foreground">{publisher}’s published copy is behind what’s here.</span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size={mobile ? undefined : "xs"}
-                  className={touchButton}
-                  disabled={!online || retrying}
-                  title={online ? undefined : OFFLINE_WRITE_HINT}
-                  onClick={() => void onRetrySync()}
-                >
+                <Button type="button" variant="outline" size="xs" disabled={!online || retrying} title={online ? undefined : OFFLINE_WRITE_HINT} onClick={() => void onRetrySync()}>
                   <RefreshCw data-icon="inline-start" aria-hidden="true" />
                   {retrying ? "Retrying…" : "Retry"}
                 </Button>
@@ -688,7 +675,6 @@ function PublishSection({
                   <Button
                     type="button"
                     variant="outline"
-                    className={touchButton}
                     disabled={!online}
                     title={online ? undefined : OFFLINE_WRITE_HINT}
                     aria-haspopup="dialog"
@@ -704,7 +690,6 @@ function PublishSection({
                   <Button
                     type="button"
                     variant="secondary"
-                    className={touchButton}
                     disabled={!online}
                     title={online ? undefined : OFFLINE_WRITE_HINT}
                     aria-haspopup="dialog"
@@ -722,7 +707,7 @@ function PublishSection({
                 <Button
                   type="button"
                   variant="ghost"
-                  className={mobile ? "h-11 text-destructive" : "text-destructive"}
+                  className="text-destructive"
                   disabled={!online}
                   title={online ? undefined : OFFLINE_WRITE_HINT}
                   aria-haspopup="dialog"
@@ -750,7 +735,6 @@ function PublishSection({
         blockedTitles={blockedTitles}
         failure={failure}
         pending={pending}
-        touch={mobile}
         onConfirm={() => void onPublish()}
       />
 
@@ -761,7 +745,6 @@ function PublishSection({
         publisherHandle={collection.publishedByHandle}
         failure={failure}
         pending={pending}
-        touch={mobile}
         onConfirm={() => void onUnpublish()}
       />
 
@@ -773,11 +756,10 @@ function PublishSection({
         publisherHandle={collection.publishedByHandle}
         failure={failure}
         pending={pending}
-        touch={mobile}
         onConfirm={() => void onDelete()}
       />
 
-      <AtprotoReauthDialog open={reauthOpen} onOpenChange={setReauthOpen} touch={mobile} />
+      <AtprotoReauthDialog open={reauthOpen} onOpenChange={setReauthOpen} />
     </>
   );
 }

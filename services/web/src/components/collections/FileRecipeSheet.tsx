@@ -94,7 +94,7 @@ export function FileRecipeSheet({
 
         {/* The combo publishes a *recipe*: an under-scoped grant refuses it here
           exactly as it does on the recipe's own publish button. */}
-        <AtprotoReauthDialog open={reauthOpen} onOpenChange={setReauthOpen} touch />
+        <AtprotoReauthDialog open={reauthOpen} onOpenChange={setReauthOpen} />
       </SheetContent>
     </Sheet>
   );

@@ -27,7 +27,6 @@ export function PublishConfirmDialog({
   blockedTitles,
   failure,
   pending,
-  touch,
   onConfirm,
 }: {
   open: boolean;
@@ -39,7 +38,6 @@ export function PublishConfirmDialog({
   /** A refusal to keep on screen — the dialog stays open holding it. */
   failure: string | null;
   pending: boolean;
-  touch: boolean;
   onConfirm: () => void;
 }) {
   const who = publisherName(ownerHandle);
@@ -57,7 +55,6 @@ export function PublishConfirmDialog({
       }
       confirmLabel="Publish collection"
       pending={pending}
-      touch={touch}
       onConfirm={onConfirm}
     >
       {blockedTitles.length > 0 && (

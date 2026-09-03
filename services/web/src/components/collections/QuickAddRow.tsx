@@ -51,15 +51,14 @@ export function QuickAddRow({
         title={disabledHint}
         onClick={() => setOpen(true)}
         className={cn(
-          // 44px on a coarse pointer, like every other row in the tree — see
-          // `CollectionRow` for why the variant is the input device and not the
-          // viewport width.
-          "flex w-full cursor-(--cursor-interactive) items-center gap-2 px-2.5 py-1.5 text-[0.8125rem] font-semibold text-muted-foreground transition-colors pointer-coarse:min-h-11",
+          // Row height on the `touch` layer, like every other row in the tree —
+          // see `CollectionRow` for what that variant covers.
+          "flex w-full cursor-(--cursor-interactive) items-center gap-2 px-2.5 py-1.5 text-[0.8125rem] font-semibold text-muted-foreground transition-colors touch:min-h-(--nav-row-h-touch) touch:gap-3 touch:px-3.5 touch:text-base",
           "not-disabled:hover:bg-accent/40 not-disabled:hover:text-foreground disabled:opacity-60",
           "focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-ring",
         )}
       >
-        <Plus className="size-3.5 shrink-0" aria-hidden="true" />
+        <Plus className="size-3.5 shrink-0 touch:size-5" aria-hidden="true" />
         New collection
       </button>
     );
@@ -67,7 +66,7 @@ export function QuickAddRow({
 
   return (
     <form
-      className="flex items-center gap-2 px-2.5 py-1 pointer-coarse:min-h-11"
+      className="flex items-center gap-2 px-2.5 py-1 touch:min-h-(--nav-row-h-touch) touch:gap-3 touch:px-3.5"
       onSubmit={(event) => {
         event.preventDefault();
         const trimmed = name.trim();
@@ -79,7 +78,7 @@ export function QuickAddRow({
         close();
       }}
     >
-      <Plus className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <Plus className="size-3.5 shrink-0 text-muted-foreground touch:size-5" aria-hidden="true" />
       {/* Not the `Input` primitive: this is a row in a tree, not a form field —
         it has to sit flush at row height with no border of its own, and the
         primitive's job is to look like a field. */}
@@ -109,7 +108,7 @@ export function QuickAddRow({
         onBlur={() => {
           if (!name.trim()) close();
         }}
-        className="min-w-0 flex-1 border-0 bg-transparent py-0.5 text-[0.8125rem] font-semibold text-foreground outline-none placeholder:font-medium placeholder:text-muted-foreground pointer-coarse:min-h-9"
+        className="min-w-0 flex-1 border-0 bg-transparent py-0.5 text-[0.8125rem] font-semibold text-foreground outline-none placeholder:font-medium placeholder:text-muted-foreground touch:min-h-(--control-h-touch) touch:text-base"
       />
     </form>
   );

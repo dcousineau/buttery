@@ -24,7 +24,6 @@ export function UnpublishConfirmDialog({
   publisherHandle,
   failure,
   pending,
-  touch,
   onConfirm,
 }: {
   open: boolean;
@@ -34,7 +33,6 @@ export function UnpublishConfirmDialog({
   publisherHandle: string | null;
   failure: string | null;
   pending: boolean;
-  touch: boolean;
   onConfirm: () => void;
 }) {
   const who = publisherName(publisherHandle);
@@ -53,7 +51,6 @@ export function UnpublishConfirmDialog({
       confirmLabel="Unpublish"
       destructive
       pending={pending}
-      touch={touch}
       onConfirm={onConfirm}
     >
       {failure && (

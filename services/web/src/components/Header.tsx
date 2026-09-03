@@ -17,8 +17,9 @@ function Wordmark() {
   const signedIn = session !== null || snapshot !== null;
   return (
     // `shrink-0` + `nowrap`: on a 390px phone the menus squeeze this down until
-    // the wordmark breaks mid-word ("Butter / y").
-    <Link to={signedIn ? "/household" : "/"} className="flex shrink-0 items-center whitespace-nowrap text-foreground no-underline">
+    // the wordmark breaks mid-word ("Butter / y"). The touch height is hit box
+    // only — the glyphs stay 18px tall, the tappable row grows to the floor.
+    <Link to={signedIn ? "/household" : "/"} className="flex shrink-0 items-center whitespace-nowrap text-foreground no-underline touch:min-h-(--control-h-touch)">
       <span className="display-title text-lg leading-none">Buttery</span>
     </Link>
   );

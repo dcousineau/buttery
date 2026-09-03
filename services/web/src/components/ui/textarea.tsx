@@ -38,8 +38,8 @@ const textareaVariants = cva(
   {
     variants: {
       size: {
-        default: "px-3 py-2 text-base md:text-sm [--textarea-py:--spacing(2)]",
-        lg: "px-3.5 py-2.5 text-base [--textarea-py:--spacing(2.5)]",
+        default: "px-(--control-px) py-2 text-base md:text-sm [--textarea-py:--spacing(2)]",
+        lg: "px-(--control-px-lg) py-2.5 text-base [--textarea-py:--spacing(2.5)]",
         xl: "rounded-xl px-5 py-3.5 text-lg [--textarea-py:--spacing(3.5)]",
         "2xl": "rounded-xl px-7 py-4 text-2xl [--textarea-py:--spacing(4)]",
       },

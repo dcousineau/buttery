@@ -80,8 +80,8 @@ const checkboxRowVariants = cva(
   {
     variants: {
       size: {
-        sm: "gap-3 rounded-lg px-2.5 py-2 text-sm",
-        default: "gap-3 rounded-lg px-3 py-2.5 text-base",
+        sm: "gap-3 rounded-lg px-2.5 py-2 text-sm touch:min-h-(--control-h-touch)",
+        default: "gap-3 rounded-lg px-3 py-2.5 text-base touch:min-h-(--nav-row-h-touch)",
         lg: "gap-4 rounded-lg px-4 py-3.5 text-lg",
         xl: "gap-5 rounded-xl px-5 py-4.5 text-2xl shadow-pop-md",
       },

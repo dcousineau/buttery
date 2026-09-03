@@ -33,9 +33,10 @@ import { type LedgerScope, scopeLabel } from "./scope";
  * arbitrary-variant classes that grew the tree's 30px rows to 44px and revealed
  * its hover-only gear, applied from *outside* because that milestone did not own
  * `CollectionRow.tsx`. Those rules now live on the elements they describe, under
- * a `pointer-coarse:` variant, so a touchscreen gets them wherever the tree is
- * mounted and a mouse never does. The sheet has no styling opinion left beyond
- * filling its own height.
+ * the app-wide `touch:` variant, so the tree sizes itself wherever it is
+ * mounted. The sheet has no styling opinion left beyond filling its own height,
+ * and its own two controls take their height from the shared control scale
+ * rather than hand-pinning 44px.
  */
 
 export function CollectionsSheet({ householdId, scope, className }: { householdId: string; scope: LedgerScope; className?: string }) {
@@ -48,8 +49,9 @@ export function CollectionsSheet({ householdId, scope, className }: { householdI
     <div className={cn("flex flex-none items-center border-b-2 border-border bg-card px-2.5 py-2", className)}>
       <Button
         variant="outline"
-        // 44px: the smallest touch target this feature ships (§7).
-        className="h-11 min-w-0 flex-1 justify-start"
+        // Height comes from the shared control scale — 44px wherever this strip
+        // is visible, since it only renders below `md` (§7).
+        className="min-w-0 flex-1 justify-start"
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen(true)}
@@ -72,9 +74,10 @@ export function CollectionsSheet({ householdId, scope, className }: { householdI
           <SheetTitle className="sr-only">Collections</SheetTitle>
           <SheetDescription className="sr-only">Pick a smart list or a collection to scope your recipe box. Picking one closes this panel.</SheetDescription>
 
-          {/* The primitive's own close is a 28px icon button. This one is 44px,
-            like every other target in the mobile surface. */}
-          <SheetClose render={<Button variant="ghost" size="icon" className="absolute top-0.5 right-0.5 z-10 size-11" />}>
+          {/* The primitive's own close is a 28px icon button. `size="icon"`
+            reads the shared scale, so this one is 44px like every other target
+            in the mobile surface. */}
+          <SheetClose render={<Button variant="ghost" size="icon" className="absolute top-0.5 right-0.5 z-10" />}>
             <X aria-hidden="true" />
             <span className="sr-only">Close collections</span>
           </SheetClose>

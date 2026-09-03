@@ -24,12 +24,12 @@ const inputVariants = cva(
   {
     variants: {
       size: {
-        xs: "h-6 px-2 text-xs",
-        sm: "h-7 px-2.5 text-sm",
-        default: "h-8 px-3 text-base md:text-sm",
-        lg: "h-9 px-3.5 text-base md:text-sm",
-        xl: "h-12 rounded-xl px-5 text-lg",
-        "2xl": "h-16 rounded-xl px-7 text-2xl",
+        xs: "h-(--control-h-xs) px-(--control-px-xs) text-xs",
+        sm: "h-(--control-h-sm) px-(--control-px-sm) text-sm",
+        default: "h-(--control-h) px-(--control-px) text-base md:text-sm",
+        lg: "h-(--control-h-lg) px-(--control-px-lg) text-base md:text-sm",
+        xl: "h-(--control-h-xl) rounded-xl px-5 text-lg",
+        "2xl": "h-(--control-h-2xl) rounded-xl px-7 text-2xl",
       },
     },
     defaultVariants: { size: "default" },
