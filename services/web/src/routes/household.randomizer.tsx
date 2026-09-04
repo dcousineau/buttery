@@ -8,7 +8,7 @@ import { ensureActiveHousehold } from "#/lib/offline/active-household";
 import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { RecipesViewProvider } from "#/components/recipes/RecipesViewProvider";
 import { clearFilters, countSheetFilters, defaultFilters, draw, hasActiveFilters, isResultStale, toPoolFilters, type RandomizerFilterState } from "#/lib/randomizer/draw";
-import { useReducedMotion } from "#/components/randomizer/use-reduced-motion";
+import { useReducedMotion } from "#/lib/hooks/use-reduced-motion";
 import { usePersistedRandomizerFilters } from "#/components/randomizer/use-persisted-randomizer-filters";
 import { RandomizerFilterBar } from "#/components/randomizer/RandomizerFilterBar";
 import { RandomizerFiltersSheet } from "#/components/randomizer/RandomizerFiltersSheet";

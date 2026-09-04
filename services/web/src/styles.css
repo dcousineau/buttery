@@ -299,6 +299,20 @@
     box-sizing: border-box;
   }
 
+  /* How much of the app header is on screen right now, and where the top edge
+   * therefore is for anything sticky under it.
+   *
+   * `--header-height` is written by `AppShell` (a ResizeObserver on the live
+   * header); `--header-progress` is written by the header's own headroom probe,
+   * 1 = fully shown, 0 = fully slid away. Both defaults here are the no-JS
+   * answer — a fully visible header — so every consumer is correct before a
+   * single frame of script has run, and none of them re-renders when the
+   * header moves: they read the variable, not React state. */
+  :root {
+    --header-progress: 1;
+    --header-offset: calc(var(--header-height, 4rem) * var(--header-progress));
+  }
+
   html,
   body,
   #app {

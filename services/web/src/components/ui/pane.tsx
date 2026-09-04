@@ -27,8 +27,9 @@ import { cn } from "#/lib/utils";
  *
  * The consequence to remember when adding sticky furniture: below `md` a
  * sticky element's viewport is the window, and the app header is `fixed` over
- * the top of it — so anything sticky parks at `var(--header-height)` there and
- * at `0` from `md` up, where the scrollport's own top edge is already below it.
+ * the top of it — so anything sticky parks at `var(--header-offset)` there (how
+ * much of the header is showing, which headroom drives to 0 as it slides away)
+ * and at `0` from `md` up, where the scrollport's top edge is already below it.
  *
  * ## Collapse on scroll
  *
@@ -93,9 +94,11 @@ export function PaneHeader({ collapseOnScroll = false, className, children }: { 
       className={cn(
         "flex-none border-b-2 border-border bg-card",
         // Below `md` the window is the scrollport and the app header is fixed
-        // over its top edge, so a pinned head parks under the header rather than
-        // at 0. From `md` up the scrollport already starts below the header.
-        !collapseOnScroll && "sticky top-[var(--header-height,4rem)] z-20 md:top-0",
+        // over its top edge, so a pinned head parks under whatever of the header
+        // is currently showing (`--header-offset`, which headroom drives to 0 as
+        // the bar slides away — the head rises to the top edge with it). From
+        // `md` up the scrollport already starts below the header.
+        !collapseOnScroll && "sticky top-[var(--header-offset)] z-20 md:top-0",
         className,
       )}
     >
