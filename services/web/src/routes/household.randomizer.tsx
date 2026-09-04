@@ -17,6 +17,7 @@ import { RandomizerBoxResult } from "#/components/randomizer/RandomizerBoxResult
 import { RandomizerCorpusResult } from "#/components/randomizer/RandomizerCorpusResult";
 import { RandomizerPlanShortcut } from "#/components/randomizer/RandomizerPlanShortcut";
 import { Button } from "#/components/ui/button";
+import { Pane, PaneBody, PaneHeader, PaneScroller } from "#/components/ui/pane";
 import { seo } from "#/lib/seo";
 
 /**
@@ -298,43 +299,47 @@ function RandomizerPage() {
 
   return (
     <RecipesViewProvider householdId={householdId}>
-      <div className="flex h-[calc(100svh-var(--header-height,4rem))] min-h-0 w-full flex-col">
-        {/* Controls — sticky at the top of the pane (§6.2). */}
-        <div className="flex flex-none flex-col gap-3 border-b-2 border-border bg-card px-4 py-3.5">
-          <h1 className="display-title m-0 text-[1.375rem] leading-[1.1] text-foreground">What should I make?</h1>
+      <Pane className="flex-col">
+        <PaneScroller>
+          {/* Controls — the head of the pane (§6.2), and the one head on this
+            surface, so it collapses: on a phone it is most of the screen, and
+            the recipe under it is what you came to read. It scrolls away with
+            the result and is back the moment you return to the top. */}
+          <PaneHeader collapseOnScroll className="flex flex-col gap-3 px-4 py-3.5">
+            <h1 className="display-title m-0 text-[1.375rem] leading-[1.1] text-foreground">What should I make?</h1>
 
-          {/* Announced politely — the pool count and the roll outcome are the
+            {/* Announced politely — the pool count and the roll outcome are the
             two things worth a screen reader hearing without stealing focus. */}
-          <p aria-live="polite" className="m-0 text-[0.8125rem] font-semibold text-muted-foreground">
-            {poolLineText(pool, filters.skipRecentDays)}
-          </p>
+            <p aria-live="polite" className="m-0 text-[0.8125rem] font-semibold text-muted-foreground">
+              {poolLineText(pool, filters.skipRecentDays)}
+            </p>
 
-          <RandomizerFilterBar
-            filters={filters}
-            facets={pool?.facets ?? EMPTY_FACETS}
-            hasActiveFilters={hasActiveFilters(filters)}
-            sheetFilterCount={countSheetFilters(filters)}
-            onChange={onChangeFilters}
-            onOpenSheet={() => setSheetOpen(true)}
-            onClear={onClearFilters}
-          />
+            <RandomizerFilterBar
+              filters={filters}
+              facets={pool?.facets ?? EMPTY_FACETS}
+              hasActiveFilters={hasActiveFilters(filters)}
+              sheetFilterCount={countSheetFilters(filters)}
+              onChange={onChangeFilters}
+              onOpenSheet={() => setSheetOpen(true)}
+              onClear={onClearFilters}
+            />
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={onRoll} disabled={rollDisabled}>
-              <Dices data-icon="inline-start" aria-hidden="true" className={rolling ? "animate-spin" : undefined} />
-              {rollLabel}
-            </Button>
-
-            {drawn && !stale && drawn.source === "box" && <RandomizerPlanShortcut householdId={householdId} recipeId={drawn.card.recipeId} />}
-
-            {filters.source === "corpus" && (
-              <Button variant="secondary" size="sm" onClick={onDismissWiden}>
-                Public recipes
-                <X data-icon="inline-end" aria-hidden="true" />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={onRoll} disabled={rollDisabled}>
+                <Dices data-icon="inline-start" aria-hidden="true" className={rolling ? "animate-spin" : undefined} />
+                {rollLabel}
               </Button>
-            )}
 
-            {/* §5.6's whole point is that the result below stops matching
+              {drawn && !stale && drawn.source === "box" && <RandomizerPlanShortcut householdId={householdId} recipeId={drawn.card.recipeId} />}
+
+              {filters.source === "corpus" && (
+                <Button variant="secondary" size="sm" onClick={onDismissWiden}>
+                  Public recipes
+                  <X data-icon="inline-end" aria-hidden="true" />
+                </Button>
+              )}
+
+              {/* §5.6's whole point is that the result below stops matching
               WITHOUT moving — so the one person who cannot see it stop matching
               is the one who most needs telling. The visible marker is paint
               (`aria-hidden`); the announcement comes from a live region that is
@@ -342,57 +347,21 @@ function RandomizerPage() {
               region that appears at the same moment as its text is not
               reliably announced. It is a sibling of the pool line's region, not
               part of it, so a filter change never runs the two together. */}
-            <span role="status" className="sr-only">
-              {stale ? STALE_RESULT_MESSAGE : ""}
-            </span>
-            {stale && (
-              <span aria-hidden="true" className="text-[0.8125rem] font-semibold text-warning">
-                {STALE_RESULT_MESSAGE}
+              <span role="status" className="sr-only">
+                {stale ? STALE_RESULT_MESSAGE : ""}
               </span>
-            )}
-          </div>
+              {stale && (
+                <span aria-hidden="true" className="text-[0.8125rem] font-semibold text-warning">
+                  {STALE_RESULT_MESSAGE}
+                </span>
+              )}
+            </div>
 
-          {/* §5.6: a filter change that empties the pool renders THIS in the
+            {/* §5.6: a filter change that empties the pool renders THIS in the
             controls region, next to the (still-visible, now-stale) result
             below — never clearing it. Before any roll, the equivalent empty
             state renders in the result region instead (below). */}
-          {settledEmpty && drawn && (
-            <RandomizerEmptyState
-              source={pool.source}
-              totalInScope={pool.totalInScope}
-              unenrichedInScope={pool.unenrichedInScope}
-              widening={widening}
-              onClear={onClearFilters}
-              onWiden={onWidenToCorpus}
-            />
-          )}
-        </div>
-
-        {/* Result — scrolls under the sticky controls, readable measure, centred (§6.2).
-          `relative` is load-bearing, not decoration: `main` is `overflow-hidden`
-          but is NOT positioned, so absolutely-positioned descendants of the
-          recipe body (every `.sr-only` span inside a `RecipeTagStrip` badge is
-          `position: absolute`) resolve their containing block to the layout div
-          OUTSIDE `main`, escape the clip, and extend the DOCUMENT by their
-          offset. The symptom is the one this route exists to avoid: a second,
-          whole-page scrollbar that slides the controls off the top and parks a
-          few hundred pixels of dead cream under a recipe cut off mid-column.
-          Positioning this scroller makes it their containing block, so the
-          height this flex column already bounds is the only height there is. */}
-        <div className="relative min-h-0 flex-1 overflow-auto">
-          {rolling ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
-              <Dices className="size-10 animate-spin" aria-hidden="true" />
-              <p className="m-0 text-sm font-semibold">Rolling…</p>
-            </div>
-          ) : drawn ? (
-            drawn.source === "box" ? (
-              <RandomizerBoxResult householdId={householdId} card={drawn.card} onResultAction={captureResultAction} />
-            ) : (
-              <RandomizerCorpusResult householdId={householdId} card={drawn.card} onKept={onKeptFromCorpus} />
-            )
-          ) : settledEmpty && pool ? (
-            <div className="mx-auto max-w-[54rem] px-5 pt-6">
+            {settledEmpty && drawn && (
               <RandomizerEmptyState
                 source={pool.source}
                 totalInScope={pool.totalInScope}
@@ -401,15 +370,42 @@ function RandomizerPage() {
                 onClear={onClearFilters}
                 onWiden={onWidenToCorpus}
               />
-            </div>
-          ) : (
-            <div className="mx-auto flex max-w-[54rem] flex-col items-start gap-1.5 px-5 pt-8">
-              <h2 className="display-title m-0 text-lg text-foreground">Nothing drawn yet</h2>
-              <p className="m-0 text-sm text-muted-foreground">Set a filter or two if you like, then roll. Can't decide? Roll the dice, dinner picks itself.</p>
-            </div>
-          )}
-        </div>
-      </div>
+            )}
+          </PaneHeader>
+
+          {/* Result — scrolls up past the controls, readable measure, centred (§6.2). */}
+          <PaneBody>
+            {rolling ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
+                <Dices className="size-10 animate-spin" aria-hidden="true" />
+                <p className="m-0 text-sm font-semibold">Rolling…</p>
+              </div>
+            ) : drawn ? (
+              drawn.source === "box" ? (
+                <RandomizerBoxResult householdId={householdId} card={drawn.card} onResultAction={captureResultAction} />
+              ) : (
+                <RandomizerCorpusResult householdId={householdId} card={drawn.card} onKept={onKeptFromCorpus} />
+              )
+            ) : settledEmpty && pool ? (
+              <div className="mx-auto max-w-[54rem] px-5 pt-6">
+                <RandomizerEmptyState
+                  source={pool.source}
+                  totalInScope={pool.totalInScope}
+                  unenrichedInScope={pool.unenrichedInScope}
+                  widening={widening}
+                  onClear={onClearFilters}
+                  onWiden={onWidenToCorpus}
+                />
+              </div>
+            ) : (
+              <div className="mx-auto flex max-w-[54rem] flex-col items-start gap-1.5 px-5 pt-8">
+                <h2 className="display-title m-0 text-lg text-foreground">Nothing drawn yet</h2>
+                <p className="m-0 text-sm text-muted-foreground">Set a filter or two if you like, then roll. Can't decide? Roll the dice, dinner picks itself.</p>
+              </div>
+            )}
+          </PaneBody>
+        </PaneScroller>
+      </Pane>
 
       <RandomizerFiltersSheet
         open={sheetOpen}

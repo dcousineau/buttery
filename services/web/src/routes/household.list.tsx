@@ -14,6 +14,7 @@ import { GroceryList } from "#/components/grocery/GroceryList";
 import { ManualItemInput } from "#/components/grocery/ManualItemInput";
 import { listCounts, visibleItems } from "#/components/grocery/optimistic";
 import { ConfirmDialog } from "#/components/ConfirmDialog";
+import { Pane, PaneBody, PaneHeader, PaneScroller } from "#/components/ui/pane";
 import { Button } from "#/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "#/components/ui/dropdown-menu";
 import { Toast, ToastViewport, useToasts } from "#/components/ui/toast";
@@ -50,9 +51,11 @@ import { seo } from "#/lib/seo";
  * the line.
  *
  * `/household/*` is an "app view" (see `AppShell`): `main` is pinned to the
- * viewport and this route owns its own scroll container, so the header bar and
- * the add field stay put while the aisles scroll under them — which is the only
- * layout that works with a basket in the other hand.
+ * viewport and this route owns its own scroll container (`PaneScroller`). The
+ * add field is a pinned `PaneHeader` and stays put while the aisles scroll under
+ * it — the only layout that works with a basket in the other hand. The title row
+ * above it collapses on scroll instead: its buttons are the before-you-leave
+ * ones, and in a store the screen belongs to the list.
  *
  * Everything on the page shares one centred `max-w-3xl` column — the same width
  * `MisePhase` gives the cook-mode checklist, the app's only other big list of
@@ -224,49 +227,54 @@ function GroceryListPage() {
 
   return (
     <>
-      <div className="flex h-[calc(100svh-var(--header-height,4rem))] min-h-0 w-full">
+      <Pane>
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {/* The title and the actions are two wrap rows on a phone, not one:
+          <PaneScroller className="pb-8">
+            {/* The title and the actions are two wrap rows on a phone, not one:
             `basis-full` hands the heading its own line so a four-word h1 and
             three buttons stop fighting over 390px. From `sm` up they share a
-            line again and the actions ride the right edge. */}
-          <div className="flex flex-none border-b-2 border-border bg-card px-3 py-2.5 md:px-4">
-            <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-2.5 gap-y-2">
-              <div className="flex min-w-0 basis-full flex-wrap items-baseline gap-x-2 gap-y-0.5 sm:flex-1 sm:basis-auto">
-                <h1 className="display-title m-0 text-base leading-[1.1] md:text-[1.625rem]">Shopping list</h1>
-                <p className="m-0 text-xs font-semibold text-muted-foreground">
-                  {items.length === 0 ? "Nothing on it yet" : `${remaining} to get${checked > 0 ? ` · ${checked} in the cart` : ""}`}
-                </p>
-              </div>
+            line again and the actions ride the right edge.
 
-              <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto md:gap-2">
-                {/* The list is a household's, not a week's (D1), so pulling a plan
+            It collapses: the sweeps and the two "add" buttons are what you press
+            before you leave the house, not in the aisle, so they give the screen
+            back once you start shopping. */}
+            <PaneHeader collapseOnScroll className="flex px-3 py-2.5 md:px-4">
+              <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-x-2.5 gap-y-2">
+                <div className="flex min-w-0 basis-full flex-wrap items-baseline gap-x-2 gap-y-0.5 sm:flex-1 sm:basis-auto">
+                  <h1 className="display-title m-0 text-base leading-[1.1] md:text-[1.625rem]">Shopping list</h1>
+                  <p className="m-0 text-xs font-semibold text-muted-foreground">
+                    {items.length === 0 ? "Nothing on it yet" : `${remaining} to get${checked > 0 ? ` · ${checked} in the cart` : ""}`}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto md:gap-2">
+                  {/* The list is a household's, not a week's (D1), so pulling a plan
                 week in is an action the list itself offers — not something you
                 have to go back to the planner to do. The server snaps the date
                 to the household's own week start. */}
-                {/* Every "add" here reads the household's recipes and the food
+                  {/* Every "add" here reads the household's recipes and the food
                   lexicon server-side, so there is nothing to do offline but
                   say so. The list itself stays fully readable. */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!online}
-                  title={online ? undefined : OFFLINE_WRITE_HINT}
-                  onClick={() => setAddRequest({ planWeek: todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone), label: "This week's plan" })}
-                >
-                  <CalendarRange data-icon="inline-start" aria-hidden="true" />
-                  Add this week
-                </Button>
-                {/* D3's fourth source: several boxed recipes at once. Picking is a
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!online}
+                    title={online ? undefined : OFFLINE_WRITE_HINT}
+                    onClick={() => setAddRequest({ planWeek: todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone), label: "This week's plan" })}
+                  >
+                    <CalendarRange data-icon="inline-start" aria-hidden="true" />
+                    Add this week
+                  </Button>
+                  {/* D3's fourth source: several boxed recipes at once. Picking is a
                 separate step from confirming — the picker answers "which
                 recipes", the preview answers "which rows", and collapsing them
                 into one dialog would ask both questions before either has an
                 answer. */}
-                <Button variant="outline" size="sm" disabled={!online} title={online ? undefined : OFFLINE_WRITE_HINT} onClick={() => setPickerOpen(true)}>
-                  <BookOpenText data-icon="inline-start" aria-hidden="true" />
-                  Add recipes
-                </Button>
-                {/* Every way of emptying the list lives behind one triple-dot:
+                  <Button variant="outline" size="sm" disabled={!online} title={online ? undefined : OFFLINE_WRITE_HINT} onClick={() => setPickerOpen(true)}>
+                    <BookOpenText data-icon="inline-start" aria-hidden="true" />
+                    Add recipes
+                  </Button>
+                  {/* Every way of emptying the list lives behind one triple-dot:
                 they are rare, they are irreversible from the UI, and none of
                 them deserves a permanent button beside the two you press every
                 week.
@@ -277,25 +285,25 @@ function GroceryListPage() {
                 move around between openings is a menu you have to read every
                 time. On an empty list the two sweeps are simply inert; the
                 delete is not, because a swept list is not an empty one. */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button variant="outline" size="icon-sm" aria-label="List actions" title="List actions">
-                        <EllipsisVertical aria-hidden="true" />
-                      </Button>
-                    }
-                  />
-                  <DropdownMenuContent align="end" className="min-w-52">
-                    <DropdownMenuItem disabled={checked === 0 || !online} onClick={() => setConfirmClearPurchased(true)}>
-                      <Check aria-hidden="true" />
-                      {checked > 0 ? `Clear purchased (${checked})` : "Clear purchased"}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem disabled={items.length === 0 || !online} onClick={() => setConfirmClearAll(true)}>
-                      <ListX aria-hidden="true" />
-                      Clear all
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    {/* The only one that is not a sweep. It gets the destructive
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button variant="outline" size="icon-sm" aria-label="List actions" title="List actions">
+                          <EllipsisVertical aria-hidden="true" />
+                        </Button>
+                      }
+                    />
+                    <DropdownMenuContent align="end" className="min-w-52">
+                      <DropdownMenuItem disabled={checked === 0 || !online} onClick={() => setConfirmClearPurchased(true)}>
+                        <Check aria-hidden="true" />
+                        {checked > 0 ? `Clear purchased (${checked})` : "Clear purchased"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem disabled={items.length === 0 || !online} onClick={() => setConfirmClearAll(true)}>
+                        <ListX aria-hidden="true" />
+                        Clear all
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {/* The only one that is not a sweep. It gets the destructive
                     styling the other two deliberately do not: they keep what
                     they take.
 
@@ -305,60 +313,58 @@ function GroceryListPage() {
                     one action that reclaims them. Disabling it then would leave
                     them unreachable forever. On a genuinely empty list it is a
                     server-side no-op. */}
-                    <DropdownMenuItem variant="destructive" disabled={!online} onClick={() => setConfirmDeleteAll(true)}>
-                      <Trash2 aria-hidden="true" />
-                      Delete everything
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      <DropdownMenuItem variant="destructive" disabled={!online} onClick={() => setConfirmDeleteAll(true)}>
+                        <Trash2 aria-hidden="true" />
+                        Delete everything
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
-            </div>
-          </div>
+            </PaneHeader>
 
-          {/* The stated reason the input and every row control below are
+            {/* The stated reason the input and every row control below are
             disabled. They only carry it in `title`, which no phone and no
             keyboard user can reach — see `OfflineNotice`. */}
-          <OfflineNotice online={online}>You're offline — the list is readable, but ticking things off needs a connection.</OfflineNotice>
+            <OfflineNotice online={online}>You're offline — the list is readable, but ticking things off needs a connection.</OfflineNotice>
 
-          {/* Pinned above the scroll area: adding four things in a row is how
-            this field actually gets used, and scrolling back to the top between
-            each one is not something a hand holding a basket wants to do.
+            {/* Pinned, unlike the title above it: adding four things in a row is
+            how this field actually gets used, and scrolling back to the top
+            between each one is not something a hand holding a basket wants to
+            do. Once the title scrolls away this takes the top edge. */}
+            <PaneHeader className="px-3 py-2.5 md:px-4">
+              <ManualItemInput
+                className="mx-auto w-full max-w-3xl"
+                disabled={!online}
+                onAdded={(text, result) => {
+                  // No optimistic row: the aisle, the parsed amount and whether it
+                  // merged are the lexicon's answers, not the client's.
+                  push({ variant: "success", title: result.merged ? `${text} merged into the list` : `${text} added` });
+                  setAnnouncement(`${text} added to the list`);
+                  void refreshList();
+                }}
+                onError={(message) => push({ variant: "destructive", title: message })}
+              />
+            </PaneHeader>
 
-            It gets its own top padding: without one the field sat flush against
-            the header's bottom border and the two zones read as a single
-            overlapping block. */}
-          <div className="flex-none border-b-2 border-border bg-card px-3 py-2.5 md:px-4">
-            <ManualItemInput
-              className="mx-auto w-full max-w-3xl"
-              disabled={!online}
-              onAdded={(text, result) => {
-                // No optimistic row: the aisle, the parsed amount and whether it
-                // merged are the lexicon's answers, not the client's.
-                push({ variant: "success", title: result.merged ? `${text} merged into the list` : `${text} added` });
-                setAnnouncement(`${text} added to the list`);
-                void refreshList();
-              }}
-              onError={(message) => push({ variant: "destructive", title: message })}
-            />
-          </div>
-
-          {/* Announces what changed on the list. Toasts carry the same news
+            {/* Announces what changed on the list. Toasts carry the same news
             visually, but their viewport is also used for failures — this stays
             the one place a screen reader hears the list itself change. */}
-          <p aria-live="polite" className="sr-only">
-            {announcement}
-          </p>
+            <p aria-live="polite" className="sr-only">
+              {announcement}
+            </p>
 
-          {/* No horizontal padding on the scrollport: the rows are full-bleed
+            {/* No horizontal padding on the scrollport: the rows are full-bleed
             slats and own their own inset, so on a phone the divider runs edge to
             edge and only the text is inset. */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-auto pb-8">
-            <div className="mx-auto w-full max-w-3xl">
-              <GroceryList items={items} onToggle={toggleItem} onEdit={editItem} onRemove={askRemove} writable={online} />
-            </div>
-          </div>
+            <PaneBody>
+              <div className="mx-auto w-full max-w-3xl">
+                <GroceryList items={items} onToggle={toggleItem} onEdit={editItem} onRemove={askRemove} writable={online} />
+              </div>
+            </PaneBody>
+          </PaneScroller>
         </section>
-      </div>
+      </Pane>
 
       <RecipePickerDialog
         open={pickerOpen}

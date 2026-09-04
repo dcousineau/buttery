@@ -1,5 +1,5 @@
-import { useCallback, useRef } from "react";
 import { useRouterState } from "@tanstack/react-router";
+import { useHeightVar } from "#/lib/hooks/use-height-var";
 import { SidebarFloatingToggle, SidebarProvider, SidebarTrigger } from "#/components/ui/sidebar";
 import { TooltipProvider } from "#/components/ui/tooltip";
 import AppSidebar from "./AppSidebar";
@@ -36,27 +36,6 @@ function SkipLink() {
   );
 }
 
-/** Publishes the live header height to `--header-height` so fixed layout offsets
- * sit below the full-width header. Returns a *callback ref* rather than an
- * effect-bound object ref: switching between the sidebar and nav-less layouts
- * remounts the header into a new DOM node, and a one-shot effect would keep
- * observing the detached old node — which fires a `0` resize on removal and
- * collapses the offset, clipping the top of the page. Re-binding on every node
- * change (and never writing on unmount) keeps the var pinned to the live header. */
-function useHeaderHeightVar() {
-  const observerRef = useRef<ResizeObserver | null>(null);
-  return useCallback((el: HTMLElement | null) => {
-    observerRef.current?.disconnect();
-    observerRef.current = null;
-    if (!el) return;
-    const set = () => document.documentElement.style.setProperty("--header-height", `${el.offsetHeight}px`);
-    set();
-    const observer = new ResizeObserver(set);
-    observer.observe(el);
-    observerRef.current = observer;
-  }, []);
-}
-
 /**
  * The two PWA affordances that have to outlive every route (offline plan §4.4):
  * the "new version ready" banner, which is a standing offer rather than a
@@ -75,7 +54,8 @@ function PwaAffordances() {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const headerRef = useHeaderHeightVar();
+  // `--header-height` is what every app view measures its own height against.
+  const headerRef = useHeightVar("--header-height");
 
   if (isNavless(pathname)) {
     return (

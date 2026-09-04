@@ -5,7 +5,9 @@ import { BookOpenText, EyeOff, FolderLock, Plus, Star, Unlink, UtensilsCrossed }
 import { type HouseholdRecipeRow, reorderCollectionRecipesMutation } from "#/lib/api";
 import { useIsOnline } from "#/lib/offline/use-online";
 import { Button } from "#/components/ui/button";
+import { PaneBody, PaneHeader, PaneScroller } from "#/components/ui/pane";
 import { DragHandle, DropLine, insertionPointAt } from "#/components/ui/drag-reorder";
+import { CollectionsSheet } from "#/components/collections/CollectionsSheet";
 import { ScopedLedgerHeader } from "#/components/collections/ScopedLedgerHeader";
 import { dragCarries, RECIPE_DRAG_TYPE } from "#/components/collections/drag";
 import { isDefaultScope, type LedgerScope, scopeLabel, scopeRows, searchRows } from "#/components/collections/scope";
@@ -155,143 +157,153 @@ export function RecipeLedger({
 
   return (
     <div className={cn("flex min-h-0 flex-col border-border bg-background lg:w-[360px] lg:shrink-0 lg:border-r-2", className)}>
-      {/* Filter bar — deliberately compact, not a card. */}
-      <div className="flex flex-none gap-1.5 border-b-2 border-border bg-card px-2.5 py-2">
-        {/* The collections column's only toggle. It lives here rather than on the
+      <PaneScroller>
+        {/* Below `md` the ledger gains a head of its own — the collections *sheet*
+        trigger (collections plan §7), because the filter bar's toggle is
+        `max-md:hidden` and a phone has no third column to toggle. It collapses
+        on scroll while the filter bar below it stays: picking a shelf is
+        something you do once, searching is something you do mid-scan. */}
+        <CollectionsSheet householdId={householdId} scope={scope} className="md:hidden" />
+
+        {/* Filter bar — deliberately compact, not a card. Pinned: the search field
+        is the one control that has to be reachable from anywhere in the list. */}
+        <PaneHeader className="flex gap-1.5 px-2.5 py-2">
+          {/* The collections column's only toggle. It lives here rather than on the
           column itself because a collapsed column has nowhere to put a control. */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-[30px] max-md:hidden"
-          aria-expanded={collectionsOpen}
-          aria-controls={collectionsPanelId}
-          aria-label={collectionsOpen ? "Hide collections" : "Show collections"}
-          onClick={onToggleCollections}
-        >
-          <FolderLock aria-hidden="true" />
-        </Button>
-        <div className="flex h-[30px] flex-1 items-center gap-1.5 rounded-lg border-2 border-border bg-background px-2.5">
-          <BookOpenText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
-            // A scope that resolved to nothing has no name worth searching, so
-            // the placeholder falls back to the box rather than saying "Search
-            // Collection not found".
-            placeholder={isDefaultScope(scope) || missing ? `Search ${recipes.length} recipe${recipes.length === 1 ? "" : "s"}` : `Search ${scopeLabel(scope)}`}
-            aria-label="Search recipes"
-            className="min-w-0 flex-1 border-0 bg-transparent text-[0.8125rem] font-medium text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
-          />
-        </div>
-        <Button size="sm" className="h-[30px]" onClick={onAdd}>
-          <Plus data-icon="inline-start" aria-hidden="true" />
-          Add
-        </Button>
-      </div>
-
-      {!isDefaultScope(scope) && <ScopedLedgerHeader scope={scope} count={visible.length} />}
-
-      {/* Filter results are a status message — announce the count as the search /
-       * scope narrows the list, so non-sighted users hear it change. */}
-      <div className="sr-only" role="status" aria-live="polite">
-        {boxEmpty
-          ? ""
-          : missing
-            ? "This collection no longer exists."
-            : visible.length === 0
-              ? emptyCollection && !query
-                ? `${scopeLabel(scope)} is empty.`
-                : "No recipes match your filters."
-              : `${visible.length} recipe${visible.length === 1 ? "" : "s"}.`}
-      </div>
-
-      {/* List */}
-      <div className="min-h-0 flex-1 overflow-auto">
-        {boxEmpty ? (
-          <EmptyBox onAdd={onAdd} />
-        ) : missing ? (
-          <MissingCollection />
-        ) : visible.length === 0 ? (
-          emptyCollection && !query ? (
-            <EmptyCollection name={scopeLabel(scope)} />
-          ) : (
-            <EmptyFilter />
-          )
-        ) : (
-          <RecipeSlatList
-            // The reorder is read at the list, not at each row: the drop line
-            // lands in the divider between two rows, and a drag read row-by-row
-            // goes blind exactly there. A recipe on its way to a collection passes
-            // over this list too — `reorderable` is what keeps a search result,
-            // or a smart scope, from quietly rewriting a collection's order.
-            onDragOver={(event) => {
-              if (!reorderable || dragging === null || !dragCarries(event.dataTransfer, RECIPE_DRAG_TYPE)) return;
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "move";
-              setDropAt(insertionPointAt(event.currentTarget, event.clientY, "[data-ledger-row]"));
-            }}
-            onDragLeave={(event) => {
-              // Only a departure from the list itself counts — crossing between
-              // two rows fires dragleave too, and hiding the line there would
-              // strobe it.
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropAt(null);
-            }}
-            onDrop={(event) => {
-              if (!reorderable || dragging === null || !dragCarries(event.dataTransfer, RECIPE_DRAG_TYPE)) return;
-              event.preventDefault();
-              if (dropAt !== null) commitOrder(moveToInsertionPoint(visibleIds, dragging, dropAt), dragging);
-              endDrag();
-            }}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-[30px] max-md:hidden"
+            aria-expanded={collectionsOpen}
+            aria-controls={collectionsPanelId}
+            aria-label={collectionsOpen ? "Hide collections" : "Show collections"}
+            onClick={onToggleCollections}
           >
-            {visible.map((r, index) => (
-              <LedgerRow
-                key={r.recipeId}
-                row={r}
-                selected={r.recipeId === selectedId}
-                dragging={dragging === index}
-                draggable={filable && armed}
-                onDragStart={
-                  filable
-                    ? (event) => {
-                        // One payload, two possible landings: `copy` onto a
-                        // collection, `move` inside this list.
-                        event.dataTransfer.effectAllowed = "copyMove";
-                        event.dataTransfer.setData(RECIPE_DRAG_TYPE, r.recipeId);
-                        setDragging(index);
-                        if (reorderable) setDropAt(index);
-                      }
-                    : undefined
-                }
-                onDragEnd={filable ? endDrag : undefined}
-                handle={
-                  filable ? (
-                    <DragHandle
-                      // Named per row: the alternative is one accessible name
-                      // repeated down the whole ledger. It also names the job the
-                      // grip actually does in this scope — only a collection
-                      // scope has an order to rearrange.
-                      label={reorderable ? `Reorder ${r.title}` : `Drag ${r.title} onto a collection`}
-                      title={reorderable ? undefined : "Drag onto a collection to file it"}
-                      onMove={reorderable ? (move) => commitOrder(moveByKey(visibleIds, index, move), index) : undefined}
-                      onPointerDown={handleProps.onPointerDown}
-                      className="max-md:hidden"
-                    />
-                  ) : undefined
-                }
-                dropLine={
-                  dropAt === index ? (
-                    <DropLine className="-top-[1.5px]" />
-                  ) : dropAt === visible.length && index === visible.length - 1 ? (
-                    // The one landing place no gap above a row can express.
-                    <DropLine className="-bottom-[1.5px]" />
-                  ) : undefined
-                }
-              />
-            ))}
-          </RecipeSlatList>
-        )}
-      </div>
+            <FolderLock aria-hidden="true" />
+          </Button>
+          <div className="flex h-[30px] flex-1 items-center gap-1.5 rounded-lg border-2 border-border bg-background px-2.5">
+            <BookOpenText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => onQueryChange(e.target.value)}
+              // A scope that resolved to nothing has no name worth searching, so
+              // the placeholder falls back to the box rather than saying "Search
+              // Collection not found".
+              placeholder={isDefaultScope(scope) || missing ? `Search ${recipes.length} recipe${recipes.length === 1 ? "" : "s"}` : `Search ${scopeLabel(scope)}`}
+              aria-label="Search recipes"
+              className="min-w-0 flex-1 border-0 bg-transparent text-[0.8125rem] font-medium text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+            />
+          </div>
+          <Button size="sm" className="h-[30px]" onClick={onAdd}>
+            <Plus data-icon="inline-start" aria-hidden="true" />
+            Add
+          </Button>
+        </PaneHeader>
+
+        {!isDefaultScope(scope) && <ScopedLedgerHeader scope={scope} count={visible.length} />}
+
+        {/* Filter results are a status message — announce the count as the search /
+         * scope narrows the list, so non-sighted users hear it change. */}
+        <div className="sr-only" role="status" aria-live="polite">
+          {boxEmpty
+            ? ""
+            : missing
+              ? "This collection no longer exists."
+              : visible.length === 0
+                ? emptyCollection && !query
+                  ? `${scopeLabel(scope)} is empty.`
+                  : "No recipes match your filters."
+                : `${visible.length} recipe${visible.length === 1 ? "" : "s"}.`}
+        </div>
+
+        {/* List */}
+        <PaneBody>
+          {boxEmpty ? (
+            <EmptyBox onAdd={onAdd} />
+          ) : missing ? (
+            <MissingCollection />
+          ) : visible.length === 0 ? (
+            emptyCollection && !query ? (
+              <EmptyCollection name={scopeLabel(scope)} />
+            ) : (
+              <EmptyFilter />
+            )
+          ) : (
+            <RecipeSlatList
+              // The reorder is read at the list, not at each row: the drop line
+              // lands in the divider between two rows, and a drag read row-by-row
+              // goes blind exactly there. A recipe on its way to a collection passes
+              // over this list too — `reorderable` is what keeps a search result,
+              // or a smart scope, from quietly rewriting a collection's order.
+              onDragOver={(event) => {
+                if (!reorderable || dragging === null || !dragCarries(event.dataTransfer, RECIPE_DRAG_TYPE)) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                setDropAt(insertionPointAt(event.currentTarget, event.clientY, "[data-ledger-row]"));
+              }}
+              onDragLeave={(event) => {
+                // Only a departure from the list itself counts — crossing between
+                // two rows fires dragleave too, and hiding the line there would
+                // strobe it.
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropAt(null);
+              }}
+              onDrop={(event) => {
+                if (!reorderable || dragging === null || !dragCarries(event.dataTransfer, RECIPE_DRAG_TYPE)) return;
+                event.preventDefault();
+                if (dropAt !== null) commitOrder(moveToInsertionPoint(visibleIds, dragging, dropAt), dragging);
+                endDrag();
+              }}
+            >
+              {visible.map((r, index) => (
+                <LedgerRow
+                  key={r.recipeId}
+                  row={r}
+                  selected={r.recipeId === selectedId}
+                  dragging={dragging === index}
+                  draggable={filable && armed}
+                  onDragStart={
+                    filable
+                      ? (event) => {
+                          // One payload, two possible landings: `copy` onto a
+                          // collection, `move` inside this list.
+                          event.dataTransfer.effectAllowed = "copyMove";
+                          event.dataTransfer.setData(RECIPE_DRAG_TYPE, r.recipeId);
+                          setDragging(index);
+                          if (reorderable) setDropAt(index);
+                        }
+                      : undefined
+                  }
+                  onDragEnd={filable ? endDrag : undefined}
+                  handle={
+                    filable ? (
+                      <DragHandle
+                        // Named per row: the alternative is one accessible name
+                        // repeated down the whole ledger. It also names the job the
+                        // grip actually does in this scope — only a collection
+                        // scope has an order to rearrange.
+                        label={reorderable ? `Reorder ${r.title}` : `Drag ${r.title} onto a collection`}
+                        title={reorderable ? undefined : "Drag onto a collection to file it"}
+                        onMove={reorderable ? (move) => commitOrder(moveByKey(visibleIds, index, move), index) : undefined}
+                        onPointerDown={handleProps.onPointerDown}
+                        className="max-md:hidden"
+                      />
+                    ) : undefined
+                  }
+                  dropLine={
+                    dropAt === index ? (
+                      <DropLine className="-top-[1.5px]" />
+                    ) : dropAt === visible.length && index === visible.length - 1 ? (
+                      // The one landing place no gap above a row can express.
+                      <DropLine className="-bottom-[1.5px]" />
+                    ) : undefined
+                  }
+                />
+              ))}
+            </RecipeSlatList>
+          )}
+        </PaneBody>
+      </PaneScroller>
 
       {/* A reorder is invisible to anyone not watching the rows move, and the
         drop line is deliberately `aria-hidden`, so the move says itself here.
