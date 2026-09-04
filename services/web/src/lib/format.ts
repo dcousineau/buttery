@@ -23,12 +23,19 @@ export function formatPublished(iso: string): string {
   return d.fromNow();
 }
 
-/** ISO 8601 duration (PT1H30M) → "1h 30m". Returns the input when unparseable. */
-export function formatDuration(iso: string): string {
-  if (typeof iso !== "string" || iso[0] !== "P") return iso;
+/**
+ * ISO 8601 duration (PT1H30M) → "1h 30m", or `null` when there is nothing to
+ * show — unparseable input, or a duration of zero (`PT0S`, common in recipes
+ * published to the network).
+ *
+ * Every caller renders this straight into a meta row, so the nullable return is
+ * what stops a duration with no duration in it reaching the page as a time.
+ */
+export function formatDuration(iso: string | null | undefined): string | null {
+  if (typeof iso !== "string" || iso[0] !== "P") return null;
   const d = dayjs.duration(iso);
   const secs = d.asSeconds();
-  if (!Number.isFinite(secs) || secs <= 0) return iso;
+  if (!Number.isFinite(secs) || secs <= 0) return null;
   const parts = [d.days() * 24 + d.hours() && `${d.days() * 24 + d.hours()}h`, d.minutes() && `${d.minutes()}m`, d.seconds() && `${d.seconds()}s`].filter(Boolean);
-  return parts.join(" ") || iso;
+  return parts.join(" ") || null;
 }

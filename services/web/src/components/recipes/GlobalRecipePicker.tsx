@@ -116,10 +116,15 @@ export function GlobalRecipePicker({ open, onOpenChange, onAdded }: { open: bool
                     )}
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <span className="truncate text-sm font-bold text-foreground">{r.title}</span>
-                      <span className="flex items-center gap-1 truncate text-[0.6875rem] font-semibold text-muted-foreground">
-                        <SourceIcon kind={r.source.kind} className="size-[11px] shrink-0" />
-                        <span className="truncate">{r.source.label}</span>
-                      </span>
+                      {/* One line, so the publishing account backs the credit up
+                          rather than sitting beside it. Plain text either way —
+                          the whole row is the button that picks the recipe. */}
+                      {r.source || r.handle ? (
+                        <span className="flex items-center gap-1 truncate text-[0.6875rem] font-semibold text-muted-foreground">
+                          <SourceIcon kind={r.source?.kind ?? "handle"} className="size-[11px] shrink-0" />
+                          <span className="truncate">{r.source?.label ?? r.handle}</span>
+                        </span>
+                      ) : null}
                     </div>
                     {adding === r.recipeId && <Spinner aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
                   </button>

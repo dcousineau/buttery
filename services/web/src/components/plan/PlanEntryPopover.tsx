@@ -121,7 +121,7 @@ export function PlanEntryPopover({ entry, date, slot, variant, onAction }: PlanE
               {entry.totalTimeDisplay}
             </span>
           )}
-          {entry.kind === "recipe" && <SourceLink source={entry.source} className="gap-1.5" iconClassName="size-3" />}
+          {entry.kind === "recipe" && entry.source && <SourceLink source={entry.source} className="gap-1.5" iconClassName="size-3" />}
           {entry.addedByHandle && (
             <span className="inline-flex items-center gap-1.5">
               <Users className="size-3 shrink-0" aria-hidden="true" />

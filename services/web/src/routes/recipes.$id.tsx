@@ -14,6 +14,8 @@ import { Button } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
 import { CookModeLauncher } from "#/components/recipes/CookModeLauncher";
 import { RecipeTagStrip } from "#/components/recipes/RecipeTagStrip";
+import { MetaRow, PublisherLink } from "#/components/recipes/RecipeMeta";
+import { SourceLink } from "#/components/recipes/SourceLink";
 import type { CookRecipe } from "#/components/recipes/cook/CookMode";
 
 export const Route = createFileRoute("/recipes/$id")({
@@ -119,10 +121,12 @@ function buildRecipeLd(recipe: RecipeDetailData): SchemaOrgRecipe {
 function RecipeDetail({ recipe }: { recipe: RecipeDetailData }) {
   const hero = recipe.images[0];
   const times = [
-    recipe.prepTime && { label: "Prep", value: formatDuration(recipe.prepTime) },
-    recipe.cookTime && { label: "Cook", value: formatDuration(recipe.cookTime) },
-    recipe.totalTime && { label: "Total", value: formatDuration(recipe.totalTime) },
-  ].filter(Boolean) as Array<{ label: string; value: string }>;
+    { label: "Prep", value: formatDuration(recipe.prepTime) },
+    { label: "Cook", value: formatDuration(recipe.cookTime) },
+    { label: "Total", value: formatDuration(recipe.totalTime) },
+    // Filter on the formatted value, not the raw field: `PT0S` is a present
+    // field that formats to nothing.
+  ].filter((t): t is { label: string; value: string } => t.value !== null);
 
   return (
     <article className="rise-in page-wrap px-4 pt-8 pb-16" itemScope itemType="https://schema.org/Recipe">
@@ -139,37 +143,17 @@ function RecipeDetail({ recipe }: { recipe: RecipeDetailData }) {
 
       <header className="grid gap-8 lg:grid-cols-[1.1fr_1fr] lg:items-center">
         <div className="order-2 min-w-0 lg:order-1">
-          <p className="mb-4 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
-            {recipe.publishedBy ? (
-              recipe.publisherUrl ? (
-                <a href={recipe.publisherUrl} target="_blank" rel="noreferrer noopener" className="font-semibold text-foreground hover:underline">
-                  {recipe.publishedBy}
-                </a>
-              ) : (
-                <span className="font-semibold text-foreground">{recipe.publishedBy}</span>
-              )
-            ) : null}
-            {recipe.app ? (
-              <span>
-                published via{" "}
-                {recipe.appUrl ? (
-                  <a href={recipe.appUrl} target="_blank" rel="noreferrer noopener" className="font-medium text-foreground hover:underline">
-                    {recipe.app}
-                  </a>
-                ) : (
-                  <span className="font-medium text-foreground">{recipe.app}</span>
-                )}
-              </span>
-            ) : null}
+          <MetaRow className="mb-4 text-sm text-muted-foreground">
+            {recipe.source && <SourceLink source={recipe.source} />}
+            {recipe.publishedBy && <PublisherLink handle={recipe.publishedBy} url={recipe.publisherUrl} />}
             {recipe.publishedAt ? (
               <>
-                <span aria-hidden>·</span>
                 <time itemProp="datePublished" dateTime={recipe.publishedAt}>
                   {formatPublished(recipe.publishedAt)}
                 </time>
               </>
             ) : null}
-          </p>
+          </MetaRow>
           <h1 className="display-title m-0 text-4xl leading-[1.08] text-foreground sm:text-5xl" itemProp="name">
             {recipe.name}
           </h1>
@@ -348,7 +332,7 @@ function PublicCookMode({ recipe }: { recipe: RecipeDetailData }) {
     ingredients: recipe.ingredients,
     instructions: recipe.instructions,
     serves: parseServes(recipe.recipeYield),
-    totalTimeDisplay: recipe.totalTime ? formatDuration(recipe.totalTime) : null,
+    totalTimeDisplay: formatDuration(recipe.totalTime),
   };
   return <CookModeLauncher recipe={cook} analyticsSource="public_recipe" />;
 }

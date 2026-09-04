@@ -365,8 +365,6 @@ export async function readMealPlanWeek(db: Kysely<DB>, did: string, householdId:
     if (!row.recipe_id || !row.name) continue;
     const { minutes, display } = minutesDisplay(row.total_time_seconds);
     const source = deriveSource({
-      origin: row.origin ?? "local",
-      id: row.recipe_id,
       repoHandle: row.repo_handle,
       attrDisplayName: row.attr_display_name,
       attrAuthor: row.attr_author,

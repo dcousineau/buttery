@@ -12,6 +12,7 @@ import { ConfirmDialog } from "#/components/ConfirmDialog";
 import { AddToPlanDialog, type AddToPlanRequest } from "#/components/plan/AddToPlanDialog";
 import { AddPreviewDialog, type AddPreviewRequest } from "#/components/grocery/AddPreviewDialog";
 import { CollectionChips } from "#/components/collections/CollectionChips";
+import { MetaRow } from "#/components/recipes/RecipeMeta";
 import { summarizeGroceryAdd } from "#/components/grocery/added-summary";
 import { SLOT_LABELS, formatPlanDate, shortDow } from "#/lib/plan/labels";
 import type { MealSlot, PlanDate } from "#/lib/plan/week";
@@ -328,45 +329,29 @@ export function DetailPane({
           <h1 ref={titleRef} tabIndex={-1} className="display-title m-0 text-[1.625rem] leading-[1.1] text-balance text-foreground outline-none">
             {recipe.title}
           </h1>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.75rem] font-semibold text-muted-foreground">
+          <MetaRow className="gap-x-2 text-[0.75rem] font-semibold text-muted-foreground">
             {recipe.unpublished && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setConfirmPublish(true)}
-                  disabled={!online}
-                  title={online ? undefined : OFFLINE_WRITE_HINT}
-                  className="inline-flex items-center gap-1 rounded-4xl border-2 border-border bg-secondary px-2 py-0.5 text-secondary-foreground transition-colors not-disabled:hover:bg-accent disabled:opacity-60"
-                >
-                  <EyeOff className="size-3" aria-hidden="true" />
-                  Private · Publish
-                </button>
-                <span aria-hidden>·</span>
-              </>
+              <button
+                type="button"
+                onClick={() => setConfirmPublish(true)}
+                disabled={!online}
+                title={online ? undefined : OFFLINE_WRITE_HINT}
+                className="inline-flex items-center gap-1 rounded-4xl border-2 border-border bg-secondary px-2 py-0.5 text-secondary-foreground transition-colors not-disabled:hover:bg-accent disabled:opacity-60"
+              >
+                <EyeOff className="size-3" aria-hidden="true" />
+                Private · Publish
+              </button>
             )}
-            <SourceLink source={recipe.source} />
+            {recipe.source && <SourceLink source={recipe.source} />}
             {recipe.totalTimeDisplay && (
-              <>
-                <span aria-hidden>·</span>
-                <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                  <Clock className="size-3.5" aria-hidden="true" />
-                  {recipe.totalTimeDisplay}
-                </span>
-              </>
+              <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                <Clock className="size-3.5" aria-hidden="true" />
+                {recipe.totalTimeDisplay}
+              </span>
             )}
-            {recipe.category && (
-              <>
-                <span aria-hidden>·</span>
-                <span className="whitespace-nowrap">{recipe.category}</span>
-              </>
-            )}
-            {recipe.addedByHandle && (
-              <>
-                <span aria-hidden>·</span>
-                <span className="whitespace-nowrap">saved by {recipe.addedByHandle}</span>
-              </>
-            )}
-          </div>
+            {recipe.category && <span className="whitespace-nowrap">{recipe.category}</span>}
+            {recipe.addedByHandle && <span className="whitespace-nowrap">saved by {recipe.addedByHandle}</span>}
+          </MetaRow>
         </div>
 
         {/* Which household collections this recipe is filed in, and the way onto

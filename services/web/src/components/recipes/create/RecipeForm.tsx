@@ -322,8 +322,6 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
     const built = buildAttribution(attr);
     const attrUrl = imported ? sourceUrl : ((built?.url as string | undefined) ?? null);
     const source = deriveSource({
-      origin: "local",
-      id: "",
       repoHandle: null,
       attrDisplayName: (built?.name as string) ?? (built?.title as string) ?? null,
       attrAuthor: (built?.author as string) ?? null,

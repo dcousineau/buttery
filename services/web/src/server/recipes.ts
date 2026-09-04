@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { blobImageUrl } from "#/lib/atproto/images";
-import { deriveApp, prettify, profileUrl, shortDid } from "#/lib/recipe-provenance";
+import { deriveSource, prettify, profileUrl, shortDid } from "#/lib/recipe-provenance";
 import type { RecipeCardData, RecipeDetailData } from "#/lib/api/types";
 
 // Read-side browse/detail queries over the rendered `recipe` layer (see the
@@ -22,7 +22,6 @@ interface CardRow {
   id: string;
   name: string;
   description: string | null;
-  origin: string;
   did: string | null;
   published_at: Date | null;
   record_created_at: Date | null;
@@ -30,8 +29,10 @@ interface CardRow {
   blob_cid: string | null;
   blob_mime: string | null;
   img_alt: string | null;
+  attr_kind: string | null;
   attr_display_name: string | null;
   attr_author: string | null;
+  attr_publisher: string | null;
   attr_url: string | null;
   repo_handle: string | null;
 }
@@ -39,13 +40,13 @@ interface CardRow {
 function toCard(row: CardRow): RecipeCardData {
   const publishedAt = row.published_at ?? row.record_created_at ?? row.indexed_at ?? null;
   const imageUrl = row.did && row.blob_cid ? blobImageUrl(row.did, row.blob_cid, row.blob_mime, "feed_fullsize") : null;
-  // The publisher is the atproto account that owns the record. Prefer its handle
-  // ("@foo.bsky.app"); fall back to attribution or a short DID.
-  const publishedBy = row.repo_handle ? `@${row.repo_handle}` : (row.attr_display_name ?? row.attr_author ?? shortDid(row.did));
+  // The publisher is the atproto account that owns the record: its handle
+  // ("@foo.bsky.app"), else a short DID. Never an attribution name — that is a
+  // credit, not an account, and it has its own segment in every byline below.
+  const publishedBy = row.repo_handle ? `@${row.repo_handle}` : shortDid(row.did);
   // Only link the publisher when we have a resolved handle — bsky.app profiles
   // key on the handle, not the DID, so a DID-only repo isn't linkable.
   const publisherUrl = profileUrl(row.repo_handle);
-  const app = deriveApp(row.origin, row.id);
   return {
     id: row.id,
     name: row.name,
@@ -55,8 +56,16 @@ function toCard(row: CardRow): RecipeCardData {
     imageAlt: row.img_alt,
     publishedBy,
     publisherUrl,
-    app: app.name,
-    appUrl: app.url,
+    // `repoHandle: null` because the publishing account is rendered beside this,
+    // never through it — the same derivation the box uses, minus the handle rung
+    // that would otherwise print the account twice.
+    source: deriveSource({
+      repoHandle: null,
+      attrDisplayName: row.attr_display_name,
+      attrAuthor: row.attr_author,
+      attrPublisher: row.attr_publisher,
+      attrUrl: row.attr_url,
+    }),
   };
 }
 
@@ -75,7 +84,6 @@ export const listRecentRecipes = createServerFn({ method: "GET" }).handler(async
         "r.id",
         "r.name",
         "r.description",
-        "r.origin",
         "r.did",
         "r.published_at",
         "r.record_created_at",
@@ -83,8 +91,10 @@ export const listRecentRecipes = createServerFn({ method: "GET" }).handler(async
         "img.blob_cid",
         "img.blob_mime",
         "img.alt as img_alt",
+        "attr.kind as attr_kind",
         "attr.display_name as attr_display_name",
         "attr.author as attr_author",
+        "attr.publisher as attr_publisher",
         "attr.url as attr_url",
         "repo.handle as repo_handle",
       ])
@@ -124,7 +134,6 @@ export const getRecipe = createServerFn({ method: "GET" })
         "r.id",
         "r.name",
         "r.description",
-        "r.origin",
         "r.did",
         "r.uri",
         "r.published_at",

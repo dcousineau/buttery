@@ -244,8 +244,6 @@ interface CardRow {
 function toCard(row: CardRow, favorite: boolean): RandomizerCard {
   const { minutes, display } = minutesDisplay(row.total_time_seconds);
   const source = deriveSource({
-    origin: row.origin,
-    id: row.id,
     repoHandle: row.repo_handle,
     attrDisplayName: row.attr_display_name,
     attrAuthor: row.attr_author,
@@ -255,9 +253,9 @@ function toCard(row: CardRow, favorite: boolean): RandomizerCard {
   return {
     recipeId: row.id,
     title: row.name,
-    sourceKind: source.kind,
-    sourceLabel: source.label,
-    sourceUrl: source.url,
+    sourceKind: source?.kind ?? null,
+    sourceLabel: source?.label ?? null,
+    sourceUrl: source?.url ?? null,
     totalMinutes: minutes,
     totalTimeDisplay: display,
     thumbUrl: row.did && row.blob_cid ? blobImageUrl(row.did, row.blob_cid, row.blob_mime, "feed_thumbnail") : null,

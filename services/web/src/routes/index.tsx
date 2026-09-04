@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AtSign, CalendarRange, Check, CookingPot, Dices, FolderLock, ShoppingBasket, UtensilsCrossed } from "lucide-react";
 import { listRecentRecipes, type RecipeCardData, resolveHomeRedirect } from "#/lib/api";
+import { MetaRow, PublisherLink } from "#/components/recipes/RecipeMeta";
+import { SourceLink } from "#/components/recipes/SourceLink";
 import { formatPublished } from "../lib/format";
 import ButterStick from "../components/ButterStick";
 import AtprotoProviderCycle from "../components/AtprotoProviderCycle";
@@ -103,8 +105,11 @@ function RecentRecipes({ recipes }: { recipes: RecipeCardData[] }) {
 
 function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
   return (
-    <Card className="group/recipe overflow-hidden p-0 transition-transform hover:-translate-y-0.5">
-      <Link to="/recipes/$id" params={{ id: recipe.id }} className="flex h-full flex-col no-underline">
+    // The byline sits outside the card-wide link rather than inside it: its
+    // source and publisher segments are links of their own, and an anchor cannot
+    // nest in an anchor.
+    <Card className="group/recipe flex flex-col overflow-hidden p-0 transition-transform hover:-translate-y-0.5">
+      <Link to="/recipes/$id" params={{ id: recipe.id }} className="flex flex-1 flex-col no-underline">
         <div className="aspect-[4/3] w-full overflow-hidden border-b-2 border-border bg-muted">
           {recipe.imageUrl ? (
             <img
@@ -119,25 +124,16 @@ function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
             </div>
           )}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col gap-2 p-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 p-4 pb-2">
           <h3 className="m-0 line-clamp-2 text-base leading-snug font-bold text-foreground">{recipe.name}</h3>
           {recipe.description ? <p className="m-0 line-clamp-2 text-sm text-muted-foreground">{recipe.description}</p> : null}
-          <div className="mt-auto flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 pt-1 text-xs text-muted-foreground">
-            {recipe.publishedBy ? <span className="truncate font-semibold text-foreground">{recipe.publishedBy}</span> : null}
-            {recipe.app ? (
-              <span className="truncate">
-                via <span className="font-medium text-foreground">{recipe.app}</span>
-              </span>
-            ) : null}
-            {recipe.publishedAt ? (
-              <>
-                <span aria-hidden>·</span>
-                <time dateTime={recipe.publishedAt}>{formatPublished(recipe.publishedAt)}</time>
-              </>
-            ) : null}
-          </div>
         </div>
       </Link>
+      <MetaRow className="min-w-0 px-4 pb-4 text-xs text-muted-foreground">
+        {recipe.source && <SourceLink source={recipe.source} className="min-w-0 truncate" />}
+        {recipe.publishedBy && <PublisherLink handle={recipe.publishedBy} url={recipe.publisherUrl} className="min-w-0 truncate" />}
+        {recipe.publishedAt && <time dateTime={recipe.publishedAt}>{formatPublished(recipe.publishedAt)}</time>}
+      </MetaRow>
     </Card>
   );
 }

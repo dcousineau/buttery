@@ -225,10 +225,12 @@ export function AddRecipesSheet({
                         <span className="truncate">{row.title}</span>
                         {row.unpublished && <EyeOff className="size-3 shrink-0 text-muted-foreground" aria-label="Private — not published" />}
                       </RecipeSlatTitle>
-                      <RecipeSlatMeta className="flex items-center gap-1">
-                        <SourceIcon kind={row.sourceKind} className="size-[11px] shrink-0" />
-                        <span className="truncate">{row.sourceLabel}</span>
-                      </RecipeSlatMeta>
+                      {row.sourceKind && row.sourceLabel ? (
+                        <RecipeSlatMeta className="flex items-center gap-1">
+                          <SourceIcon kind={row.sourceKind} className="size-[11px] shrink-0" />
+                          <span className="truncate">{row.sourceLabel}</span>
+                        </RecipeSlatMeta>
+                      ) : null}
                     </RecipeSlatBody>
                     {(already || row.totalTimeDisplay) && <RecipeSlatAside>{already ? "Filed" : row.totalTimeDisplay}</RecipeSlatAside>}
                   </RecipeSlatAction>

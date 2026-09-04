@@ -52,23 +52,6 @@ export function prettify(slug: string | null): string | null {
     .join(" ");
 }
 
-/**
- * Best-effort "which app published this" + a deep link to the recipe there.
- * atproto records carry NO provenance of the writing app — the
- * exchange.recipe.recipe lexicon has no client/via field — so this is a
- * heuristic, not a fact:
- *   - origin 'local' → Buttery wrote it (we know; we're the writer). No external
- *     link — the recipe already lives here.
- *   - origin 'sync'  → recipe.exchange is currently the only app publishing this
- *     NSID to the network. Its canonical URL is `/recipes/{rkey}`, and our
- *     recipe.id IS the rkey (a ULID), so the deep link is derivable. Revisit if
- *     a second producer ever appears.
- */
-export function deriveApp(origin: string, id: string): { name: string; url: string | null } {
-  if (origin === "local") return { name: "Buttery", url: null };
-  return { name: "recipe.exchange", url: `https://recipe.exchange/recipes/${encodeURIComponent(id)}` };
-}
-
 /** Bare hostname of a URL ("https://www.smittenkitchen.com/…" → "smittenkitchen.com"). */
 function domainOf(url: string | null): string | null {
   if (!url) return null;
@@ -80,6 +63,16 @@ function domainOf(url: string | null): string | null {
 }
 
 /**
+ * The single display name for an attribution row: what the recipe is credited
+ * to (`displayName` → `author` → `publisher`), shared so a card and the detail
+ * page can never credit the same recipe to two different names.
+ */
+export function attributionName(attr: { displayName: string | null; author: string | null; publisher: string | null } | null | undefined): string | null {
+  if (!attr) return null;
+  return attr.displayName ?? attr.author ?? attr.publisher ?? null;
+}
+
+/**
  * Derive the ledger/detail source label + glyph for a recipe, agreeing with the
  * public page's provenance. Priority:
  *   1. An attribution URL → `web` (external-link + bare domain), the most
@@ -88,17 +81,20 @@ function domainOf(url: string | null): string | null {
  *      (book-open-text + `@handle`, linked to the profile).
  *   3. A named attribution without a URL (person/publication) → `note`
  *      (pencil + the name), the "handwritten / offline" provenance.
- *   4. Fallback to the publishing app (Buttery = `note`, recipe.exchange = `handle`).
+ *   4. Nothing — `null`, and every surface omits the line.
+ *
+ * Nothing here names the publishing *app*: an atproto record carries no trace of
+ * the client that wrote it (the exchange.recipe.recipe lexicon has no client/via
+ * field), so when none of 1–3 resolve we do not know where the recipe came from
+ * and say nothing.
  */
 export function deriveSource(row: {
-  origin: string;
-  id: string;
   repoHandle: string | null;
   attrDisplayName: string | null;
   attrAuthor: string | null;
   attrPublisher: string | null;
   attrUrl: string | null;
-}): RecipeSource {
+}): RecipeSource | null {
   const domain = domainOf(row.attrUrl);
   if (domain && row.attrUrl) return { kind: "web", label: domain, url: row.attrUrl };
 
@@ -107,6 +103,5 @@ export function deriveSource(row: {
   const attrName = row.attrDisplayName ?? row.attrAuthor ?? row.attrPublisher;
   if (attrName) return { kind: "note", label: attrName, url: null };
 
-  const app = deriveApp(row.origin, row.id);
-  return { kind: row.origin === "local" ? "note" : "handle", label: app.name, url: app.url };
+  return null;
 }

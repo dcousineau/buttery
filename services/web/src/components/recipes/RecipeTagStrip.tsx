@@ -1,7 +1,8 @@
-import { WandSparkles } from "lucide-react";
+import type { ReactElement, ReactNode } from "react";
+import { Binoculars, WandSparkles } from "lucide-react";
 import { mergeRecipeTags, type RecipeTag, type RecipeTagLabel } from "#/lib/recipe-tags";
 import { Badge } from "#/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipTrigger } from "#/components/ui/tooltip";
+import { Infotip, InfotipContent, InfotipTrigger } from "#/components/ui/infotip";
 import { cn } from "#/lib/utils";
 
 /**
@@ -61,9 +62,9 @@ function RecipeTagBadge({ tag }: { tag: RecipeTag }) {
     // Plain badge: no tooltip, no icon, nothing to attribute — the author
     // wrote this down themselves.
     return (
-      <Badge variant={variant} size="xs" data-source={tag.source}>
+      <TagInfotip content={tag.note ?? "Provided by the author"} badge={<Badge variant={variant} size="xs" data-source={tag.source} />}>
         {tag.label}
-      </Badge>
+      </TagInfotip>
     );
   }
 
@@ -71,32 +72,70 @@ function RecipeTagBadge({ tag }: { tag: RecipeTag }) {
     // The verdict is always in the badge TEXT (`tag.label`) — the tooltip
     // only adds provenance, never the finding itself, which is what keeps
     // this inside the design system's "no essential info in tooltips" rule.
-    // Touch/no-hover devices never see this tooltip; the `sr-only` span is
-    // the accepted v1 mitigation, and it also happens to be the only way a
-    // screen reader learns the tag was AI-identified at all.
+    // The `sr-only` span still carries the provenance for screen readers,
+    // which is the only way they learn the tag was AI-identified at all.
     const tooltipCopy = tag.note ? `Identified by AI — ${tag.note}` : "Identified by AI";
     return (
-      <Tooltip>
-        <TooltipTrigger render={<Badge variant={variant} size="xs" tabIndex={0} data-source={tag.source} />}>
-          {tag.label}
-          <WandSparkles data-icon="inline-end" aria-hidden="true" />
-          <span className="sr-only"> (identified by AI)</span>
-        </TooltipTrigger>
-        <TooltipContent>{tooltipCopy}</TooltipContent>
-      </Tooltip>
+      <TagInfotip content={tooltipCopy} badge={<Badge variant={variant} size="xs" data-source={tag.source} />}>
+        {tag.label}
+        <WandSparkles className="text-fuchsia-500 dark:text-fuchsia-300" data-icon="inline-end" aria-hidden="true" />
+        <span className="sr-only"> (identified by AI)</span>
+      </TagInfotip>
     );
   }
 
   // Rules classifier: no icon (it isn't a model call, doesn't get the "AI"
   // treatment), but still gets a tooltip — the generic fallback line when the
-  // rules pass left no note (it never does today; rows have no `note`) — plus
-  // a native `title` carrying the full `method` string (`rules@N`) for anyone
-  // inspecting provenance without a mouse hover on the custom tooltip.
-  const tooltipCopy = tag.note ?? "Detected from the ingredient list";
+  // rules pass left no note (it never does today; rows have no `note`)
+  const tooltipCopy = tag.note ?? "Detected from the ingredient list by a simple rules-based classifier";
   return (
-    <Tooltip>
-      <TooltipTrigger render={<Badge variant={variant} size="xs" tabIndex={0} data-source={tag.source} title={tag.method ?? undefined} />}>{tag.label}</TooltipTrigger>
-      <TooltipContent>{tooltipCopy}</TooltipContent>
-    </Tooltip>
+    <TagInfotip content={tooltipCopy} badge={<Badge variant={variant} size="xs" data-source={tag.source} />}>
+      {tag.label}
+      <Binoculars className="opacity-50" data-icon="inline-end" aria-hidden="true" />
+      <span className="sr-only"> (identified by simple matching)</span>
+    </TagInfotip>
+  );
+}
+
+/**
+ * The provenance popup on a derived tag chip.
+ *
+ * An {@link Infotip}, not a `Tooltip`, and that is not a styling choice: Base
+ * UI's tooltip is hover-and-keyboard only by construction, so on iOS there was
+ * no way to open this at all — the provenance was unreachable on exactly the
+ * devices most likely to be holding this page in a kitchen. `Infotip` is Base
+ * UI's own prescribed swap for that (its module doc quotes them) and carries
+ * the whole story: tap and hover both open it, focus stays put on hover, and
+ * the trigger gets real `aria-expanded` disclosure semantics.
+ *
+ * Two details this call site owns:
+ *
+ * `cursor-pointer` is load-bearing, not decoration. Safari only synthesizes a
+ * `click` on a non-interactive element that looks clickable, and React
+ * delegates its listeners to the root container — without it, an iOS tap on
+ * the chip produces `pointerdown` and nothing else.
+ *
+ * The chip stays a `span`. `InfotipTrigger` would render a `<button>` by
+ * default, which crosses `badgeVariants`' `touch:[&:is(a,button)]` 44px floor
+ * and would inflate every tag in the strip. That floor is scoped to real
+ * buttons on purpose (commit bcf1cfd); a provenance chip is a supplementary
+ * affordance, not a primary tap target, so it opts out by staying a span.
+ *
+ * `nativeButton={false}` is what keeps that span honest, and it is NOT
+ * optional: the prop defaults to `true`, and left alone Base UI assumes the
+ * element brings its own button semantics. On a span that means no `tabIndex`,
+ * no `role`, and no Space/Enter activation — a chip a keyboard user cannot
+ * reach. Setting it false makes Base UI supply all three. The floor's selector
+ * matches the `:is(a,button)` ELEMENT, not the role, so the chip keeps its
+ * size.
+ */
+function TagInfotip({ content, badge, children }: { content: ReactNode; badge: ReactElement; children: ReactNode }) {
+  return (
+    <Infotip>
+      <InfotipTrigger nativeButton={false} render={badge} className="cursor-pointer touch-manipulation">
+        {children}
+      </InfotipTrigger>
+      <InfotipContent>{content}</InfotipContent>
+    </Infotip>
   );
 }

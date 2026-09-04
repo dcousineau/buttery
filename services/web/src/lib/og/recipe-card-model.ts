@@ -170,11 +170,14 @@ export function recipeOgModel(recipe: RecipeDetailData): RecipeOgModel {
 
   // Priority order, first four survive. A chip is only worth 22px of a 630px
   // image if it says something a glance can use.
-  const duration = nonEmpty(recipe.totalTime) ?? nonEmpty(recipe.cookTime) ?? nonEmpty(recipe.prepTime);
+  // Fall through on what FORMATS, not on what is merely present: a recipe
+  // published with `totalTime: "PT0S"` has a total time field and no total time,
+  // and the chip is worth more spent on the next duration that says something.
+  const duration = formatDuration(recipe.totalTime) ?? formatDuration(recipe.cookTime) ?? formatDuration(recipe.prepTime);
   const yieldText = nonEmpty(recipe.recipeYield);
   const ingredientCount = recipe.ingredients.length;
   const candidates: Array<string | null> = [
-    duration ? formatDuration(duration) : null,
+    duration,
     yieldText ? formatYield(yieldText) : null,
     ingredientCount > 0 ? `${ingredientCount} ingredient${ingredientCount === 1 ? "" : "s"}` : null,
     nonEmpty(recipe.cuisine) ?? nonEmpty(recipe.category) ?? nonEmpty(recipe.cookingMethod),

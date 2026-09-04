@@ -42,8 +42,9 @@ export interface HouseholdRecipeRow {
   recipeId: string;
   title: string;
   favorite: boolean;
-  sourceKind: RecipeSource["kind"];
-  sourceLabel: string;
+  /** All three are null together when nothing resolved a provenance (`deriveSource`). */
+  sourceKind: RecipeSource["kind"] | null;
+  sourceLabel: string | null;
   sourceUrl: string | null;
   /** Total time in whole minutes, or null (sorts last under "Quickest"). */
   totalMinutes: number | null;
@@ -80,7 +81,8 @@ export interface HouseholdRecipeDetail {
   recipeId: string;
   title: string;
   description: string | null;
-  source: RecipeSource;
+  /** Null when nothing resolved a provenance — the pane omits the line. */
+  source: RecipeSource | null;
   images: Array<{ url: string; alt: string | null }>;
   ingredients: string[];
   instructions: string[];
@@ -149,10 +151,13 @@ export interface GlobalRecipeResult {
   recipeId: string;
   title: string;
   description: string | null;
-  source: RecipeSource;
+  /** Null when nothing resolved a provenance — the surface omits the line. */
+  source: RecipeSource | null;
   thumbUrl: string | null;
   /** "@handle" of the publishing repo, already prefixed; null when unresolvable. */
   handle: string | null;
+  /** The publisher's profile link, or null when the handle never resolved. */
+  handleUrl: string | null;
 }
 
 // --- collections --------------------------------------------------------
@@ -212,7 +217,8 @@ export interface PlanRecipeEntry {
   imageUrl: string | null;
   totalMinutes: number | null;
   totalTimeDisplay: string | null;
-  source: RecipeSource;
+  /** Null when nothing resolved a provenance — the popover omits the line. */
+  source: RecipeSource | null;
   /** Still in the household box? False ⇒ "not in box" flag + "Add back to your box". */
   inBox: boolean;
   /** Source went unavailable on the network; still renders from the local cache. */
@@ -493,10 +499,22 @@ export interface RecipeCardData {
   publishedBy: string | null;
   /** Link to the publisher's profile (Bluesky appview), or null. */
   publisherUrl: string | null;
-  /** Which app it was published under, if we can tell. Often null. */
-  app: string | null;
-  /** Deep link to this recipe on the source app, or null. */
-  appUrl: string | null;
+  /**
+   * Where the recipe came from — the site, cookbook or person it is credited
+   * to, ready for `SourceLink`. Derived from the record's attribution only:
+   * the publishing account is a separate segment of every byline that renders
+   * this (`publishedBy` + `publisherUrl`), so it is not a fallback here.
+   */
+  source: RecipeSource | null;
+}
+
+/** A recipe's credit line, as stored on `recipe_attribution`. */
+export interface RecipeAttributionView {
+  kind: string;
+  displayName: string | null;
+  author: string | null;
+  publisher: string | null;
+  url: string | null;
 }
 
 export interface RecipeDetailData extends RecipeCardData {
@@ -522,13 +540,13 @@ export interface RecipeDetailData extends RecipeCardData {
   cookingMethod: string | null;
   suitableForDiet: string[];
   calories: number | null;
-  attribution: {
-    kind: string;
-    displayName: string | null;
-    author: string | null;
-    publisher: string | null;
-    url: string | null;
-  } | null;
+  /**
+   * The raw credit row. `source` above is the same thing shaped for display;
+   * this keeps the fields the footer's microdata and the JSON-LD author need
+   * (`kind` picks Person vs Organization, `author` renders beside a publication
+   * name).
+   */
+  attribution: RecipeAttributionView | null;
 }
 
 // --- recipe authoring (online-only, §1.1, but still a wire contract) ------
@@ -607,8 +625,9 @@ export interface RandomizerFilters {
 export interface RandomizerCard {
   recipeId: string;
   title: string;
-  sourceKind: RecipeSource["kind"];
-  sourceLabel: string;
+  /** All three are null together when nothing resolved a provenance (`deriveSource`). */
+  sourceKind: RecipeSource["kind"] | null;
+  sourceLabel: string | null;
   sourceUrl: string | null;
   totalMinutes: number | null;
   totalTimeDisplay: string | null;

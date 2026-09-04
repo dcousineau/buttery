@@ -367,10 +367,12 @@ function LedgerRow({
             {row.favorite && <Star className="size-3 shrink-0 fill-primary text-primary" aria-label="Favorited" />}
             {row.unavailable && <Unlink className="size-3 shrink-0 text-muted-foreground" aria-label="Source no longer available" />}
           </RecipeSlatTitle>
-          <RecipeSlatMeta className="flex items-center gap-1">
-            <SourceIcon kind={row.sourceKind} className="size-[11px] shrink-0" />
-            <span className="truncate">{row.sourceLabel}</span>
-          </RecipeSlatMeta>
+          {row.sourceKind && row.sourceLabel ? (
+            <RecipeSlatMeta className="flex items-center gap-1">
+              <SourceIcon kind={row.sourceKind} className="size-[11px] shrink-0" />
+              <span className="truncate">{row.sourceLabel}</span>
+            </RecipeSlatMeta>
+          ) : null}
           {row.keywords.length > 0 && <RecipeSlatDetail>{row.keywords.join(" · ")}</RecipeSlatDetail>}
         </RecipeSlatBody>
         {row.totalTimeDisplay && <RecipeSlatAside>{row.totalTimeDisplay}</RecipeSlatAside>}

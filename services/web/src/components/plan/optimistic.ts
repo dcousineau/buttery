@@ -184,7 +184,7 @@ export function optimisticRecipeEntry(row: HouseholdRecipeRow, position: number)
     imageUrl: row.thumbUrl,
     totalMinutes: row.totalMinutes,
     totalTimeDisplay: row.totalTimeDisplay,
-    source: { kind: row.sourceKind, label: row.sourceLabel, url: row.sourceUrl },
+    source: row.sourceKind && row.sourceLabel ? { kind: row.sourceKind, label: row.sourceLabel, url: row.sourceUrl } : null,
     inBox: true,
     unavailable: row.unavailable,
     unpublished: row.unpublished,

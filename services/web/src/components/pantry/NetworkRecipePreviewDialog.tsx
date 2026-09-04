@@ -9,6 +9,9 @@ import { Separator } from "#/components/ui/separator";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Spinner } from "#/components/ui/spinner";
 import { formatDuration, formatPublished } from "#/lib/format";
+import { attributionName } from "#/lib/recipe-provenance";
+import { MetaRow, PublisherLink } from "#/components/recipes/RecipeMeta";
+import { SourceLink } from "#/components/recipes/SourceLink";
 
 /**
  * A read-only look at a public recipe before it is worth a place in the box —
@@ -178,13 +181,15 @@ export function NetworkRecipePreviewDialog({ recipe, onOpenChange, onSave, savin
 function PreviewBody({ recipe }: { recipe: RecipeDetailData }) {
   const hero = recipe.images[0];
   const times = [
-    recipe.prepTime && { label: "Prep", value: formatDuration(recipe.prepTime) },
-    recipe.cookTime && { label: "Cook", value: formatDuration(recipe.cookTime) },
-    recipe.totalTime && { label: "Total", value: formatDuration(recipe.totalTime) },
-  ].filter(Boolean) as Array<{ label: string; value: string }>;
+    { label: "Prep", value: formatDuration(recipe.prepTime) },
+    { label: "Cook", value: formatDuration(recipe.cookTime) },
+    { label: "Total", value: formatDuration(recipe.totalTime) },
+    // Filter on the formatted value, not on the raw field: `PT0S` is a present
+    // field that formats to nothing.
+  ].filter((t): t is { label: string; value: string } => t.value !== null);
 
   const facets = [recipe.cuisine, recipe.category, recipe.cookingMethod, ...recipe.suitableForDiet].filter(Boolean) as string[];
-  const attributedTo = recipe.attribution ? (recipe.attribution.displayName ?? recipe.attribution.author ?? recipe.attribution.publisher) : null;
+  const attributedTo = attributionName(recipe.attribution);
 
   return (
     <div className="flex flex-col gap-6">
@@ -202,16 +207,11 @@ function PreviewBody({ recipe }: { recipe: RecipeDetailData }) {
         </div>
 
         <div className="order-2 min-w-0 md:order-1">
-          <p className="m-0 mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted-foreground">
-            {recipe.publishedBy ? <span className="font-semibold text-foreground">{recipe.publishedBy}</span> : null}
-            {recipe.app ? <span>published via {recipe.app}</span> : null}
-            {recipe.publishedAt ? (
-              <>
-                {recipe.publishedBy || recipe.app ? <span aria-hidden="true">·</span> : null}
-                <time dateTime={recipe.publishedAt}>{formatPublished(recipe.publishedAt)}</time>
-              </>
-            ) : null}
-          </p>
+          <MetaRow className="mb-3 text-sm text-muted-foreground">
+            {recipe.source && <SourceLink source={recipe.source} />}
+            {recipe.publishedBy && <PublisherLink handle={recipe.publishedBy} url={recipe.publisherUrl} />}
+            {recipe.publishedAt && <time dateTime={recipe.publishedAt}>{formatPublished(recipe.publishedAt)}</time>}
+          </MetaRow>
 
           {recipe.description ? <p className="m-0 max-w-prose text-sm text-foreground text-pretty sm:text-base">{recipe.description}</p> : null}
 

@@ -4,6 +4,8 @@ import type { GlobalRecipeResult, HouseholdRecipeRow } from "#/lib/api";
 import { Button } from "#/components/ui/button";
 import { Card } from "#/components/ui/card";
 import { Spinner } from "#/components/ui/spinner";
+import { MetaRow, PublisherLink } from "#/components/recipes/RecipeMeta";
+import { SourceLink } from "#/components/recipes/SourceLink";
 import { formatPublished } from "#/lib/format";
 import { cn } from "#/lib/utils";
 
@@ -115,10 +117,6 @@ function BoxCard({ recipe, addedByYou = false }: RecipeMiniCardBoxProps) {
 }
 
 function NetworkCard({ recipe, onSave, onPreview, saving = false }: RecipeMiniCardNetworkProps) {
-  // `source.label` is the publishing `@handle` whenever the repo resolved, which
-  // is also the third line — show it only when it says something different.
-  const meta = recipe.source.label && recipe.source.label !== recipe.handle ? recipe.source.label : null;
-
   // `gap-0` cancels `Card`'s own `--card-spacing` gap: with `p-0` the media and
   // the body are the card's two direct children and must sit flush.
   return (
@@ -140,17 +138,23 @@ function NetworkCard({ recipe, onSave, onPreview, saving = false }: RecipeMiniCa
         <CardMedia src={recipe.thumbUrl} zoom />
         <span className="flex min-w-0 flex-1 flex-col gap-1.5 px-4 pt-3.5 pb-2">
           <CardTitleLine as="span">{recipe.title}</CardTitleLine>
-          {meta ? <span className="m-0 block truncate text-[0.8125rem] text-muted-foreground">{meta}</span> : null}
-          {recipe.handle ? <span className="m-0 block truncate text-xs text-muted-foreground">{recipe.handle}</span> : null}
         </span>
       </button>
+      {/*
+        Provenance sits outside the preview button: the source and the publisher
+        are links, and a link inside a button is neither valid nor operable.
+      */}
+      <MetaRow className="min-w-0 px-4 text-xs text-muted-foreground">
+        {recipe.source && <SourceLink source={recipe.source} className="min-w-0 truncate" />}
+        {recipe.handle && <PublisherLink handle={recipe.handle} url={recipe.handleUrl} className="min-w-0 truncate font-normal" />}
+      </MetaRow>
       {/*
         Every card in the grid carries the same visible label, so the button
         also names its recipe for anyone reading the page as a list of
         controls. The visible text stays a leading substring of the accessible
         name (WCAG 2.5.3, label in name).
       */}
-      <div className="px-4 pt-1.5 pb-4">
+      <div className="px-4 pt-2.5 pb-4">
         <Button size="sm" className="w-full" disabled={saving} aria-label={`Save to my box: ${recipe.title}`} onClick={() => onSave(recipe.recipeId)}>
           {saving ? <Spinner data-icon="inline-start" /> : <Plus data-icon="inline-start" aria-hidden="true" />}
           {saving ? "Saving…" : "Save to my box"}

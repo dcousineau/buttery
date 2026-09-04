@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import type { Kysely } from "kysely";
 import type { DB } from "#/db/types";
 import { blobImageUrl } from "#/lib/atproto/images";
-import { deriveSource, prettify } from "#/lib/recipe-provenance";
+import { deriveSource, prettify, profileUrl } from "#/lib/recipe-provenance";
 import type { GlobalRecipeResult, HouseholdRecipeDetail, HouseholdRecipeNoteView, HouseholdRecipeRow, RecipeNutrition } from "#/lib/api/types";
 
 /**
@@ -187,8 +187,6 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
     rows.map(async (row): Promise<HouseholdRecipeRow> => {
       const { minutes, display } = minutesDisplay(row.total_time_seconds);
       const source = deriveSource({
-        origin: row.origin,
-        id: row.id,
         repoHandle: row.repo_handle,
         attrDisplayName: row.attr_display_name,
         attrAuthor: row.attr_author,
@@ -202,9 +200,9 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
         recipeId: row.id,
         title: row.name,
         favorite: row.favorite,
-        sourceKind: source.kind,
-        sourceLabel: source.label,
-        sourceUrl: source.url,
+        sourceKind: source?.kind ?? null,
+        sourceLabel: source?.label ?? null,
+        sourceUrl: source?.url ?? null,
         totalMinutes: minutes,
         totalTimeDisplay: display,
         keywords: keywordsByRecipe.get(row.id) ?? [],
@@ -344,8 +342,6 @@ export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, hou
 
   const { minutes, display } = minutesDisplay(row.total_time_seconds);
   const source = deriveSource({
-    origin: row.origin,
-    id: row.id,
     repoHandle: row.repo_handle,
     attrDisplayName: row.attr_display_name,
     attrAuthor: row.attr_author,
@@ -650,10 +646,11 @@ export const searchGlobalRecipes = createServerFn({ method: "GET" })
       recipeId: row.id,
       title: row.name,
       description: row.description,
+      // `repoHandle: null` because the publishing account renders beside this on
+      // the network surfaces, never through it — the handle rung would print the
+      // account twice.
       source: deriveSource({
-        origin: row.origin,
-        id: row.id,
-        repoHandle: row.repo_handle,
+        repoHandle: null,
         attrDisplayName: row.attr_display_name,
         attrAuthor: row.attr_author,
         attrPublisher: row.attr_publisher,
@@ -662,9 +659,10 @@ export const searchGlobalRecipes = createServerFn({ method: "GET" })
       // Public recipes only, so the image is always an atproto blob: no pending
       // fallback here, and the caller has no box row that would authorize one.
       thumbUrl: row.did && row.blob_cid ? blobImageUrl(row.did, row.blob_cid, row.blob_mime, "feed_thumbnail") : null,
-      // Same `repo` join `deriveSource` already consumes — prefixed the way every
+      // Same `repo` join the source derivation reads — prefixed the way every
       // other handle in this module is surfaced.
       handle: row.repo_handle ? `@${row.repo_handle}` : null,
+      handleUrl: profileUrl(row.repo_handle),
     }));
 
     return { results, nextCursor: hasMore ? String(data.cursor + data.limit) : null };
