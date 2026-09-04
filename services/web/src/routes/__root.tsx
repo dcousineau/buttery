@@ -30,8 +30,19 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         // PWA affordances inset themselves with `env(safe-area-inset-*)`;
         // adding it without those would put cook mode's controls under the home
         // indicator (offline plan §4.4).
+        //
+        // `maximum-scale=1, user-scalable=no` asks the browser not to let a
+        // pinch scale this page: it is an app, and a pinch mid-recipe is nearly
+        // always a fumble.
+        //
+        // Who honours it: Android Chrome, and an iOS home-screen install.
+        // **A Safari tab on iOS does not** — it has overridden both since iOS
+        // 10 and lets the pinch through on purpose, and no viewport value
+        // changes that. Blocking it in the tab too would take a script
+        // (`preventDefault` on WebKit's `gesturestart`), which is a different
+        // decision from this one and is not made here.
         name: "viewport",
-        content: "width=device-width, initial-scale=1, viewport-fit=cover",
+        content: "width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no",
       },
       // iOS reads none of the web app manifest for home-screen installs — it
       // has its own decade-old meta vocabulary, and these are what make an
