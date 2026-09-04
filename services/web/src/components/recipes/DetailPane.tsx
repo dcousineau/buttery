@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useRouter } from "@tanstack/react-router";
+import { Link, useCanGoBack, useRouter } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CalendarRange, Clock, EyeOff, Settings2, ShoppingBasket, Star, Trash2, UtensilsCrossed } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
@@ -136,6 +136,7 @@ export function DetailPane({
   onResultAction?: (action: "plan_dialog" | "grocery" | "cook") => void;
 }) {
   const router = useRouter();
+  const canGoBack = useCanGoBack();
   const queryClient = useQueryClient();
   // M1 writes are online-only (§4.1): the affordance disables rather than
   // queuing, because the favourite toggle is server-side (so replaying it flips
@@ -145,7 +146,6 @@ export function DetailPane({
   const { posthog } = useAnalytics();
   const { pushToast } = useRecipesView();
   const { factor, setFactor, metric, setMetric } = useRecipeScale();
-  const scrollRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
 
   // Move focus to the recipe title when the pane mounts. The pane is keyed by
@@ -306,15 +306,28 @@ export function DetailPane({
   }
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+    <div className="flex flex-col md:min-h-0 md:flex-1 md:overflow-auto">
       <div className="mx-auto flex max-w-[54rem] flex-col gap-3.5 px-5 pt-4 pb-8">
         {/* Mobile back affordance. `search: (prev) => prev` keeps the collection
           or smart scope you came from (collections plan §7) — going back to "the
-          shelf" should land on the shelf you were on, not the whole box. */}
+          shelf" should land on the shelf you were on, not the whole box.
+
+          A plain click pops history instead of navigating forward, because below
+          `lg` the shelf scrolls the *window*: a forward navigation is a new
+          history entry with nothing cached, so it lands at the top of a
+          200-row list, while a pop restores the offset the router snapshotted
+          on the way out. It stays a real `<Link>` — the href, the middle-click
+          and the modifier clicks are all still the shelf — and falls back to
+          navigating when there is nothing to pop (a deep link, a refresh). */}
         {showBackLink && (
           <Link
             to="/household/recipes"
             search={(prev) => prev}
+            onClick={(event) => {
+              if (!canGoBack || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              router.history.back();
+            }}
             className="flex w-fit items-center gap-1 text-xs font-semibold text-muted-foreground no-underline hover:text-foreground lg:hidden"
           >
             <ArrowLeft className="size-3.5" aria-hidden="true" />

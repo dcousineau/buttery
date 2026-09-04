@@ -31,16 +31,17 @@ function Wordmark() {
  * overscroll doesn't rubber-band it with the body. `leftSlot` is where the app
  * shell injects the mobile sidebar trigger; nav-less layouts leave it empty.
  *
- * `hidden` is wired for a future scroll-direction collapse (slides the bar out
- * of view); the transition is already here — nothing drives it yet.
+ * **It never moves.** A headroom pass — sliding it away on scroll down, back on
+ * a flick up — was built here and taken out again: this bar is the app's
+ * navigation and its identity, and navigation that leaves on its own is a worse
+ * trade than the ~80px it wins back, on every surface, not just the browsing
+ * ones. What gets out of the way instead is the pane head below it
+ * (`ui/pane.tsx`), which is page furniture rather than navigation, and can go
+ * without taking the way back with it.
  */
-export default function Header({ ref, leftSlot, hidden = false }: { ref?: Ref<HTMLElement>; leftSlot?: ReactNode; hidden?: boolean }) {
+export default function Header({ ref, leftSlot }: { ref?: Ref<HTMLElement>; leftSlot?: ReactNode }) {
   return (
-    <header
-      ref={ref}
-      data-hidden={hidden || undefined}
-      className="fixed inset-x-0 top-0 z-(--z-sticky) border-b-2 border-border bg-background transition-transform duration-200 ease-linear data-[hidden]:-translate-y-full"
-    >
+    <header ref={ref} className="fixed inset-x-0 top-0 z-(--z-sticky) border-b-2 border-border bg-background">
       <div className="flex items-center gap-2 px-3 py-2.5 sm:px-5">
         {leftSlot}
         <Wordmark />

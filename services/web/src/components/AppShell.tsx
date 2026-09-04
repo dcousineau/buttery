@@ -1,5 +1,5 @@
-import { useCallback, useRef } from "react";
 import { useRouterState } from "@tanstack/react-router";
+import { useHeightVar } from "#/lib/hooks/use-height-var";
 import { SidebarFloatingToggle, SidebarProvider, SidebarTrigger } from "#/components/ui/sidebar";
 import { TooltipProvider } from "#/components/ui/tooltip";
 import AppSidebar from "./AppSidebar";
@@ -17,10 +17,10 @@ function isNavless(pathname: string): boolean {
   return NAVLESS_ROUTES.has(pathname) || pathname.startsWith("/recipes/") || pathname.startsWith("/invite/");
 }
 
-/** Fixed-height, non-scrolling application views (the `/household/*` surfaces:
- * the recipes master–detail, the meal planner). They keep the sidebar but drop
- * the marketing footer and pin `main` to the viewport so only the inner panes
- * scroll. */
+/** Application views (the `/household/*` surfaces: the recipes master–detail,
+ * the meal planner). They keep the sidebar but drop the marketing footer, and
+ * from `md` up `main` is pinned to the viewport so only the inner panes scroll.
+ * Below `md` the document scrolls instead — see `components/ui/pane.tsx`. */
 function isAppView(pathname: string): boolean {
   return pathname.startsWith("/household/");
 }
@@ -34,27 +34,6 @@ function SkipLink() {
       Skip to main content
     </a>
   );
-}
-
-/** Publishes the live header height to `--header-height` so fixed layout offsets
- * sit below the full-width header. Returns a *callback ref* rather than an
- * effect-bound object ref: switching between the sidebar and nav-less layouts
- * remounts the header into a new DOM node, and a one-shot effect would keep
- * observing the detached old node — which fires a `0` resize on removal and
- * collapses the offset, clipping the top of the page. Re-binding on every node
- * change (and never writing on unmount) keeps the var pinned to the live header. */
-function useHeaderHeightVar() {
-  const observerRef = useRef<ResizeObserver | null>(null);
-  return useCallback((el: HTMLElement | null) => {
-    observerRef.current?.disconnect();
-    observerRef.current = null;
-    if (!el) return;
-    const set = () => document.documentElement.style.setProperty("--header-height", `${el.offsetHeight}px`);
-    set();
-    const observer = new ResizeObserver(set);
-    observer.observe(el);
-    observerRef.current = observer;
-  }, []);
 }
 
 /**
@@ -75,11 +54,12 @@ function PwaAffordances() {
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const headerRef = useHeaderHeightVar();
+  // `--header-height` is what every app view measures its own height against.
+  const headerRef = useHeightVar("--header-height");
 
   if (isNavless(pathname)) {
     return (
-      <div className="flex min-h-svh flex-col pt-[var(--header-height,4rem)]">
+      <div className="flex min-h-dvh flex-col pt-[var(--header-height,4rem)]">
         <SkipLink />
         <Header ref={headerRef} />
         <main id="main-content" tabIndex={-1} className="flex-1 focus-visible:outline-none">
@@ -104,7 +84,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <main
               id="main-content"
               tabIndex={-1}
-              className={appView ? "flex min-h-0 flex-1 flex-col overflow-hidden focus-visible:outline-none" : "flex-1 focus-visible:outline-none"}
+              className={appView ? "flex flex-1 flex-col focus-visible:outline-none md:min-h-0 md:overflow-hidden" : "flex-1 focus-visible:outline-none"}
             >
               {children}
             </main>

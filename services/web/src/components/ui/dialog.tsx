@@ -15,7 +15,7 @@ const dialogPopupVariants = cva(
         lg: "top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border-2 border-border p-6 shadow-pop-md data-ending-style:scale-95 data-starting-style:scale-95",
         xl: "top-1/2 left-1/2 w-[calc(100vw-2rem)] max-w-4xl -translate-x-1/2 -translate-y-1/2 gap-5 rounded-xl border-2 border-border p-8 shadow-pop-md data-ending-style:scale-95 data-starting-style:scale-95",
         // Cook mode: the recipe owns the screen. No scrim, no border, no radius.
-        fullscreen: "inset-0 h-svh w-screen gap-6 overflow-auto bg-background p-8",
+        fullscreen: "inset-0 h-dvh w-screen gap-6 overflow-auto bg-background p-8",
       },
     },
     defaultVariants: { size: "default" },

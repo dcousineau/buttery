@@ -8,6 +8,7 @@ import { PlanEntryCard } from "./PlanEntryCard";
 import { OFFLINE_WRITE_HINT } from "#/lib/offline/use-online";
 import { slotDropHandlers, slotKey, usePlanActions } from "./PlanActions";
 import { useIsMobile } from "#/lib/hooks/use-mobile";
+import { scrollportOf } from "#/lib/scroll";
 import { cn } from "#/lib/utils";
 
 /** Frames the scroll keeps re-asserting itself after a week loads — roughly a
@@ -51,11 +52,11 @@ export function PlanDaysAgenda({ week, scrollNonce = 0 }: { week: PlanWeek; scro
   const showAnchor = todayIndex > 0;
 
   /**
-   * The breathing room above the parked chip is the chip's own `scroll-mt-3` —
+   * The breathing room above the parked chip is the chip's own `scroll-mt-*` —
    * `block: "start"` honours scroll margin, so the offset is a class rather than
-   * arithmetic here. Walking up to other scrollable ancestors isn't a concern:
-   * the agenda's box is the only one on this page, since the shell sizes itself
-   * to the viewport and the document never scrolls.
+   * arithmetic here. The chip is mobile-only, where the *window* is the
+   * scrollport and the app header and the pinned pane head are both fixed over
+   * its top edge, so that margin has to clear them or the chip parks underneath.
    */
   const scrollToAnchor = useCallback((behavior: ScrollBehavior) => {
     anchorRef.current?.scrollIntoView({ block: "start", behavior });
@@ -65,7 +66,8 @@ export function PlanDaysAgenda({ week, scrollNonce = 0 }: { week: PlanWeek; scro
    * which scrolling to the card would push out of sight on exactly the weeks
    * that need it most. */
   const scrollToTop = useCallback((behavior: ScrollBehavior) => {
-    firstDayRef.current?.parentElement?.scrollTo({ top: 0, behavior });
+    const box = firstDayRef.current?.parentElement;
+    if (box) scrollportOf(box).scrollTo({ top: 0, behavior });
   }, []);
 
   /**
@@ -111,13 +113,16 @@ export function PlanDaysAgenda({ week, scrollNonce = 0 }: { week: PlanWeek; scro
     };
     frame = requestAnimationFrame(tick);
 
+    // The hand scroll that ends this arrives at whichever scrollport is live —
+    // the pane's box from `md` up, the window on a phone.
+    const port = scrollportOf(box);
     const stop = () => cancelAnimationFrame(frame);
-    box.addEventListener("wheel", stop, { passive: true });
-    box.addEventListener("touchstart", stop, { passive: true });
+    port.addEventListener("wheel", stop, { passive: true });
+    port.addEventListener("touchstart", stop, { passive: true });
     return () => {
       stop();
-      box.removeEventListener("wheel", stop);
-      box.removeEventListener("touchstart", stop);
+      port.removeEventListener("wheel", stop);
+      port.removeEventListener("touchstart", stop);
     };
   }, [isMobile, scrollToAnchor, scrollToTop, showAnchor, week.weekStart, scrollNonce]);
 
@@ -130,7 +135,7 @@ export function PlanDaysAgenda({ week, scrollNonce = 0 }: { week: PlanWeek; scro
               ref={anchorRef}
               type="button"
               onClick={() => scrollToTop("smooth")}
-              className="-mb-1 inline-flex shrink-0 scroll-mt-3 items-center gap-1 self-center rounded-4xl border-2 border-dashed border-border/45 px-2.5 py-1 text-[0.6875rem] font-bold text-muted-foreground hover:border-border hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none md:hidden touch:min-h-(--control-h-touch) touch:gap-1.5 touch:px-4 touch:text-sm touch:[&_svg]:size-4"
+              className="-mb-1 inline-flex shrink-0 scroll-mt-[calc(var(--header-height,4rem)+var(--pane-pinned-height,0px)+0.75rem)] items-center gap-1 self-center rounded-4xl border-2 border-dashed border-border/45 px-2.5 py-1 text-[0.6875rem] font-bold text-muted-foreground hover:border-border hover:bg-accent hover:text-accent-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none md:hidden touch:min-h-(--control-h-touch) touch:gap-1.5 touch:px-4 touch:text-sm touch:[&_svg]:size-4"
             >
               <ChevronUp className="size-3" aria-hidden="true" />
               See previous days

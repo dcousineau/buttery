@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FolderLock, X } from "lucide-react";
 import { Button } from "#/components/ui/button";
+import { PaneHeader } from "#/components/ui/pane";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "#/components/ui/sheet";
 import { cn } from "#/lib/utils";
 import { CollectionsTree } from "./CollectionsTree";
@@ -45,8 +46,9 @@ export function CollectionsSheet({ householdId, scope, className }: { householdI
   return (
     // The strip matches the ledger's filter bar directly below it — same card
     // fill, same 2px rule — so the two read as one head rather than a control
-    // floating above a toolbar.
-    <div className={cn("flex flex-none items-center border-b-2 border-border bg-card px-2.5 py-2", className)}>
+    // floating above a toolbar. It is the ledger's *collapsing* head: it scrolls
+    // away as you scan and the pinned filter bar takes the top edge.
+    <PaneHeader collapseOnScroll className={cn("flex items-center px-2.5 py-2", className)}>
       <Button
         variant="outline"
         // Height comes from the shared control scale — 44px wherever this strip
@@ -85,6 +87,6 @@ export function CollectionsSheet({ householdId, scope, className }: { householdI
           <CollectionsTree householdId={householdId} onNavigate={() => setOpen(false)} className="h-full" />
         </SheetContent>
       </Sheet>
-    </div>
+    </PaneHeader>
   );
 }

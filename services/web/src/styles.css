@@ -338,8 +338,9 @@
    *    fixed sidebar (`left: 0`) then no longer lined up with its own in-flow
    *    gap in the padded content column: in landscape on a notched phone the
    *    layout visibly came apart by `env(safe-area-inset-left)`.
-   *  - Every app screen is sized to the *viewport* — `min-h-svh` on the shell,
-   *    `h-[calc(100svh-var(--header-height))]` on the `/household/*` views. Body
+   *  - Every app screen is sized to the *viewport* — `min-h-dvh` on the shell,
+   *    `min-h`/`h` of `100dvh`/`100svh` minus the header on the `/household/*`
+   *    views (see `ui/pane.tsx` for which unit goes where). Body
    *    padding is added around that, so the page box came out 34–93px taller
    *    than the window and **every installed screen scrolled**, including the
    *    `overflow-hidden` master–detail views deliberately pinned to the viewport

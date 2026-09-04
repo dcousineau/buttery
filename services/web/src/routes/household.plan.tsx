@@ -36,6 +36,7 @@ import { summarizeGroceryAdd } from "#/components/grocery/added-summary";
 import { CookModeFallback, CookModeOverlay } from "#/components/recipes/CookModeOverlay";
 import { findEntry, optimisticNoteEntry, optimisticRecipeEntry } from "#/components/plan/optimistic";
 import { Button } from "#/components/ui/button";
+import { Pane, PaneBody, PaneHeader, PaneScroller } from "#/components/ui/pane";
 import { Toast, ToastViewport, useToasts } from "#/components/ui/toast";
 import { useIsMobile } from "#/lib/hooks/use-mobile";
 import { cn } from "#/lib/utils";
@@ -369,59 +370,60 @@ function PlanPage() {
 
   return (
     <PlanActionsProvider value={actions}>
-      <div className="flex h-[calc(100svh-var(--header-height,4rem))] min-h-0 w-full">
+      <Pane>
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {/* Below `md` the title steps down, the week label loses its 9rem
+          <PaneScroller>
+            {/* Below `md` the title steps down, the week label loses its 9rem
             reservation, and the panel toggle is icon-only (see below). Three
             44px targets, a title and a date range do not fit one 390px line,
             and the floor wins that argument — so the title takes the full row
             to itself and the controls get the next one, which is a cleaner
             break than letting the panel toggle wrap off on its own. */}
-          <div className="flex flex-none flex-wrap items-center gap-x-2 gap-y-2 border-b-2 border-border bg-card px-3 py-2.5 md:gap-x-2.5 md:px-4">
-            <h1 className="display-title m-0 w-full text-base leading-[1.1] md:w-auto md:text-[1.625rem]">Meal plan</h1>
+            <PaneHeader className="flex flex-wrap items-center gap-x-2 gap-y-2 px-3 py-2.5 md:gap-x-2.5 md:px-4">
+              <h1 className="display-title m-0 w-full text-base leading-[1.1] md:w-auto md:text-[1.625rem]">Meal plan</h1>
 
-            <div role="group" aria-label="Layout" className="hidden overflow-hidden rounded-lg border-2 border-border shadow-pop-sm md:flex">
-              <button
-                type="button"
-                aria-pressed={view === "week"}
-                onClick={() => setView("week")}
-                className={cn(
-                  "inline-flex h-7 items-center gap-1.5 px-2.5 text-xs font-semibold focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-                  view === "week" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                )}
-              >
-                <CalendarRange className="size-[13px]" aria-hidden="true" />
-                Week
-              </button>
-              <button
-                type="button"
-                aria-pressed={view === "days"}
-                onClick={() => setView("days")}
-                className={cn(
-                  "inline-flex h-7 items-center gap-1.5 border-l-2 border-l-border px-2.5 text-xs font-semibold focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
-                  view === "days" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                )}
-              >
-                <BookOpenText className="size-[13px]" aria-hidden="true" />
-                Days
-              </button>
-            </div>
+              <div role="group" aria-label="Layout" className="hidden overflow-hidden rounded-lg border-2 border-border shadow-pop-sm md:flex">
+                <button
+                  type="button"
+                  aria-pressed={view === "week"}
+                  onClick={() => setView("week")}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1.5 px-2.5 text-xs font-semibold focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+                    view === "week" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                  )}
+                >
+                  <CalendarRange className="size-[13px]" aria-hidden="true" />
+                  Week
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={view === "days"}
+                  onClick={() => setView("days")}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1.5 border-l-2 border-l-border px-2.5 text-xs font-semibold focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
+                    view === "days" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                  )}
+                >
+                  <BookOpenText className="size-[13px]" aria-hidden="true" />
+                  Days
+                </button>
+              </div>
 
-            <div className="flex min-w-0 items-center gap-1 md:gap-1.5">
-              <Button variant="outline" size="icon-sm" aria-label="Previous week" onClick={() => goToWeek(shiftWeeks(week.weekStart, -1))}>
-                <ChevronLeft aria-hidden="true" />
-              </Button>
-              <span className="px-0.5 text-center text-xs font-bold whitespace-nowrap md:min-w-[9rem] md:text-sm">{weekRangeLabel(week.weekStart, week.weekEnd)}</span>
-              <Button variant="outline" size="icon-sm" aria-label="Next week" onClick={() => goToWeek(shiftWeeks(week.weekStart, 1))}>
-                <ChevronRight aria-hidden="true" />
-              </Button>
-              {/* Dropping `week` entirely rather than pinning today's date keeps the
+              <div className="flex min-w-0 items-center gap-1 md:gap-1.5">
+                <Button variant="outline" size="icon-sm" aria-label="Previous week" onClick={() => goToWeek(shiftWeeks(week.weekStart, -1))}>
+                  <ChevronLeft aria-hidden="true" />
+                </Button>
+                <span className="px-0.5 text-center text-xs font-bold whitespace-nowrap md:min-w-[9rem] md:text-sm">{weekRangeLabel(week.weekStart, week.weekEnd)}</span>
+                <Button variant="outline" size="icon-sm" aria-label="Next week" onClick={() => goToWeek(shiftWeeks(week.weekStart, 1))}>
+                  <ChevronRight aria-hidden="true" />
+                </Button>
+                {/* Dropping `week` entirely rather than pinning today's date keeps the
                 URL clean and lets the server decide what "today" means in the
                 household's timezone. The nonce is what makes "Today" do
                 something when the current week is already on screen: the URL
                 does not change, so only a bumped nonce re-runs the agenda's
                 scroll-to-today. */}
-              {/* Outline, not ghost: it sits between two outlined chevrons and a
+                {/* Outline, not ghost: it sits between two outlined chevrons and a
                 flat label there reads as static text, not a control. The icon
                 is desktop-only and takes `md:pl-2` rather than
                 `data-icon="inline-start"` — that attribute tightens the left
@@ -430,81 +432,82 @@ function PlanPage() {
                 height is the shared control scale's to set (44px on a coarse
                 pointer); only the horizontal padding is tightened here, because
                 that is what has to give for the row to stay on one line. */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="max-md:px-2 max-md:text-xs md:pl-2"
-                onClick={() => {
-                  goToWeek(undefined);
-                  setScrollNonce((nonce) => nonce + 1);
-                }}
-              >
-                <CalendarCheck className="max-md:hidden" aria-hidden="true" />
-                Today
-              </Button>
-            </div>
-
-            <div className="ml-auto flex items-center gap-2">
-              {!panelOpen && (
-                // Icon-only below `md`: the label is what pushes this row onto a
-                // second line on a phone, and the `aria-label` (which the rail
-                // button already carries) keeps the name identical either way.
-                // Square it off the same token that sets the height so it stays
-                // a square at both 28px and the 44px coarse-pointer floor.
                 <Button
                   variant="outline"
                   size="sm"
-                  aria-label="Show this week panel"
-                  aria-expanded={false}
-                  onClick={() => setPanel(true)}
-                  className="max-md:w-(--control-h-sm) max-md:px-0 md:pl-2"
+                  className="max-md:px-2 max-md:text-xs md:pl-2"
+                  onClick={() => {
+                    goToWeek(undefined);
+                    setScrollNonce((nonce) => nonce + 1);
+                  }}
                 >
-                  <PanelLeft aria-hidden="true" />
-                  <span className="max-md:hidden">This week</span>
+                  <CalendarCheck className="max-md:hidden" aria-hidden="true" />
+                  Today
                 </Button>
-              )}
-            </div>
-          </div>
+              </div>
 
-          {/* The stated reason every planning control below is disabled. The
+              <div className="ml-auto flex items-center gap-2">
+                {!panelOpen && (
+                  // Icon-only below `md`: the label is what pushes this row onto a
+                  // second line on a phone, and the `aria-label` (which the rail
+                  // button already carries) keeps the name identical either way.
+                  // Square it off the same token that sets the height so it stays
+                  // a square at both 28px and the 44px coarse-pointer floor.
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Show this week panel"
+                    aria-expanded={false}
+                    onClick={() => setPanel(true)}
+                    className="max-md:w-(--control-h-sm) max-md:px-0 md:pl-2"
+                  >
+                    <PanelLeft aria-hidden="true" />
+                    <span className="max-md:hidden">This week</span>
+                  </Button>
+                )}
+              </div>
+            </PaneHeader>
+
+            {/* The stated reason every planning control below is disabled. The
             controls themselves only carry it in `title`, which no phone and no
             keyboard user can reach — see `OfflineNotice`. */}
-          <OfflineNotice online={online}>You're offline — the plan is readable, but changes need a connection.</OfflineNotice>
+            <OfflineNotice online={online}>You're offline — the plan is readable, but changes need a connection.</OfflineNotice>
 
-          {/* Announces the results of planner actions (added, moved, removed).
+            {/* Announces the results of planner actions (added, moved, removed).
             Toasts carry the same news visually, but they are `aria-live` on a
             viewport that is also used for failures — this stays the one place a
             screen reader hears what changed in the grid. */}
-          <p aria-live="polite" className="sr-only">
-            {announcement}
-          </p>
+            <p aria-live="polite" className="sr-only">
+              {announcement}
+            </p>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-4 pt-3.5 pb-6">
-            {/* Scoped to next week, the one week where planning is the obvious
+            <PaneBody className="gap-3 px-4 pt-3.5 pb-6">
+              {/* Scoped to next week, the one week where planning is the obvious
               next move: a past week being empty is history, not a prompt, and
               offering to fill a week three out invites planning further ahead
               than anyone actually eats. */}
-            {isEmpty && isNextWeek && (
-              <div className="flex flex-none flex-wrap items-center gap-2.5 rounded-lg border-2 border-border bg-secondary px-3 py-2.5 text-secondary-foreground shadow-pop-sm">
-                <CalendarRange className="size-[18px] shrink-0" aria-hidden="true" />
-                <p className="m-0 text-[0.8125rem] font-semibold">Nothing planned this week yet. Fill a slot below, or bring last week over and edit it.</p>
-                {/* Straight to the copy, no dialog: the week is empty, so
+              {isEmpty && isNextWeek && (
+                <div className="flex flex-none flex-wrap items-center gap-2.5 rounded-lg border-2 border-border bg-secondary px-3 py-2.5 text-secondary-foreground shadow-pop-sm">
+                  <CalendarRange className="size-[18px] shrink-0" aria-hidden="true" />
+                  <p className="m-0 text-[0.8125rem] font-semibold">Nothing planned this week yet. Fill a slot below, or bring last week over and edit it.</p>
+                  {/* Straight to the copy, no dialog: the week is empty, so
                   "append or replace?" has one possible answer. */}
-                <Button
-                  size="sm"
-                  className="ml-auto"
-                  disabled={!online}
-                  title={online ? undefined : OFFLINE_WRITE_HINT}
-                  onClick={() => copyWeek(shiftWeeks(week.weekStart, -1), week.weekStart, "append")}
-                >
-                  <Copy data-icon="inline-start" aria-hidden="true" />
-                  Copy last week in
-                </Button>
-              </div>
-            )}
+                  <Button
+                    size="sm"
+                    className="ml-auto"
+                    disabled={!online}
+                    title={online ? undefined : OFFLINE_WRITE_HINT}
+                    onClick={() => copyWeek(shiftWeeks(week.weekStart, -1), week.weekStart, "append")}
+                  >
+                    <Copy data-icon="inline-start" aria-hidden="true" />
+                    Copy last week in
+                  </Button>
+                </div>
+              )}
 
-            {view === "week" ? <PlanWeekGrid week={week} /> : <PlanDaysAgenda week={week} scrollNonce={scrollNonce} />}
-          </div>
+              {view === "week" ? <PlanWeekGrid week={week} /> : <PlanDaysAgenda week={week} scrollNonce={scrollNonce} />}
+            </PaneBody>
+          </PaneScroller>
         </section>
 
         <ThisWeekPanel
@@ -525,7 +528,7 @@ function PlanPage() {
           }}
           onError={(title) => push({ variant: "destructive", title })}
         />
-      </div>
+      </Pane>
 
       <CopyWeekDialog weekStart={copyRequest} onClose={() => setCopyRequest(null)} onCopy={copyWeek} />
 
