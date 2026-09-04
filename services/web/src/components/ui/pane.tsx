@@ -27,9 +27,8 @@ import { cn } from "#/lib/utils";
  *
  * The consequence to remember when adding sticky furniture: below `md` a
  * sticky element's viewport is the window, and the app header is `fixed` over
- * the top of it — so anything sticky parks at `var(--header-offset)` there (how
- * much of the header is showing, which headroom drives to 0 as it slides away)
- * and at `0` from `md` up, where the scrollport's top edge is already below it.
+ * the top of it — so anything sticky parks at `var(--header-height)` there, and
+ * at `0` from `md` up, where the scrollport's top edge is already below it.
  *
  * ## Collapse on scroll
  *
@@ -53,10 +52,22 @@ import { cn } from "#/lib/utils";
 
 const PaneScrollerContext = createContext<{ ref: React.RefObject<HTMLDivElement | null> } | null>(null);
 
-/** The column an app view lives in: viewport-height and non-scrolling from `md`
- * up, a minimum height below it so the page grows with its content. */
+/**
+ * The column an app view lives in: viewport-height and non-scrolling from `md`
+ * up, a minimum height below it so the page grows with its content.
+ *
+ * The two units are not a slip. The minimum is **`dvh`** because it has to fill
+ * whatever is visible *right now*: a page whose content lands between the small
+ * and large viewports — a ten-item shopping list is exactly that — is taller
+ * than `100svh` and so does not scroll, but shorter than the viewport a phone
+ * actually shows once its browser retracts its toolbar, and the difference is a
+ * strip of bare canvas under the last row. `dvh` grows with the retraction and
+ * closes it. The fixed height from `md` up stays **`svh`**: that is pane mode,
+ * where the document does not scroll, so no toolbar ever retracts and a live
+ * unit would only invite a resize mid-gesture.
+ */
 export function Pane({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cn("flex min-h-[calc(100svh-var(--header-height,4rem))] w-full md:h-[calc(100svh-var(--header-height,4rem))] md:min-h-0", className)}>{children}</div>;
+  return <div className={cn("flex min-h-[calc(100dvh-var(--header-height,4rem))] w-full md:h-[calc(100svh-var(--header-height,4rem))] md:min-h-0", className)}>{children}</div>;
 }
 
 /**
@@ -94,11 +105,9 @@ export function PaneHeader({ collapseOnScroll = false, className, children }: { 
       className={cn(
         "flex-none border-b-2 border-border bg-card",
         // Below `md` the window is the scrollport and the app header is fixed
-        // over its top edge, so a pinned head parks under whatever of the header
-        // is currently showing (`--header-offset`, which headroom drives to 0 as
-        // the bar slides away — the head rises to the top edge with it). From
-        // `md` up the scrollport already starts below the header.
-        !collapseOnScroll && "sticky top-[var(--header-offset)] z-20 md:top-0",
+        // over its top edge, so a pinned head parks under the header rather than
+        // at 0. From `md` up the scrollport already starts below it.
+        !collapseOnScroll && "sticky top-[var(--header-height,4rem)] z-20 md:top-0",
         className,
       )}
     >

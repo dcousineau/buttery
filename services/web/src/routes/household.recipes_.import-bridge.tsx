@@ -95,7 +95,7 @@ function ImportBridge() {
   }, [navigate]);
 
   return (
-    <div className="grid min-h-svh place-content-center bg-background px-6 text-center">
+    <div className="grid min-h-dvh place-content-center bg-background px-6 text-center">
       {failed ? (
         <div className="flex max-w-sm flex-col items-center gap-3">
           <span className="grid size-10 place-content-center rounded-md border-2 border-border bg-background text-destructive">
