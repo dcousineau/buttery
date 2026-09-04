@@ -71,12 +71,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  // The header only gets out of the way on app views (see `Header`): the landing
+  // and the marketing pages are browsing surfaces where this bar is the
+  // navigation, and it stays put there.
   const appView = isAppView(pathname);
   return (
     <TooltipProvider>
       <SidebarProvider className="flex-col">
         <SkipLink />
-        <Header ref={headerRef} leftSlot={<SidebarTrigger className="md:hidden" />} />
+        <Header ref={headerRef} leftSlot={<SidebarTrigger className="md:hidden" />} headroom={appView} />
         <div className="flex flex-1 pt-[var(--header-height,4rem)]">
           <AppSidebar />
           <SidebarFloatingToggle />

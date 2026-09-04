@@ -49,6 +49,17 @@ function HeadroomProbe() {
   useEffect(() => {
     document.documentElement.style.setProperty("--header-progress", String(progress));
   }, [progress]);
+  // Hand the variable back on the way out, or a route that mounts no probe
+  // inherits whatever the last scrolled one left behind — navigate from a
+  // scrolled-down app view to the landing and the bar would still be off-screen,
+  // with nothing left running to bring it back. Removing the property restores
+  // the `:root` default, which is a fully shown header.
+  useEffect(
+    () => () => {
+      document.documentElement.style.removeProperty("--header-progress");
+    },
+    [],
+  );
   return null;
 }
 
@@ -58,9 +69,17 @@ function HeadroomProbe() {
  * overscroll doesn't rubber-band it with the body. `leftSlot` is where the app
  * shell injects the mobile sidebar trigger; nav-less layouts leave it empty.
  *
- * **It slides away as you scroll down and comes back on a flick up** — headroom,
- * the behaviour the old `hidden` prop was left here for and never got, because
+ * `headroom` slides it away as you scroll down and brings it back on a flick up
+ * — the behaviour the old `hidden` prop was left here for and never got, because
  * until the document scrolled there was no scroll for it to read.
+ *
+ * **It is off by default, and `AppShell` turns it on for app views only.** A
+ * scrolling page whose job is browsing — the landing at `/household`, the
+ * marketing and legal pages — is one where this bar is the navigation, and
+ * navigation that moves on its own is a worse trade than the ~80px it wins
+ * back. The app views are where the trade pays: they are read one column at a
+ * time on a phone, and the head under this one is already getting out of the
+ * way.
  *
  * The transform is a `transform`, never a height: the document's height is what
  * a scroll position is measured against, so collapsing the header would move
@@ -71,10 +90,10 @@ function HeadroomProbe() {
  * No transition, deliberately: the progress tracks scroll continuously, so the
  * bar follows the finger. An easing curve on top of that reads as lag.
  */
-export default function Header({ ref, leftSlot }: { ref?: Ref<HTMLElement>; leftSlot?: ReactNode }) {
+export default function Header({ ref, leftSlot, headroom = false }: { ref?: Ref<HTMLElement>; leftSlot?: ReactNode; headroom?: boolean }) {
   return (
     <header ref={ref} className="fixed inset-x-0 top-0 z-(--z-sticky) translate-y-[calc((var(--header-progress,1)-1)*100%)] border-b-2 border-border bg-background">
-      <HeadroomProbe />
+      {headroom && <HeadroomProbe />}
       <div className="flex items-center gap-2 px-3 py-2.5 sm:px-5">
         {leftSlot}
         <Wordmark />
