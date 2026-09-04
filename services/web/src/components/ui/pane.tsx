@@ -3,23 +3,41 @@ import { useHeightVar } from "#/lib/hooks/use-height-var";
 import { cn } from "#/lib/utils";
 
 /**
- * The app views' shared furniture: a viewport-height column whose *inside*
- * scrolls, and the white strips that head it.
+ * The app views' shared furniture: the column an app view lives in, the one
+ * scrollport inside it, and the white strips that head it.
  *
  * Every `/household/*` surface was building the same three pieces by hand — the
  * `100svh - header` column, an `overflow-auto` scrollport, and one or more
  * `bg-card` heads above it. They live here now, and with them the one behaviour
  * the hand-built version could not have: a head that gets out of the way.
  *
+ * ## Two scroll models, split at `md`
+ *
+ * **Below `md` the DOCUMENT scrolls.** The scrollport is an ordinary block, the
+ * column is a minimum height rather than a fixed one, and `main` stops clipping
+ * (`AppShell`). This is the mobile-native shape: a phone shows one column
+ * anyway — the collections tree, the detail pane and the planner's aside are all
+ * `md:`/`lg:` — so the inner scrollport was buying nothing there while costing
+ * the thing a browser only does for document scroll: retracting its own
+ * toolbar. Scrolling a recipe now reclaims the pane head *and* ~50–100px of
+ * Safari chrome.
+ *
+ * **From `md` up the pane scrolls**, exactly as before, because that is where
+ * two columns sit side by side and have to scroll independently.
+ *
+ * The consequence to remember when adding sticky furniture: below `md` a
+ * sticky element's viewport is the window, and the app header is `fixed` over
+ * the top of it — so anything sticky parks at `var(--header-height)` there and
+ * at `0` from `md` up, where the scrollport's own top edge is already below it.
+ *
  * ## Collapse on scroll
  *
- * A `PaneHeader` inside the scrollport is either **pinned** (`sticky`, the
- * default — it never leaves) or **collapsing** (`collapseOnScroll`, ordinary
- * flow — it scrolls off the top with the content and comes back when you
- * return to the top). That is the whole mechanism: no scroll listener, no
- * measured direction, no state. Scroll position IS the state, so the head can
- * never disagree with the content under it, and a fling-scroll cannot leave it
- * half-open.
+ * A `PaneHeader` is either **pinned** (`sticky`, the default — it never leaves)
+ * or **collapsing** (`collapseOnScroll`, ordinary flow — it scrolls off the top
+ * with the content and comes back when you return to the top). That is the
+ * whole mechanism: no scroll listener, no measured direction, no state. Scroll
+ * position IS the state, so the head can never disagree with the content under
+ * it, and a fling-scroll cannot leave it half-open.
  *
  * The two kinds compose, which is the point of the prop: the shopping list
  * collapses its title but pins "add an item", the recipe box pins the search
@@ -34,23 +52,27 @@ import { cn } from "#/lib/utils";
 
 const PaneScrollerContext = createContext<{ ref: React.RefObject<HTMLDivElement | null> } | null>(null);
 
-/** The fixed-height, non-scrolling column an app view lives in. */
+/** The column an app view lives in: viewport-height and non-scrolling from `md`
+ * up, a minimum height below it so the page grows with its content. */
 export function Pane({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cn("flex h-[calc(100svh-var(--header-height,4rem))] min-h-0 w-full", className)}>{children}</div>;
+  return <div className={cn("flex min-h-[calc(100svh-var(--header-height,4rem))] w-full md:h-[calc(100svh-var(--header-height,4rem))] md:min-h-0", className)}>{children}</div>;
 }
 
 /**
- * The one scrollport in a pane. `relative` is load-bearing rather than
- * decoration: `main` is `overflow-hidden` but unpositioned, so absolutely
- * positioned descendants (every `.sr-only` span is one) would otherwise resolve
- * against a box outside the clip, escape it, and extend the *document* — a
- * second, whole-page scrollbar that slides the app view off the top.
+ * The pane's scrollport from `md` up; an ordinary block below it, where the
+ * document is the scrollport.
+ *
+ * `relative` is load-bearing rather than decoration: `main` is `overflow-hidden`
+ * at those widths but unpositioned, so absolutely positioned descendants (every
+ * `.sr-only` span is one) would otherwise resolve against a box outside the
+ * clip, escape it, and extend the *document* — a second, whole-page scrollbar
+ * that slides the app view off the top.
  */
 export function PaneScroller({ className, children }: { className?: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   return (
     <PaneScrollerContext value={{ ref }}>
-      <div ref={ref} className={cn("relative flex min-h-0 flex-1 flex-col overflow-auto", className)}>
+      <div ref={ref} className={cn("relative flex flex-col md:min-h-0 md:flex-1 md:overflow-auto", className)}>
         {children}
       </div>
     </PaneScrollerContext>
@@ -66,7 +88,17 @@ export function PaneHeader({ collapseOnScroll = false, className, children }: { 
   const scroller = use(PaneScrollerContext);
   const pinnedHeightRef = useHeightVar("--pane-pinned-height", scroller?.ref);
   return (
-    <div ref={collapseOnScroll ? undefined : pinnedHeightRef} className={cn("flex-none border-b-2 border-border bg-card", !collapseOnScroll && "sticky top-0 z-20", className)}>
+    <div
+      ref={collapseOnScroll ? undefined : pinnedHeightRef}
+      className={cn(
+        "flex-none border-b-2 border-border bg-card",
+        // Below `md` the window is the scrollport and the app header is fixed
+        // over its top edge, so a pinned head parks under the header rather than
+        // at 0. From `md` up the scrollport already starts below the header.
+        !collapseOnScroll && "sticky top-[var(--header-height,4rem)] z-20 md:top-0",
+        className,
+      )}
+    >
       {children}
     </div>
   );

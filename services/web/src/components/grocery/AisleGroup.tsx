@@ -37,8 +37,9 @@ export function AisleGroup({ aisle, label, items, onToggle, onEdit, onRemove, wr
         id={headingId}
         // Sticks *below* the pane's pinned head (the add-item field), not under
         // it: `--pane-pinned-height` is published by `PaneHeader` on the
-        // scrollport, and is 0 anywhere this list is mounted without one.
-        className="sticky top-[var(--pane-pinned-height,0px)] z-10 flex items-baseline gap-2 bg-background px-3 pt-3 pb-1.5 text-xs font-bold tracking-[0.08em] text-muted-foreground uppercase md:px-4"
+        // scrollport, and is 0 anywhere this list is mounted without one. Below
+        // `md` the window is the scrollport, so the fixed app header counts too.
+        className="sticky top-[calc(var(--header-height,4rem)+var(--pane-pinned-height,0px))] z-10 flex md:top-[var(--pane-pinned-height,0px)] items-baseline gap-2 bg-background px-3 pt-3 pb-1.5 text-xs font-bold tracking-[0.08em] text-muted-foreground uppercase md:px-4"
       >
         {label}
         {/* The count is what makes a sticky heading worth its pixels: "3 left"

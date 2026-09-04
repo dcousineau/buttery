@@ -17,10 +17,10 @@ function isNavless(pathname: string): boolean {
   return NAVLESS_ROUTES.has(pathname) || pathname.startsWith("/recipes/") || pathname.startsWith("/invite/");
 }
 
-/** Fixed-height, non-scrolling application views (the `/household/*` surfaces:
- * the recipes master–detail, the meal planner). They keep the sidebar but drop
- * the marketing footer and pin `main` to the viewport so only the inner panes
- * scroll. */
+/** Application views (the `/household/*` surfaces: the recipes master–detail,
+ * the meal planner). They keep the sidebar but drop the marketing footer, and
+ * from `md` up `main` is pinned to the viewport so only the inner panes scroll.
+ * Below `md` the document scrolls instead — see `components/ui/pane.tsx`. */
 function isAppView(pathname: string): boolean {
   return pathname.startsWith("/household/");
 }
@@ -84,7 +84,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <main
               id="main-content"
               tabIndex={-1}
-              className={appView ? "flex min-h-0 flex-1 flex-col overflow-hidden focus-visible:outline-none" : "flex-1 focus-visible:outline-none"}
+              className={appView ? "flex flex-1 flex-col focus-visible:outline-none md:min-h-0 md:overflow-hidden" : "flex-1 focus-visible:outline-none"}
             >
               {children}
             </main>
