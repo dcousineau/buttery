@@ -28,5 +28,6 @@ minimumReleaseAgeExclude:
   # the lockfile regardless.
   - "@atproto/*"
   - "@atproto-labs/*"
+  - qs@6.15.4
 
 minimumReleaseAge: 1440 # At least a day

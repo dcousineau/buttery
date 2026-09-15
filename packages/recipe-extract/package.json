@@ -18,11 +18,11 @@
   },
   "dependencies": {
     "@buttery/recipe-schemas": "workspace:*",
-    "node-html-parser": "^9.0.1"
+    "node-html-parser": "^9.0.4"
   },
   "devDependencies": {
     "@buttery/lexicons": "workspace:*",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.5.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   }

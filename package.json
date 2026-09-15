@@ -22,13 +22,13 @@
   "devDependencies": {
     "@danilocampos/coherence": "^0.37.1",
     "@resvg/resvg-js": "^2.6.2",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.5.1",
     "husky": "^9.1.7",
-    "lint-staged": "^17.3.0",
+    "lint-staged": "^17.5.1",
     "oxfmt": "^0.64.0",
-    "oxlint": "^1.79.0",
+    "oxlint": "^1.83.0",
     "oxlint-tsgolint": "^7.0.2001",
-    "railway": "^3.10.0",
+    "railway": "^3.11.0",
     "typescript": "^7.0.2"
   },
   "lint-staged": {

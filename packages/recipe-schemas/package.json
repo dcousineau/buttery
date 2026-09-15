@@ -18,10 +18,10 @@
   },
   "devDependencies": {
     "@buttery/lexicons": "workspace:*",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.5.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   },
   "peerDependencies": {
     "zod": "^4.4.3"

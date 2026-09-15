@@ -15,5 +15,9 @@
   "editor.formatOnSave": true,
   "[typescriptreact]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
-  }
+  },
+  "debug.javascript.defaultRuntimeExecutable": {
+    "pwa-node": "/Users/dcousineau/.local/share/mise/shims/node"
+  },
+  "oxc.path.node": "/Users/dcousineau/.local/share/mise/shims/node"
 }

@@ -20,8 +20,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/otel": "^1.0.83",
-    "@ai-sdk/provider-utils": "^5.0.32",
+    "@ai-sdk/otel": "^1.0.99",
+    "@ai-sdk/provider-utils": "^5.0.40",
     "@bull-board/api": "^8.6.1",
     "@bull-board/fastify": "^8.6.1",
     "@buttery/food": "workspace:*",
@@ -32,22 +32,22 @@
     "@openrouter/ai-sdk-provider": "^3.0.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
-    "@opentelemetry/resources": "^2.10.0",
-    "@opentelemetry/sdk-trace-base": "^2.10.0",
-    "@posthog/ai": "^8.9.0",
-    "ai": "^7.0.83",
-    "bullmq": "^6.1.2",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-trace-base": "^2.11.0",
+    "@posthog/ai": "^8.11.1",
+    "ai": "^7.0.99",
+    "bullmq": "^6.3.6",
     "dayjs": "^1.11.23",
-    "es-toolkit": "^1.51.0",
-    "fastify": "^5.12.1",
+    "es-toolkit": "^1.52.0",
+    "fastify": "^5.12.4",
     "fastify-plugin": "^6.0.0",
     "ioredis": "^6.0.0",
     "pg": "^8.23.0",
-    "posthog-node": "^5.51.3",
-    "zod": "^4.4.3"
+    "posthog-node": "^5.52.2",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.5.1",
     "@types/pg": "^8.23.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
