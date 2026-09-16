@@ -29,7 +29,7 @@ import type { SaveRecipeInput, SaveRecipeResult } from "./recipes-write";
  * that line is shipped code against the real database — including `assertMember`,
  * which passes because the fixture inserts a genuine household membership.
  *
- *   pnpm test:db      # railway run --service buttery -- vitest run --project db
+ *   pnpm test:db      # = vitest run --project db; DATABASE_URL comes from services/web/.env
  *
  * With no reachable database the suite SKIPS rather than fails, so `pnpm test`
  * stays green on a machine that has never booted the stack.
@@ -38,7 +38,7 @@ import type { SaveRecipeInput, SaveRecipeResult } from "./recipes-write";
 // --- reachability probe --------------------------------------------------
 
 function announceSkip(reason: string): void {
-  process.stderr.write(`\nSKIPPING recipes-write DB tests — ${reason}.\nRun them against the local dev stack with \`pnpm test:db\` (railway run injects DATABASE_URL).\n\n`);
+  process.stderr.write(`\nSKIPPING recipes-write DB tests — ${reason}.\nRun them against the local dev stack with \`pnpm test:db\`.\n\n`);
 }
 
 async function connectOrSkip(): Promise<Kysely<DB> | null> {

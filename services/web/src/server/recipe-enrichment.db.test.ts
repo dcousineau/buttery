@@ -16,7 +16,7 @@ import { ulid } from "./household/ids";
  * stored labels out of a much larger `recipe_vocab` reads back exactly those
  * rows, with nothing synthesized for the slugs that were never written.
  *
- *   pnpm --filter @buttery/web exec vitest run --project db
+ *   pnpm --filter @buttery/web test:db
  *
  * With no reachable database the suite SKIPS rather than fails, so `pnpm test`
  * stays green on a machine that has never booted the stack (AGENTS.md).
@@ -25,9 +25,7 @@ import { ulid } from "./household/ids";
 // --- reachability probe --------------------------------------------------
 
 function announceSkip(reason: string): void {
-  process.stderr.write(
-    `\nSKIPPING recipe-enrichment DB tests — ${reason}.\nRun them against the local dev stack with \`pnpm --filter @buttery/web exec vitest run --project db\`.\n\n`,
-  );
+  process.stderr.write(`\nSKIPPING recipe-enrichment DB tests — ${reason}.\nRun them against the local dev stack with \`pnpm --filter @buttery/web test:db\`.\n\n`);
 }
 
 async function connectOrSkip(): Promise<Kysely<DB> | null> {

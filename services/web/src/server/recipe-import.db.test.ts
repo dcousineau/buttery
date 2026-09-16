@@ -63,7 +63,7 @@ vi.mock("./enrichment-queue", () => ({
  * querying* — the whole point being that they cannot drift, which is only
  * observable against real rows.
  *
- *   pnpm test:db      # railway run --service buttery -- vitest run --project db
+ *   pnpm test:db      # = vitest run --project db; DATABASE_URL comes from services/web/.env
  *
  * With no reachable database the suite SKIPS rather than fails.
  */
@@ -71,7 +71,7 @@ vi.mock("./enrichment-queue", () => ({
 // --- reachability probe --------------------------------------------------
 
 function announceSkip(reason: string): void {
-  process.stderr.write(`\nSKIPPING recipe-import DB tests — ${reason}.\nRun them against the local dev stack with \`pnpm test:db\` (railway run injects DATABASE_URL).\n\n`);
+  process.stderr.write(`\nSKIPPING recipe-import DB tests — ${reason}.\nRun them against the local dev stack with \`pnpm test:db\`.\n\n`);
 }
 
 async function connectOrSkip(): Promise<Kysely<DB> | null> {

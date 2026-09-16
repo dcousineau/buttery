@@ -14,7 +14,7 @@ import { ulid } from "./household/ids";
  * household join that IS the authorization. Run them against the local dev
  * stack with:
  *
- *   pnpm test:db      # railway run --service buttery -- vitest run --project db
+ *   pnpm test:db      # = vitest run --project db; DATABASE_URL comes from services/web/.env
  *
  * With no reachable database the whole suite SKIPS with a message rather than
  * failing, so `pnpm test` stays green on a machine that has never booted the
@@ -43,7 +43,7 @@ let skipReason = "";
  */
 function announceSkip(reason: string): void {
   skipReason = reason;
-  process.stderr.write(`\nSKIPPING meal-plan DB tests — ${reason}.\nRun them against the local dev stack with \`pnpm test:db\` (railway run injects DATABASE_URL).\n\n`);
+  process.stderr.write(`\nSKIPPING meal-plan DB tests — ${reason}.\nRun them against the local dev stack with \`pnpm test:db\`.\n\n`);
 }
 
 /**

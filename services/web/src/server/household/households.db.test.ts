@@ -1,14 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { sql } from "kysely";
 import { ulid } from "./ids";
 
 /**
  * DB-backed integration tests for the household server logic.
  *
- * These require a reachable Postgres with the household tables migrated. In this
- * worktree the DB is NOT reachable (no `.env`, no network), so the whole suite
- * SKIPS unless `DATABASE_URL` is set. Run it against a dev DB with:
+ * These require a reachable Postgres with the household tables migrated, and the
+ * whole suite SKIPS when there isn't one. Run it against the local dev stack
+ * with:
  *
- *   railway run --service buttery -- ./node_modules/.bin/vitest run households.db
+ *   pnpm --filter @buttery/web test:db
  *
  * We exercise the code paths that don't need an HTTP session context: the
  * tombstone path (§7.2) and the live-membership predicate that backs the §4
@@ -17,7 +18,41 @@ import { ulid } from "./ids";
  * intended for an end-to-end HTTP pass once a dev DB + auth are wired.
  */
 
-const HAS_DB = Boolean(process.env.DATABASE_URL);
+/**
+ * `console` calls made while the module is still loading belong to no task, and
+ * vitest drops them; a raw stderr write is the one thing that reliably reaches
+ * the terminal from a file that then skips entirely.
+ */
+function announceSkip(reason: string): void {
+  process.stderr.write(`\nSKIPPING household DB tests — ${reason}.\nRun them against the local dev stack with \`pnpm --filter @buttery/web test:db\`.\n\n`);
+}
+
+/**
+ * A set `DATABASE_URL` is not the same as a database: `services/web/.env` always
+ * carries one, so the URL alone would turn a stopped dev stack into a suite of
+ * connection errors. Probe the household table too — a database that is up but
+ * un-migrated would otherwise fail every test with "relation does not exist".
+ */
+async function hasReachableDb(): Promise<boolean> {
+  if (!process.env.DATABASE_URL) {
+    announceSkip("DATABASE_URL is not set");
+    return false;
+  }
+  const { getDb } = await import("#/lib/db");
+  const db = getDb();
+  try {
+    // `pg` waits indefinitely for a TCP connect to a black-holed host, so the
+    // probe is bounded rather than left to the suite timeout.
+    await Promise.race([sql`select 1 from household limit 0`.execute(db), new Promise((_, reject) => setTimeout(() => reject(new Error("timed out after 5s")), 5_000).unref?.())]);
+    return true;
+  } catch (error) {
+    announceSkip(`no reachable migrated database (${error instanceof Error ? error.message : String(error)})`);
+    await db.destroy().catch(() => {});
+    return false;
+  }
+}
+
+const HAS_DB = await hasReachableDb();
 
 describe.skipIf(!HAS_DB)("household DB integration", () => {
   // Namespace this run's rows so cleanup is precise and parallel runs don't clash.

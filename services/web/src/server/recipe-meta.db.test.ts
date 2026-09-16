@@ -14,7 +14,7 @@ import { ulid } from "./household/ids";
  * moving on conflict, the dedupe rows landing in the SAME transaction as the
  * recipe, and the index shape of §5.1/§5.2 accepting an 8 kB value.
  *
- *   pnpm test:db      # railway run --service buttery -- vitest run --project db
+ *   pnpm test:db      # = vitest run --project db; DATABASE_URL comes from services/web/.env
  *
  * With no reachable database the suite SKIPS rather than fails, so `pnpm test`
  * stays green on a machine that has never booted the stack.
@@ -23,7 +23,7 @@ import { ulid } from "./household/ids";
 // --- reachability probe --------------------------------------------------
 
 function announceSkip(reason: string): void {
-  process.stderr.write(`\nSKIPPING recipe-meta DB tests — ${reason}.\nRun them against the local dev stack with \`pnpm test:db\` (railway run injects DATABASE_URL).\n\n`);
+  process.stderr.write(`\nSKIPPING recipe-meta DB tests — ${reason}.\nRun them against the local dev stack with \`pnpm test:db\`.\n\n`);
 }
 
 async function connectOrSkip(): Promise<Kysely<DB> | null> {

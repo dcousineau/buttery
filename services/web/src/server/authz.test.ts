@@ -10,8 +10,8 @@ import { InsufficientRoleError, NotAMemberError } from "./household/errors";
  * `deleted_at IS NULL`). This exercises `assertMember`'s branching for the four
  * §16 outcomes without a database.
  *
- * The real query is covered by an integration test once a dev DB is reachable
- * (`railway run --service buttery -- ...`); see the plan's Agent B slice.
+ * The real query is covered by an integration test against the local dev stack
+ * (`pnpm --filter @buttery/web test:db`); see the plan's Agent B slice.
  */
 
 type MemberRow = Membership & { household_deleted: boolean };

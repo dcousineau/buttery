@@ -54,12 +54,12 @@ that fails: report the blocked host, don't route around it.
 means `postgres`, `redis`, `web`, `atproto-dev-env` running and `migrate`
 completed. See the `local-dev` skill to drive it.
 
-| Check                     | Command                                                                                                                                                                          |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| web serves                | `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/` — also `/login`                                                                                                  |
-| atproto sign-in handshake | POST `{"handle":"chef.test"}` to `/api/auth/atproto/sign-in` → an `oauth/authorize` URL                                                                                          |
-| tests, types, lint        | `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format:check`                                                                                                                  |
-| DB-backed tests           | `pnpm --filter @buttery/web exec vitest run --project db` with `DATABASE_URL` from `services/web/.env` — **not** `pnpm test:db`, which wraps `railway run` and has no login here |
+| Check                     | Command                                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| web serves                | `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/` — also `/login`                                                 |
+| atproto sign-in handshake | POST `{"handle":"chef.test"}` to `/api/auth/atproto/sign-in` → an `oauth/authorize` URL                                         |
+| tests, types, lint        | `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm format:check`                                                                 |
+| DB-backed tests           | `pnpm --filter @buttery/web test:db` — it reads `DATABASE_URL` from `services/web/.env` itself, no wrapper and no Railway login |
 
 ## Environment setup script (humans only — do not run this)
 
