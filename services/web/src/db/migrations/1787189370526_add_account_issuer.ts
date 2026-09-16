@@ -1,6 +1,7 @@
 import { type Kysely } from "kysely";
 
-/** Mirrors `ATPROTO_ACCOUNT_ISSUER` in `src/lib/atproto/better-auth-plugin.ts`. */
+/** Superseded by 1789578812345_drop_account_issuer: better-auth 1.7.3 reverted
+ * the issuer-scoped account key, so this column no longer exists. */
 const ATPROTO_ISSUER = "local:atproto";
 
 /**
