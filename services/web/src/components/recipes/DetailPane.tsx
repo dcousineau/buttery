@@ -20,6 +20,7 @@ import { scaleIngredients } from "#/lib/recipe-scale";
 import { cn } from "#/lib/utils";
 import { useHydratedSession } from "#/lib/auth-client";
 import { reconnectAtproto } from "#/lib/atproto-reauth";
+import { type PublishFeedback, describePublishError, describePublishOutcome } from "#/lib/publish-feedback";
 import { useRecipesView } from "./context";
 import { useRecipeScale } from "./scale";
 import { SourceLink } from "./SourceLink";
@@ -27,6 +28,7 @@ import { ScalePanel } from "./ScalePanel";
 import { NutritionStrip } from "./NutritionStrip";
 import { RecipeTagStrip } from "./RecipeTagStrip";
 import { UnavailableBanner } from "./UnavailableBanner";
+import { NotInBoxNotice } from "./NotInBoxNotice";
 import { StepText } from "./StepText";
 import { CookModeLauncher } from "./CookModeLauncher";
 import { RecipeTimerStrip } from "#/components/timers/RecipeTimerStrip";
@@ -59,6 +61,7 @@ export function DetailPane({
   onCookModeClosed,
   showBackLink = true,
   onResultAction,
+  replaces,
 }: {
   recipe: HouseholdRecipeDetail;
   /**
@@ -134,6 +137,8 @@ export function DetailPane({
    * stand in for. Two problems, two fixes, and both exist.
    */
   onResultAction?: (action: "plan_dialog" | "grocery" | "cook") => void;
+  /** `?replaces=` — the reader's own copy of this recipe; see the `$id` route's search schema. */
+  replaces?: string;
 }) {
   const router = useRouter();
   const canGoBack = useCanGoBack();
@@ -182,6 +187,15 @@ export function DetailPane({
   const scaledIngredients = useMemo(() => scaleIngredients(recipe.ingredients, factor, metric), [recipe.ingredients, factor, metric]);
   const displayServings = recipe.serves != null ? Math.max(1, Math.round(recipe.serves * factor)) : null;
   const primaryImage = recipe.images[0] ?? null;
+
+  // A public recipe this household does not keep renders read-only: the
+  // household-private controls below (favorite, collections, shopping list,
+  // planner, remove, publish, notes) all write against a box row that does not
+  // exist yet, so they are hidden rather than disabled — saving to the box is
+  // the one action, and after it lands the refetched payload flips this. Cook
+  // mode, scale and timers stay: they are ways of reading, not of keeping.
+  // Absent reads as boxed (see `HouseholdRecipeDetail.inBox`).
+  const inBox = recipe.inBox !== false;
 
   const scaleActive = factor !== 1 || metric;
   const scaleLabel = scaleActive ? `${factor}× · ${metric ? "metric" : "US"}` : "Scale & convert";
@@ -248,20 +262,41 @@ export function DetailPane({
   async function onPublish() {
     setPublishing(true);
     try {
-      const res = await publishRecipe(recipe.recipeId);
-      if (res.status === "publish_disabled") {
-        pushToast("Publishing is turned off right now.");
-        return;
+      let feedback: PublishFeedback;
+      try {
+        feedback = describePublishOutcome(await publishRecipe(recipe.recipeId), recipe.recipeId);
+      } catch (err) {
+        console.error("publishRecipe failed", err);
+        feedback = describePublishError(err);
       }
-      if (res.status === "reauth_required") {
-        // Grant predates the scopes publishing needs — the recipe stays private
-        // until the user re-authorizes.
-        posthog.capture("recipe_publish_reauth_required", { recipe_id: recipe.recipeId, missing_scope: res.missingScope });
-        setNeedsReauth(true);
-        return;
+      switch (feedback.kind) {
+        case "success":
+          posthog.capture("recipe_published", { recipe_id: recipe.recipeId, from: "detail_lock" });
+          await invalidateBox();
+          return;
+        case "reauth":
+          // Grant predates the scopes publishing needs — the recipe stays private
+          // until the user re-authorizes, via the reconnect prompt this opens.
+          posthog.capture("recipe_publish_reauth_required", { recipe_id: recipe.recipeId, missing_scope: feedback.missingScope });
+          setNeedsReauth(true);
+          return;
+        case "toast": {
+          // The confirm dialog closes either way; the toast is what says the
+          // recipe is still private and why.
+          const openId = feedback.openRecipeId;
+          // `replaces` names this draft on the published recipe, so its
+          // not-in-box bar can offer to swap the two (see `NotInBoxNotice`).
+          const search = { replaces: feedback.replacesRecipeId };
+          pushToast(feedback.message, {
+            variant: feedback.variant,
+            // A toast with something to do stays until dismissed (see ToastOptions).
+            ...(openId
+              ? { sticky: true, action: { label: "Open it", onClick: () => void router.navigate({ to: "/household/recipes/$id", params: { id: openId }, search }) } }
+              : {}),
+          });
+          return;
+        }
       }
-      posthog.capture("recipe_published", { recipe_id: recipe.recipeId, from: "detail_lock" });
-      await invalidateBox();
     } finally {
       setPublishing(false);
       setConfirmPublish(false);
@@ -343,7 +378,7 @@ export function DetailPane({
             {recipe.title}
           </h1>
           <MetaRow className="gap-x-2 text-[0.75rem] font-semibold text-muted-foreground">
-            {recipe.unpublished && (
+            {inBox && recipe.unpublished && (
               <button
                 type="button"
                 onClick={() => setConfirmPublish(true)}
@@ -371,7 +406,11 @@ export function DetailPane({
           another one (collections plan §7). Reads the same cached collections
           query the tree and the ledger do — memberships are a client-side join,
           not a second request. */}
-        <CollectionChips householdId={householdId} recipeId={recipe.recipeId} recipeTitle={recipe.title} recipeUnpublished={recipe.unpublished} />
+        {inBox ? (
+          <CollectionChips householdId={householdId} recipeId={recipe.recipeId} recipeTitle={recipe.title} recipeUnpublished={recipe.unpublished} />
+        ) : (
+          <NotInBoxNotice householdId={householdId} recipeId={recipe.recipeId} replaces={replaces} />
+        )}
 
         {/* Action row */}
         <div className="flex flex-wrap items-center gap-2">
@@ -393,58 +432,62 @@ export function DetailPane({
             on a double delivery, and the shared note is the field two people
             erase each other on. Saying "not now" is honest; silently queuing a
             write that would corrupt on replay is not. */}
-          <Button
-            variant="outline"
-            aria-pressed={recipe.favorite}
-            disabled={favoriteMutation.isPending || !online}
-            title={online ? undefined : OFFLINE_WRITE_HINT}
-            onClick={onFavorite}
-            className={cn(recipe.favorite && "bg-primary text-primary-foreground hover:bg-primary")}
-          >
-            <Star data-icon="inline-start" aria-hidden="true" className={cn(recipe.favorite && "fill-current")} />
-            {recipe.favorite ? "Favorited" : "Favorite"}
-          </Button>
-          {/*
-            The scale the pane is CURRENTLY showing rides along (plan D4): if you
-            are reading this recipe at 2×, the list should get 2× of it. Nothing
-            is written back to the recipe — `factor` is a reading preference and
-            stays one.
-          */}
-          <Button
-            variant="outline"
-            disabled={!online}
-            title={online ? undefined : OFFLINE_WRITE_HINT}
-            onClick={() => {
-              onResultAction?.("grocery");
-              setListRequest({ recipes: [{ recipeId: recipe.recipeId, scale: factor }], label: recipe.title });
-            }}
-          >
-            <ShoppingBasket data-icon="inline-start" aria-hidden="true" />
-            Add to shopping list
-          </Button>
-          <Button
-            variant="outline"
-            disabled={!online}
-            title={online ? undefined : OFFLINE_WRITE_HINT}
-            onClick={() => {
-              onResultAction?.("plan_dialog");
-              setPlanRequest({ recipeId: recipe.recipeId, title: recipe.title });
-            }}
-          >
-            <CalendarRange data-icon="inline-start" aria-hidden="true" />
-            Add to meal planner
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto text-muted-foreground"
-            disabled={!online || removeBlockedReason !== null}
-            title={removeBlockedReason ?? (online ? undefined : OFFLINE_WRITE_HINT)}
-            onClick={() => setConfirmRemove(true)}
-          >
-            <Trash2 data-icon="inline-start" aria-hidden="true" />
-            Remove
-          </Button>
+          {inBox && (
+            <>
+              <Button
+                variant="outline"
+                aria-pressed={recipe.favorite}
+                disabled={favoriteMutation.isPending || !online}
+                title={online ? undefined : OFFLINE_WRITE_HINT}
+                onClick={onFavorite}
+                className={cn(recipe.favorite && "bg-primary text-primary-foreground hover:bg-primary")}
+              >
+                <Star data-icon="inline-start" aria-hidden="true" className={cn(recipe.favorite && "fill-current")} />
+                {recipe.favorite ? "Favorited" : "Favorite"}
+              </Button>
+              {/*
+                The scale the pane is CURRENTLY showing rides along (plan D4): if you
+                are reading this recipe at 2×, the list should get 2× of it. Nothing
+                is written back to the recipe — `factor` is a reading preference and
+                stays one.
+              */}
+              <Button
+                variant="outline"
+                disabled={!online}
+                title={online ? undefined : OFFLINE_WRITE_HINT}
+                onClick={() => {
+                  onResultAction?.("grocery");
+                  setListRequest({ recipes: [{ recipeId: recipe.recipeId, scale: factor }], label: recipe.title });
+                }}
+              >
+                <ShoppingBasket data-icon="inline-start" aria-hidden="true" />
+                Add to shopping list
+              </Button>
+              <Button
+                variant="outline"
+                disabled={!online}
+                title={online ? undefined : OFFLINE_WRITE_HINT}
+                onClick={() => {
+                  onResultAction?.("plan_dialog");
+                  setPlanRequest({ recipeId: recipe.recipeId, title: recipe.title });
+                }}
+              >
+                <CalendarRange data-icon="inline-start" aria-hidden="true" />
+                Add to meal planner
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto text-muted-foreground"
+                disabled={!online || removeBlockedReason !== null}
+                title={removeBlockedReason ?? (online ? undefined : OFFLINE_WRITE_HINT)}
+                onClick={() => setConfirmRemove(true)}
+              >
+                <Trash2 data-icon="inline-start" aria-hidden="true" />
+                Remove
+              </Button>
+            </>
+          )}
         </div>
 
         {/* A disabled button fires no pointer events, so its `title` never
@@ -551,7 +594,7 @@ export function DetailPane({
               )}
             </div>
 
-            <NoteEditor recipeId={recipe.recipeId} initialBody={recipe.note?.body ?? ""} online={online} />
+            {inBox && <NoteEditor recipeId={recipe.recipeId} initialBody={recipe.note?.body ?? ""} online={online} />}
           </div>
         </div>
       </div>

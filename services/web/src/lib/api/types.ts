@@ -144,6 +144,18 @@ export interface HouseholdRecipeDetail {
    * appears on the next refetch, and nothing new has to be invalidated.
    */
   enrichment?: RecipeTagLabel[] | null;
+  /**
+   * False for a public recipe this household does not keep: the pane renders
+   * it read-only, framed as "not in your box yet", with saving it as the one
+   * action. The household-private fields above (`favorite`, `note`,
+   * `addedByHandle`, `plannedUsage`, `autoimportLock`) are then empty, never
+   * another household's.
+   *
+   * Optional, and ABSENT reads as boxed: a payload sitting in IndexedDB from
+   * before this shipped was necessarily a boxed recipe, because the detail
+   * read returned nothing at all for any other — so test `inBox !== false`.
+   */
+  inBox?: boolean;
 }
 
 /** One picker result (global public search, excludes already-boxed). */

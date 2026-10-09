@@ -49,6 +49,7 @@ export const mutationKeys = {
   planEntriesAdded: ["plan-entries-added"] as const,
   planNoteSaved: ["plan-note-saved"] as const,
   recipeFavorite: ["recipe-favorite"] as const,
+  recipeAddedToBox: ["recipe-added-to-box"] as const,
   collectionEdited: ["collection-edited"] as const,
   collectionsReordered: ["collections-reordered"] as const,
   collectionRecipesReordered: ["collection-recipes-reordered"] as const,
@@ -447,6 +448,30 @@ export function toggleRecipeFavoriteMutation(queryClient: QueryClient, household
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: detailKey(vars.recipeId) }),
         scope.isLastWrite() ? queryClient.invalidateQueries({ queryKey: listKey }) : Promise.resolve(),
+      ]);
+    },
+  });
+}
+
+/**
+ * Keep a public recipe this household is reading but does not keep yet.
+ *
+ * No optimistic patch: the boxed detail carries household fields (note,
+ * planned usage, autoimport pin) only the server can fill in, and a ledger row
+ * built client-side would be a guess at its sort place and source line. The
+ * refetch IS the flip — the detail comes back `inBox: true` and the ledger
+ * gains the row, so the not-in-box treatment on both surfaces drops away on its
+ * own. Online-only like every write here; the add is idempotent server-side, so
+ * it is also replay-safe by shape when M2 lets writes queue.
+ */
+export function addRecipeToBoxMutation(queryClient: QueryClient, householdId: string) {
+  return mutationOptions({
+    mutationKey: mutationKeys.recipeAddedToBox,
+    mutationFn: (vars: { recipeId: string }) => api.addRecipeToHousehold(vars.recipeId),
+    onSuccess: async (_data: { ok: true }, vars: { recipeId: string }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: keys.household.recipes(householdId) }),
+        queryClient.invalidateQueries({ queryKey: keys.household.recipe(householdId, vars.recipeId) }),
       ]);
     },
   });

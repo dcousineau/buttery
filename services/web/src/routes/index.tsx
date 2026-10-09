@@ -55,30 +55,28 @@ function App() {
 
       <section id="features" className="mt-16">
         <h2 className="display-title m-0 text-2xl text-foreground sm:text-3xl">Stocking the pantry</h2>
-        <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">
-          Buttery is still under development. Some of this is already on the shelf and ready to use; the rest is where we&rsquo;re headed.
-        </p>
+        <p className="mt-3 max-w-xl text-sm text-muted-foreground sm:text-base">Everything on the shelf is ready to use.</p>
         <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           <FeatureCard
             icon={<AtSign />}
             title="Built on atproto"
-            status="ready"
+
             blurb="Recipes live as atproto records in the atmosphere — yours to keep, yours to take anywhere."
           />
           <FeatureCard
             icon={<CookingPot />}
             title="Cook mode"
-            status="ready"
+
             blurb="The whole point. Recipes rendered huge and glare-proof for the counter — no sleep, no scrolling with buttery thumbs."
           />
-          <FeatureCard icon={<CalendarRange />} title="Meal planner" status="ready" blurb="Lay the week out on the table before it starts." />
+          <FeatureCard icon={<CalendarRange />} title="Meal planner" blurb="Lay the week out on the table before it starts." />
           <FeatureCard
             icon={<ShoppingBasket />}
             title="Shopping list"
-            status="ready"
+
             blurb="Send a recipe or the whole week to one running household list — duplicates merged, grouped by aisle for the store."
           />
-          <FeatureCard icon={<Dices />} title="Randomizer" status="development" blurb="Can't decide? Roll the dice, dinner picks itself." />
+          <FeatureCard icon={<Dices />} title="Randomizer" blurb="Can't decide? Roll the dice, dinner picks itself." />
           <FeatureCard icon={<FolderLock />} title="Private collections" blurb="Sort recipes into collections only you (or your chosen few) can open." />
         </div>
       </section>
@@ -138,9 +136,7 @@ function RecipeCard({ recipe }: { recipe: RecipeCardData }) {
   );
 }
 
-function FeatureCard({ icon, title, blurb, status = "planned" }: { icon: React.ReactNode; title: string; blurb: string; status?: "ready" | "development" | "planned" }) {
-  const ready = status === "ready";
-  const label = status === "ready" ? "ready" : status === "development" ? "in development" : "planned";
+function FeatureCard({ icon, title, blurb }: { icon: React.ReactNode; title: string; blurb: string }) {
   return (
     <Card>
       <CardHeader>
@@ -148,8 +144,8 @@ function FeatureCard({ icon, title, blurb, status = "planned" }: { icon: React.R
           {icon}
           {title}
           <Badge variant="outline" className="ml-auto gap-1 text-[0.6rem] tracking-wide uppercase [&_svg]:size-3">
-            {ready ? <Check aria-hidden /> : null}
-            {label}
+            <Check aria-hidden />
+            ready
           </Badge>
         </CardTitle>
       </CardHeader>
