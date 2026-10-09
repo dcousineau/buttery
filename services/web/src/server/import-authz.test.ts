@@ -57,6 +57,27 @@ vi.mock("./recipe-context", () => ({ activeContext }));
 vi.mock("./authz", async (importOriginal) => ({ ...(await importOriginal<object>()), assertMember }));
 
 /**
+ * The two pieces of shared infrastructure an entry point can reach *after* the
+ * gate, faked so this file stays a pure unit test in both directions.
+ *
+ * `copyRemoteImage` is the reason: past its gate it INCRs a Redis counter and
+ * then fetches a URL. With `.env` loaded (the config loads it for every project)
+ * the real `getRedis()` would open a socket and, with `maxRetriesPerRequest:
+ * null`, queue the command forever on a machine with no Redis — a hang, not a
+ * failure. Both fakes fail the way the shipped code already tolerates: the
+ * limiter fails OPEN on a Redis error, and a failed fetch is just no photo.
+ */
+vi.mock("#/lib/redis", () => ({
+  getRedis: () => {
+    throw new Error("no Redis in a unit test");
+  },
+}));
+vi.mock("#/lib/net/safe-fetch", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  safeFetchBytes: () => Promise.reject(new Error("no network in a unit test")),
+}));
+
+/**
  * The server-side half of `createServerFn`, and nothing more: validate the input
  * with the declared validator, then call the handler with `{ data }`. The real
  * builder's client half is an RPC round trip, which is not what any assertion
@@ -117,14 +138,17 @@ const GATED: readonly [name: string, call: () => Promise<unknown>][] = [
 /**
  * Entry points that authorize the same way but never reach the database.
  *
- * There is one, and it is the odd shape on purpose: `createRecipeImageUpload`
- * hands back a signed URL for the browser to PUT a photo at, and the key it
- * signs is derived from the DID alone — no household row is read or written, so
- * there is no `getDb()` for the ordering assertion above to hang on. What still
- * has to hold is the gate itself: a signed upload URL is a write credential for
- * shared infrastructure, and a caller `assertMember` rejects must not get one.
+ * Both of these hand back a credential for, or write bytes into, the shared
+ * bucket, and the key is derived from the DID alone — no household row is read or
+ * written, so there is no `getDb()` for the ordering assertion above to hang on.
+ * What still has to hold is the gate itself: a signed upload URL, and a copy
+ * performed by this server's own egress, are both writes to shared
+ * infrastructure, and a caller `assertMember` rejects must not get either.
  */
-const SESSION_ONLY: [string, () => Promise<unknown>][] = [["createRecipeImageUpload", () => writes.createRecipeImageUpload({ data: { mime: "image/jpeg", size: 64 } })]];
+const SESSION_ONLY: [string, () => Promise<unknown>][] = [
+  ["createRecipeImageUpload", () => writes.createRecipeImageUpload({ data: { mime: "image/jpeg", size: 64 } })],
+  ["copyRemoteImage", () => writes.copyRemoteImage({ data: { url: "https://assets.example/no-cors/hero.jpg" } })],
+];
 
 // `reset`, not `clear`: a `mockRejectedValueOnce` that the case under test never
 // consumed — precisely what happens when a gate goes missing — would otherwise

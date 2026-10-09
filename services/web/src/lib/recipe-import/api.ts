@@ -20,10 +20,7 @@ import type { ImportApi } from "./contracts.ts";
  */
 export const importApi: ImportApi = {
   openSession: importTransport.openSession,
-  // Two steps behind one call: a server function signs an upload URL, and the
-  // browser PUTs the bytes straight at the bucket. The payload never crosses
-  // this service. See lib/recipe-image-upload.ts.
-  uploadImage: uploadRecipeImage,
+  uploadImage: async (blob) => (await uploadRecipeImage(blob))?.uploadId ?? null,
   probeDuplicates: importTransport.probeDuplicates,
   getComparison: importTransport.getComparison,
   commitChunk: importTransport.commitChunk,

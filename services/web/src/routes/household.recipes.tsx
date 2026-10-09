@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { createFileRoute, Outlet, useParams, useRouter, useRouterState } from "@tanstack/react-router";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { createFileRoute, Outlet, useParams, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import * as z from "zod";
-import { householdCollectionsQuery, householdRecipesQuery } from "#/lib/api";
+import { householdCollectionsQuery, householdRecipeQuery, householdRecipesQuery } from "#/lib/api";
 import { ensureActiveHousehold } from "#/lib/offline/active-household";
 import { OfflineRouteError } from "#/components/offline/OfflineRouteError";
 import { useRecipeMirror } from "#/lib/offline/use-recipe-mirror";
 import { RecipeLedger } from "#/components/recipes/RecipeLedger";
+import { NotInBoxLedgerItem } from "#/components/recipes/NotInBoxNotice";
 import { CollectionsColumn } from "#/components/collections/CollectionsColumn";
 import { resolveScope, SMART_SCOPES } from "#/components/collections/scope";
 import { useCollectionsColumn } from "#/components/collections/use-collections-column";
@@ -120,6 +121,19 @@ function RecipesLayoutColumns({ householdId }: { householdId: string }) {
   const selectedId = (params as { id?: string }).id ?? null;
   const hasSelection = selectedId != null;
 
+  // A selection the box does not hold is a public recipe read from outside it
+  // (or an id that resolves to nothing). The detail route already fetched it, so
+  // this observes that cache entry rather than asking again; the ledger shows it
+  // as a lead row only when the server said `inBox: false`. Once a save lands
+  // the list refetch carries the real row, `selectedOutsideBox` goes false, and
+  // the lead row is gone.
+  const selectedOutsideBox = selectedId != null && !recipes.some((r) => r.recipeId === selectedId);
+  const { data: selectedDetail } = useQuery({ ...householdRecipeQuery(householdId, selectedId ?? ""), enabled: selectedOutsideBox });
+  const notInBox = selectedOutsideBox && selectedDetail?.inBox === false ? selectedDetail : null;
+  // The `$id` child's `?replaces=`, read loosely from up here so the lead row
+  // offers the same swap as the detail pane's bar.
+  const { replaces } = useSearch({ strict: false });
+
   // The full-page create form (`/household/recipes/new`) renders full width — the
   // ledger + column + picker are suppressed for it (plan §A5: the form is a full page).
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -158,6 +172,7 @@ function RecipesLayoutColumns({ householdId }: { householdId: string }) {
               collectionsOpen={collectionsColumn.open}
               onToggleCollections={collectionsColumn.toggle}
               collectionsPanelId={COLLECTIONS_PANEL_ID}
+              lead={notInBox ? <NotInBoxLedgerItem householdId={householdId} recipe={notInBox} replaces={replaces} /> : undefined}
               className="min-h-0 w-full flex-1"
             />
           </div>

@@ -54,7 +54,8 @@ const DID_STRANGER = `did:test:detail-stranger-${RUN}`;
 
 const R_BOXED = `rec-detail-boxed-${RUN}`;
 const R_UNBOXED = `rec-detail-unboxed-${RUN}`;
-const RECIPES = [R_BOXED, R_UNBOXED];
+const R_DRAFT = `rec-detail-draft-${RUN}`;
+const RECIPES = [R_BOXED, R_UNBOXED, R_DRAFT];
 
 type HouseholdRecipesModule = typeof import("./household-recipes");
 let box: HouseholdRecipesModule;
@@ -81,6 +82,7 @@ async function reset(): Promise<void> {
     .values([
       { id: R_BOXED, origin: "local", visibility: "public", name: "Boxed", did: DID_MEMBER, rkey: R_BOXED, total_time_seconds: 5400 },
       { id: R_UNBOXED, origin: "local", visibility: "public", name: "Unboxed", did: DID_MEMBER, rkey: R_UNBOXED },
+      { id: R_DRAFT, origin: "local", visibility: "draft", name: "Draft" },
     ])
     .execute();
   // Inserted out of order on purpose: the payload's order must come from the
@@ -156,9 +158,38 @@ describe.skipIf(!db)(db ? "readHouseholdRecipeDetail (§6.2)" : "readHouseholdRe
     await db!.deleteFrom("household").where("id", "=", other).execute();
   });
 
-  it("returns null for a non-member, for an unboxed recipe, and for an unknown recipe", async () => {
+  it("marks a boxed recipe inBox", async () => {
+    expect((await box.readHouseholdRecipeDetail(db!, DID_MEMBER, HH, R_BOXED))!.inBox).toBe(true);
+  });
+
+  it("reads a public recipe outside the box with every household-private field empty", async () => {
+    // Another household keeps it, favourites it and notes it — none of which
+    // may reach a household that only reads it.
+    const other = `hh-detail-other-${RUN}`;
+    await db!.insertInto("household").values({ id: other, name: "Other", created_by_did: DID_STRANGER }).execute();
+    await db!.insertInto("household_recipe").values({ household_id: other, recipe_id: R_UNBOXED, added_by_did: DID_STRANGER, favorite: true }).execute();
+    await db!.insertInto("household_recipe_note").values({ household_id: other, recipe_id: R_UNBOXED, author_did: DID_STRANGER, body: "theirs" }).execute();
+
+    const detail = await box.readHouseholdRecipeDetail(db!, DID_MEMBER, HH, R_UNBOXED);
+    expect(detail).not.toBeNull();
+    expect(detail!.title).toBe("Unboxed");
+    expect(detail!.inBox).toBe(false);
+    expect(detail!.favorite).toBe(false);
+    expect(detail!.note).toBeNull();
+    expect(detail!.addedByHandle).toBeNull();
+    expect(detail!.plannedUsage).toBeNull();
+    expect(detail!.autoimportLock).toBeNull();
+
+    await db!.deleteFrom("household_recipe_note").where("household_id", "=", other).execute();
+    await db!.deleteFrom("household_recipe").where("household_id", "=", other).execute();
+    await db!.deleteFrom("household").where("id", "=", other).execute();
+  });
+
+  it("returns null for a non-member, for a non-public recipe outside the box, and for an unknown recipe", async () => {
     expect(await box.readHouseholdRecipeDetail(db!, DID_STRANGER, HH, R_BOXED)).toBeNull();
-    expect(await box.readHouseholdRecipeDetail(db!, DID_MEMBER, HH, R_UNBOXED)).toBeNull();
+    // Public is not enough without a live membership: the household gate comes first.
+    expect(await box.readHouseholdRecipeDetail(db!, DID_STRANGER, HH, R_UNBOXED)).toBeNull();
+    expect(await box.readHouseholdRecipeDetail(db!, DID_MEMBER, HH, R_DRAFT)).toBeNull();
     expect(await box.readHouseholdRecipeDetail(db!, DID_MEMBER, HH, `rec-missing-${RUN}`)).toBeNull();
   });
 
