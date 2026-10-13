@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, BookOpenText, Check, CircleAlert, Clock, Compass, CookingPot, Eye, Link2, ShoppingBasket, UtensilsCrossed, X } from "lucide-react";
+import { ArrowLeft, BookOpenText, Check, CircleAlert, Clock, Compass, CookingPot, Eye, Link2, ShoppingBasket, X } from "lucide-react";
 import { useAnalytics } from "#/lib/analytics";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
@@ -18,9 +18,8 @@ import { useHydratedSession } from "#/lib/auth-client";
 import { reconnectAtproto } from "#/lib/atproto-reauth";
 import { type AttributionState, EMPTY_ATTRIBUTION, attributionComplete, buildAttribution } from "#/lib/recipe-attribution";
 import { deriveSource } from "#/lib/recipe-provenance";
+import { PUBLISH_DISABLED_MESSAGE } from "#/lib/publish-feedback";
 import { type FieldIssue, getImportPrefill, keys, type RecipeRecordInput, saveRecipe } from "#/lib/api";
-import { stageRemoteImage, uploadRecipeImage } from "#/lib/recipe-image-upload";
-import { MAX_IMAGE_BYTES } from "#/lib/recipe-image";
 import { useRecipesView } from "../context";
 import type { RecipeViewData } from "../RecipeView";
 import { type EditorMode } from "./LineEditor";
@@ -29,6 +28,7 @@ import { InstructionsEditor } from "./InstructionsEditor";
 import { AttributionCard } from "./AttributionCard";
 import { PreviewDialog } from "./PreviewDialog";
 import { DuplicateDialog } from "./DuplicateDialog";
+import { PhotoField, useRecipePhoto } from "./PhotoField";
 
 function hostOf(url: string): string | null {
   try {
@@ -53,32 +53,10 @@ function isoToMinutes(iso: string | undefined): string {
   return mins > 0 ? String(mins) : "";
 }
 
-/**
- * The form's photo: what to show, and what the save will point at.
- *
- * `uploadId` null means "showing something, owning nothing" — the optimistic
- * render of an imported hero's origin URL while the browser tries to fetch and
- * upload it for itself. A save carries the id or it carries no image; the
- * preview URL is never persisted and never reaches the server.
- *
- * `sourceUrl` is set only for an imported hero, and only travels once the bytes
- * are ours. It is logged beside them and never read back — the recipe's image is
- * the object, always.
- */
-type FormImage = { previewUrl: string; uploadId: string | null; alt: string; sourceUrl?: string };
-
-/**
- * The full-page recipe create/import form (plan §A5). Plain controlled state
- * (matching the repo's CreateInviteForm pattern); saving/publishing goes through
- * the `saveRecipe` server fn, which re-validates via the lexicon. Save is gated on
- * attribution being complete. Import mode locks Website attribution to the URL.
- */
+/** Recipe create/import form. Save is gated on attribution; import locks it to the source URL. */
 export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importId }: { householdName: string; sourceUrl: string | null; importId?: string | null }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  // The cache partition, from the parent layout's `beforeLoad` context — the
-  // same value `/household/recipes` keyed its box query with, so the
-  // invalidation below is guaranteed to name the entry the ledger is observing.
   const { householdId } = useRouteContext({ from: "/household/recipes" });
   const { posthog } = useAnalytics();
   const { pushToast } = useRecipesView();
@@ -109,8 +87,8 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
   const [fat, setFat] = useState("");
   const [carbs, setCarbs] = useState("");
   const [attr, setAttr] = useState<AttributionState>({ ...EMPTY_ATTRIBUTION });
-  const [image, setImage] = useState<FormImage | null>(null);
-  const imageSrc = image?.previewUrl ?? null;
+  const photo = useRecipePhoto();
+  const { state: photoState, stageRemote } = photo;
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState(false);
@@ -121,16 +99,12 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
   // predates the scopes publishing needs, so it has to be re-authorized.
   const [needsReauth, setNeedsReauth] = useState(false);
   const [reauthPending, setReauthPending] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const attrDone = imported || attributionComplete(attr);
-  const saveDisabled = !attrDone || pending != null;
+  const saveDisabled = !attrDone || photo.busy || pending != null;
   const importHost = imported && sourceUrl ? hostOf(sourceUrl) : null;
 
-  // Import prefill (plan §B/§C): the recipe is cached server-side and fetched by
-  // opaque id (`?import=<id>`) — never carried in the URL. Both Phase B (server
-  // scrape) and Phase C (bookmarklet POST) converge here. Fetch once on mount,
-  // fill the form, lock attribution to the source. Runs client-side only.
+  // The scraped recipe is cached server-side and fetched by opaque id, never carried in the URL.
   useEffect(() => {
     if (!importId) return;
     let cancelled = false;
@@ -165,26 +139,12 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
       if (r.nutrition?.fatContent) setFat(String(r.nutrition.fatContent));
       if (r.nutrition?.proteinContent) setProtein(String(r.nutrition.proteinContent));
       if (r.nutrition?.carbohydrateContent) setCarbs(String(r.nutrition.carbohydrateContent));
-      if (r.imageUrl) {
-        const alt = r.name ?? "";
-        // Optimistic: render the origin's URL right away so the preview is not
-        // blank while we try to become its owner. An `<img src>` is not
-        // CORS-gated, so this shows even for the hosts the fetch below fails on
-        // — but with no `uploadId` it is a picture on screen and nothing more.
-        setImage({ previewUrl: r.imageUrl, uploadId: null, alt });
-        // Then take our own copy, straight into our bucket. The tab has the
-        // user's referer and is far likelier to be served than our backend was.
-        // When it doesn't work (no `Access-Control-Allow-Origin`, the usual
-        // reason) the preview above stands and the recipe saves without a photo.
-        const uploadId = await stageRemoteImage(r.imageUrl);
-        if (cancelled || !uploadId) return;
-        setImage({ previewUrl: r.imageUrl, uploadId, alt, sourceUrl: r.imageUrl });
-      }
+      if (r.imageUrl) void stageRemote(r.imageUrl, hostOf(payload.sourceUrl));
     })();
     return () => {
       cancelled = true;
     };
-  }, [importId]);
+  }, [importId, stageRemote]);
 
   function buildRecord(): RecipeRecordInput {
     const nutrition =
@@ -210,28 +170,13 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
       recipeCategory: tokenForSlug("category", category) ?? undefined,
       suitableForDiet: diet ? ([tokenForSlug("diet", diet)].filter(Boolean) as RecipeRecordInput["suitableForDiet"]) : undefined,
       nutrition,
-      // For imports the server re-derives Website attribution from sourceUrl and
-      // ignores anything here; for manual entry send the built union.
+      // Imports: the server derives attribution from sourceUrl.
       attribution: imported ? undefined : (buildAttribution(attr) as RecipeRecordInput["attribution"]),
     };
   }
 
-  /**
-   * The box gained a row, so the box query has to be told.
-   *
-   * This used to be `router.invalidate()`, which stopped doing anything the day
-   * `/household/recipes` moved onto `householdRecipesQuery` (§4.1). Re-running
-   * that loader now means re-running `ensureQueryData`, and `ensureQueryData`
-   * returns whatever is cached without revalidating — there is no
-   * `revalidateIfStale` on it. The layout never unmounts while this form is on
-   * screen (the form is its child), so its `useSuspenseQuery` observer stays
-   * mounted and never refetches on mount either: **the recipe you just wrote
-   * did not appear in the ledger at all** until a reload or a window refocus.
-   *
-   * Invalidating the key is what the router used to do by proxy, and it is also
-   * narrower than what the router used to do — one entry, not every loader in
-   * the tree (`household.recipes.tsx`'s `onAdded` takes the same shape).
-   */
+  // The parent layout's query observer stays mounted under this form and won't
+  // refetch on its own; `router.invalidate()` would only re-read the cache.
   async function refreshBox() {
     await queryClient.invalidateQueries({ queryKey: keys.household.recipes(householdId) });
   }
@@ -245,9 +190,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
         visibility: "draft",
         publish,
         sourceUrl,
-        // The bytes are already in our bucket; this is only the id that says
-        // which object. A preview with no id saves no photo.
-        image: image?.uploadId ? { uploadId: image.uploadId, alt: image.alt, sourceUrl: image.sourceUrl ?? null } : null,
+        image: photoState.status === "ready" ? { uploadId: photoState.uploadId, alt: name.trim(), sourceUrl: photoState.sourceUrl ?? null } : null,
       });
       if (result.status === "invalid") {
         setIssues(result.issues);
@@ -260,21 +203,17 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
       }
       if (result.status === "publish_disabled") {
         posthog.capture("recipe_created", { published: false, imported, publish_blocked: true });
-        pushToast("Publishing is turned off right now — kept private.");
+        pushToast(PUBLISH_DISABLED_MESSAGE, { variant: "default" });
         await refreshBox();
         await navigate({ to: "/household/recipes/$id", params: { id: result.recipeId } });
         return;
       }
       if (result.status === "reauth_required") {
-        // The recipe is saved as a draft; only the PDS write was refused. Stay
-        // put and offer the re-authorization rather than dumping the user on a
-        // draft with no explanation.
+        // Saved as a draft; only the PDS write was refused. Stay and offer reauth.
         posthog.capture("recipe_created", { published: false, imported, reauth_required: true, missing_scope: result.missingScope });
         setReauthPending(false);
         setNeedsReauth(true);
         window.scrollTo({ top: 0, behavior: "smooth" });
-        // The recipe *is* in the box — only the PDS write was refused — so the
-        // ledger behind this form is already out of date even though we stay put.
         await refreshBox();
         return;
       }
@@ -298,26 +237,6 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
     }
   }
 
-  async function onPickFile(file: File) {
-    if (file.size > MAX_IMAGE_BYTES) {
-      setIssues([{ path: "image", message: "That image is over 2 MB. Pick a smaller one." }]);
-      return;
-    }
-    // Show it immediately off the local `File`, then upload. The preview is the
-    // same bytes either way, so a slow bucket costs the user nothing visible.
-    const previewUrl = URL.createObjectURL(file);
-    const alt = name.trim();
-    setImage({ previewUrl, uploadId: null, alt });
-    const uploadId = await uploadRecipeImage(file);
-    if (!uploadId) {
-      URL.revokeObjectURL(previewUrl);
-      setImage(null);
-      setIssues([{ path: "image", message: "That photo could not be uploaded. Try another one." }]);
-      return;
-    }
-    setImage({ previewUrl, uploadId, alt });
-  }
-
   const previewData: RecipeViewData = useMemo(() => {
     const built = buildAttribution(attr);
     const attrUrl = imported ? sourceUrl : ((built?.url as string | undefined) ?? null);
@@ -331,7 +250,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
     return {
       title: name,
       description: text.trim() || null,
-      images: image && imageSrc ? [{ url: imageSrc, alt: image.alt }] : [],
+      images: photoState.status === "ready" ? [{ url: photoState.previewUrl, alt: name }] : [],
       ingredients,
       instructions,
       keywords,
@@ -346,7 +265,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
       },
       serves: null,
     };
-  }, [name, text, image, imageSrc, ingredients, instructions, keywords, category, calories, protein, fat, carbs, attr, imported, sourceUrl]);
+  }, [name, text, photoState, ingredients, instructions, keywords, category, calories, protein, fat, carbs, attr, imported, sourceUrl]);
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
@@ -449,34 +368,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
                       <p className="bt-field-description m-0">Shows under the title on the recipe page.</p>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <label className="bt-label">Photo</label>
-                    <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && void onPickFile(e.target.files[0])} />
-                    {image ? (
-                      <div className="flex flex-col gap-2">
-                        <div className="aspect-[4/3] w-full overflow-hidden rounded-lg border-2 border-border">
-                          <img src={imageSrc ?? ""} alt="" className="size-full object-cover" />
-                        </div>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
-                            Replace
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setImage(null)}>
-                            Remove
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted text-muted-foreground">
-                        <UtensilsCrossed className="size-10" aria-hidden="true" />
-                        <span className="text-xs font-semibold">Add a photo</span>
-                        <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
-                          Choose a file
-                        </Button>
-                      </div>
-                    )}
-                    <p className="bt-field-description m-0">One photo, up to 1&nbsp;MB. Held with the recipe and uploaded to your atproto repo when you publish.</p>
-                  </div>
+                  <PhotoField photo={photo} />
                 </div>
               </CardContent>
             </Card>
@@ -636,6 +528,7 @@ export function RecipeForm({ householdName, sourceUrl: initialSourceUrl, importI
                 </Button>
               </div>
               {!attrDone && <p className="m-0 text-xs font-semibold text-destructive">Saving unlocks once the attribution is complete.</p>}
+              {attrDone && photo.busy && <p className="m-0 text-xs font-semibold text-muted-foreground">Saving unlocks once the photo finishes uploading.</p>}
             </div>
           </div>
         </div>

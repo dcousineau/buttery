@@ -224,9 +224,10 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
 // --- §6.2 getHouseholdRecipe --------------------------------------------
 
 /**
- * Full detail for one boxed recipe. Authorization = box membership, NOT
- * `visibility='public'`: this must render a recipe whose source has since gone
- * unavailable (the whole point of the cache).
+ * Full detail for one recipe, as this household sees it. Two ways in: box
+ * membership (NOT `visibility='public'` — this must render a recipe whose source
+ * has since gone unavailable, the whole point of the cache), or a public recipe
+ * the household does not keep, returned read-only with `inBox: false`.
  */
 export const getHouseholdRecipe = createServerFn({ method: "GET" })
   .validator((data: { recipeId: string }) => ({ recipeId: validateRecipeId(data?.recipeId) }))
@@ -246,23 +247,27 @@ export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, hou
   const { householdScopedQuery } = await import("./household/scoped-query");
 
   // ONE round trip carries the authorization, the recipe row, and every child
-  // collection. `householdScopedQuery` + the `household_recipe` join IS both
-  // the authz gate and the 404 — you may only read content for recipes in
-  // YOUR box — and there is deliberately no visibility filter, because this
-  // must still render a recipe whose source has since gone unavailable (the
-  // whole point of the cache). The children ride along as json sub-selects
-  // rather than a fan-out of one-table-each queries: each is keyed by
-  // `recipe_id` (plus `household_id` for the note), so a second round trip
-  // has nothing left to learn.
+  // collection. `householdScopedQuery` still gates on a live membership, and
+  // the recipe is readable on one of two grounds: it is in YOUR box (no
+  // visibility filter, because this must still render a recipe whose source
+  // has since gone unavailable — the whole point of the cache), or it is
+  // public, the same `visibility='public'` rule `getRecipe` and
+  // `addRecipeToHousehold` read by. Anything else — another household's draft,
+  // a private recipe, an unknown id — is the 404. The box row is a LEFT join so
+  // its absence is the `inBox: false` signal rather than a missing row. The
+  // children ride along as json sub-selects rather than a fan-out of
+  // one-table-each queries: each is keyed by `recipe_id` (plus `household_id`
+  // for the note), so a second round trip has nothing left to learn.
   const { jsonArrayFrom, jsonObjectFrom } = await import("kysely/helpers/postgres");
   const row = await householdScopedQuery(db, did, householdId)
-    .innerJoin("household_recipe as hr", "hr.household_id", "hm.household_id")
-    .innerJoin("recipe as r", "r.id", "hr.recipe_id")
+    .innerJoin("recipe as r", (join) => join.on("r.id", "=", recipeId))
+    .leftJoin("household_recipe as hr", (join) => join.onRef("hr.household_id", "=", "hm.household_id").onRef("hr.recipe_id", "=", "r.id"))
     .leftJoin("recipe_attribution as attr", "attr.recipe_id", "r.id")
     .leftJoin("atproto_repo as repo", "repo.did", "r.did")
     .leftJoin("atproto_collection_recipe as acr", (join) => join.onRef("acr.did", "=", "r.did").onRef("acr.rkey", "=", "r.rkey"))
-    .where("hr.recipe_id", "=", recipeId)
+    .where((eb) => eb.or([eb("hr.recipe_id", "is not", null), eb("r.visibility", "=", "public")]))
     .select((eb) => [
+      "hr.recipe_id as box_recipe_id",
       "hr.favorite as favorite",
       "hr.added_by_did as added_by_did",
       "r.id as id",
@@ -311,6 +316,7 @@ export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, hou
     ])
     .executeTakeFirst();
   if (!row) return null;
+  const inBox = row.box_recipe_id !== null;
 
   // What is left is the handful of reads that are NOT a child table of this
   // recipe — each owned by another module, each carrying a rule (a household
@@ -332,13 +338,17 @@ export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, hou
   // not by pressing the button and catching a 409.
   const { autoimportPinnedBy } = await import("./household/autoimport");
 
+  //
+  // A recipe outside the box skips the three box-only reads: the pane shows it
+  // read-only with no remove flow to warn, no box row to pin and no adder to
+  // credit. Enrichment is public-derived (`getRecipe` serves it to anyone).
   const [plannedUsage, enrichment, pinnedByDid, adderHandles] = await Promise.all([
-    readPlannedUsage(db, householdId, recipeId),
+    inBox ? readPlannedUsage(db, householdId, recipeId) : null,
     getRecipeEnrichment(db, recipeId),
-    autoimportPinnedBy(db, householdId, recipeId),
-    resolveAdderHandles(db, [row.added_by_did]),
+    inBox ? autoimportPinnedBy(db, householdId, recipeId) : null,
+    row.added_by_did ? resolveAdderHandles(db, [row.added_by_did]) : new Map<string, string>(),
   ]);
-  const adder = adderHandles.get(row.added_by_did) ?? null;
+  const adder = row.added_by_did ? (adderHandles.get(row.added_by_did) ?? null) : null;
 
   const { minutes, display } = minutesDisplay(row.total_time_seconds);
   const source = deriveSource({
@@ -363,12 +373,14 @@ export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, hou
 
   // A published recipe renders from an atproto CDN; before that, from a signed
   // URL onto our bucket. There is no third case and no `<img src>` on someone
-  // else's host.
+  // else's host. The bucket URL is minted only for a boxed recipe: the box row
+  // is what authorizes it, so a public recipe this household does not keep
+  // never hands out a signed URL onto its publisher's unpublished photo.
   const published = row.images
     .filter((img) => row.did && img.blob_cid)
     .map((img) => ({ url: blobImageUrl(row.did as string, img.blob_cid as string, img.blob_mime, "feed_fullsize"), alt: img.alt }));
   let heroImages = published;
-  if (!published.length && row.pending_image) {
+  if (inBox && !published.length && row.pending_image) {
     const { presignDownload } = await import("#/lib/blob-storage");
     heroImages = [{ url: await presignDownload(row.pending_image.object_key), alt: row.pending_image.alt }];
   }
@@ -394,8 +406,10 @@ export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, hou
       carbs: toNum(row.carbohydrate_content),
       fat: toNum(row.fat_content),
     },
-    favorite: row.favorite,
-    note: row.note ? { body: row.note.body, updatedAt: new Date(row.note.updated_at).toISOString() } : null,
+    favorite: row.favorite ?? false,
+    // The note's FK is the box row, so one cannot exist outside the box; the
+    // `inBox` guard says so here rather than leaning on the schema from afar.
+    note: inBox && row.note ? { body: row.note.body, updatedAt: new Date(row.note.updated_at).toISOString() } : null,
     addedByHandle: adder,
     unavailable,
     unavailableSince: row.acr_deleted_at ? new Date(row.acr_deleted_at).toISOString() : null,
@@ -404,6 +418,7 @@ export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, hou
     autoimportLock,
     suitableForDiet: (row.suitable_for_diet ?? []).map((slug) => prettify(slug)).filter((label): label is string => label !== null),
     enrichment: enrichmentTagLabels(enrichment),
+    inBox,
   };
 }
 

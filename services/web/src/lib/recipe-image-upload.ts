@@ -1,82 +1,76 @@
-import { createRecipeImageUpload } from "#/lib/api";
+import { copyRemoteImage, createRecipeImageUpload } from "#/lib/api";
 import { MAX_IMAGE_BYTES, isAllowedImageMime } from "#/lib/recipe-image";
 
+export type UploadedImage = { uploadId: string; previewUrl: string };
+
+function isUploadable(blob: Blob): boolean {
+  return blob.size > 0 && blob.size <= MAX_IMAGE_BYTES && isAllowedImageMime(blob.type);
+}
+
 /**
- * The browser puts a recipe photo in Buttery's bucket. Directly — we are not in
- * the middle of it.
- *
- * Two steps, one round trip each: ask the server for a presigned POST, then send
- * the file at it as a form. The bytes never touch the web service, so an import
- * of 341 recipes costs it 341 signatures instead of 341 megabytes of memory and
- * egress. This replaced a `POST /api/recipe-image/staged` route that read the
- * whole body into the server and re-uploaded it.
- *
- * The checks below only save a round trip. What actually bounds the upload is
- * the policy inside `fields` — key, content type and a 2 MB `content-length-range`
- * — which the bucket enforces on the body itself, where we could not.
- *
- * The `uploadId` that comes back is opaque and only redeemable by the account
- * that asked for it: the server derived the object key from the *session's* DID,
- * so nothing a client sends reaches the bucket's key space.
- *
- * Returns null rather than throwing, always. A photo is the one part of a recipe
- * that is allowed to go missing — losing an import because a bucket was slow
- * would be the wrong trade — so every caller reads null as "this recipe has no
- * image", never as an error.
+ * Upload a photo straight to Buttery's bucket through a presigned POST; the bytes
+ * never touch the web service. Null on any failure, never a throw: a photo is the
+ * one part of a recipe allowed to go missing.
  */
-export async function uploadRecipeImage(blob: Blob, signal?: AbortSignal): Promise<string | null> {
-  // A blob with no `type` is not guessed at: an upload declares a mime the
-  // policy will be written against, or it does not happen.
-  if (blob.size === 0 || blob.size > MAX_IMAGE_BYTES) return null;
-  if (!isAllowedImageMime(blob.type)) return null;
+export async function uploadRecipeImage(blob: Blob, opts: { signal?: AbortSignal; onProgress?: (fraction: number) => void } = {}): Promise<UploadedImage | null> {
+  if (!isUploadable(blob)) return null;
   try {
     const ticket = await createRecipeImageUpload({ mime: blob.type, size: blob.size });
     if (!ticket) return null;
     const form = new FormData();
     for (const [name, value] of Object.entries(ticket.fields)) form.append(name, value);
-    // S3 reads the policy fields in order and takes the first `file` part as the
-    // body, so the file goes last.
+    // S3 takes the first `file` part as the body, so it goes after the policy fields.
     form.append("file", blob);
-    const res = await fetch(ticket.url, { method: "POST", body: form, signal });
-    return res.ok ? ticket.uploadId : null;
+    const ok = await postWithProgress(ticket.url, form, opts);
+    return ok ? { uploadId: ticket.uploadId, previewUrl: ticket.previewUrl } : null;
   } catch {
     return null;
   }
 }
 
+// XHR because `fetch` exposes no upload progress.
+function postWithProgress(url: string, body: FormData, { signal, onProgress }: { signal?: AbortSignal; onProgress?: (fraction: number) => void }): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve(false);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    if (onProgress) xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.onload = () => resolve(xhr.status >= 200 && xhr.status < 300);
+    xhr.onerror = xhr.onabort = () => resolve(false);
+    signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.send(body);
+  });
+}
+
 /**
- * Try to read a remote image from the browser, so it can be uploaded as ours.
- *
- * This is a plain CORS fetch, and it fails on any host that does not send
- * `Access-Control-Allow-Origin` — which is many of them. There is no server-side
- * fetch behind it any more: that fallback was refused more often than this is
- * (hotlink protection keys on Referer, and a datacenter IP is an easy block) and
- * it was the only thing that ever made a third-party URL storable. A hero we
- * cannot read is a recipe with no photo.
- *
- * `no-cors` is not an option here and never will be — an opaque response has no
- * readable body, so there would be nothing to upload.
- *
- * Nothing about the URL is retained on success or failure. It is a place we read
- * from once.
+ * Read a remote image from the browser so it can be uploaded as ours. The first of
+ * two attempts: a plain CORS fetch, which a host that sends no
+ * `Access-Control-Allow-Origin` refuses outright, so callers fall back to
+ * `copyRemoteImageViaServer`. Null means "the browser could not get these bytes",
+ * not "there is no photo".
  */
 export async function fetchRemoteImage(url: string, signal?: AbortSignal): Promise<Blob | null> {
   try {
     const res = await fetch(url, { mode: "cors", credentials: "omit", signal });
     if (!res.ok) return null;
     const blob = await res.blob();
-    if (blob.size === 0 || blob.size > MAX_IMAGE_BYTES) return null;
-    // A hotlink-refusal page served with a 200 is common enough to check for,
-    // and the type has to be one we can declare on the upload anyway.
-    if (!isAllowedImageMime(blob.type)) return null;
-    return blob;
+    // Hotlink-refusal pages often arrive as a 200 with an HTML body.
+    return isUploadable(blob) ? blob : null;
   } catch {
     return null;
   }
 }
 
-/** Best effort, browser-side: remote URL → bytes in our bucket → upload id. */
-export async function stageRemoteImage(url: string, signal?: AbortSignal): Promise<string | null> {
-  const blob = await fetchRemoteImage(url, signal);
-  return blob ? await uploadRecipeImage(blob, signal) : null;
+/**
+ * The second attempt: the server fetches the URL and puts the bytes in our bucket,
+ * for hosts the browser cannot read at all. Null on any failure — including a throw,
+ * which the server half is not supposed to produce — because a photo is the one part
+ * of a recipe allowed to go missing.
+ */
+export async function copyRemoteImageViaServer(url: string): Promise<UploadedImage | null> {
+  try {
+    return await copyRemoteImage(url);
+  } catch {
+    return null;
+  }
 }

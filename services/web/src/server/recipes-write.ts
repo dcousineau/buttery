@@ -213,33 +213,17 @@ export const saveRecipe = createServerFn({ method: "POST" })
   });
 
 /**
- * Sign a form the browser can POST one recipe photo at, and hand back its id.
- *
- * The whole of Buttery's part in an upload. It authorizes (a session member), it
- * bounds (the declared mime must be on the allowlist, the declared size within
- * the 2 MB cap), and it derives the key from the session's DID so nothing a
- * client says can steer where the object lands. Then the browser talks to the
- * bucket and this service is out of the way — no body read, no re-upload, no
- * megabyte through our memory or egress.
- *
- * The bounds are not advisory, and the checks here are not what makes them so:
- * `presignUpload` writes them into the POST policy, so the *bucket* refuses an
- * over-sized body (`EntityTooLarge`), a re-typed one or a re-keyed one. The size
- * check below only saves a round trip for a file the browser already knows is
- * too big — a client that lies about it gets a form that will not accept the
- * bytes anyway.
- *
- * Nothing is written to the database here. An upload nobody saves is an orphan
- * under `uploads/`, which is what the prefix is for: ULIDs sort by time, so
- * expiring it is a bucket lifecycle rule rather than a sweeper we have to write.
+ * Sign a form the browser POSTs one recipe photo at, keyed from the session's DID.
+ * The bucket enforces the policy (key, type, 2 MB cap); the checks here only save
+ * a round trip. Writes nothing: an unsaved upload ages out under `uploads/`.
  */
 export const createRecipeImageUpload = createServerFn({ method: "POST" })
   .validator((data: { mime: string; size: number }) => ({ mime: String(data?.mime ?? ""), size: Number(data?.size ?? 0) }))
-  .handler(async ({ data }): Promise<{ uploadId: string; url: string; fields: Record<string, string> } | null> => {
+  .handler(async ({ data }): Promise<{ uploadId: string; url: string; fields: Record<string, string>; previewUrl: string } | null> => {
     const { activeContext } = await import("./recipe-context");
     const { assertMember } = await import("./authz");
     const { isAllowedImageMime, MAX_IMAGE_BYTES } = await import("#/lib/recipe-image");
-    const { isBlobStorageConfigured, presignUpload, uploadKey } = await import("#/lib/blob-storage");
+    const { isBlobStorageConfigured, presignDownload, presignUpload, uploadKey } = await import("#/lib/blob-storage");
     const { ulid } = await import("./household/ids");
 
     // A signed URL is a write credential for shared infrastructure, so it is
@@ -253,8 +237,134 @@ export const createRecipeImageUpload = createServerFn({ method: "POST" })
     if (!Number.isInteger(data.size) || data.size <= 0 || data.size > MAX_IMAGE_BYTES) return null;
 
     const uploadId = ulid();
-    return { uploadId, ...(await presignUpload(uploadKey(did, uploadId), data.mime)) };
+    const key = uploadKey(did, uploadId);
+    // Signed before the object exists; it resolves once the POST lands, which is
+    // how the form previews the bucket's copy rather than the local file.
+    const [upload, previewUrl] = await Promise.all([presignUpload(key, data.mime), presignDownload(key)]);
+    return { uploadId, ...upload, previewUrl };
   });
+
+/**
+ * Copy a remote image into Buttery's bucket from the server, and hand back an
+ * upload id a save can redeem — the fallback for a host the browser cannot read.
+ *
+ * The browser tries first (`#/lib/recipe-image-upload`) and usually wins: a tab
+ * carries the user's own IP and referer, which is exactly what hotlink
+ * protection is looking for, and a datacenter IP is exactly what it refuses.
+ * What a tab cannot do is read a response that carries no
+ * `Access-Control-Allow-Origin` — some CDNs (`assets.bonappetit.com` among them)
+ * send none, and to a browser that image simply does not exist. The two fetchers
+ * fail on disjoint sets of hosts, which is the whole reason there are two.
+ *
+ * This signs a form with `presignUpload` and POSTs it like any other client
+ * rather than writing to S3 with the bucket credentials directly. The presigned
+ * POST's policy is what enforces the key, the content type and the 2 MB cap, so
+ * routing through it keeps enforcement at the bucket and adds no second write
+ * door to `#/lib/blob-storage`.
+ *
+ * These bytes crossing this server is the second deliberate exception to that
+ * module's "bytes never pass through this server" invariant, and it is the same
+ * exception as publish: a hop the browser cannot make.
+ *
+ * Every failure is null. A photo is the one part of a recipe allowed to go
+ * missing, so this never throws.
+ */
+export const copyRemoteImage = createServerFn({ method: "POST" })
+  .validator((data: { url: string }) => ({ url: String(data?.url ?? "").trim() }))
+  .handler(async ({ data }): Promise<{ uploadId: string; previewUrl: string } | null> => {
+    const { activeContext } = await import("./recipe-context");
+    const { assertMember } = await import("./authz");
+
+    // Gated identically to `createRecipeImageUpload`: a bucket write is a write
+    // credential for shared infrastructure even though no household row moves.
+    const { did, householdId } = await activeContext();
+    await assertMember(did, householdId);
+
+    return await runCopyRemoteImage(did, data.url);
+  });
+
+/** Injectable fetch so the DB test needs no network and no public host. */
+export interface CopyRemoteImageDeps {
+  fetchBytes(url: string, opts: { maxBytes: number }): Promise<{ bytes: Uint8Array; contentType: string | null }>;
+}
+
+/** Server-side copies one account may ask for, and the window they are counted in. */
+const COPY_IMAGE_LIMIT = 30;
+const COPY_IMAGE_WINDOW_SECONDS = 600;
+
+export const runCopyRemoteImage = createServerOnlyFn(
+  async (did: string, url: string, deps?: Partial<CopyRemoteImageDeps>): Promise<{ uploadId: string; previewUrl: string } | null> => {
+    const { isBlobStorageConfigured, presignDownload, presignUpload, uploadKey } = await import("#/lib/blob-storage");
+    if (!isBlobStorageConfigured()) return null;
+
+    // Rate limit on our own egress: INCR the account's counter, stamp the TTL on
+    // the first hit of a window, refuse past the limit. If Redis is unreachable
+    // this fails OPEN, exactly like the scrape limiter — the limit is abuse
+    // mitigation, not a correctness gate, and losing photos because a cache is
+    // down would be the worse failure.
+    try {
+      const { getRedis } = await import("#/lib/redis");
+      const redis = getRedis();
+      const counterKey = `imgcopy:${did}`;
+      const count = await redis.incr(counterKey);
+      if (count === 1) await redis.expire(counterKey, COPY_IMAGE_WINDOW_SECONDS);
+      if (count > COPY_IMAGE_LIMIT) return null;
+    } catch {
+      // Redis down → allow the copy.
+    }
+
+    const { MAX_IMAGE_BYTES, sniffImageMime } = await import("#/lib/recipe-image");
+
+    // `safeFetchBytes` is the SSRF guard every user-supplied URL goes through. It
+    // is the default rather than a hard dependency because that guard rejects
+    // loopback, so a test cannot point this at an HTTP server it started itself —
+    // the same reasoning as `StageImagesDeps.fetchRemote`, with more teeth.
+    const fetchBytes: CopyRemoteImageDeps["fetchBytes"] =
+      deps?.fetchBytes ??
+      (async (target, opts) => {
+        const { safeFetchBytes } = await import("#/lib/net/safe-fetch");
+        return await safeFetchBytes(target, opts);
+      });
+
+    let bytes: Uint8Array;
+    try {
+      ({ bytes } = await fetchBytes(url, { maxBytes: MAX_IMAGE_BYTES }));
+    } catch {
+      // A blocked host, a hotlink refusal, a timeout, an oversize body — every
+      // `SafeFetchError` and everything else lands on the same outcome: no photo.
+      return null;
+    }
+
+    // The remote's declared `content-type` is not consulted; the sniff decides
+    // what this is and what we store it as. See `sniffImageMime`.
+    const mime = sniffImageMime(bytes);
+    if (!mime) return null;
+
+    const { ulid } = await import("./household/ids");
+    const uploadId = ulid();
+    const key = uploadKey(did, uploadId);
+    const ticket = await presignUpload(key, mime);
+
+    const form = new FormData();
+    // Policy fields first: S3 reads the FIRST `file` part as the object body, so a
+    // field appended after it is never seen.
+    for (const [name, value] of Object.entries(ticket.fields)) form.append(name, value);
+    // The `new Uint8Array` re-homes the view onto an ArrayBuffer of its own, which
+    // is what `BlobPart` accepts and what keeps this correct for a `bytes` that is
+    // a subarray of something larger. 2 MB at most, so the copy is free.
+    form.append("file", new Blob([new Uint8Array(bytes)], { type: mime }), uploadId);
+
+    try {
+      const res = await fetch(ticket.url, { method: "POST", body: form });
+      if (!res.ok) return null;
+    } catch {
+      return null;
+    }
+
+    // Signed after the POST landed, so it resolves immediately for the preview.
+    return { uploadId, previewUrl: await presignDownload(key) };
+  },
+);
 
 export const publishRecipe = createServerFn({ method: "POST" })
   .validator((data: { recipeId: string }) => ({ recipeId: String(data?.recipeId ?? "") }))

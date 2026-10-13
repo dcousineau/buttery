@@ -646,3 +646,200 @@ describeDb("recipe_pending_image — a URL can never be the image again", () => 
     expect(nullable.get("source_url")).toBe("YES");
   });
 });
+
+// --- runCopyRemoteImage --------------------------------------------------
+
+/**
+ * The hop that exists because the browser's copy has no permission to make it: a
+ * CDN that sends no `Access-Control-Allow-Origin` has no image at all as far as a
+ * `fetch` from our page is concerned, so the server fetches those bytes instead
+ * and POSTs them at a form it signed for itself.
+ *
+ * `fetchBytes` is injected in every test below, and that is not a convenience —
+ * `safeFetchBytes` rejects loopback, so a test CANNOT point the real fetcher at
+ * an HTTP server it started itself. Everything downstream of the injection point
+ * is shipped code against the real bucket, which is where the assertions look: a
+ * return value is a claim about an object, so the object gets read.
+ */
+
+type CopyDeps = import("./recipes-write").CopyRemoteImageDeps;
+
+/** Canned bytes, plus what the remote CLAIMS they are. The claim is the part under test. */
+function fetcherFor(bytes: Uint8Array, contentType: string | null = "image/jpeg"): CopyDeps["fetchBytes"] {
+  return () => Promise.resolve({ bytes, contentType });
+}
+
+/**
+ * Every object in one account's upload partition.
+ *
+ * This is how a test proves nothing was written: the key is `uploads/<sha256 of
+ * the did>/<id>`, so a DID used by exactly one test owns a prefix of its own and
+ * an empty listing there is a complete statement about that test.
+ */
+async function uploadsUnder(did: string): Promise<string[]> {
+  const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+  const { getBlobClient, uploadKey } = await import("#/lib/blob-storage");
+  const res = await getBlobClient().send(new ListObjectsV2Command({ Bucket: process.env.BLOB_S3_BUCKET, Prefix: uploadKey(did, "") }));
+  return (res.Contents ?? []).map((object) => object.Key ?? "");
+}
+
+describeImages("runCopyRemoteImage — the server-side copy, for the photo a browser cannot reach", () => {
+  /** Keys this suite wrote, deleted afterwards so a dev bucket doesn't accrete a run's worth of 64-byte objects. */
+  const copiedKeys: string[] = [];
+
+  afterAll(async () => {
+    const { deleteBlob } = await import("#/lib/blob-storage");
+    for (const key of copiedKeys) await deleteBlob(key).catch(() => {});
+  });
+
+  it("puts the remote bytes in OUR bucket, under this account's key, and the preview serves them back", async () => {
+    const { getBlob, headBlob, uploadKey } = await import("#/lib/blob-storage");
+    const { isValidUploadId } = await import("#/lib/recipe-image");
+    const bytes = jpegBytes();
+
+    const result = await write.runCopyRemoteImage(DID, "https://assets.example/no-cors/hero.jpg", { fetchBytes: fetcherFor(bytes) });
+
+    expect(result).not.toBeNull();
+    if (!result) return;
+    expect(isValidUploadId(result.uploadId)).toBe(true);
+
+    // The id is a claim about an object, so read the object. The stored mime is
+    // the one the SNIFF decided and the signature bound — not the one the remote
+    // sent, and the two are the same here only because the bytes are honest.
+    const key = uploadKey(DID, result.uploadId);
+    copiedKeys.push(key);
+    expect(await headBlob(key)).toEqual({ size: bytes.byteLength, mime: "image/jpeg" });
+    await expect(getBlob(key)).resolves.toEqual(bytes);
+
+    // The preview is what the create form drops into an `<img src>`, so it has to
+    // resolve to those bytes on its own — no session, no further signing.
+    const preview = await fetch(result.previewUrl);
+    expect(preview.ok).toBe(true);
+    expect(new Uint8Array(await preview.arrayBuffer())).toEqual(bytes);
+  });
+
+  it("asks the fetcher for no more than the 2 MB cap, so the egress guard cannot silently widen", async () => {
+    // The cap is enforced twice: here, before the bytes are ever in this
+    // process's memory, and again by the presigned POST's own policy. This pins
+    // the first one to the shared constant, so a copy can never buffer more than
+    // a publish could carry.
+    const { MAX_IMAGE_BYTES } = await import("#/lib/recipe-image");
+    const { uploadKey } = await import("#/lib/blob-storage");
+    const asked: Array<{ maxBytes: number }> = [];
+
+    const result = await write.runCopyRemoteImage(DID, "https://assets.example/no-cors/cap.jpg", {
+      fetchBytes: (_url, opts) => {
+        asked.push(opts);
+        return Promise.resolve({ bytes: jpegBytes(), contentType: "image/jpeg" });
+      },
+    });
+
+    expect(asked).toEqual([{ maxBytes: MAX_IMAGE_BYTES }]);
+    if (result) copiedKeys.push(uploadKey(DID, result.uploadId));
+  });
+
+  it("believes the bytes and not the `content-type` — an HTML hotlink refusal served as image/jpeg becomes no photo at all", async () => {
+    // The case the sniffer exists for. A host with hotlink protection answers
+    // HTTP 200 with `content-type: image/jpeg` and a refusal page in the body;
+    // believing the header would store a document where a photo belongs and hand
+    // a PDS a blob it cannot decode.
+    const did = `did:test:imgcopy-html-${RUN}`;
+    const html = new TextEncoder().encode("<!doctype html>\n<html><body>Hotlinking is not permitted.</body></html>");
+
+    await expect(write.runCopyRemoteImage(did, "https://assets.example/hotlink/hero.jpg", { fetchBytes: fetcherFor(html, "image/jpeg") })).resolves.toBeNull();
+
+    // Null on its own is not the property. The property is that no object exists
+    // for a later save to redeem, so the bucket is what gets asked.
+    expect(await uploadsUnder(did)).toEqual([]);
+  });
+
+  it("returns null rather than throwing when the fetch fails, because a photo is the one part of a recipe allowed to go missing", async () => {
+    // Stands in for the whole failure population: the SSRF guard refusing a
+    // private address, a dead CDN, a timeout, a 403. They are one outcome here,
+    // and a throw would turn a missing photo into a failed import.
+    const did = `did:test:imgcopy-fail-${RUN}`;
+    const { SafeFetchError } = await import("#/lib/net/safe-fetch");
+
+    await expect(
+      write.runCopyRemoteImage(did, "http://169.254.169.254/latest/meta-data/", {
+        fetchBytes: () => Promise.reject(new SafeFetchError("blocked", "That address isn't reachable.")),
+      }),
+    ).resolves.toBeNull();
+
+    await expect(write.runCopyRemoteImage(did, "https://assets.example/gone.jpg", { fetchBytes: () => Promise.reject(new Error("socket hang up")) })).resolves.toBeNull();
+
+    expect(await uploadsUnder(did)).toEqual([]);
+  });
+
+  it("cannot smuggle an oversize body past the policy by putting a JPEG's magic bytes on the front of it", async () => {
+    // The cap that matters is the bucket's, which is what makes it binding rather
+    // than advisory: the presigned POST carries a `content-length-range`, so the
+    // bucket refuses the body and there is nothing at the key afterwards.
+    const { MAX_IMAGE_BYTES } = await import("#/lib/recipe-image");
+    const did = `did:test:imgcopy-big-${RUN}`;
+    const tooBig = new Uint8Array(MAX_IMAGE_BYTES + 1);
+    tooBig.set([0xff, 0xd8, 0xff, 0xe0]);
+
+    await expect(write.runCopyRemoteImage(did, "https://assets.example/enormous.jpg", { fetchBytes: fetcherFor(tooBig) })).resolves.toBeNull();
+
+    expect(await uploadsUnder(did)).toEqual([]);
+  });
+});
+
+/**
+ * The limiter is the only thing in this file that needs Redis, so it carries its
+ * own probe — same arrangement as the bucket above. Without a reachable Redis the
+ * copy deliberately fails OPEN, which means the assertion below would be testing
+ * nothing rather than failing, so it skips instead.
+ */
+const redisForCopyLimit = await (async (): Promise<ReturnType<typeof import("#/lib/redis").getRedis> | null> => {
+  if (!db || !hasBucket || !process.env.REDIS_URL) return null;
+  try {
+    const { getRedis } = await import("#/lib/redis");
+    const redis = getRedis();
+    await Promise.race([redis.ping(), new Promise((_, reject) => setTimeout(() => reject(new Error("timed out after 3s")), 3_000).unref?.())]);
+    return redis;
+  } catch (error) {
+    process.stderr.write(`\nSKIPPING the copy rate-limit test — no reachable Redis (${error instanceof Error ? error.message : String(error)}).\n\n`);
+    return null;
+  }
+})();
+const describeCopyLimit = redisForCopyLimit ? describe : describe.skip;
+
+describeCopyLimit("runCopyRemoteImage — the egress rate limit", () => {
+  it("refuses the 31st copy in the window while the first 30 land, and the 31st is otherwise identical", async () => {
+    // The discriminator matters: all 31 calls get the SAME valid JPEG bytes, so
+    // the counter is the only thing that can explain the last one coming back
+    // null. (Driving the first 30 with failures instead would make every call
+    // return null and prove nothing.)
+    const { deleteBlob, uploadKey } = await import("#/lib/blob-storage");
+    const redis = redisForCopyLimit!;
+    const did = `did:test:imgcopy-limit-${RUN}`;
+    const counterKey = `imgcopy:${did}`;
+    const written: string[] = [];
+
+    await redis.del(counterKey);
+    try {
+      for (let n = 1; n <= 30; n++) {
+        const result = await write.runCopyRemoteImage(did, `https://assets.example/limit/${n}.jpg`, { fetchBytes: fetcherFor(jpegBytes()) });
+        expect(result, `copy ${n} of 30 was refused`).not.toBeNull();
+        if (result) written.push(uploadKey(did, result.uploadId));
+      }
+
+      await expect(write.runCopyRemoteImage(did, "https://assets.example/limit/31.jpg", { fetchBytes: fetcherFor(jpegBytes()) })).resolves.toBeNull();
+
+      // Refused before the fetch, so the refusal costs no egress and leaves no
+      // object: thirty copies in, thirty objects out.
+      expect(await uploadsUnder(did)).toHaveLength(30);
+
+      // And the window is a window — the counter expires, so an account is not
+      // locked out of hero photos forever after one bulk import.
+      const ttl = await redis.ttl(counterKey);
+      expect(ttl).toBeGreaterThan(0);
+      expect(ttl).toBeLessThanOrEqual(600);
+    } finally {
+      await redis.del(counterKey).catch(() => {});
+      for (const key of written) await deleteBlob(key).catch(() => {});
+    }
+  });
+});

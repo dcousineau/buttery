@@ -113,7 +113,12 @@ import {
   triggerEnrichPayload as triggerEnrichPayloadFn,
   triggerLlmEnrichPayload as triggerLlmEnrichPayloadFn,
 } from "#/server/recipe-debug";
-import { createRecipeImageUpload as createRecipeImageUploadFn, publishRecipe as publishRecipeFn, saveRecipe as saveRecipeFn } from "#/server/recipes-write";
+import {
+  copyRemoteImage as copyRemoteImageFn,
+  createRecipeImageUpload as createRecipeImageUploadFn,
+  publishRecipe as publishRecipeFn,
+  saveRecipe as saveRecipeFn,
+} from "#/server/recipes-write";
 import { getImportPrefill as getImportPrefillFn, scrapeRecipe as scrapeRecipeFn, submitImport as submitImportFn } from "#/server/recipe-scrape";
 import type { CommitChunkInput, ComparisonInput, FailImportSessionInput, FinalizeInput, OpenImportSessionInput, ProbeInput } from "#/server/recipe-import";
 import {
@@ -569,6 +574,9 @@ type SubmitImportArgs = Parameters<typeof submitImportFn>[0] extends { data: inf
  */
 export type { FieldIssue, RecipeRecordInput } from "#/lib/recipe-record";
 
+/** What `saveRecipe` and `publishRecipe` resolve to; `#/lib/publish-feedback` reads it. */
+export type { SaveRecipeResult } from "#/server/recipes-write";
+
 export function saveRecipe(input: SaveRecipeArgs) {
   return saveRecipeFn({ data: input });
 }
@@ -584,6 +592,15 @@ export function publishRecipe(recipeId: string) {
  */
 export function createRecipeImageUpload(input: { mime: string; size: number }) {
   return createRecipeImageUploadFn({ data: input });
+}
+
+/**
+ * Have the server fetch a remote image and put it in the bucket, for a host the
+ * browser could not read cross-origin. The fallback after `fetchRemoteImage`; null
+ * means the recipe goes without a photo.
+ */
+export function copyRemoteImage(url: string) {
+  return copyRemoteImageFn({ data: { url } });
 }
 
 export function scrapeRecipe(input: ScrapeArgs) {

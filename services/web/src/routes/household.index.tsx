@@ -15,7 +15,6 @@ import { RecipesViewContext } from "#/components/recipes/context";
 import { FillTheBoxCard } from "#/components/pantry/FillTheBoxCard";
 import { InviteYourHouseCard } from "#/components/pantry/InviteYourHouseCard";
 import { FreshInYourBox } from "#/components/pantry/FreshInYourBox";
-import { LockedFeaturesStrip } from "#/components/pantry/LockedFeaturesStrip";
 import { NetworkRecipePreviewDialog } from "#/components/pantry/NetworkRecipePreviewDialog";
 import { NotInYourBoxYet } from "#/components/pantry/NotInYourBoxYet";
 import { ShoppingListTeaser } from "#/components/pantry/ShoppingListTeaser";
@@ -42,8 +41,7 @@ import { seo } from "#/lib/seo";
  * lands on the error boundary, which says so instead of crashing.
  *
  * **Two states, both derived from data — never from a toggle.** A household with
- * an empty recipe box gets "Welcome to the pantry": one card that fills the box
- * and a strip of what is waiting on it. Everything else gets the overview — the
+ * an empty recipe box gets "Welcome to the pantry": one card that fills the box. Everything else gets the overview — the
  * week ahead, what the household added lately, and public recipes not yet boxed.
  * The empty-plan panel inside the week card is likewise just what an empty week
  * looks like, not a separate mode.
@@ -180,7 +178,7 @@ function PantryPage() {
             <h1 className="display-title m-0 text-3xl leading-[1.1] text-foreground sm:text-4xl">{isFresh ? "Welcome to the pantry" : "Your pantry"}</h1>
             <p className="mt-3 mb-0 max-w-[34rem] text-sm text-muted-foreground text-pretty sm:text-base">
               {isFresh
-                ? "The box is empty, which is the only real chore here. Bring the recipes you already cook and everything else — planning, shopping, cook mode — has something to work with."
+                ? "The box is empty, which is the only real chore here. Bring the recipes you already cook — planning, shopping, the randomizer and cook mode are all ready and waiting on them."
                 : "What's cooking this week, what the household added lately, and a few things from the network worth stealing."}
             </p>
           </header>
@@ -190,10 +188,7 @@ function PantryPage() {
           {nudges?.inviteNudge ? <InviteYourHouseCard householdId={active.householdId} /> : null}
 
           {isFresh ? (
-            <>
-              <FillTheBoxCard onNotify={pushToast} />
-              <LockedFeaturesStrip />
-            </>
+            <FillTheBoxCard onNotify={pushToast} />
           ) : (
             <>
               <div className="grid grid-cols-[repeat(auto-fit,minmax(18rem,1fr))] items-start gap-5">

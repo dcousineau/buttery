@@ -39,6 +39,14 @@ const searchSchema = z.object({
     .transform((value) => value !== false)
     .optional()
     .catch(undefined),
+  /**
+   * `?replaces=<recipeId>` — the reader's own copy of this recipe, set by the
+   * duplicate-publish toast's "Open it". While this recipe is not in the box,
+   * the not-in-box bar offers to swap that copy for this one. Any non-empty
+   * string: recipe ids are atproto rkeys and the DB is the only truth, and
+   * nothing is fetched to check it — the remove simply no-ops on a stranger.
+   */
+  replaces: z.string().min(1).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/household/recipes/$id")({
@@ -81,6 +89,7 @@ function RecipeDetailRoute() {
       // (randomizer plan §6.1).
       householdId={householdId}
       autoOpenCook={search.cook === true}
+      replaces={search.replaces}
       // Drop the param once cook mode has been closed, so the deep link is
       // consumed exactly once and a reload does not re-enter the apron.
       onCookModeClosed={() => void navigate({ search: (prev) => ({ ...prev, cook: undefined }), replace: true })}

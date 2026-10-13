@@ -159,6 +159,13 @@ const R_CORPUS_BOXED = `r-corpus-boxed-${RUN}`; // public, but boxed by HH_A —
 const R_CORPUS_DRAFT = `r-corpus-draft-${RUN}`; // draft, never boxed — excluded (visibility)
 const R_CORPUS_OTHERBOX = `r-corpus-otherbox-${RUN}`; // public, boxed by HH_B ONLY — still new to HH_A, so it must survive the anti-join
 const CORPUS_RECIPES = [R_CORPUS_PUBLIC, R_CORPUS_BOXED, R_CORPUS_DRAFT, R_CORPUS_OTHERBOX];
+// The corpus is every public recipe in the database, and a corpus draw is capped
+// at CORPUS_POOL_CAP random rows of it — so on a database that already holds
+// thousands of public recipes (a dev box, a seeded one) an unfiltered draw almost
+// never contains these four. A per-run cuisine that only they carry narrows the
+// scan to exactly the fixtures, whatever else is in the table.
+const CORPUS_CUISINE = `corpus-${RUN}`;
+const CORPUS_FILTER = { source: "corpus", cuisine: CORPUS_CUISINE } as const;
 
 const RECIPES = [...HH_A_RECIPES, ...CORPUS_RECIPES];
 
@@ -241,10 +248,10 @@ async function reset(): Promise<void> {
       { id: R_OLD_PLAN, origin: "local", visibility: "public", name: "Planned Long Ago", total_time_seconds: 1500 },
       { id: R_SOFT_DELETED_RECENT, origin: "local", visibility: "public", name: "Soft Deleted Recent Plan", total_time_seconds: 1500 },
       { id: R_COMBO, origin: "local", visibility: "public", name: "Combo Target", recipe_cuisine: "italian", total_time_seconds: 1000 },
-      { id: R_CORPUS_PUBLIC, origin: "local", visibility: "public", name: "Corpus Public" },
-      { id: R_CORPUS_BOXED, origin: "local", visibility: "public", name: "Corpus Boxed" },
-      { id: R_CORPUS_DRAFT, origin: "local", visibility: "draft", name: "Corpus Draft" },
-      { id: R_CORPUS_OTHERBOX, origin: "local", visibility: "public", name: "Corpus Boxed By Someone Else" },
+      { id: R_CORPUS_PUBLIC, origin: "local", visibility: "public", name: "Corpus Public", recipe_cuisine: CORPUS_CUISINE },
+      { id: R_CORPUS_BOXED, origin: "local", visibility: "public", name: "Corpus Boxed", recipe_cuisine: CORPUS_CUISINE },
+      { id: R_CORPUS_DRAFT, origin: "local", visibility: "draft", name: "Corpus Draft", recipe_cuisine: CORPUS_CUISINE },
+      { id: R_CORPUS_OTHERBOX, origin: "local", visibility: "public", name: "Corpus Boxed By Someone Else", recipe_cuisine: CORPUS_CUISINE },
     ])
     .execute();
 
@@ -869,7 +876,7 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
 
   describe("corpus source (§4.5)", () => {
     it("excludes already-boxed recipes and drafts, keeps genuinely new public recipes", async () => {
-      const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { source: "corpus" });
+      const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, CORPUS_FILTER);
       const found = ids(pool.pool);
       expect(found).toContain(R_CORPUS_PUBLIC);
       expect(found).not.toContain(R_CORPUS_BOXED);
@@ -881,13 +888,13 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
       // Drop the household column and it becomes "in ANY box", which would
       // hide from every household every recipe any other household has ever
       // kept — the corpus would empty out as the app grew.
-      const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { source: "corpus" });
+      const pool = await randomizer.readRandomizerPool(db!, DID_A, HH_A, CORPUS_FILTER);
       expect(ids(pool.pool)).toContain(R_CORPUS_OTHERBOX); // boxed by HH_B, never by HH_A
       expect(ids(pool.pool)).not.toContain(R_CORPUS_BOXED); // boxed by HH_A itself
 
       // And symmetrically from HH_B's side, so this cannot pass by the
       // anti-join being broken in the other direction.
-      const asB = await randomizer.readRandomizerPool(db!, DID_B, HH_B, { source: "corpus" });
+      const asB = await randomizer.readRandomizerPool(db!, DID_B, HH_B, CORPUS_FILTER);
       expect(ids(asB.pool)).not.toContain(R_CORPUS_OTHERBOX);
       expect(ids(asB.pool)).toContain(R_CORPUS_BOXED);
     });
@@ -1000,7 +1007,7 @@ describe.skipIf(!db)(db ? "randomizer DB integration (§4, §10)" : `randomizer 
       // Positive control: the same household id in a real member's hands does
       // return the corpus, so the assertion above is about membership and not
       // about the corpus branch being broken outright.
-      const member = await randomizer.readRandomizerPool(db!, DID_A, HH_A, { source: "corpus" });
+      const member = await randomizer.readRandomizerPool(db!, DID_A, HH_A, CORPUS_FILTER);
       expect(ids(member.pool)).toContain(R_CORPUS_PUBLIC);
     });
   });

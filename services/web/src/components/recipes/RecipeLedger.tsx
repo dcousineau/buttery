@@ -81,6 +81,7 @@ export function RecipeLedger({
   collectionsOpen,
   onToggleCollections,
   collectionsPanelId,
+  lead,
   className,
 }: {
   recipes: HouseholdRecipeRow[];
@@ -94,6 +95,12 @@ export function RecipeLedger({
   onToggleCollections: () => void;
   /** The collections column's DOM id, for the toggle's `aria-controls`. */
   collectionsPanelId: string;
+  /**
+   * Rendered above the rows, outside them: the not-in-box row for a recipe being
+   * read but not kept. It is not a result of the scope or the search, so it is
+   * not in `visible` and not in any count this ledger announces.
+   */
+  lead?: ReactNode;
   className?: string;
 }) {
   const { householdId } = useRouteContext({ from: "/household/recipes" });
@@ -219,6 +226,7 @@ export function RecipeLedger({
 
         {/* List */}
         <PaneBody>
+          {lead}
           {boxEmpty ? (
             <EmptyBox onAdd={onAdd} />
           ) : missing ? (
@@ -356,7 +364,8 @@ function LedgerRow({
         // `search: (prev) => prev` carries the active scope onto the detail
         // route (§7): opening a recipe from inside "Weeknights" keeps you inside
         // Weeknights, and the resulting URL deep-links to both at once.
-        render={<Link to="/household/recipes/$id" params={{ id: row.recipeId }} search={(prev) => prev} />}
+        // `replaces` is dropped: it is an offer about the recipe being left.
+        render={<Link to="/household/recipes/$id" params={{ id: row.recipeId }} search={(prev) => ({ ...prev, replaces: undefined })} />}
         // The row *is* a link to the current page when it's the selected one, so "page"
         // rather than a bare "true" — same state the butter marker paints.
         aria-current={selected ? "page" : undefined}
