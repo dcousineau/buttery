@@ -20,6 +20,7 @@ import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as TipJarRouteImport } from './routes/tip-jar'
+import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known.$'
 import { Route as HouseholdIndexRouteImport } from './routes/household.index'
 import { Route as HouseholdListRouteImport } from './routes/household.list'
 import { Route as HouseholdPlanRouteImport } from './routes/household.plan'
@@ -28,6 +29,8 @@ import { Route as HouseholdRecipesRouteImport } from './routes/household.recipes
 import { Route as HouseholdsIndexRouteImport } from './routes/households.index'
 import { Route as HouseholdsSwitchRouteImport } from './routes/households.switch'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
+import { Route as McpIndexRouteImport } from './routes/mcp/index'
+import { Route as McpAuthRouteImport } from './routes/mcp/auth'
 import { Route as RecipesIdRouteImport } from './routes/recipes.$id'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiPlanWeekDoticsRouteImport } from './routes/api/plan/week[.]ics'
@@ -94,6 +97,11 @@ const TipJarRoute = TipJarRouteImport.update({
   path: '/tip-jar',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DotwellKnownSplatRoute = DotwellKnownSplatRouteImport.update({
+  id: '/.well-known/$',
+  path: '/.well-known/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HouseholdIndexRoute = HouseholdIndexRouteImport.update({
   id: '/household/',
   path: '/household/',
@@ -132,6 +140,16 @@ const HouseholdsSwitchRoute = HouseholdsSwitchRouteImport.update({
 const InviteTokenRoute = InviteTokenRouteImport.update({
   id: '/invite/$token',
   path: '/invite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpIndexRoute = McpIndexRouteImport.update({
+  id: '/mcp/',
+  path: '/mcp/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpAuthRoute = McpAuthRouteImport.update({
+  id: '/mcp/auth',
+  path: '/mcp/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecipesIdRoute = RecipesIdRouteImport.update({
@@ -193,15 +211,18 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/tip-jar': typeof TipJarRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/household/randomizer': typeof HouseholdRandomizerRoute
   '/household/recipes': typeof HouseholdRecipesRouteWithChildren
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/mcp/auth': typeof McpAuthRoute
   '/recipes/$id': typeof RecipesIdRoute
   '/household/': typeof HouseholdIndexRoute
   '/households/': typeof HouseholdsIndexRoute
+  '/mcp/': typeof McpIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
@@ -223,14 +244,17 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/tip-jar': typeof TipJarRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/household/randomizer': typeof HouseholdRandomizerRoute
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/mcp/auth': typeof McpAuthRoute
   '/recipes/$id': typeof RecipesIdRoute
   '/household': typeof HouseholdIndexRoute
   '/households': typeof HouseholdsIndexRoute
+  '/mcp': typeof McpIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
@@ -253,15 +277,18 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/tip-jar': typeof TipJarRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/household/randomizer': typeof HouseholdRandomizerRoute
   '/household/recipes': typeof HouseholdRecipesRouteWithChildren
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/mcp/auth': typeof McpAuthRoute
   '/recipes/$id': typeof RecipesIdRoute
   '/household/': typeof HouseholdIndexRoute
   '/households/': typeof HouseholdsIndexRoute
+  '/mcp/': typeof McpIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
@@ -285,15 +312,18 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/tip-jar'
+    | '/.well-known/$'
     | '/household/list'
     | '/household/plan'
     | '/household/randomizer'
     | '/household/recipes'
     | '/households/switch'
     | '/invite/$token'
+    | '/mcp/auth'
     | '/recipes/$id'
     | '/household/'
     | '/households/'
+    | '/mcp/'
     | '/api/auth/$'
     | '/api/plan/week.ics'
     | '/household/recipes/$id'
@@ -315,14 +345,17 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/tip-jar'
+    | '/.well-known/$'
     | '/household/list'
     | '/household/plan'
     | '/household/randomizer'
     | '/households/switch'
     | '/invite/$token'
+    | '/mcp/auth'
     | '/recipes/$id'
     | '/household'
     | '/households'
+    | '/mcp'
     | '/api/auth/$'
     | '/api/plan/week.ics'
     | '/household/recipes/$id'
@@ -344,15 +377,18 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/tip-jar'
+    | '/.well-known/$'
     | '/household/list'
     | '/household/plan'
     | '/household/randomizer'
     | '/household/recipes'
     | '/households/switch'
     | '/invite/$token'
+    | '/mcp/auth'
     | '/recipes/$id'
     | '/household/'
     | '/households/'
+    | '/mcp/'
     | '/api/auth/$'
     | '/api/plan/week.ics'
     | '/household/recipes/$id'
@@ -375,15 +411,18 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   TermsRoute: typeof TermsRoute
   TipJarRoute: typeof TipJarRoute
+  DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
   HouseholdListRoute: typeof HouseholdListRoute
   HouseholdPlanRoute: typeof HouseholdPlanRoute
   HouseholdRandomizerRoute: typeof HouseholdRandomizerRoute
   HouseholdRecipesRoute: typeof HouseholdRecipesRouteWithChildren
   HouseholdsSwitchRoute: typeof HouseholdsSwitchRoute
   InviteTokenRoute: typeof InviteTokenRoute
+  McpAuthRoute: typeof McpAuthRoute
   RecipesIdRoute: typeof RecipesIdRoute
   HouseholdIndexRoute: typeof HouseholdIndexRoute
   HouseholdsIndexRoute: typeof HouseholdsIndexRoute
+  McpIndexRoute: typeof McpIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiPlanWeekDoticsRoute: typeof ApiPlanWeekDoticsRoute
   HouseholdRecipesImportRoute: typeof HouseholdRecipesImportRoute
@@ -470,6 +509,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TipJarRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.well-known/$': {
+      id: '/.well-known/$'
+      path: '/.well-known/$'
+      fullPath: '/.well-known/$'
+      preLoaderRoute: typeof DotwellKnownSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/household/': {
       id: '/household/'
       path: '/household'
@@ -524,6 +570,20 @@ declare module '@tanstack/react-router' {
       path: '/invite/$token'
       fullPath: '/invite/$token'
       preLoaderRoute: typeof InviteTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp/': {
+      id: '/mcp/'
+      path: '/mcp'
+      fullPath: '/mcp/'
+      preLoaderRoute: typeof McpIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp/auth': {
+      id: '/mcp/auth'
+      path: '/mcp/auth'
+      fullPath: '/mcp/auth'
+      preLoaderRoute: typeof McpAuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recipes/$id': {
@@ -619,15 +679,18 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   TermsRoute: TermsRoute,
   TipJarRoute: TipJarRoute,
+  DotwellKnownSplatRoute: DotwellKnownSplatRoute,
   HouseholdListRoute: HouseholdListRoute,
   HouseholdPlanRoute: HouseholdPlanRoute,
   HouseholdRandomizerRoute: HouseholdRandomizerRoute,
   HouseholdRecipesRoute: HouseholdRecipesRouteWithChildren,
   HouseholdsSwitchRoute: HouseholdsSwitchRoute,
   InviteTokenRoute: InviteTokenRoute,
+  McpAuthRoute: McpAuthRoute,
   RecipesIdRoute: RecipesIdRoute,
   HouseholdIndexRoute: HouseholdIndexRoute,
   HouseholdsIndexRoute: HouseholdsIndexRoute,
+  McpIndexRoute: McpIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiPlanWeekDoticsRoute: ApiPlanWeekDoticsRoute,
   HouseholdRecipesImportRoute: HouseholdRecipesImportRoute,

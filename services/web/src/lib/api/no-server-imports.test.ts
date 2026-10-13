@@ -47,6 +47,8 @@ const SRC = fileURLToPath(new URL("../..", import.meta.url));
 const SERVER_TREE = [
   /^server\//,
   /^routes\/api\//,
+  // The MCP resource endpoint: a POST-only server route, same as `routes/api/`.
+  /^routes\/mcp\/index\.ts$/,
   /^routes\/[^/]*og\[\.\]png\.ts$/,
   // This file. Its prose spells out the specifiers it is looking for, which the
   // regex below cannot tell from the real thing — a scanner that fails on its

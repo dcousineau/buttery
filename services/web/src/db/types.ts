@@ -199,6 +199,16 @@ export interface HouseholdRecipeNote {
   updated_at: Generated<Timestamp>;
 }
 
+export interface Jwks {
+  alg: string | null;
+  created_at: Generated<Timestamp>;
+  crv: string | null;
+  expires_at: Timestamp | null;
+  id: string;
+  private_key: string;
+  public_key: string;
+}
+
 export interface MealPlanEntry {
   body: string | null;
   cooked_at: Timestamp | null;
@@ -214,6 +224,127 @@ export interface MealPlanEntry {
   recipe_id: string | null;
   slot: string;
   updated_at: Generated<Timestamp>;
+}
+
+export interface OauthAccessToken {
+  authorization_code_id: string | null;
+  client_id: string;
+  confirmation: Json | null;
+  created_at: Generated<Timestamp | null>;
+  expires_at: Timestamp | null;
+  id: string;
+  reference_id: string | null;
+  refresh_id: string | null;
+  requested_user_info_claims: string | null;
+  resources: string | null;
+  revoked: Timestamp | null;
+  scopes: string;
+  session_id: string | null;
+  token: string | null;
+  user_id: string | null;
+}
+
+export interface OauthClient {
+  application_type: string | null;
+  backchannel_logout_session_required: boolean | null;
+  backchannel_logout_uri: string | null;
+  client_credentials_scopes: string | null;
+  client_discovery_id: string | null;
+  client_id: string;
+  client_secret: string | null;
+  contacts: string | null;
+  created_at: Generated<Timestamp | null>;
+  disabled: boolean | null;
+  dpop_bound_access_tokens: boolean | null;
+  enable_end_session: boolean | null;
+  grant_types: string | null;
+  icon: string | null;
+  id: string;
+  jwks: string | null;
+  jwks_uri: string | null;
+  metadata: Json | null;
+  name: string | null;
+  policy: string | null;
+  post_logout_redirect_uris: string | null;
+  redirect_uris: string;
+  reference_id: string | null;
+  require_pkce: boolean | null;
+  response_types: string | null;
+  scopes: string | null;
+  skip_consent: boolean | null;
+  software_id: string | null;
+  software_statement: string | null;
+  software_version: string | null;
+  subject_type: string | null;
+  token_endpoint_auth_method: string | null;
+  tos: string | null;
+  updated_at: Generated<Timestamp | null>;
+  uri: string | null;
+  user_id: string | null;
+}
+
+export interface OauthClientAssertion {
+  expires_at: Timestamp;
+  id: string;
+}
+
+export interface OauthClientResource {
+  client_id: string;
+  created_at: Generated<Timestamp | null>;
+  id: string;
+  metadata: Json | null;
+  resource_id: string;
+}
+
+export interface OauthConsent {
+  client_id: string;
+  created_at: Generated<Timestamp | null>;
+  id: string;
+  reference_id: string | null;
+  requested_user_info_claims: string | null;
+  resources: string | null;
+  scopes: string;
+  updated_at: Generated<Timestamp | null>;
+  user_id: string | null;
+}
+
+export interface OauthRefreshToken {
+  auth_time: Timestamp | null;
+  authorization_code_id: string | null;
+  client_id: string;
+  confirmation: Json | null;
+  created_at: Generated<Timestamp | null>;
+  expires_at: Timestamp | null;
+  id: string;
+  reference_id: string | null;
+  requested_user_info_claims: string | null;
+  resources: string | null;
+  revoked: Timestamp | null;
+  rotated_at: Timestamp | null;
+  rotation_replay_expires_at: Timestamp | null;
+  rotation_replay_response: string | null;
+  scopes: string;
+  session_id: string | null;
+  token: string;
+  user_id: string;
+}
+
+export interface OauthResource {
+  access_token_ttl: number | null;
+  allowed_scopes: string | null;
+  created_at: Generated<Timestamp | null>;
+  custom_claims: Json | null;
+  disabled: boolean | null;
+  dpop_bound_access_tokens_required: boolean | null;
+  id: string;
+  identifier: string;
+  metadata: Json | null;
+  name: string;
+  policy_version: number | null;
+  refresh_token_ttl: number | null;
+  signing_algorithm: string | null;
+  signing_key_id: string | null;
+  updated_at: Generated<Timestamp | null>;
 }
 
 export interface Recipe {
@@ -487,7 +618,15 @@ export interface DB {
   household_recipe: HouseholdRecipe;
   household_recipe_meta: HouseholdRecipeMeta;
   household_recipe_note: HouseholdRecipeNote;
+  jwks: Jwks;
   meal_plan_entry: MealPlanEntry;
+  oauth_access_token: OauthAccessToken;
+  oauth_client: OauthClient;
+  oauth_client_assertion: OauthClientAssertion;
+  oauth_client_resource: OauthClientResource;
+  oauth_consent: OauthConsent;
+  oauth_refresh_token: OauthRefreshToken;
+  oauth_resource: OauthResource;
   recipe: Recipe;
   recipe_attribution: RecipeAttribution;
   recipe_collection: RecipeCollection;

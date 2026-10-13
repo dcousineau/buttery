@@ -227,6 +227,7 @@
       "files": [
         "services/web/src/server/**",
         "services/web/src/routes/api/**",
+        "services/web/src/routes/mcp/index.ts",
         "services/web/src/routes/*og*png.ts",
         "services/web/src/lib/api/transport.ts",
         "services/web/src/lib/recipe-import/contracts.ts"
