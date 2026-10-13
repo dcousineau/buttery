@@ -25,6 +25,7 @@
  * client-side cache partition only, and lives in the query keys.
  */
 
+import { decideConsent as decideConsentFn, loadConsent as loadConsentFn } from "#/server/mcp/consent";
 import {
   addRecipeToHousehold as addRecipeToHouseholdFn,
   getHouseholdRecipe as getHouseholdRecipeFn,
@@ -629,3 +630,15 @@ export const importTransport = {
   finalizeSession: (data: FinalizeInput) => finalizeImportSessionFn({ data }),
   failSession: (data: FailImportSessionInput) => failImportSessionFn({ data }),
 };
+
+/**
+ * The MCP OAuth consent screen. `query` is better-auth's signed authorize query,
+ * passed back byte for byte — the server re-verifies its signature on both calls.
+ */
+export function getMcpConsent(query: string) {
+  return loadConsentFn({ data: { query } });
+}
+
+export function decideMcpConsent(query: string, accept: boolean) {
+  return decideConsentFn({ data: { query, accept } });
+}

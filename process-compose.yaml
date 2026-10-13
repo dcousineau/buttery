@@ -383,3 +383,33 @@ processes:
       failure_threshold: 60
     log_location: ./.dev-logs/docs.log
     log_configuration: *log_config
+
+  # Opt-in. The official MCP Inspector, preloaded with this app's MCP server
+  # (`services/web/mcp-inspector.json`). Boots `Disabled`; start it by hand once
+  # `web` is up: TUI "Start Process" on `mcp-inspector`, or
+  # `process-compose process start mcp-inspector`, or `pnpm dev mcp-inspector`
+  # from cold. The Inspector prints a session-token URL into its log — open that
+  # one, plain http://127.0.0.1:6274 is refused without the token.
+  mcp-inspector:
+    description: "MCP Inspector UI (http://127.0.0.1:6274) — opt-in, starts Disabled"
+    command: "pnpm mcp:inspect"
+    environment:
+      # No stray browser tab on every start; the URL is in the log.
+      - "MCP_AUTO_OPEN_ENABLED=false"
+    depends_on:
+      web:
+        condition: process_healthy
+    disabled: true
+    availability:
+      restart: "no"
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: 6274
+        path: /
+        scheme: http
+      initial_delay_seconds: 3
+      period_seconds: 2
+      failure_threshold: 30
+    log_location: ./.dev-logs/mcp-inspector.log
+    log_configuration: *log_config
