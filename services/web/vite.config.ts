@@ -34,7 +34,11 @@ const config = defineConfig({
   optimizeDeps: { exclude: ["@resvg/resvg-js"] },
   // Bind IPv4 explicitly: the atproto loopback OAuth client redirects the app
   // to 127.0.0.1, but plain `localhost` may resolve to ::1 only.
-  server: { host: "127.0.0.1" },
+  // `allowedHosts` is dev-server only (the production build never reads it):
+  // Vite rejects any Host header it doesn't know, which blocks a Microsoft dev
+  // tunnel (`<id>-3000.<region>.devtunnels.ms`) used to try the app on a phone.
+  // The leading dot allows the domain and every subdomain.
+  server: { host: "127.0.0.1", allowedHosts: [".devtunnels.ms"] },
   plugins: [
     devtools({
       // Console piping is bidirectional — client logs go to the terminal AND
