@@ -67,14 +67,27 @@ export default defineRailway((ctx) => {
   // two.
   //
   // The web service never relays the bytes. It signs a URL and the BROWSER talks
-  // to this bucket directly — a PUT to upload, a GET to render. Two consequences
-  // that are not visible from the variables below:
+  // to this bucket directly — a presigned-form POST to upload, a GET to render.
+  // Two consequences that are not visible from the variables below:
   //
-  //   * **CORS has to allow the app's origin**, for `PUT` and `GET`, or every
-  //     upload fails in the browser with no server-side trace. Railway buckets
-  //     do not expose a CORS policy through IaC today, so it is configured out
-  //     of band (`aws s3api put-bucket-cors --endpoint-url <ENDPOINT>`); see
-  //     docs.railway.com/storage-buckets/uploading-serving.
+  //   * **CORS has to allow the app's origin**, for `POST` and `GET`, or every
+  //     upload fails in the browser (`net::ERR_FAILED`, no response headers) with
+  //     no server-side trace. THIS FILE CANNOT DECLARE IT: `bucket()` takes only
+  //     name + region, and Railway documents CORS solely as an S3 API call
+  //     (docs.railway.com/storage-buckets/uploading-serving). So it lives outside
+  //     `railway config apply` and a plan/apply will never show or fix drift.
+  //     Apply it with:
+  //
+  //       railway run --service buttery -- node services/web/scripts/create-bucket.mjs --cors-only
+  //
+  //     (same script and rule local dev applies on every boot). RE-RUN IT when:
+  //     the bucket is created or recreated (a new bucket has NO rule), the
+  //     environment is duplicated or a PR environment is enabled (each gets its
+  //     own bucket), `publicOrigin` below changes or a custom domain is added
+  //     (the rule is keyed on that origin), or the browser starts using another
+  //     method or header against the bucket. Verify with an OPTIONS request
+  //     carrying `Origin` + `Access-Control-Request-Method: POST` and look for
+  //     `access-control-allow-origin`.
   //   * **One prefix, `uploads/<hashed did>/<ulid>`.** The object never moves:
   //     the browser writes it, the recipe row points at it, publish reads it
   //     back for the PDS blob and deletes it. An upload whose save never arrived
