@@ -12,6 +12,16 @@ experimental = true
 railway = "latest"
 process-compose = "latest"
 
+# iOS Simulator automation for the ios-simulator MCP: it shells out to the `idb`
+# client, which talks to the `idb_companion` daemon. Both come from [tools], not
+# `[bootstrap.packages]` + `brew:facebook/fb/idb`: that tap has no Homebrew API
+# metadata, so mise needs Ruby 3 to read it and then compiles idb from source
+# (full Xcode as the active developer dir). The GitHub release ships the same
+# prebuilt arm64 companion, and the client is the `fb-idb` wheel on PyPI.
+# macOS-only — Linux (cloud sessions) has no iOS simulator.
+"github:facebook/idb" = { version = "latest", asset_pattern = "idb-companion.macos-arm64.tar.gz", os = ["macos"] }
+"pipx:fb-idb" = { version = "latest", os = ["macos"] }
+
 [monorepo]
 config_roots = ["services/*", "packages/*"]
 

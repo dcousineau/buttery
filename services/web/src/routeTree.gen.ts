@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as _scannerRouteImport } from './routes/[_]_scanner'
 import { Route as AcknowledgementsRouteImport } from './routes/acknowledgements'
 import { Route as AiUsageRouteImport } from './routes/ai-usage'
 import { Route as BookmarkletDotjsRouteImport } from './routes/bookmarklet[.]js'
@@ -41,6 +42,11 @@ import { Route as RecipesIdOgDotpngRouteImport } from './routes/recipes.$id_.og[
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const _scannerRoute = _scannerRouteImport.update({
+  id: '/__scanner',
+  path: '/__scanner',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AcknowledgementsRoute = AcknowledgementsRouteImport.update({
@@ -183,6 +189,7 @@ const RecipesIdOgDotpngRoute = RecipesIdOgDotpngRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/__scanner': typeof _scannerRoute
   '/acknowledgements': typeof AcknowledgementsRoute
   '/ai-usage': typeof AiUsageRoute
   '/bookmarklet.js': typeof BookmarkletDotjsRoute
@@ -213,6 +220,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/__scanner': typeof _scannerRoute
   '/acknowledgements': typeof AcknowledgementsRoute
   '/ai-usage': typeof AiUsageRoute
   '/bookmarklet.js': typeof BookmarkletDotjsRoute
@@ -243,6 +251,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/__scanner': typeof _scannerRoute
   '/acknowledgements': typeof AcknowledgementsRoute
   '/ai-usage': typeof AiUsageRoute
   '/bookmarklet.js': typeof BookmarkletDotjsRoute
@@ -275,6 +284,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/__scanner'
     | '/acknowledgements'
     | '/ai-usage'
     | '/bookmarklet.js'
@@ -305,6 +315,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/__scanner'
     | '/acknowledgements'
     | '/ai-usage'
     | '/bookmarklet.js'
@@ -334,6 +345,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/__scanner'
     | '/acknowledgements'
     | '/ai-usage'
     | '/bookmarklet.js'
@@ -365,6 +377,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  _scannerRoute: typeof _scannerRoute
   AcknowledgementsRoute: typeof AcknowledgementsRoute
   AiUsageRoute: typeof AiUsageRoute
   BookmarkletDotjsRoute: typeof BookmarkletDotjsRoute
@@ -398,6 +411,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/__scanner': {
+      id: '/__scanner'
+      path: '/__scanner'
+      fullPath: '/__scanner'
+      preLoaderRoute: typeof _scannerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/acknowledgements': {
@@ -609,6 +629,7 @@ const HouseholdRecipesRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  _scannerRoute: _scannerRoute,
   AcknowledgementsRoute: AcknowledgementsRoute,
   AiUsageRoute: AiUsageRoute,
   BookmarkletDotjsRoute: BookmarkletDotjsRoute,

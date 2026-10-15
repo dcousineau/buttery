@@ -72,6 +72,7 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "satori": "^0.29.1",
+    "scanic": "^1.6.0",
     "srvx": "^0.12.8",
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.3.3",
