@@ -36,6 +36,9 @@
 //
 // Usage:
 //   pnpm --filter @buttery/web dev:bucket
+//
+// Production (CORS only, never creates a bucket; see .railway/railway.ts):
+//   railway run --service buttery -- node services/web/scripts/create-bucket.mjs --cors-only
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -100,14 +103,22 @@ const client = new S3Client({
   forcePathStyle: (cfg("BLOB_S3_FORCE_PATH_STYLE") || "").toLowerCase() === "true",
 });
 
-let exists = false;
-try {
-  await client.send(new HeadBucketCommand({ Bucket: bucket }));
-  exists = true;
-  console.log(`create-bucket: ${bucket} already exists at ${endpoint}`);
-} catch {
-  // Absent (or the server does not answer HEAD on a bucket) — fall through to
-  // the create, which is the call that actually decides.
+// `--cors-only` is the production mode: Railway owns the bucket's existence (the
+// IaC declares it), so this must never try to create one — it only applies the
+// CORS rule, which Railway's IaC cannot express. See the bucket block in
+// .railway/railway.ts for when and how to run it.
+const corsOnly = process.argv.includes("--cors-only");
+
+let exists = corsOnly;
+if (!corsOnly) {
+  try {
+    await client.send(new HeadBucketCommand({ Bucket: bucket }));
+    exists = true;
+    console.log(`create-bucket: ${bucket} already exists at ${endpoint}`);
+  } catch {
+    // Absent (or the server does not answer HEAD on a bucket) — fall through to
+    // the create, which is the call that actually decides.
+  }
 }
 
 if (!exists) {
