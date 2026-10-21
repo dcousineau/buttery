@@ -16,7 +16,7 @@ const HANDLE_RESOLVER = process.env.ATPROTO_HANDLE_RESOLVER ?? "https://bsky.soc
 const RAW_URL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:3000";
 
 const rawHostname = new URL(RAW_URL).hostname;
-const isLoopback = ["127.0.0.1", "localhost", "[::1]"].includes(rawHostname) || rawHostname.endsWith(".localhost");
+export const isLoopback = ["127.0.0.1", "localhost", "[::1]"].includes(rawHostname) || rawHostname.endsWith(".localhost");
 
 // atproto forbids local hostnames in web client_ids (`.localhost` TLDs
 // included — e.g. the https://*.railway.localhost URL `railway dev` injects);

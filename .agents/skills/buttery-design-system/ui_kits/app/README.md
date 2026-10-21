@@ -7,7 +7,7 @@ The authenticated shell and household surfaces, recreated from
 | --- | --- |
 | `../shared/Chrome.jsx` | `src/components/Header.tsx`, `Footer.tsx`, `HouseholdSwitcher.tsx`, `ThemeToggle.tsx` |
 | `PantryHome.jsx` | `src/components/AppSidebar.tsx` + `src/routes/pantry.tsx` |
-| `HouseholdManage.jsx` | `src/routes/households.index.tsx` (rename, members, invites, create-another, danger zone) |
+| `HouseholdManage.jsx` | `src/routes/settings.households.tsx` (rename, members, invites, create-another, danger zone) |
 | `Onboarding.jsx` | `src/routes/onboarding.tsx` |
 
 ## Click-through

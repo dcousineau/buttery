@@ -2,11 +2,12 @@ import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ExternalLink } from "lucide-react";
 import { authClient, signOutAndGoHome, useHydratedSession } from "../lib/auth-client";
+import { AtmosphereIcon } from "#/components/icons/AtmosphereIcon";
 import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "#/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "#/components/ui/field";
-import { Input } from "#/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "#/components/ui/input-group";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Spinner } from "#/components/ui/spinner";
 import { seo } from "../lib/seo";
@@ -157,20 +158,24 @@ function SignInCard() {
           <FieldGroup>
             <Field data-invalid={failureMessage ? true : undefined}>
               <FieldLabel htmlFor="atproto-handle">Internet Handle</FieldLabel>
-              <Input
-                id="atproto-handle"
-                type="text"
-                size="lg"
-                value={handle}
-                onChange={(e) => setHandle(e.target.value)}
-                placeholder="alice.bsky.social"
-                autoComplete="username"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                aria-invalid={failureMessage ? true : undefined}
-                aria-describedby={failureMessage ? "atproto-handle-error" : "atproto-handle-hint"}
-              />
+              <InputGroup size="lg">
+                <InputGroupAddon>
+                  <AtmosphereIcon />
+                </InputGroupAddon>
+                <InputGroupInput
+                  id="atproto-handle"
+                  type="text"
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  placeholder="alice.bsky.social"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  aria-invalid={failureMessage ? true : undefined}
+                  aria-describedby={failureMessage ? "atproto-handle-error" : "atproto-handle-hint"}
+                />
+              </InputGroup>
             </Field>
           </FieldGroup>
           <p id="atproto-handle-hint" className="mt-2 mb-0 text-xs text-muted-foreground">

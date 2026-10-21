@@ -695,3 +695,16 @@ export interface RandomizerPool {
   cap: number;
   facets: RandomizerFacets;
 }
+
+/** One AI app the signed-in user has connected to Buttery over MCP. Safe fields only — never tokens. */
+export interface McpConnection {
+  clientId: string;
+  /** Readable name: the client's registered name, else its site, else its id. */
+  name: string;
+  /** https icon URL, or null when the client has none (or it isn't https). */
+  iconUrl: string | null;
+  /** ISO timestamp the user approved the connection. */
+  connectedAt: string;
+  /** ISO timestamp of the newest token issued to the app, or null if it never got one. */
+  lastActiveAt: string | null;
+}

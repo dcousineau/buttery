@@ -25,6 +25,7 @@
  * client-side cache partition only, and lives in the query keys.
  */
 
+import { decideConsent as decideConsentFn, loadConsent as loadConsentFn } from "#/server/mcp/consent";
 import {
   addRecipeToHousehold as addRecipeToHouseholdFn,
   getHouseholdRecipe as getHouseholdRecipeFn,
@@ -106,6 +107,7 @@ import {
 } from "#/server/household/preferences";
 import { dismissInviteNudge as dismissInviteNudgeFn, getHouseholdNudges as getHouseholdNudgesFn } from "#/server/household/settings";
 import { clearPendingInvite as clearPendingInviteFn, errorMessage as errorMessage_, stashPendingInvite as stashPendingInviteFn } from "#/server/household/pending-invite";
+import { disconnectMcpConnection as disconnectMcpConnectionFn, getMcpConnections as getMcpConnectionsFn } from "#/server/mcp-connections";
 import { getRandomizerPool as getRandomizerPoolFn } from "#/server/randomizer";
 import { getRecipe as getRecipeFn, listRecentRecipes as listRecentRecipesFn } from "#/server/recipes";
 import {
@@ -147,6 +149,7 @@ import type {
   HouseholdRecipeNoteView,
   HouseholdRecipeRow,
   HouseholdSummary,
+  McpConnection,
   InvitePreview,
   InviteSummary,
   OnboardingVerdict,
@@ -629,3 +632,23 @@ export const importTransport = {
   finalizeSession: (data: FinalizeInput) => finalizeImportSessionFn({ data }),
   failSession: (data: FailImportSessionInput) => failImportSessionFn({ data }),
 };
+
+/**
+ * The MCP OAuth consent screen. `query` is better-auth's signed authorize query,
+ * passed back byte for byte — the server re-verifies its signature on both calls.
+ */
+export function getMcpConsent(query: string) {
+  return loadConsentFn({ data: { query } });
+}
+
+export function decideMcpConsent(query: string, accept: boolean) {
+  return decideConsentFn({ data: { query, accept } });
+}
+
+export function getMcpConnections(): Promise<McpConnection[]> {
+  return getMcpConnectionsFn();
+}
+
+export function disconnectMcpConnection(clientId: string): Promise<{ disconnected: boolean }> {
+  return disconnectMcpConnectionFn({ data: { clientId } });
+}
