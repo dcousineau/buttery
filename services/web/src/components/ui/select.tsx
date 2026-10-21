@@ -5,7 +5,7 @@ import { cn } from "#/lib/utils.ts";
 
 /*
  * Styled native <select>. Buttery has no popover Select and doesn't need one —
- * the invite form already styles a raw <select> inline (routes/households.index.tsx);
+ * the invite form already styles a raw <select> inline (routes/settings.households.tsx);
  * this promotes that exact treatment into a primitive so it isn't re-styled per
  * screen. Heights come from the shared control scale (BRAND.md), so a Select lines
  * up with a Button, Badge and Input of the same `size`.

@@ -8,7 +8,7 @@ The popover menu. Its one production use is the header's household switcher, tri
   <DropdownMenuContent align="end">
     <DropdownMenuGroup>
       <DropdownMenuLabel>Active household</DropdownMenuLabel>
-      <DropdownMenuItem href="/households">Manage household</DropdownMenuItem>
+      <DropdownMenuItem href="/settings/households">Manage household</DropdownMenuItem>
       <DropdownMenuItem href="/households/switch">Switch household</DropdownMenuItem>
     </DropdownMenuGroup>
     <DropdownMenuSeparator />

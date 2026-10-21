@@ -107,6 +107,7 @@ import {
 } from "#/server/household/preferences";
 import { dismissInviteNudge as dismissInviteNudgeFn, getHouseholdNudges as getHouseholdNudgesFn } from "#/server/household/settings";
 import { clearPendingInvite as clearPendingInviteFn, errorMessage as errorMessage_, stashPendingInvite as stashPendingInviteFn } from "#/server/household/pending-invite";
+import { disconnectMcpConnection as disconnectMcpConnectionFn, getMcpConnections as getMcpConnectionsFn } from "#/server/mcp-connections";
 import { getRandomizerPool as getRandomizerPoolFn } from "#/server/randomizer";
 import { getRecipe as getRecipeFn, listRecentRecipes as listRecentRecipesFn } from "#/server/recipes";
 import {
@@ -148,6 +149,7 @@ import type {
   HouseholdRecipeNoteView,
   HouseholdRecipeRow,
   HouseholdSummary,
+  McpConnection,
   InvitePreview,
   InviteSummary,
   OnboardingVerdict,
@@ -641,4 +643,12 @@ export function getMcpConsent(query: string) {
 
 export function decideMcpConsent(query: string, accept: boolean) {
   return decideConsentFn({ data: { query, accept } });
+}
+
+export function getMcpConnections(): Promise<McpConnection[]> {
+  return getMcpConnectionsFn();
+}
+
+export function disconnectMcpConnection(clientId: string): Promise<{ disconnected: boolean }> {
+  return disconnectMcpConnectionFn({ data: { clientId } });
 }
