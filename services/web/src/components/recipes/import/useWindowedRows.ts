@@ -131,6 +131,8 @@ export function useWindowedRows({ count, resetKey }: { count: number; resetKey?:
     if (!el) return;
     el.scrollTop = 0;
     setMetrics({ scrollTop: 0, viewportHeight: el.clientHeight });
+    // `resetKey` is not read in the body: it is the trigger. A new key must re-run this reset.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [resetKey]);
 
   // Measured once on mount *and* watched from then on. A row's height is not the constant it

@@ -124,6 +124,9 @@ export function PlanDaysAgenda({ week, scrollNonce = 0 }: { week: PlanWeek; scro
       port.removeEventListener("wheel", stop);
       port.removeEventListener("touchstart", stop);
     };
+    // `week.weekStart` and `scrollNonce` are not read in the body: they are triggers. A new week
+    // or an explicit re-scroll request must re-run the settle loop.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [isMobile, scrollToAnchor, scrollToTop, showAnchor, week.weekStart, scrollNonce]);
 
   return (
