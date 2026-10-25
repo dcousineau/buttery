@@ -199,7 +199,7 @@ export function RecipeLedger({
               // Collection not found".
               placeholder={isDefaultScope(scope) || missing ? `Search ${recipes.length} recipe${recipes.length === 1 ? "" : "s"}` : `Search ${scopeLabel(scope)}`}
               aria-label="Search recipes"
-              className="min-w-0 flex-1 border-0 bg-transparent text-[0.8125rem] font-medium text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+              className="min-w-0 flex-1 border-0 bg-transparent text-[0.8125rem] font-medium text-foreground outline-none placeholder:text-muted-foreground/55 [&::-webkit-search-cancel-button]:hidden"
             />
           </div>
           <Button size="sm" className="h-[30px]" onClick={onAdd}>

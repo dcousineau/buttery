@@ -75,7 +75,7 @@ export function GlobalRecipePicker({ open, onOpenChange, onAdded }: { open: bool
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search public recipes…"
             aria-label="Search public recipes"
-            className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+            className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/55 [&::-webkit-search-cancel-button]:hidden"
           />
           {loading && <Spinner aria-hidden className="size-4 text-muted-foreground" />}
         </div>

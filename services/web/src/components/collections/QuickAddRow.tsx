@@ -108,7 +108,7 @@ export function QuickAddRow({
         onBlur={() => {
           if (!name.trim()) close();
         }}
-        className="min-w-0 flex-1 border-0 bg-transparent py-0.5 text-[0.8125rem] font-semibold text-foreground outline-none placeholder:font-medium placeholder:text-muted-foreground touch:min-h-(--control-h-touch) touch:text-base"
+        className="min-w-0 flex-1 border-0 bg-transparent py-0.5 text-[0.8125rem] font-semibold text-foreground outline-none placeholder:font-medium placeholder:text-muted-foreground/55 touch:min-h-(--control-h-touch) touch:text-base"
       />
     </form>
   );

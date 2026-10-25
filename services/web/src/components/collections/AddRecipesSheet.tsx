@@ -165,7 +165,7 @@ export function AddRecipesSheet({
               onChange={(event) => setQuery(event.target.value)}
               placeholder={`Search ${recipes.length} recipe${recipes.length === 1 ? "" : "s"}`}
               aria-label="Search your box"
-              className="min-w-0 flex-1 border-0 bg-transparent text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+              className="min-w-0 flex-1 border-0 bg-transparent text-sm font-medium text-foreground outline-none placeholder:text-muted-foreground/55 [&::-webkit-search-cancel-button]:hidden"
             />
           </div>
         </SheetHeader>
