@@ -521,7 +521,7 @@ export const persistRecipeDraft = createServerOnlyFn(async (db: Kysely<DB>, ctx:
   return { status: "ok", recipeId, record };
 });
 
-const runSave = createServerOnlyFn(async (db: Kysely<DB>, ctx: Ctx, input: SaveRecipeInput): Promise<SaveRecipeResult> => {
+export const runSave = createServerOnlyFn(async (db: Kysely<DB>, ctx: Ctx, input: SaveRecipeInput): Promise<SaveRecipeResult> => {
   const { sql } = await import("kysely");
 
   const sourceUrl = input.sourceUrl?.trim() || null;

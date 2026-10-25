@@ -25,6 +25,9 @@ function isAppView(pathname: string): boolean {
   return pathname.startsWith("/household/");
 }
 
+/** Focused decision screens that render with no header, footer or sidebar. */
+const BARE_ROUTES = new Set(["/mcp/auth"]);
+
 function SkipLink() {
   return (
     <a
@@ -56,6 +59,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // `--header-height` is what every app view measures its own height against.
   const headerRef = useHeightVar("--header-height");
+
+  if (BARE_ROUTES.has(pathname)) {
+    return (
+      <div className="flex min-h-dvh flex-col">
+        <SkipLink />
+        <main id="main-content" tabIndex={-1} className="flex-1 focus-visible:outline-none">
+          {children}
+        </main>
+      </div>
+    );
+  }
 
   if (isNavless(pathname)) {
     return (

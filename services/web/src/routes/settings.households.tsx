@@ -43,7 +43,7 @@ function useAutoFocus<T extends HTMLElement>(active: boolean = true) {
  * guard (`requireActiveHousehold`) so this never renders against a dead/exited
  * household; owner-only data + controls are gated on the caller's server-derived
  * role — the client never decides authorization. */
-export const Route = createFileRoute("/households/")({
+export const Route = createFileRoute("/settings/households")({
   loader: async () => {
     const active = await requireActiveHousehold();
     const [members, mine] = await Promise.all([listHouseholdMembers(active.householdId), listMyHouseholds()]);
@@ -60,20 +60,18 @@ function HouseholdPage() {
   const data = Route.useLoaderData();
   const isOwner = data.myRole === "owner";
   return (
-    <div className="page-wrap px-4 pt-8 pb-12 sm:pt-10">
-      <div className="rise-in mx-auto flex max-w-2xl flex-col gap-6">
-        <HouseholdHeader householdId={data.householdId} name={data.name} isOwner={isOwner} />
+    <div className="rise-in flex max-w-2xl flex-col gap-6">
+      <HouseholdHeader householdId={data.householdId} name={data.name} isOwner={isOwner} />
 
-        <MembersSection householdId={data.householdId} members={data.members} isOwner={isOwner} />
+      <MembersSection householdId={data.householdId} members={data.members} isOwner={isOwner} />
 
-        {isOwner ? <InvitesSection householdId={data.householdId} invites={data.invites} /> : null}
+      {isOwner ? <InvitesSection householdId={data.householdId} invites={data.invites} /> : null}
 
-        <Separator />
+      <Separator />
 
-        <CreateAnotherSection currentName={data.name} />
+      <CreateAnotherSection currentName={data.name} />
 
-        <DangerZone householdId={data.householdId} isOwner={isOwner} memberCount={data.members.length} />
-      </div>
+      <DangerZone householdId={data.householdId} isOwner={isOwner} memberCount={data.members.length} />
     </div>
   );
 }
@@ -621,7 +619,7 @@ function CreateAnotherSection({ currentName }: { currentName: string }) {
       await refreshSession();
       setOpen(false);
       // createHousehold sets the new one active server-side; land in it.
-      await navigate({ to: "/households" });
+      await navigate({ to: "/settings/households" });
     } catch (err) {
       setError(errorMessage(err));
       setPending(false);

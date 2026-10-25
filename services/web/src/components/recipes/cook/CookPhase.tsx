@@ -71,6 +71,8 @@ export function CookPhase({
   useEffect(() => {
     centerStep(focus, "auto");
     // Only on mount: focus-driven centring during interaction is handled by go()/click.
+    // The mount-only suppression below is deliberate, so the rule that flags suppressions is off too.
+    // oxlint-disable-next-line react/rule-suppression
     // oxlint-disable-next-line react/exhaustive-deps
   }, []);
 

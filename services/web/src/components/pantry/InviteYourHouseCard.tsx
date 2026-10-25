@@ -22,7 +22,7 @@ import { Card, CardContent } from "#/components/ui/card";
  * lost if the POST never lands (the nudge comes back next load), and blocking a
  * dismissal on the network would be a worse trade than re-asking.
  *
- * The primary action points at `/households`, which is where the invite form
+ * The primary action points at `/settings/households`, which is where the invite form
  * lives — the one place onboarding is still allowed to send someone.
  */
 export function InviteYourHouseCard({ householdId, className }: { householdId: string; className?: string }) {
@@ -47,7 +47,7 @@ export function InviteYourHouseCard({ householdId, className }: { householdId: s
             Buttery is better with the rest of the house in it — send them an invite and everything you add shows up for them too.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Button render={<Link to="/households" />} nativeButton={false}>
+            <Button render={<Link to="/settings/households" />} nativeButton={false}>
               <UserPlus data-icon="inline-start" aria-hidden="true" />
               Invite someone
             </Button>

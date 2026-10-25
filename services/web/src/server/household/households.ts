@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { redirect } from "@tanstack/react-router";
+import type { Kysely } from "kysely";
+import type { DB } from "#/db/types";
 import type { Role } from "./errors";
 import type { HouseholdSummary } from "#/lib/api/types";
 
@@ -113,9 +115,15 @@ export const listMyHouseholds = createServerFn({ method: "GET" }).handler(async 
   const { requireSessionDid } = await import("./session");
   const { getDb } = await import("#/lib/db");
 
-  const did = await requireSessionDid();
-  const db = getDb();
+  return listHouseholdsForDid(getDb(), await requireSessionDid());
+});
 
+/**
+ * The live memberships of `did`, with live member counts. Takes a plain `did`
+ * rather than a session so a caller that authenticated some other way (the MCP
+ * endpoint's bearer token) shares the exact liveness predicate.
+ */
+export async function listHouseholdsForDid(db: Kysely<DB>, did: string): Promise<HouseholdSummary[]> {
   const mine = await db
     .selectFrom("household_member as hm")
     .innerJoin("household as h", "h.id", "hm.household_id")
@@ -149,7 +157,7 @@ export const listMyHouseholds = createServerFn({ method: "GET" }).handler(async 
     role: asRole(m.role),
     memberCount: countByHousehold.get(m.id) ?? 0,
   }));
-});
+}
 
 /**
  * Soft-delete a household (owners only): mark the household deleted, soft-delete

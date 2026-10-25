@@ -18,6 +18,9 @@ allowBuilds:
   # objects, so the native build buys nothing worth a compiler on every install
   # and every Railway build image.
   msgpackr-extract: false
+  # @modelcontextprotocol/inspector (web devDependency, `pnpm mcp:inspect`): its
+  # postinstall fetches the UI clients the launcher serves. Dev tooling only.
+  "@modelcontextprotocol/inspector": true
 
 minimumReleaseAgeExclude:
   - "@types/pg@8.20.3"
@@ -31,3 +34,13 @@ minimumReleaseAgeExclude:
   - qs@6.15.4
 
 minimumReleaseAge: 1440 # At least a day
+
+permissions:
+  "@tanstack/devtools-utils":
+    skills: true
+  "@tanstack/devtools-vite":
+    skills: true
+  "@tanstack/react-start":
+    skills: true
+  "@tanstack/router-plugin":
+    skills: true

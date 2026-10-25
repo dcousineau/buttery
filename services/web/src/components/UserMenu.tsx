@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowLeftRight, Bug, Home, Lightbulb, LogOut, Monitor, Moon, Settings, Sun } from "lucide-react";
+import { ArrowLeftRight, Bug, Home, Lightbulb, LogOut, Monitor, Moon, Settings, Settings2, Sun } from "lucide-react";
 import { signOutAndGoHome, useHydratedSession } from "../lib/auth-client";
 import { useSessionSnapshot } from "#/lib/offline/use-household";
 import UserAvatar from "./UserAvatar";
@@ -66,7 +66,7 @@ function HouseholdSection({ verdict }: { verdict: OnboardingVerdict | null }) {
         </div>
       </div>
 
-      <DropdownMenuItem render={<Link to="/households" />}>
+      <DropdownMenuItem render={<Link to="/settings/households" />}>
         <Settings aria-hidden="true" />
         Manage household
       </DropdownMenuItem>
@@ -164,6 +164,11 @@ export default function UserMenu() {
         <DropdownMenuSeparator />
 
         <HouseholdSection verdict={verdict} />
+
+        <DropdownMenuItem render={<Link to="/settings" />}>
+          <Settings2 aria-hidden="true" />
+          Settings
+        </DropdownMenuItem>
 
         {/* Cycles light → dark → auto in place; stays open so you can keep tapping. */}
         <DropdownMenuItem closeOnClick={false} onClick={() => setMode(THEME_META[mode].next)}>

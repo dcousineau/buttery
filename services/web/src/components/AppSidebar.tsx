@@ -1,8 +1,9 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { BookOpenText, CalendarRange, Dices, Home, ShoppingBasket } from "lucide-react";
+import { BookOpenText, CalendarRange, Dices, Home, Settings2, ShoppingBasket } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -31,6 +32,10 @@ const NAV_ENTRIES: Array<NavEntry> = [
   { label: "Meal planner", icon: CalendarRange, to: "/household/plan" },
   { label: "Randomizer", icon: Dices, to: "/household/randomizer" },
 ];
+
+/** Pinned to the bottom of the rail, apart from the pantry sections. Prefix
+ * match, so it stays lit across every `/settings/*` page. */
+const SETTINGS_ENTRY: NavEntry = { label: "Settings", icon: Settings2, to: "/settings" };
 
 export default function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -78,6 +83,20 @@ export default function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={pathname === SETTINGS_ENTRY.to || pathname.startsWith(`${SETTINGS_ENTRY.to}/`)}
+              className="data-active:border-2 data-active:border-border data-active:shadow-pop-sm"
+              render={<Link to="/settings" onClick={() => setOpenMobile(false)} />}
+            >
+              <Settings2 />
+              <span>{SETTINGS_ENTRY.label}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
     </Sidebar>
   );
 }

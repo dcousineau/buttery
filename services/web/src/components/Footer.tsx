@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
 
-export default function Footer() {
-  const year = new Date().getFullYear();
+const year = new Date().getFullYear();
 
+export default function Footer() {
   return (
     <footer className="mt-16">
       <div className="gingham-band" aria-hidden="true" />

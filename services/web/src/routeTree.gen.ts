@@ -18,17 +18,24 @@ import { Route as OauthClientMetadataDotjsonRouteImport } from './routes/oauth-c
 import { Route as OfflineRouteImport } from './routes/offline'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as TipJarRouteImport } from './routes/tip-jar'
+import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known.$'
 import { Route as HouseholdIndexRouteImport } from './routes/household.index'
 import { Route as HouseholdListRouteImport } from './routes/household.list'
 import { Route as HouseholdPlanRouteImport } from './routes/household.plan'
 import { Route as HouseholdRandomizerRouteImport } from './routes/household.randomizer'
 import { Route as HouseholdRecipesRouteImport } from './routes/household.recipes'
-import { Route as HouseholdsIndexRouteImport } from './routes/households.index'
 import { Route as HouseholdsSwitchRouteImport } from './routes/households.switch'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
+import { Route as McpIndexRouteImport } from './routes/mcp/index'
+import { Route as McpAuthRouteImport } from './routes/mcp/auth'
 import { Route as RecipesIdRouteImport } from './routes/recipes.$id'
+import { Route as SettingsIndexRouteImport } from './routes/settings.index'
+import { Route as SettingsAccountRouteImport } from './routes/settings.account'
+import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
+import { Route as SettingsHouseholdsRouteImport } from './routes/settings.households'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiPlanWeekDoticsRouteImport } from './routes/api/plan/week[.]ics'
 import { Route as HouseholdRecipesIndexRouteImport } from './routes/household.recipes.index'
@@ -84,6 +91,11 @@ const PrivacyRoute = PrivacyRouteImport.update({
   path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -92,6 +104,11 @@ const TermsRoute = TermsRouteImport.update({
 const TipJarRoute = TipJarRouteImport.update({
   id: '/tip-jar',
   path: '/tip-jar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DotwellKnownSplatRoute = DotwellKnownSplatRouteImport.update({
+  id: '/.well-known/$',
+  path: '/.well-known/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HouseholdIndexRoute = HouseholdIndexRouteImport.update({
@@ -119,11 +136,6 @@ const HouseholdRecipesRoute = HouseholdRecipesRouteImport.update({
   path: '/household/recipes',
   getParentRoute: () => rootRouteImport,
 } as any)
-const HouseholdsIndexRoute = HouseholdsIndexRouteImport.update({
-  id: '/households/',
-  path: '/households/',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const HouseholdsSwitchRoute = HouseholdsSwitchRouteImport.update({
   id: '/households/switch',
   path: '/households/switch',
@@ -134,10 +146,40 @@ const InviteTokenRoute = InviteTokenRouteImport.update({
   path: '/invite/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const McpIndexRoute = McpIndexRouteImport.update({
+  id: '/mcp/',
+  path: '/mcp/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpAuthRoute = McpAuthRouteImport.update({
+  id: '/mcp/auth',
+  path: '/mcp/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RecipesIdRoute = RecipesIdRouteImport.update({
   id: '/recipes/$id',
   path: '/recipes/$id',
   getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAccountRoute = SettingsAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsConnectionsRoute = SettingsConnectionsRouteImport.update({
+  id: '/connections',
+  path: '/connections',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsHouseholdsRoute = SettingsHouseholdsRouteImport.update({
+  id: '/households',
+  path: '/households',
+  getParentRoute: () => SettingsRoute,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
@@ -191,17 +233,24 @@ export interface FileRoutesByFullPath {
   '/offline': typeof OfflineRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/terms': typeof TermsRoute
   '/tip-jar': typeof TipJarRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/household/randomizer': typeof HouseholdRandomizerRoute
   '/household/recipes': typeof HouseholdRecipesRouteWithChildren
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/mcp/auth': typeof McpAuthRoute
   '/recipes/$id': typeof RecipesIdRoute
+  '/settings/account': typeof SettingsAccountRoute
+  '/settings/connections': typeof SettingsConnectionsRoute
+  '/settings/households': typeof SettingsHouseholdsRoute
   '/household/': typeof HouseholdIndexRoute
-  '/households/': typeof HouseholdsIndexRoute
+  '/mcp/': typeof McpIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
@@ -223,14 +272,20 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/tip-jar': typeof TipJarRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/household/randomizer': typeof HouseholdRandomizerRoute
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/mcp/auth': typeof McpAuthRoute
   '/recipes/$id': typeof RecipesIdRoute
+  '/settings/account': typeof SettingsAccountRoute
+  '/settings/connections': typeof SettingsConnectionsRoute
+  '/settings/households': typeof SettingsHouseholdsRoute
   '/household': typeof HouseholdIndexRoute
-  '/households': typeof HouseholdsIndexRoute
+  '/mcp': typeof McpIndexRoute
+  '/settings': typeof SettingsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
@@ -251,17 +306,24 @@ export interface FileRoutesById {
   '/offline': typeof OfflineRoute
   '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/terms': typeof TermsRoute
   '/tip-jar': typeof TipJarRoute
+  '/.well-known/$': typeof DotwellKnownSplatRoute
   '/household/list': typeof HouseholdListRoute
   '/household/plan': typeof HouseholdPlanRoute
   '/household/randomizer': typeof HouseholdRandomizerRoute
   '/household/recipes': typeof HouseholdRecipesRouteWithChildren
   '/households/switch': typeof HouseholdsSwitchRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/mcp/auth': typeof McpAuthRoute
   '/recipes/$id': typeof RecipesIdRoute
+  '/settings/account': typeof SettingsAccountRoute
+  '/settings/connections': typeof SettingsConnectionsRoute
+  '/settings/households': typeof SettingsHouseholdsRoute
   '/household/': typeof HouseholdIndexRoute
-  '/households/': typeof HouseholdsIndexRoute
+  '/mcp/': typeof McpIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/plan/week.ics': typeof ApiPlanWeekDoticsRoute
   '/household/recipes/$id': typeof HouseholdRecipesIdRoute
@@ -283,17 +345,24 @@ export interface FileRouteTypes {
     | '/offline'
     | '/onboarding'
     | '/privacy'
+    | '/settings'
     | '/terms'
     | '/tip-jar'
+    | '/.well-known/$'
     | '/household/list'
     | '/household/plan'
     | '/household/randomizer'
     | '/household/recipes'
     | '/households/switch'
     | '/invite/$token'
+    | '/mcp/auth'
     | '/recipes/$id'
+    | '/settings/account'
+    | '/settings/connections'
+    | '/settings/households'
     | '/household/'
-    | '/households/'
+    | '/mcp/'
+    | '/settings/'
     | '/api/auth/$'
     | '/api/plan/week.ics'
     | '/household/recipes/$id'
@@ -315,14 +384,20 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/tip-jar'
+    | '/.well-known/$'
     | '/household/list'
     | '/household/plan'
     | '/household/randomizer'
     | '/households/switch'
     | '/invite/$token'
+    | '/mcp/auth'
     | '/recipes/$id'
+    | '/settings/account'
+    | '/settings/connections'
+    | '/settings/households'
     | '/household'
-    | '/households'
+    | '/mcp'
+    | '/settings'
     | '/api/auth/$'
     | '/api/plan/week.ics'
     | '/household/recipes/$id'
@@ -342,17 +417,24 @@ export interface FileRouteTypes {
     | '/offline'
     | '/onboarding'
     | '/privacy'
+    | '/settings'
     | '/terms'
     | '/tip-jar'
+    | '/.well-known/$'
     | '/household/list'
     | '/household/plan'
     | '/household/randomizer'
     | '/household/recipes'
     | '/households/switch'
     | '/invite/$token'
+    | '/mcp/auth'
     | '/recipes/$id'
+    | '/settings/account'
+    | '/settings/connections'
+    | '/settings/households'
     | '/household/'
-    | '/households/'
+    | '/mcp/'
+    | '/settings/'
     | '/api/auth/$'
     | '/api/plan/week.ics'
     | '/household/recipes/$id'
@@ -373,17 +455,20 @@ export interface RootRouteChildren {
   OfflineRoute: typeof OfflineRoute
   OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
   TermsRoute: typeof TermsRoute
   TipJarRoute: typeof TipJarRoute
+  DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
   HouseholdListRoute: typeof HouseholdListRoute
   HouseholdPlanRoute: typeof HouseholdPlanRoute
   HouseholdRandomizerRoute: typeof HouseholdRandomizerRoute
   HouseholdRecipesRoute: typeof HouseholdRecipesRouteWithChildren
   HouseholdsSwitchRoute: typeof HouseholdsSwitchRoute
   InviteTokenRoute: typeof InviteTokenRoute
+  McpAuthRoute: typeof McpAuthRoute
   RecipesIdRoute: typeof RecipesIdRoute
   HouseholdIndexRoute: typeof HouseholdIndexRoute
-  HouseholdsIndexRoute: typeof HouseholdsIndexRoute
+  McpIndexRoute: typeof McpIndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiPlanWeekDoticsRoute: typeof ApiPlanWeekDoticsRoute
   HouseholdRecipesImportRoute: typeof HouseholdRecipesImportRoute
@@ -456,6 +541,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/terms': {
       id: '/terms'
       path: '/terms'
@@ -468,6 +560,13 @@ declare module '@tanstack/react-router' {
       path: '/tip-jar'
       fullPath: '/tip-jar'
       preLoaderRoute: typeof TipJarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.well-known/$': {
+      id: '/.well-known/$'
+      path: '/.well-known/$'
+      fullPath: '/.well-known/$'
+      preLoaderRoute: typeof DotwellKnownSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/household/': {
@@ -505,13 +604,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HouseholdRecipesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/households/': {
-      id: '/households/'
-      path: '/households'
-      fullPath: '/households/'
-      preLoaderRoute: typeof HouseholdsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/households/switch': {
       id: '/households/switch'
       path: '/households/switch'
@@ -526,12 +618,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InviteTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mcp/': {
+      id: '/mcp/'
+      path: '/mcp'
+      fullPath: '/mcp/'
+      preLoaderRoute: typeof McpIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp/auth': {
+      id: '/mcp/auth'
+      path: '/mcp/auth'
+      fullPath: '/mcp/auth'
+      preLoaderRoute: typeof McpAuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/recipes/$id': {
       id: '/recipes/$id'
       path: '/recipes/$id'
       fullPath: '/recipes/$id'
       preLoaderRoute: typeof RecipesIdRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/settings/': {
+      id: '/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/account': {
+      id: '/settings/account'
+      path: '/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof SettingsAccountRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/connections': {
+      id: '/settings/connections'
+      path: '/connections'
+      fullPath: '/settings/connections'
+      preLoaderRoute: typeof SettingsConnectionsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/households': {
+      id: '/settings/households'
+      path: '/households'
+      fullPath: '/settings/households'
+      preLoaderRoute: typeof SettingsHouseholdsRouteImport
+      parentRoute: typeof SettingsRoute
     }
     '/api/auth/$': {
       id: '/api/auth/$'
@@ -592,6 +726,24 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface SettingsRouteChildren {
+  SettingsAccountRoute: typeof SettingsAccountRoute
+  SettingsConnectionsRoute: typeof SettingsConnectionsRoute
+  SettingsHouseholdsRoute: typeof SettingsHouseholdsRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAccountRoute: SettingsAccountRoute,
+  SettingsConnectionsRoute: SettingsConnectionsRoute,
+  SettingsHouseholdsRoute: SettingsHouseholdsRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
+
 interface HouseholdRecipesRouteChildren {
   HouseholdRecipesIdRoute: typeof HouseholdRecipesIdRoute
   HouseholdRecipesNewRoute: typeof HouseholdRecipesNewRoute
@@ -617,17 +769,20 @@ const rootRouteChildren: RootRouteChildren = {
   OfflineRoute: OfflineRoute,
   OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   TermsRoute: TermsRoute,
   TipJarRoute: TipJarRoute,
+  DotwellKnownSplatRoute: DotwellKnownSplatRoute,
   HouseholdListRoute: HouseholdListRoute,
   HouseholdPlanRoute: HouseholdPlanRoute,
   HouseholdRandomizerRoute: HouseholdRandomizerRoute,
   HouseholdRecipesRoute: HouseholdRecipesRouteWithChildren,
   HouseholdsSwitchRoute: HouseholdsSwitchRoute,
   InviteTokenRoute: InviteTokenRoute,
+  McpAuthRoute: McpAuthRoute,
   RecipesIdRoute: RecipesIdRoute,
   HouseholdIndexRoute: HouseholdIndexRoute,
-  HouseholdsIndexRoute: HouseholdsIndexRoute,
+  McpIndexRoute: McpIndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiPlanWeekDoticsRoute: ApiPlanWeekDoticsRoute,
   HouseholdRecipesImportRoute: HouseholdRecipesImportRoute,

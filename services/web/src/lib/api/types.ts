@@ -83,7 +83,11 @@ export interface HouseholdRecipeDetail {
   description: string | null;
   /** Null when nothing resolved a provenance — the pane omits the line. */
   source: RecipeSource | null;
-  images: Array<{ url: string; alt: string | null }>;
+  /**
+   * `aspectRatio` is optional for the IndexedDB reason `plannedUsage` is
+   * nullable; null when unknown (a pending draft image never records one).
+   */
+  images: Array<{ url: string; alt: string | null; aspectRatio?: { width: number; height: number } | null }>;
   ingredients: string[];
   instructions: string[];
   keywords: string[];
@@ -92,8 +96,23 @@ export interface HouseholdRecipeDetail {
   serves: number | null;
   totalMinutes: number | null;
   totalTimeDisplay: string | null;
+  /** Lexicon `prepTime`. Optional: absent from a payload cached before it shipped. */
+  prepMinutes?: number | null;
+  prepTimeDisplay?: string | null;
+  /** Lexicon `cookTime`. Optional for the same reason as `prepMinutes`. */
+  cookMinutes?: number | null;
+  cookTimeDisplay?: string | null;
   cuisine: string | null;
   category: string | null;
+  /** Lexicon `cookingMethod`, prettified like `cuisine`. Optional like `prepMinutes`. */
+  cookingMethod?: string | null;
+  /**
+   * The lexicon record's own `createdAt` / `updatedAt` as ISO strings. The `at`
+   * prefix distinguishes them from Buttery's row timestamps. Optional like
+   * `prepMinutes`; null when the recipe has no atproto record.
+   */
+  atCreatedAt?: string | null;
+  atUpdatedAt?: string | null;
   nutrition: RecipeNutrition;
   favorite: boolean;
   note: HouseholdRecipeNoteView | null;
@@ -694,4 +713,17 @@ export interface RandomizerPool {
   /** The cap constant applied when `capped` is (or would be) hit — currently 200. */
   cap: number;
   facets: RandomizerFacets;
+}
+
+/** One AI app the signed-in user has connected to Buttery over MCP. Safe fields only — never tokens. */
+export interface McpConnection {
+  clientId: string;
+  /** Readable name: the client's registered name, else its site, else its id. */
+  name: string;
+  /** https icon URL, or null when the client has none (or it isn't https). */
+  iconUrl: string | null;
+  /** ISO timestamp the user approved the connection. */
+  connectedAt: string;
+  /** ISO timestamp of the newest token issued to the app, or null if it never got one. */
+  lastActiveAt: string | null;
 }

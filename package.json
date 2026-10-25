@@ -6,6 +6,7 @@
     "dev": "bash scripts/dev/up.sh",
     "dev:attach": "process-compose attach",
     "dev:down": "process-compose down",
+    "mcp:inspect": "pnpm --filter @buttery/web mcp:inspect",
     "dev:web": "pnpm --filter @buttery/web dev",
     "dev:docs": "pnpm --filter @buttery/docs start --port 3001 --host 127.0.0.1 --no-open",
     "atproto:dev-env": "pnpm --filter @buttery/atproto-dev-env start",
@@ -22,13 +23,13 @@
   "devDependencies": {
     "@danilocampos/coherence": "^0.37.1",
     "@resvg/resvg-js": "^2.6.2",
-    "@types/node": "^26.5.1",
+    "@types/node": "^26.6.5",
     "husky": "^9.1.7",
-    "lint-staged": "^17.5.1",
+    "lint-staged": "^17.6.0",
     "oxfmt": "^0.64.0",
-    "oxlint": "^1.83.0",
-    "oxlint-tsgolint": "^7.0.2001",
-    "railway": "^3.11.0",
+    "oxlint": "^1.87.0",
+    "oxlint-tsgolint": "^7.0.2004",
+    "railway": "^3.15.0",
     "typescript": "^7.0.2"
   },
   "lint-staged": {
@@ -42,5 +43,5 @@
       "onFail": "error"
     }
   },
-  "packageManager": "pnpm@11.22.0"
+  "packageManager": "pnpm@12.11.2"
 }
