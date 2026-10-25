@@ -34,6 +34,15 @@ const revokedResponse = () =>
  * so a disconnected app's access token would otherwise keep working until it
  * expires. The extra check makes "Disconnect" immediate (see mcp-connections.ts).
  */
-export const handleMcpRequest = requireMcpAuth(auth, async (request, claims) => ((await isMcpGrantActive(getDb(), claims)) ? mcpHandler.fetch(request) : revokedResponse()), {
-  resource: MCP_RESOURCE,
-});
+export const handleMcpRequest = requireMcpAuth(
+  auth,
+  async (request, claims) => {
+    if (!(await isMcpGrantActive(getDb(), claims)) || typeof claims.sub !== "string") return revokedResponse();
+    // Hand the verified identity to the tools. `sub` is the signature-checked user id; tools
+    // look the DID up from it and never accept an identity as an argument. The bearer token
+    // itself isn't passed on (`token` is required by the type, nothing reads it).
+    const clientId = typeof claims.client_id === "string" ? claims.client_id : typeof claims.azp === "string" ? claims.azp : "";
+    return mcpHandler.fetch(request, { authInfo: { token: "", clientId, scopes: [], extra: { userId: claims.sub } } });
+  },
+  { resource: MCP_RESOURCE },
+);

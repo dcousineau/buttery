@@ -124,10 +124,18 @@ export async function resolveAdderHandles(db: Kysely<DB>, dids: string[]): Promi
  */
 export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(async (): Promise<HouseholdRecipeRow[]> => {
   const { getDb } = await import("#/lib/db");
+  const { did, householdId } = await activeContext();
+  return await readHouseholdRecipeRows(getDb(), did, householdId);
+});
+
+/**
+ * The list read itself, split out from the server fn like `readHouseholdRecipeDetail`
+ * so a caller that already authenticated by other means (the MCP tools) shares the
+ * exact query. `did`/`householdId` MUST come from a validated identity.
+ */
+export async function readHouseholdRecipeRows(db: Kysely<DB>, did: string, householdId: string): Promise<HouseholdRecipeRow[]> {
   const { householdScopedQuery } = await import("./household/scoped-query");
   const { presignDownload } = await import("#/lib/blob-storage");
-  const { did, householdId } = await activeContext();
-  const db = getDb();
 
   const rows = await householdScopedQuery(db, did, householdId)
     .innerJoin("household_recipe as hr", "hr.household_id", "hm.household_id")
@@ -219,7 +227,7 @@ export const listHouseholdRecipes = createServerFn({ method: "GET" }).handler(as
       };
     }),
   );
-});
+}
 
 // --- §6.2 getHouseholdRecipe --------------------------------------------
 
@@ -280,6 +288,11 @@ export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, hou
       "r.recipe_yield as recipe_yield",
       "r.total_time_seconds as total_time_seconds",
       "r.recipe_cuisine as recipe_cuisine",
+      "r.prep_time_seconds as prep_time_seconds",
+      "r.cook_time_seconds as cook_time_seconds",
+      "r.cooking_method as cooking_method",
+      "r.record_created_at as record_created_at",
+      "r.record_updated_at as record_updated_at",
       // The AUTHOR's own declared diets — the tag strip shows these beside
       // whatever the pipeline derived, and the author's wins on collision.
       "r.suitable_for_diet as suitable_for_diet",
@@ -295,7 +308,13 @@ export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, hou
       "repo.handle as repo_handle",
       "acr.deleted_at as acr_deleted_at",
       "acr.validation_status as acr_validation_status",
-      jsonArrayFrom(eb.selectFrom("recipe_image as ri").select(["ri.blob_cid", "ri.blob_mime", "ri.alt"]).whereRef("ri.recipe_id", "=", "r.id").orderBy("ri.ordinal")).as("images"),
+      jsonArrayFrom(
+        eb
+          .selectFrom("recipe_image as ri")
+          .select(["ri.blob_cid", "ri.blob_mime", "ri.alt", "ri.aspect_w", "ri.aspect_h"])
+          .whereRef("ri.recipe_id", "=", "r.id")
+          .orderBy("ri.ordinal"),
+      ).as("images"),
       // Draft/private hero: a not-yet-published recipe keeps its photo in OUR
       // bucket. The page gets a signed URL onto that object — minted below,
       // where the caller has already passed the household check that authorizes
@@ -351,6 +370,8 @@ export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, hou
   const adder = row.added_by_did ? (adderHandles.get(row.added_by_did) ?? null) : null;
 
   const { minutes, display } = minutesDisplay(row.total_time_seconds);
+  const prep = minutesDisplay(row.prep_time_seconds);
+  const cook = minutesDisplay(row.cook_time_seconds);
   const source = deriveSource({
     repoHandle: row.repo_handle,
     attrDisplayName: row.attr_display_name,
@@ -378,11 +399,15 @@ export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, hou
   // never hands out a signed URL onto its publisher's unpublished photo.
   const published = row.images
     .filter((img) => row.did && img.blob_cid)
-    .map((img) => ({ url: blobImageUrl(row.did as string, img.blob_cid as string, img.blob_mime, "feed_fullsize"), alt: img.alt }));
-  let heroImages = published;
+    .map((img) => ({
+      url: blobImageUrl(row.did as string, img.blob_cid as string, img.blob_mime, "feed_fullsize"),
+      alt: img.alt,
+      aspectRatio: img.aspect_w != null && img.aspect_h != null ? { width: img.aspect_w, height: img.aspect_h } : null,
+    }));
+  let heroImages: HouseholdRecipeDetail["images"] = published;
   if (inBox && !published.length && row.pending_image) {
     const { presignDownload } = await import("#/lib/blob-storage");
-    heroImages = [{ url: await presignDownload(row.pending_image.object_key), alt: row.pending_image.alt }];
+    heroImages = [{ url: await presignDownload(row.pending_image.object_key), alt: row.pending_image.alt, aspectRatio: null }];
   }
 
   return {
@@ -398,8 +423,15 @@ export async function readHouseholdRecipeDetail(db: Kysely<DB>, did: string, hou
     serves: parseServes(row.recipe_yield),
     totalMinutes: minutes,
     totalTimeDisplay: display,
+    prepMinutes: prep.minutes,
+    prepTimeDisplay: prep.display,
+    cookMinutes: cook.minutes,
+    cookTimeDisplay: cook.display,
     cuisine: prettify(row.recipe_cuisine),
     category: prettify(row.recipe_category),
+    cookingMethod: prettify(row.cooking_method),
+    atCreatedAt: row.record_created_at ? new Date(row.record_created_at).toISOString() : null,
+    atUpdatedAt: row.record_updated_at ? new Date(row.record_updated_at).toISOString() : null,
     nutrition: {
       calories: toNum(row.calories),
       protein: toNum(row.protein_content),
