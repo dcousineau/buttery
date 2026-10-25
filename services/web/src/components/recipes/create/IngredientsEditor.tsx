@@ -43,7 +43,7 @@ export function IngredientsEditor({
       rowId={rowId}
       rowProblem={rowProblem}
       countNoun="ingredients"
-      pastePlaceholder={"1 1/2 cups all-purpose flour\n1/2 cup granulated sugar\n2 tsp baking powder"}
+      pastePlaceholder={"Paste ingredients, one per line, e.g.\n1 1/2 cups all-purpose flour\n1/2 cup granulated sugar\n2 tsp baking powder"}
       pasteHelp={
         <>
           One ingredient per line, however you'd write it on a card. Switch to <strong className="text-foreground">Rows</strong> to reorder them.

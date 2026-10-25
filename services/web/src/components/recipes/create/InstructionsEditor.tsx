@@ -43,7 +43,9 @@ export function InstructionsEditor({
       numbered
       multiline
       countNoun="steps"
-      pastePlaceholder={"Heat the oven to 190°C and line a muffin tin.\nWhisk the dry ingredients, then fold in the wet.\nBake 25–30 minutes until golden."}
+      pastePlaceholder={
+        "Paste steps, one per line, e.g.\nHeat the oven to 190°C and line a muffin tin.\nWhisk the dry ingredients, then fold in the wet.\nBake 25–30 minutes until golden."
+      }
       pasteHelp="One step per line. Blank lines are ignored."
       addLabel="Add a step"
       warn={warnStep}
