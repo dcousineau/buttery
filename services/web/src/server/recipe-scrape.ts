@@ -23,9 +23,11 @@ import type { ImportPrefill } from "#/lib/import-payload";
 export type ScrapeResult =
   // Full extraction: form fetches the prefill by id and treats it as a review.
   | { status: "ok"; importId: string }
-  // Page fetched but no usable recipe body — we still cache title/image so the
-  // manual fallback form isn't totally empty; attribution stays locked to the URL.
-  | { status: "partial"; importId: string }
+  // Page fetched fine but nothing on it reads as a recipe (no name + ingredients/steps).
+  // No import id: whatever the heuristics found (the page title, a hero image) describes
+  // the page, not a recipe, so prefilling it would invent a wrong name. The attempt row is
+  // still logged as `parse_empty` so we can see which hosts want an adapter.
+  | { status: "no_recipe" }
   // 1-per-60s per account tripped. Generic message ONLY — never leak the window.
   | { status: "rate_limited" }
   // SSRF guard rejected the target (private/internal address).
@@ -168,10 +170,9 @@ const runScrape = createServerOnlyFn(async (did: string, householdId: string, ur
       await log("success", { extractor: result.extractor, httpStatus: page.status, parsed: prefill });
       return { status: "ok", importId: attemptId };
     }
-    // Got the page but couldn't pull a recipe body → partial (manual fallback,
-    // but keep whatever title/image we found so the form isn't blank).
+    // Got the page but couldn't pull a recipe body.
     await log("parse_empty", { extractor: result.extractor, httpStatus: page.status, parsed: prefill });
-    return { status: "partial", importId: attemptId };
+    return { status: "no_recipe" };
   } catch (err) {
     const { SafeFetchError } = await import("#/lib/net/safe-fetch");
     if (err instanceof SafeFetchError) {

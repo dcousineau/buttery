@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { BookOpenText, Boxes, Link2, PencilLine, Puzzle } from "lucide-react";
-import { useAnalytics } from "#/lib/analytics";
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "#/components/ui/dialog";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Spinner } from "#/components/ui/spinner";
 import { cn } from "#/lib/utils";
 import { scrapeRecipe } from "#/lib/api";
+import { reportImportProblem } from "#/lib/support";
 import { useRecipesView } from "../context";
 import { FetchingDialog, type FetchPhase } from "./FetchingDialog";
 import { BookmarkletInstallDialog } from "./BookmarkletInstallDialog";
@@ -24,7 +24,6 @@ type Choice = "import" | "manual" | "bookmarklet" | "library";
  */
 export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: boolean; onOpenChange: (o: boolean) => void; onAddExisting: () => void }) {
   const navigate = useNavigate();
-  const { posthog } = useAnalytics();
   const { pushToast } = useRecipesView();
   const [choice, setChoice] = useState<Choice>("manual");
   const [url, setUrl] = useState("");
@@ -55,14 +54,15 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
     setPhase("fetching");
     try {
       const res = await scrapeRecipe({ url: trimmed });
-      // Reached the page (full or partial) → open the form prefilled by import id.
-      if (res.status === "ok" || res.status === "partial") {
+      // Read a recipe off the page → open the form prefilled by import id.
+      if (res.status === "ok") {
         setPhase(null);
         onOpenChange(false);
         void navigate({ to: "/household/recipes/new", search: { import: res.importId } });
         return;
       }
       if (res.status === "rate_limited") return setPhase("rate_limited");
+      if (res.status === "no_recipe") return setPhase("no_recipe");
       if (res.status === "invalid_url") {
         setPhase(null);
         setUrlError("That doesn't look like a recipe link.");
@@ -83,10 +83,11 @@ export function AddRecipeChooser({ open, onOpenChange, onAddExisting }: { open: 
     void navigate({ to: "/household/recipes/new", search: { source: failUrl } });
   }
 
-  function reportFailure() {
-    posthog.capture("recipe_import_failed_report", { url: failUrl });
+  async function reportFailure() {
+    const problem = phase === "no_recipe" ? "no_recipe" : "fetch_failed";
     setPhase(null);
-    pushToast("Thanks — we'll take a look at that site.");
+    const sent = await reportImportProblem(failUrl, problem);
+    pushToast(sent ? "Thanks — we'll take a look at that site." : 'Couldn\'t send that just now. "Submit a bug" in the account menu reaches us too.');
   }
 
   return (

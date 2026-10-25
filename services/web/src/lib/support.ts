@@ -198,6 +198,32 @@ export async function sendSupportMessage(body: string, traits?: UserProvidedTrai
   return response;
 }
 
+/**
+ * Why an import came back empty, as the team reads it in the ticket: `no_recipe`
+ * is a page that opened with nothing recipe-shaped on it, `fetch_failed` a page
+ * we could not read at all.
+ */
+export type ImportProblem = "no_recipe" | "fetch_failed";
+
+/**
+ * File a "this URL didn't import" report as a support message, so it lands in the
+ * same inbox (and the same ticket, when this browser already has one) as a bug
+ * submitted from the account menu rather than as a bare analytics event.
+ *
+ * Resolves `true` once the message is sent and `false` when support is not
+ * available or the request fails — the caller words the toast, since only it
+ * knows what it promised the person.
+ */
+export async function reportImportProblem(url: string, problem: ImportProblem): Promise<boolean> {
+  const what = problem === "no_recipe" ? "Buttery couldn't find a recipe on this page" : "Buttery couldn't open this page";
+  try {
+    await sendSupportMessage(`Recipe import: ${what}.\n\n${url}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Clear the unread count on the server once the thread has been looked at. */
 export async function markSupportRead(): Promise<void> {
   if (!conversations?.getCurrentTicketId()) return;

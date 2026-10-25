@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Compass, Link2, Pencil } from "lucide-react";
-import { useAnalytics } from "#/lib/analytics";
 import { cn } from "#/lib/utils";
 import { scrapeRecipe } from "#/lib/api";
+import { reportImportProblem } from "#/lib/support";
 import { Button } from "#/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "#/components/ui/card";
 import { Input } from "#/components/ui/input";
@@ -27,7 +27,6 @@ import { FetchingDialog, type FetchPhase } from "#/components/recipes/create/Fet
  */
 export function FillTheBoxCard({ onNotify, className }: { onNotify?: (message: string) => void; className?: string }) {
   const navigate = useNavigate();
-  const { posthog } = useAnalytics();
   const [url, setUrl] = useState("");
   const [urlError, setUrlError] = useState<string | null>(null);
 
@@ -46,13 +45,14 @@ export function FillTheBoxCard({ onNotify, className }: { onNotify?: (message: s
     setPhase("fetching");
     try {
       const res = await scrapeRecipe({ url: trimmed });
-      // Reached the page (full or partial) → open the form prefilled by import id.
-      if (res.status === "ok" || res.status === "partial") {
+      // Read a recipe off the page → open the form prefilled by import id.
+      if (res.status === "ok") {
         setPhase(null);
         void navigate({ to: "/household/recipes/new", search: { import: res.importId } });
         return;
       }
       if (res.status === "rate_limited") return setPhase("rate_limited");
+      if (res.status === "no_recipe") return setPhase("no_recipe");
       if (res.status === "invalid_url") {
         setPhase(null);
         setUrlError("That doesn’t look like a recipe link.");
@@ -72,10 +72,11 @@ export function FillTheBoxCard({ onNotify, className }: { onNotify?: (message: s
     void navigate({ to: "/household/recipes/new", search: { source: failUrl } });
   }
 
-  function reportFailure() {
-    posthog.capture("recipe_import_failed_report", { url: failUrl });
+  async function reportFailure() {
+    const problem = phase === "no_recipe" ? "no_recipe" : "fetch_failed";
     setPhase(null);
-    onNotify?.("Thanks — we’ll take a look at that site.");
+    const sent = await reportImportProblem(failUrl, problem);
+    onNotify?.(sent ? "Thanks — we’ll take a look at that site." : "Couldn’t send that just now. “Submit a bug” in the account menu reaches us too.");
   }
 
   return (
